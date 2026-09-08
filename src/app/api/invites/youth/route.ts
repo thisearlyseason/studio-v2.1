@@ -6,6 +6,12 @@ import { adminDb, ensureAdminInit } from '@/lib/firebase-admin';
 import { youthInvitationEmail } from '@/lib/email-templates';
 import { getResend } from '@/lib/server-resend-client';
 import {
+  captureYouthInvitePlayerState,
+  INVITE_PLAYER_FIELDS,
+  youthInviteRollbackPlan,
+  type YouthInvitePlayerState,
+} from '@/lib/youth-invite-rotation';
+import {
   enforcePublicRateLimit,
   enforceUserRateLimit,
   readJsonBodyWithLimit,
@@ -45,23 +51,35 @@ async function rollbackYouthInviteDelivery(
   inviteRef: FirebaseFirestore.DocumentReference,
   playerRef: FirebaseFirestore.DocumentReference,
   token: string,
+  previousInviteRef: FirebaseFirestore.DocumentReference | null,
+  previousInvite: Record<string, unknown> | null,
+  previousPlayer: YouthInvitePlayerState,
 ) {
   await adminDb.runTransaction(async transaction => {
     const [inviteSnapshot, playerSnapshot] = await Promise.all([
       transaction.get(inviteRef),
       transaction.get(playerRef),
     ]);
+    const plan = youthInviteRollbackPlan({
+      currentToken: playerSnapshot.data()?.inviteToken,
+      replacementToken: token,
+      previousInvite,
+      previousPlayer,
+    });
+    if (!plan) return;
     if (inviteSnapshot.exists && inviteSnapshot.data()?.token === token) {
       transaction.delete(inviteRef);
     }
-    if (playerSnapshot.data()?.inviteToken === token) {
-      transaction.update(playerRef, {
-        pendingInviteEmail: admin.firestore.FieldValue.delete(),
-        inviteToken: admin.firestore.FieldValue.delete(),
-        inviteSentAt: admin.firestore.FieldValue.delete(),
-        inviteExpiresAt: admin.firestore.FieldValue.delete(),
-      });
+    if (previousInviteRef && plan.restorePreviousInvite) {
+      transaction.set(previousInviteRef, plan.restorePreviousInvite);
     }
+    const restorePlayer = Object.fromEntries(INVITE_PLAYER_FIELDS.map(field => [
+      field,
+      Object.prototype.hasOwnProperty.call(plan.restorePlayer, field)
+        ? plan.restorePlayer[field]
+        : admin.firestore.FieldValue.delete(),
+    ]));
+    transaction.update(playerRef, restorePlayer);
   });
 }
 
@@ -219,9 +237,19 @@ export async function POST(req: NextRequest) {
     const sentAt = new Date().toISOString();
     const expiresAt = new Date(Date.now() + INVITE_LIFETIME_MS).toISOString();
     const inviteRef = adminDb.collection('invites').doc(token);
+    const previousPlayer = captureYouthInvitePlayerState(player);
+    const previousToken = typeof player.inviteToken === 'string' && TOKEN_PATTERN.test(player.inviteToken)
+      ? player.inviteToken
+      : null;
+    const previousInviteRef = previousToken ? adminDb.collection('invites').doc(previousToken) : null;
+    const previousInviteSnapshot = previousInviteRef ? await previousInviteRef.get() : null;
+    const previousInviteData = previousInviteSnapshot?.data() || null;
+    const previousInvite = previousInviteSnapshot?.exists && previousInviteData && inviteIsUsable(previousInviteData)
+      ? previousInviteData
+      : null;
     const batch = adminDb.batch();
-    if (typeof player.inviteToken === 'string' && TOKEN_PATTERN.test(player.inviteToken)) {
-      batch.delete(adminDb.collection('invites').doc(player.inviteToken));
+    if (previousInviteRef) {
+      batch.delete(previousInviteRef);
     }
     batch.create(inviteRef, {
       token,
@@ -264,7 +292,14 @@ export async function POST(req: NextRequest) {
       });
       if (error || !data?.id) throw new Error('Resend did not accept the invitation.');
     } catch (deliveryError) {
-      await rollbackYouthInviteDelivery(inviteRef, playerRef, token);
+      await rollbackYouthInviteDelivery(
+        inviteRef,
+        playerRef,
+        token,
+        previousInviteRef,
+        previousInvite,
+        previousPlayer,
+      );
       console.error('[invites/youth POST] Email delivery failed:', deliveryError);
       throw new RequestBodyError('Invitation email delivery failed.', 502);
     }

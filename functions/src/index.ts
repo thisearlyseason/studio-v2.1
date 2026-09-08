@@ -4,7 +4,7 @@ import { onSchedule } from "firebase-functions/v2/scheduler";
 import * as admin from "firebase-admin";
 import * as webpush from "web-push";
 import {
-  filterUserMapDocuments,
+  loadUserMapDocumentsByUid,
   USER_ARRAY_TARGETS,
   USER_DOCUMENT_TARGETS,
   USER_MAP_TARGETS,
@@ -468,6 +468,18 @@ export const purgeExpiredDeletionRequests = onSchedule({
     .limit(100)
     .get();
 
+  if (requests.empty) {
+    console.log('[account-deletion] No expired account deletion requests.');
+    return;
+  }
+
+  const requestedUids = new Set(requests.docs.map(request => request.id));
+  const userMapDocuments = await loadUserMapDocumentsByUid(
+    USER_MAP_TARGETS,
+    requestedUids,
+    async target => (await db.collectionGroup(target.collectionGroup).get()).docs,
+  );
+
   let purged = 0;
   for (const request of requests.docs) {
     const uid = request.id;
@@ -538,8 +550,9 @@ export const purgeExpiredDeletionRequests = onSchedule({
 
       for (const target of USER_MAP_TARGETS) {
         const userEntry = new admin.firestore.FieldPath(target.mapField, uid);
-        const snapshot = await db.collectionGroup(target.collectionGroup).get();
-        const matchingDocuments = filterUserMapDocuments(snapshot.docs, target.mapField, uid);
+        const matchingDocuments = userMapDocuments
+          .get(`${target.collectionGroup}:${target.mapField}`)
+          ?.get(uid) || [];
         await Promise.all(matchingDocuments.map(async (document) => {
           const entry = document.data()?.[target.mapField]?.[uid];
           if (target.restoreQuantityField && Number(entry?.quantity) > 0) {

@@ -21,6 +21,28 @@ type UserMapDocument = {
   data(): Record<string, unknown> | undefined;
 };
 
+export async function loadUserMapDocumentsByUid<T extends UserMapDocument>(
+  targets: UserMapTarget[],
+  userIds: Set<string>,
+  load: (target: UserMapTarget) => Promise<T[]>,
+): Promise<Map<string, Map<string, T[]>>> {
+  const result = new Map<string, Map<string, T[]>>();
+  await Promise.all(targets.map(async target => {
+    const byUid = new Map<string, T[]>();
+    const documents = await load(target);
+    for (const document of documents) {
+      const candidate = document.data()?.[target.mapField];
+      if (candidate === null || typeof candidate !== 'object') continue;
+      for (const uid of userIds) {
+        if (!Object.prototype.hasOwnProperty.call(candidate, uid)) continue;
+        byUid.set(uid, [...(byUid.get(uid) || []), document]);
+      }
+    }
+    result.set(`${target.collectionGroup}:${target.mapField}`, byUid);
+  }));
+  return result;
+}
+
 /**
  * Firestore cannot define one collection-group index for arbitrary dynamic map
  * keys such as `signups.{uid}`. Account deletion therefore enumerates the

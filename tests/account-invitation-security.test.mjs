@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { youthInviteRollbackPlan } from '../src/lib/youth-invite-rotation.ts';
 
 test('league invite redemption rejects anonymous and unverified accounts', async () => {
   const source = await readFile(new URL('../functions/src/index.ts', import.meta.url), 'utf8');
@@ -49,4 +50,27 @@ test('youth invitation creation actually delivers the single-use activation link
   assert.match(createSection, /rollbackYouthInviteDelivery/);
   assert.match(templates, /export function youthInvitationEmail/);
   assert.match(templates, /guardianName\?\.trim\(\)\.replace\(\/\[\\r\\n\]\+\/g, ' '\)/);
+});
+
+test('failed replacement delivery restores the prior valid youth invitation', () => {
+  const previousInvite = { token: 'old', email: 'old@example.test', used: false };
+  const previousPlayer = {
+    pendingInviteEmail: 'old@example.test',
+    inviteToken: 'old',
+    inviteSentAt: 'before',
+    inviteExpiresAt: 'later',
+  };
+  assert.deepEqual(youthInviteRollbackPlan({
+    currentToken: 'new',
+    replacementToken: 'new',
+    previousInvite,
+    previousPlayer,
+  }), {
+    deleteReplacement: true,
+    restorePreviousInvite: previousInvite,
+    restorePlayer: previousPlayer,
+  });
+  assert.equal(youthInviteRollbackPlan({
+    currentToken: 'newer', replacementToken: 'new', previousInvite, previousPlayer,
+  }), null, 'a later rotation must not be overwritten');
 });

@@ -5,10 +5,28 @@ import * as accountDeletionPolicy from '../functions/src/account-deletion.ts';
 
 const {
   filterUserMapDocuments,
+  loadUserMapDocumentsByUid,
   USER_ARRAY_TARGETS,
   USER_DOCUMENT_TARGETS,
   USER_MAP_TARGETS,
 } = accountDeletionPolicy;
+
+test('embedded user-map collections are enumerated once per purge batch, not once per user', async () => {
+  const calls = [];
+  const documents = [
+    { id: 'both', data: () => ({ signups: { user_a: {}, user_b: {} } }) },
+    { id: 'other', data: () => ({ signups: { user_c: {} } }) },
+  ];
+  const indexed = await loadUserMapDocumentsByUid(
+    [{ collectionGroup: 'volunteers', mapField: 'signups' }],
+    new Set(['user_a', 'user_b']),
+    async target => { calls.push(target.collectionGroup); return documents; },
+  );
+
+  assert.deepEqual(calls, ['volunteers']);
+  assert.deepEqual(indexed.get('volunteers:signups')?.get('user_a')?.map(doc => doc.id), ['both']);
+  assert.deepEqual(indexed.get('volunteers:signups')?.get('user_b')?.map(doc => doc.id), ['both']);
+});
 
 test('embedded user-map cleanup selects only documents containing the exact UID key', () => {
   const docs = [

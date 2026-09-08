@@ -9,7 +9,23 @@ import {
   buildCommerceCleanupGraph,
   paymentMethodIdForCustomerUpdate,
   reconcileOwnedWebhookLedgers,
+  assertSingleConcurrentCheckout,
 } from '../scripts/qa/certification/run-commerce-lifecycle.mjs';
+
+test('concurrent Checkout evidence requires one unique response and one open provider session', () => {
+  assert.deepEqual(assertSingleConcurrentCheckout({
+    responses: [{ status: 200, sessionId: 'cs_one' }, { status: 200, sessionId: 'cs_one' }],
+    openSessionIds: ['cs_one'],
+  }), { sessionId: 'cs_one', statuses: [200, 200] });
+  assert.deepEqual(assertSingleConcurrentCheckout({
+    responses: [{ status: 200, sessionId: 'cs_one' }, { status: 409 }],
+    openSessionIds: ['cs_one'],
+  }), { sessionId: 'cs_one', statuses: [200, 409] });
+  assert.throws(() => assertSingleConcurrentCheckout({
+    responses: [{ status: 200, sessionId: 'cs_one' }, { status: 200, sessionId: 'cs_two' }],
+    openSessionIds: ['cs_one', 'cs_two'],
+  }), /exactly one Checkout Session/i);
+});
 
 const prices = {
   NEXT_PUBLIC_STRIPE_PRICE_TEAM_MONTHLY: 'price_team_monthly',

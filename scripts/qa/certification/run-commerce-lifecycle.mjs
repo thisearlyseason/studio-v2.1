@@ -94,6 +94,19 @@ export function assertPaymentLifecycleStates(states) {
   return states;
 }
 
+export function assertSingleConcurrentCheckout({ responses, openSessionIds }) {
+  const statuses = responses.map(response => response.status).sort((a, b) => a - b);
+  const successful = responses.filter(response => response.status === 200);
+  const responseSessions = new Set(successful.map(response => response.sessionId).filter(Boolean));
+  const providerSessions = new Set(openSessionIds.filter(Boolean));
+  if (successful.length < 1 || responses.some(response => ![200, 409].includes(response.status)) ||
+      responseSessions.size !== 1 || providerSessions.size !== 1 ||
+      [...responseSessions][0] !== [...providerSessions][0]) {
+    throw new Error('Concurrent evidence must prove exactly one Checkout Session');
+  }
+  return { sessionId: [...responseSessions][0], statuses };
+}
+
 function readSecret(name) {
   return execFileSync('gcloud', [
     'secrets', 'versions', 'access', 'latest',
@@ -255,19 +268,25 @@ export async function main({
 
     const concurrentBody = { userId: graph.userIds[2], teamId: graph.teamIds[0], priceId: matrix[0].priceId, billingCycle: 'monthly', extraTeamQty: 0 };
     const concurrent = await Promise.all([
-      requestJson('/api/stripe/create-checkout', lifecycleToken, concurrentBody, 200).then(() => 200).catch(error => error.message.includes('returned 409') ? 409 : Promise.reject(error)),
-      requestJson('/api/stripe/create-checkout', lifecycleToken, concurrentBody, 200).then(() => 200).catch(error => error.message.includes('returned 409') ? 409 : Promise.reject(error)),
+      requestJson('/api/stripe/create-checkout', lifecycleToken, concurrentBody, 200)
+        .then(result => ({ status: 200, sessionId: result.body.url }))
+        .catch(error => error.message.includes('returned 409') ? { status: 409 } : Promise.reject(error)),
+      requestJson('/api/stripe/create-checkout', lifecycleToken, concurrentBody, 200)
+        .then(result => ({ status: 200, sessionId: result.body.url }))
+        .catch(error => error.message.includes('returned 409') ? { status: 409 } : Promise.reject(error)),
     ]);
-    if (!concurrent.includes(200) || !concurrent.every(status => [200, 409].includes(status))) {
-      throw new Error(`Concurrent Checkout returned unsupported statuses ${concurrent.join(',')}`);
-    }
-    observations.push(`checkout-concurrency-${concurrent.sort().join('-')}`);
 
     const lifecycleUserRef = db.doc(`users/${graph.userIds[2]}`);
     const lifecycleUser = (await lifecycleUserRef.get()).data();
     const customerId = lifecycleUser?.stripe_customer_id;
     if (typeof customerId !== 'string') throw new Error('Lifecycle Checkout did not persist a Stripe customer');
     customerIds.add(customerId);
+    const concurrentOpen = await stripe.checkout.sessions.list({ customer: customerId, status: 'open', limit: 10 });
+    const concurrentEvidence = assertSingleConcurrentCheckout({
+      responses: concurrent,
+      openSessionIds: concurrentOpen.data.map(session => session.url),
+    });
+    observations.push(`checkout-concurrency-${concurrentEvidence.statuses.join('-')}`);
     await expireOpenSessions(stripe, customerId);
     const attachedPaymentMethod = await stripe.paymentMethods.attach('pm_card_visa', { customer: customerId });
     await stripe.customers.update(customerId, {

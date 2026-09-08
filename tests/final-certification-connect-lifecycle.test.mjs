@@ -46,12 +46,12 @@ test('Connect evidence covers onboarding, authorization, item, fundraising, webh
   ]);
 });
 
-test('Connect cleanup cannot pass with any Firebase, Stripe artifact, or ledger residue', () => {
-  assert.deepEqual(assertConnectCleanupState({ firestore: 0, auth: 0, stripe: 0, ledgers: 0 }), {
-    firestore: 0, auth: 0, stripe: 0, ledgers: 0, total: 0,
+test('Connect cleanup requires zero active/onboarding residue and reports retained archived provider records', () => {
+  assert.deepEqual(assertConnectCleanupState({ firestore: 0, auth: 0, activeStripe: 0, onboardingAccounts: 0, ledgers: 0, archivedStripe: 3 }), {
+    firestore: 0, auth: 0, activeStripe: 0, onboardingAccounts: 0, ledgers: 0, archivedStripe: 3, blockingTotal: 0,
   });
   assert.throws(
-    () => assertConnectCleanupState({ firestore: 0, auth: 0, stripe: 1, ledgers: 0 }),
+    () => assertConnectCleanupState({ firestore: 0, auth: 0, activeStripe: 0, onboardingAccounts: 1, ledgers: 0, archivedStripe: 3 }),
     /residual/,
   );
 });

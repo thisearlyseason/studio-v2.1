@@ -54,9 +54,10 @@ export function requiredConnectObservations() {
   ];
 }
 
-export function assertConnectCleanupState({ firestore, auth, stripe, ledgers }) {
-  const result = { firestore, auth, stripe, ledgers, total: firestore + auth + stripe + ledgers };
-  if (result.total !== 0) throw new Error(`Connect cleanup left ${result.total} residual resource(s)`);
+export function assertConnectCleanupState({ firestore, auth, activeStripe, onboardingAccounts, ledgers, archivedStripe }) {
+  const blockingTotal = firestore + auth + activeStripe + onboardingAccounts + ledgers;
+  const result = { firestore, auth, activeStripe, onboardingAccounts, ledgers, archivedStripe, blockingTotal };
+  if (blockingTotal !== 0) throw new Error(`Connect cleanup left ${blockingTotal} blocking residual resource(s)`);
   return result;
 }
 
@@ -153,31 +154,35 @@ async function deleteRateLimits(db, userIds) {
 
 async function archiveConnectArtifacts(stripe, accountId, artifacts) {
   for (const linkId of artifacts.links) {
-    await stripe.paymentLinks.update(linkId, { active: false }, { stripeAccount: accountId }).catch(() => {});
+    await stripe.paymentLinks.update(linkId, { active: false }, { stripeAccount: accountId });
   }
   for (const priceId of artifacts.prices) {
-    await stripe.prices.update(priceId, { active: false }, { stripeAccount: accountId }).catch(() => {});
+    await stripe.prices.update(priceId, { active: false }, { stripeAccount: accountId });
   }
   for (const productId of artifacts.products) {
-    await stripe.products.update(productId, { active: false }, { stripeAccount: accountId }).catch(() => {});
+    await stripe.products.update(productId, { active: false }, { stripeAccount: accountId });
   }
 }
 
-async function countActiveConnectArtifacts(stripe, accountId, artifacts) {
+async function countConnectArtifacts(stripe, accountId, artifacts) {
   let active = 0;
+  let persistent = 0;
   for (const linkId of artifacts.links) {
     const link = await stripe.paymentLinks.retrieve(linkId, {}, { stripeAccount: accountId });
+    persistent += 1;
     if (link.active) active += 1;
   }
   for (const priceId of artifacts.prices) {
     const price = await stripe.prices.retrieve(priceId, {}, { stripeAccount: accountId });
+    persistent += 1;
     if (price.active) active += 1;
   }
   for (const productId of artifacts.products) {
     const product = await stripe.products.retrieve(productId, {}, { stripeAccount: accountId });
+    persistent += 1;
     if (product.active) active += 1;
   }
-  return active;
+  return { active, persistent };
 }
 
 export async function main({
@@ -348,15 +353,26 @@ export async function main({
     await Promise.all(graph.userIds.map(async uid => {
       try { await auth.deleteUser(uid); } catch (error) { if (error?.code !== 'auth/user-not-found') throw error; }
     }));
-    if (onboardingAccountId) await stripe.accounts.del(onboardingAccountId).catch(() => {});
+    let onboardingAccountResiduals = 0;
+    if (onboardingAccountId) {
+      const deletedAccount = await stripe.accounts.del(onboardingAccountId);
+      if (deletedAccount.deleted !== true) onboardingAccountResiduals = 1;
+    }
 
     const firestoreResiduals = (await Promise.all(graph.firestorePaths.map(path => db.doc(path).get()))).filter(snapshot => snapshot.exists).length;
     const authResiduals = (await Promise.all(graph.userIds.map(async uid => {
       try { await auth.getUser(uid); return true; } catch (error) { if (error?.code === 'auth/user-not-found') return false; throw error; }
     }))).filter(Boolean).length;
-    const activeStripeResiduals = await countActiveConnectArtifacts(stripe, paymentAccount.id, artifacts);
+    const stripeArtifacts = await countConnectArtifacts(stripe, paymentAccount.id, artifacts);
     const ledgerResiduals = (await Promise.all([...observedLedgerIds].map(id => db.doc(`stripeConnectWebhookEvents/${id}`).get()))).filter(snapshot => snapshot.exists).length;
-    const cleanup = assertConnectCleanupState({ firestore: firestoreResiduals, auth: authResiduals, stripe: activeStripeResiduals, ledgers: ledgerResiduals });
+    const cleanup = assertConnectCleanupState({
+      firestore: firestoreResiduals,
+      auth: authResiduals,
+      activeStripe: stripeArtifacts.active,
+      onboardingAccounts: onboardingAccountResiduals,
+      ledgers: ledgerResiduals,
+      archivedStripe: stripeArtifacts.persistent,
+    });
     if (evidence) evidence.cleanup = { ...cleanup, checkedFirestorePaths: graph.firestorePaths.length, checkedWebhookLedgers: observedLedgerIds.size };
   }
   return evidence;
