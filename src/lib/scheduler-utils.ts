@@ -65,7 +65,7 @@ export interface ScheduleConfig {
   dailyWindows?: DailyWindow[];
   playDays?: number[];
   blackoutDaysOfWeek?: number[];
-  tournamentType?: 'round_robin' | 'pool_play_knockout' | 'single_elimination' | 'double_elimination';
+  tournamentType?: 'round_robin' | 'pool_play_knockout' | 'single_elimination' | 'double_elimination' | 'tiered_playoffs';
   poolCount?: number; // For pool_play_knockout: number of pools (default: 2)
   advancePerPool?: number; // Teams that advance from each pool to knockout (default: 2)
   maxDailyGamesPerTeam?: number;

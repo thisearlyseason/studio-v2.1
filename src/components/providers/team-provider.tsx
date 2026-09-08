@@ -14,6 +14,7 @@ import { normalizeTeamEvent } from '@/lib/team-event-normalization';
 import { dispatchTeamNotification, shouldDispatchTeamOutbound } from '@/lib/client-team-notification';
 import { isStarterExperience } from '@/lib/plan-catalog';
 import { activeTeamMemberships } from '@/lib/team-membership-security';
+import type { TieredPlayoffsConfig } from '@/lib/tiered-playoffs/types';
 
 import { 
   collection, 
@@ -401,7 +402,8 @@ export type TeamEvent = {
   round?: string | number; // Tournament round identifier
   refereePool?: TournamentReferee[];
   // ── Tournament deployment fields (set by TournamentDeploymentWizard) ──
-  tournamentType?: 'round_robin' | 'single_elimination' | 'double_elimination' | 'pool_play_knockout';
+  tournamentType?: 'round_robin' | 'single_elimination' | 'double_elimination' | 'pool_play_knockout' | 'tiered_playoffs';
+  tieredPlayoffs?: TieredPlayoffsConfig;
   gameLength?: number;
   breakLength?: number;
   gamesPerTeam?: number;
@@ -773,6 +775,15 @@ export type TournamentGame = {
   isResetMatch?: boolean;
   /** True for conditional matches that only occur under specific bracket outcomes */
   isConditional?: boolean;
+  phase?: 'preliminary' | 'playoff';
+  playoffDivisionId?: string;
+  playoffDivisionName?: string;
+  overallSeed1?: number;
+  overallSeed2?: number;
+  divisionSeed1?: number;
+  divisionSeed2?: number;
+  isBye?: boolean;
+  possibleTeamIds?: string[];
   /** Assigned official */
   refereeId?: string;
   refereeName?: string;

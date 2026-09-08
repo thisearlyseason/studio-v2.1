@@ -1,6 +1,6 @@
 import { addMinutes, format, isAfter, isBefore, parse, differenceInMinutes, addDays } from 'date-fns';
 
-export type TournamentFormat = 'round_robin' | 'single_elimination' | 'double_elimination' | 'pool_play_knockout' | 'league';
+export type TournamentFormat = 'round_robin' | 'single_elimination' | 'double_elimination' | 'pool_play_knockout' | 'tiered_playoffs' | 'league';
 
 export interface Team { id: string; name: string; }
 export interface VenueSlot { date: string; startTime: string; endTime: string; }
