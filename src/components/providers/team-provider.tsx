@@ -1906,59 +1906,40 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const getStaffEvaluation = useCallback(async (memberId: string) => { if (!activeTeam?.id || !db) return ''; const snap = await getDoc(doc(db, 'teams', activeTeam.id, 'members', memberId, 'staffEvaluation', 'current')); return snap.exists() ? (snap.data()?.notes || '') : ''; }, [activeTeam, db]);
 
   const removeMember = useCallback(async (memberId: string, reason?: string) => {
-    if (!activeTeam?.id || !db) return;
+    if (!activeTeam?.id || !firebaseAuth) return;
     try {
-      const memberRef = doc(db, 'teams', activeTeam.id, 'members', memberId);
-      const memberSnap = await getDoc(memberRef);
-      if (memberSnap.exists()) {
-        const mData = memberSnap.data();
-        await updateDoc(memberRef, {
-          status: 'removed',
-          removalReason: reason || null,
-          removedAt: new Date().toISOString()
-        });
-        
-        // Also update their user profile record if they have a userId linked
-        if (mData.userId) {
-          await updateDoc(doc(db, 'users', mData.userId, 'teamMemberships', activeTeam.id), {
-            status: 'removed'
-          }).catch(() => {}); // Secondary record might not exist or be named differently
-        }
-        
-        toast({ title: "Player Removed", description: "Member has been moved to the archived section." });
-      }
+      const token = await getAuthToken(firebaseAuth);
+      const response = await fetch('/api/teams/members/lifecycle', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ teamId: activeTeam.id, memberId, action: 'remove', reason }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Failed to remove member from active roster.');
+      toast({ title: "Player Removed", description: "Member access and squad benefits were revoked immediately." });
     } catch (e) {
       console.error("Remove Member Error:", e);
-      toast({ title: "Operation Failed", description: "Failed to remove member from active roster.", variant: "destructive" });
+      toast({ title: "Operation Failed", description: e instanceof Error ? e.message : "Failed to remove member from active roster.", variant: "destructive" });
+      throw e;
     }
-  }, [activeTeam, db]);
+  }, [activeTeam?.id, firebaseAuth]);
 
   const reinstateMember = useCallback(async (memberId: string) => {
-    if (!activeTeam?.id || !db) return;
+    if (!activeTeam?.id || !firebaseAuth) return;
     try {
-      const memberRef = doc(db, 'teams', activeTeam.id, 'members', memberId);
-      const memberSnap = await getDoc(memberRef);
-      if (memberSnap.exists()) {
-        const mData = memberSnap.data();
-        await updateDoc(memberRef, {
-          status: 'active',
-          removalReason: deleteField(),
-          removedAt: deleteField()
-        });
-        
-        if (mData.userId) {
-          await updateDoc(doc(db, 'users', mData.userId, 'teamMemberships', activeTeam.id), {
-            status: 'active'
-          }).catch(() => {});
-        }
-        
-        toast({ title: "Player Reinstated", description: "Member is now back on the active roster." });
-      }
+      const token = await getAuthToken(firebaseAuth);
+      const response = await fetch('/api/teams/members/lifecycle', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ teamId: activeTeam.id, memberId, action: 'reinstate' }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Failed to reinstate member.');
+      toast({ title: "Player Reinstated", description: "Member access is restored." });
     } catch (e) {
       console.error("Reinstate Member Error:", e);
-      toast({ title: "Operation Failed", description: "Failed to reinstate member.", variant: "destructive" });
+      toast({ title: "Operation Failed", description: e instanceof Error ? e.message : "Failed to reinstate member.", variant: "destructive" });
+      throw e;
     }
-  }, [activeTeam, db]);
+  }, [activeTeam?.id, firebaseAuth]);
 
   const createNewTeam = useCallback(async (name: string, type: any, pos: string, description?: string, planId?: string, customWaiverTitle?: string, customWaiverContent?: string, schoolId?: string, coachName?: string, coachEmail?: string, overrideOwnerId?: string) => { 
     if (!firebaseUser || !firebaseAuth || !db || !userProfile) return '';
@@ -2132,12 +2113,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       inviteCode: code,
       lastCodeEditedAt: new Date().toISOString()
     });
-    // Also update all memberships for the owner so their local list reflects the change
-    if (firebaseUser) {
-      const membershipRef = doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid);
-      await updateDoc(membershipRef, { code });
-    }
-  }, [db, firebaseUser]);
+  }, [db, checkCodeUniqueness]);
 
   const resetSquadData = useCallback(async (categories: string[]) => {
     if (!activeTeam?.id || !firebaseAuth) throw new Error('Choose an active squad before resetting its season.');

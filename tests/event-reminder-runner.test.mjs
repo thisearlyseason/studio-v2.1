@@ -40,7 +40,7 @@ test('scheduler core records a durable failure and permits its next invocation t
   assert.deepEqual(failures, [{ teamId: 'team-a', eventId: 'event-a', userId: 'player-a', diagnostic: 'safe injected failure' }]);
 });
 
-test('scheduler core selects FCM and Web Push once, excludes ineligible members, and retries only failed ledger work', async () => {
+test('scheduler core includes opted-in coaches, excludes inactive or opted-out members, and retries only failed ledger work', async () => {
   const ledger = new Map();
   const deliveries = [];
   let retryFails = true;
@@ -82,11 +82,12 @@ test('scheduler core selects FCM and Web Push once, excludes ineligible members,
   };
   const first = await runUpcomingEventReminderCore(adapter);
   const second = await runUpcomingEventReminderCore(adapter);
-  assert.deepEqual(first, { sentCount: 1, failedCount: 1, claimedCount: 2 });
+  assert.deepEqual(first, { sentCount: 3, failedCount: 1, claimedCount: 4 });
   assert.deepEqual(second, { sentCount: 1, failedCount: 0, claimedCount: 1 });
   assert.equal(ledger.get('eligible/eligible').status, 'sent');
   assert.equal(ledger.get('retry/eligible').status, 'sent');
   assert.equal(deliveries[0].targets.fcmTokens.length, 1);
   assert.equal(deliveries[0].targets.webPushSubscriptions.length, 1);
-  assert.equal(deliveries.some(delivery => delivery.entry.userId !== 'eligible'), false);
+  assert.equal(deliveries.some(delivery => delivery.entry.userId === 'coach'), true);
+  assert.equal(deliveries.some(delivery => ['pref-off', 'removed'].includes(delivery.entry.userId)), false);
 });

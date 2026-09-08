@@ -125,6 +125,9 @@ test('reminder delivery accepts the current Web Push registration alongside lega
   assert.deepEqual(selectReminderDeliveryTargets({
     role: 'coach', notificationsEnabled: true, upcomingEventNotificationsEnabled: true,
     fcmTokens: ['legacy-token-1'], webPushSubscriptions: targets.webPushSubscriptions,
+  }), targets);
+  assert.deepEqual(selectReminderDeliveryTargets({
+    role: 'coach', fcmTokens: ['legacy-token-1'], webPushSubscriptions: targets.webPushSubscriptions,
   }), { fcmTokens: [], webPushSubscriptions: [] });
 });
 
@@ -165,6 +168,8 @@ test('notification controls are enforced by the UI, API, rules, and scheduler', 
   const schedulerCore = fs.readFileSync(new URL('../functions/src/event-reminder-runner.ts', import.meta.url), 'utf8');
 
   assert.match(settings, /Game-Day Reminders/);
+  assert.doesNotMatch(settings, /\{\(isParent \|\| isPlayer\) && \(\s*<Card[^>]*>[\s\S]*?Game-Day Reminders/);
+  assert.match(settings, /All active squad members/);
   assert.match(settings, /upcomingEventNotificationsEnabled/);
   assert.match(notifyRoute, /sendNotificationToUsers/);
   assert.match(notificationDelivery, /notificationsEnabled === false/);

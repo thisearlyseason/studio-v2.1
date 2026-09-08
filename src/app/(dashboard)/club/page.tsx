@@ -1311,7 +1311,7 @@ function AuthorizedClubManagementPage() {
                       <Button 
                         variant="outline" 
                         className="rounded-xl h-8 px-3 font-black uppercase text-[9px] text-primary border-primary/20 hover:bg-primary hover:text-white transition-all shrink-0"
-                        onClick={() => reinstateMember(member.id)}
+                        onClick={() => { void reinstateMember(member.id).catch(() => {}); }}
                       >
                         Reinstate
                       </Button>

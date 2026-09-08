@@ -28,8 +28,9 @@ function validWebPushSubscription(value) {
  * can still have FCM registrations; either transport is eligible.
  */
 function selectReminderDeliveryTargets(profile) {
-    if (!['parent', 'adult_player', 'youth_player'].includes(String(profile.role || '')) ||
-        profile.notificationsEnabled === false || profile.upcomingEventNotificationsEnabled === false) {
+    // The runner already supplies only active team members. Apply personal
+    // preferences here without excluding coaches or other active squad staff.
+    if (profile.notificationsEnabled !== true || profile.upcomingEventNotificationsEnabled !== true) {
         return { fcmTokens: [], webPushSubscriptions: [] };
     }
     const fcmTokens = Array.isArray(profile.fcmTokens)

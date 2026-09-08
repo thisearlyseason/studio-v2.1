@@ -107,7 +107,7 @@ export default function SettingsPage() {
   const { 
     user, updateUser, members, activeTeam, updateMember, 
     manageSubscription, isPro, resetSquadData, checkCodeUniqueness, 
-    updateTeamCode, isStaff, isPlayer, isParent, isPrimaryClubAuthority, db
+    updateTeamCode, isStaff, isPlayer, isPrimaryClubAuthority, db
   } = useTeam();
   const auth = useAuth();
   const router = useRouter();
@@ -670,15 +670,14 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {(isParent || isPlayer) && (
-          <Card className="rounded-[2.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
+        <Card className="rounded-[2.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
             <CardHeader className="bg-muted/30 border-b p-8 flex flex-row items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="bg-blue-100 p-2.5 rounded-xl text-blue-700"><Bell className="h-5 w-5" /></div>
                 <div>
                   <CardTitle className="text-sm font-black uppercase tracking-widest">Game-Day Reminders</CardTitle>
                   <CardDescription className="mt-1 text-[10px] font-bold uppercase tracking-wider">
-                    Players and parents
+                    All active squad members
                   </CardDescription>
                 </div>
               </div>
@@ -699,8 +698,7 @@ export default function SettingsPage() {
                 </p>
               )}
             </CardContent>
-          </Card>
-        )}
+        </Card>
 
         {canManageBilling && (
         <Card className="rounded-[2.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
