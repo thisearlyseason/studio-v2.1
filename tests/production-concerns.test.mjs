@@ -184,6 +184,26 @@ test('anonymous demos survive reloads and clean up visible exits and abandoned s
   assert.match(functions, /cleanupAnonymousUsers = onSchedule\(\{[\s\S]*schedule: 'every 15 minutes'/);
 });
 
+test('every visible logout unregisters push while the user is still authenticated', async () => {
+  const [shell, settings, pushRegistration] = await Promise.all([
+    source('../src/components/layout/Shell.tsx'),
+    source('../src/app/(dashboard)/settings/page.tsx'),
+    source('../src/lib/client-push-registration.ts'),
+  ]);
+
+  for (const logoutSurface of [shell, settings]) {
+    const logout = logoutSurface.match(/const handleLogout = async \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
+    assert.match(logoutSurface, /import \{ deletePushDevice/);
+    assert.match(logout, /if \(user\?\.id\) \{\s+await deletePushDevice\(user\.id\);\s+\}/);
+    assert.ok(logout.indexOf('await deletePushDevice(user.id)') < logout.indexOf('await clearBrowserSession()'));
+    assert.ok(logout.indexOf('await deletePushDevice(user.id)') < logout.indexOf('await signOut(auth)'));
+    assert.doesNotMatch(logout, /deletePushDevice\(user\.id\)\.catch/);
+  }
+  const deletion = pushRegistration.match(/export async function deletePushDevice[\s\S]*?\n\}/)?.[0] || '';
+  assert.match(deletion, /await clearLegacyFcmRegistrations\(userId\);/);
+  assert.doesNotMatch(deletion, /clearLegacyFcmRegistrations\(userId\)\.catch/);
+});
+
 test('demo launch creates its protected profile before entering dashboard routes', async () => {
   const [login, landing, clientAuth] = await Promise.all([
     source('../src/app/login/page.tsx'),

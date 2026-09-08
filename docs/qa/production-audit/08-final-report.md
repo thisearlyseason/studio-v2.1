@@ -11,13 +11,13 @@ The matrix contains 88 rows.
 
 | Status | Count |
 |---|---:|
-| PASS | 6 |
+| PASS | 20 |
 | FAIL | 0 |
-| BLOCKED | 81 |
+| BLOCKED | 67 |
 | NOT APPLICABLE | 1 |
 | NOT RUN | 0 |
 
-Completed functional-row coverage is `(PASS + FAIL) / all rows = 6 / 88 = 6.8%`; one rejected feature is explicitly `NOT APPLICABLE`. All remaining rows have been explicitly classified BLOCKED rather than left ambiguous. Many blocked rows received partial smoke or automated boundary evidence, but they were not promoted because their complete role, negative, permission, persistence, responsive, provider, or device requirements could not be executed.
+Completed functional-row coverage is `(PASS + FAIL) / all rows = 20 / 88 = 22.7%`; one rejected feature is explicitly `NOT APPLICABLE`. Fourteen formerly blocked rows were promoted only after exact hosted/provider/background evidence reconciled with their immutable browser and authorization contracts. All remaining rows are explicitly classified BLOCKED rather than left ambiguous.
 
 ## Tested features and roles
 
@@ -50,8 +50,9 @@ The first physical Android chat test invalidated the earlier notification accept
 - BUG-019, P2: Every icon-only facility edit action now has a facility-specific accessible name.
 - BUG-020, P1: Assigned equipment cannot be deleted until all assignments have been returned.
 - BUG-021, P1: Hosted anonymous-demo cleanup now validates the configured public origin instead of App Hosting's internal proxy origin.
+- BUG-052, P1: Both visible logout paths now await removal of the current browser's legacy and Web Push registrations before session clearing; exact deployment and physical account-switch verification remain pending.
 
-Open severity totals: P0 0, P1 0, P2 0, P3 0. Historical findings addressed: P1 11 resolved, P2 9 resolved and 1 retired.
+Open severity totals: P0 0, P1 1 pending deployment verification, P2 0, P3 0. All previously deployed implementation findings remain resolved.
 
 ## Exact-candidate staging and live-demo follow-up — 2026-09-04
 
@@ -173,3 +174,13 @@ Two physical-device gates also remain explicit: Android permission-denial, opt-o
 - Defects: `docs/qa/production-audit/07-defect-ledger.md`
 - Run records: `docs/qa/production-audit/runs/2026-08-21T232919Z/`
 - Browser artifacts: `output/playwright/2026-08-21T232919Z/`
+
+## Final evidence reconciliation and logout privacy follow-up — 2026-09-08
+
+The coverage matrix was reconciled against the immutable local browser artifacts and the later exact staging, production, provider, scheduler, storage, infrastructure, rollback, and seven-persona production evidence. Fourteen stale rows now have complete evidence and are `PASS`: email/password login; logout/revocation/multi-tab; five-role signup; youth invitation/signup; demo lifecycle; calendar ICS lifecycle; library files; avatar/branding/player media; youth-login enablement; Stripe/Connect webhooks; Resend webhooks; league projections; background cleanup/purge/reminders; and health/CI/deploy/rules drift/rollback. A deployment health check by itself was never treated as feature proof.
+
+The runner inventory also found seven local-owned catalog rows that had never been assigned to a batch. They are now assigned to Operations and execute through the evidence validator. Until dedicated handlers emit their required case-owned proof, they truthfully return `BLOCKED_PRECONDITION`; the runner can no longer silently omit them or invent a pass.
+
+Fresh production Playwright at the final public alias observed the correct title, responsive mobile width with no overflow, manifest and Apple icon discovery, an active root service worker, a secure offline shell that states personal data is not stored, and zero online application console errors. The focused Push/PWA/reminder regression pack passed 54/54 before the logout review.
+
+That review found BUG-052: the Shell logout skipped push teardown and Settings launched it without awaiting completion. Both paths now await legacy and Web Push removal while the user is still authenticated, before browser-session clearing and Firebase sign-out. The test-first ordering regression and focused affected pack pass locally. The repair is not yet part of the public deployment, so the Push/PWA strict rows remain blocked along with their physical Android negative and physical iPhone/iPad requirements.

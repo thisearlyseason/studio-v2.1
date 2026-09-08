@@ -67,10 +67,16 @@ const OPERATIONS_IDS = [
   'tournaments-registration-waiver',
   'public-portals-squad-event-registration',
   'safety-incident-create-read-export',
+  'games-team-score-create-edit-reset',
   'facilities-facility-field-crud-rename',
   'facilities-availability-booking-delete',
   'equipment-inventory-assignment-return',
   'sports-hub-browse-search-filter-bookmark-preferences',
+  'sports-hub-rss-refresh-admin-publish',
+  'volunteers-opportunity-public-signup',
+  'public-portals-embed-panels',
+  'administration-entitlement-account-control-plans',
+  'administration-beta-bugs-embeds-newsletter-sports-hub',
   'leagues-create-edit-clone-delete',
   'leagues-schedule-generation-deployment',
   'leagues-registration-assignment',
@@ -78,6 +84,7 @@ const OPERATIONS_IDS = [
   'tournaments-create-configure-replicate-archive',
   'tournaments-schedule-pools-brackets-referees',
   'tournaments-scoring-dispute-public-standings',
+  'leagues-divisions-teams-filters-forms',
 ];
 
 const OPERATIONS_CATALOG_IDS = [
@@ -102,7 +109,9 @@ const OPERATIONS_CATALOG_IDS = [
   'waivers-parent-player-coach-signature',
   'forms-league-tournament-registration-builder',
   'safety-incident-create-read-export',
+  'games-team-score-create-edit-reset',
   'leagues-create-edit-clone-delete',
+  'leagues-divisions-teams-filters-forms',
   'leagues-schedule-generation-deployment',
   'leagues-registration-assignment',
   'leagues-scorekeeper-spectator',
@@ -110,11 +119,16 @@ const OPERATIONS_CATALOG_IDS = [
   'tournaments-schedule-pools-brackets-referees',
   'tournaments-registration-waiver',
   'tournaments-scoring-dispute-public-standings',
+  'volunteers-opportunity-public-signup',
   'facilities-facility-field-crud-rename',
   'facilities-availability-booking-delete',
   'equipment-inventory-assignment-return',
   'sports-hub-browse-search-filter-bookmark-preferences',
+  'sports-hub-rss-refresh-admin-publish',
   'public-portals-squad-event-registration',
+  'public-portals-embed-panels',
+  'administration-entitlement-account-control-plans',
+  'administration-beta-bugs-embeds-newsletter-sports-hub',
 ];
 
 test('identity assignment owns the exact 11 Task 3 scenarios in catalog order', () => {
@@ -136,13 +150,21 @@ test('tenant assignment owns exactly the 16 Task 4 scenarios in frozen catalog o
   assert.ok(Object.isFrozen(SCENARIO_BATCH_ASSIGNMENTS.tenants));
 });
 
-test('operations assignment owns exactly the 34 locally certified scenarios in frozen catalog order', () => {
+test('operations assignment owns exactly the 41 local scenarios in frozen catalog order', () => {
   assert.deepEqual(LOCAL_BATCH_ORDER, ['identity', 'tenants', 'operations']);
   assert.deepEqual(SCENARIO_BATCH_ASSIGNMENTS.operations, OPERATIONS_IDS);
   const selected = selectLocalScenarios({ batches: ['operations'], catalog: CERTIFICATION_SCENARIOS });
   assert.deepEqual(selected.map(scenario => scenario.id), OPERATIONS_CATALOG_IDS);
-  assert.equal(new Set(selected.map(scenario => scenario.id)).size, 34);
-  assert.equal(selected.some(scenario => scenario.id === 'sports-hub-rss-refresh-admin-publish'), false);
+  assert.equal(new Set(selected.map(scenario => scenario.id)).size, 41);
+  for (const id of [
+    'games-team-score-create-edit-reset',
+    'leagues-divisions-teams-filters-forms',
+    'volunteers-opportunity-public-signup',
+    'sports-hub-rss-refresh-admin-publish',
+    'public-portals-embed-panels',
+    'administration-entitlement-account-control-plans',
+    'administration-beta-bugs-embeds-newsletter-sports-hub',
+  ]) assert.equal(selected.some(scenario => scenario.id === id), true, id);
 });
 
 test('tenant selection excludes adjacent and established scenarios', () => {
@@ -212,7 +234,7 @@ test('selection rejects unknown batches, flags, scenarios, and non-local ownersh
   assert.throws(() => parseLocalBatchArgs(['--unknown']), /Unknown local certification argument/);
   assert.throws(() => selectLocalScenarios({ scenarioIds: ['not-a-scenario'] }), /Unknown certification scenario/);
   assert.throws(
-    () => selectLocalScenarios({ scenarioIds: ['games-team-score-create-edit-reset'] }),
+    () => selectLocalScenarios({ scenarioIds: ['billing-pricing-checkout-trial'] }),
     /not assigned to a local batch/,
   );
 });

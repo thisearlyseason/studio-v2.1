@@ -122,6 +122,6 @@ export async function deleteWebPushSubscription(userId: string): Promise<void> {
 }
 
 export async function deletePushDevice(userId: string): Promise<void> {
-  await clearLegacyFcmRegistrations(userId).catch(() => {});
+  await clearLegacyFcmRegistrations(userId);
   await deleteWebPushSubscription(userId);
 }

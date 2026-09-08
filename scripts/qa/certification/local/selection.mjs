@@ -36,11 +36,18 @@ export const OPERATIONS_SCENARIO_IDS = Object.freeze([
   'tournaments-registration-waiver',
   'public-portals-squad-event-registration',
   'safety-incident-create-read-export',
+  'games-team-score-create-edit-reset',
   'facilities-facility-field-crud-rename',
   'facilities-availability-booking-delete',
   'equipment-inventory-assignment-return',
   'sports-hub-browse-search-filter-bookmark-preferences',
+  'sports-hub-rss-refresh-admin-publish',
+  'volunteers-opportunity-public-signup',
+  'public-portals-embed-panels',
+  'administration-entitlement-account-control-plans',
+  'administration-beta-bugs-embeds-newsletter-sports-hub',
   ...COMPETITION_SCENARIO_IDS,
+  'leagues-divisions-teams-filters-forms',
 ]);
 
 export const SCENARIO_BATCH_ASSIGNMENTS = Object.freeze({

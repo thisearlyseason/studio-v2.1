@@ -115,6 +115,7 @@ import { useAuth } from '@/firebase';
 import { toast } from '@/hooks/use-toast';
 import { hasCoachesCornerEntitlement } from '@/lib/coaches-corner-entitlement';
 import { clearBrowserSession, DEMO_EXIT_PENDING_KEY } from '@/lib/client-auth';
+import { deletePushDevice } from '@/lib/client-push-registration';
 import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
 import { isTeamModuleRouteDisabled } from '@/lib/team-module-visibility';
 import {
@@ -633,6 +634,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       if (isDemoLogout) {
         const response = await fetch('/api/demo/exit', { method: 'POST' });
         if (!response.ok) throw new Error('Demo cleanup failed');
+      }
+      if (user?.id) {
+        await deletePushDevice(user.id);
       }
       await clearBrowserSession();
       await signOut(auth);
