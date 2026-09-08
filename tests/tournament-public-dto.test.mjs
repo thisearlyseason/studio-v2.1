@@ -35,6 +35,30 @@ test('disputed Tournament results remain explicitly unofficial and do not affect
   assert.equal(data.standings.every(team => team.points === 0), true);
 });
 
+test('Tiered spectator projection hides playoff placement until publication and then exposes only safe bracket data', () => {
+  const tieredPlayoffs = {
+    standings: { pointsEnabled: true, points: { win: 2, tie: 1, loss: 0 }, rankingRules: ['wins'], finalResolution: 'manual', maximumDifferentialPerGame: null },
+    divisions: { definitions: [{ id: 'a', name: 'A Division', size: 2 }] },
+    seeding: { status: 'locked', approved: [{ teamId: 'alpha', teamName: 'Alpha', divisionId: 'a', divisionName: 'A Division', divisionSeed: 1, approvedOverallSeed: 1, overriddenBy: 'private-owner' }] },
+    playoffs: { status: 'ready', publishedAt: null, publishedBy: null },
+  };
+  const playoff = { ...sensitive.tournamentGames[0], id: 'p1', phase: 'playoff', playoffDivisionId: 'a', playoffDivisionName: 'A Division', divisionSeed1: 1, divisionSeed2: 2 };
+  const hidden = spectatorTournament('cup-a', { ...sensitive, tournamentType: 'tiered_playoffs', tieredPlayoffs, tournamentGames: [...sensitive.tournamentGames, playoff] });
+  assert.deepEqual(hidden.tournamentGames.map(game => game.id), ['g1']);
+  assert.equal(hidden.tieredPlayoffs.playoffs.status, 'pending');
+  assert.equal(hidden.tieredPlayoffs.seeding, undefined);
+
+  const published = spectatorTournament('cup-a', {
+    ...sensitive, tournamentType: 'tiered_playoffs',
+    tieredPlayoffs: { ...tieredPlayoffs, playoffs: { status: 'published', publishedAt: 'now', publishedBy: 'private-owner' } },
+    tournamentGames: [...sensitive.tournamentGames, playoff],
+  });
+  assert.deepEqual(published.tournamentGames.map(game => game.id), ['g1', 'p1']);
+  assert.equal(published.tournamentGames[1].playoffDivisionName, 'A Division');
+  assert.equal(published.tieredPlayoffs.seeding.approved[0].overriddenBy, undefined);
+  assert.equal(JSON.stringify(published).includes('private-owner'), false);
+});
+
 test('Tournament referee DTO contains only that referee assigned matches and no credential or contact data', () => {
   const event = { ...sensitive, tournamentGames: [
     { ...sensitive.tournamentGames[0], refereeId: 'ref', refereeName: 'Ref' },

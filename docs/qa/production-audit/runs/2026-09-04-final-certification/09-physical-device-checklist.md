@@ -83,6 +83,46 @@ private message bodies, passwords, or provider secrets.
 - [ ] After logout/removal, confirm no stale notifications remain and later sends do
   not reach the retired installation.
 
+## Recorded owner acceptance and remaining retest — 2026-09-08
+
+Device supplied: Pixel 8, Android 16, Chrome version not recorded. The product
+owner reported the following completed checks; they do not need to be repeated
+unless a later notification-lifecycle change directly affects them:
+
+- Tactical Alerts opt-out: PASS.
+- Sender exclusion: PASS.
+- Wrong-team exclusion: PASS.
+- Same-installation account switch: PASS.
+- iPhone notification receipt and presentation for the tested path: PASS.
+
+The Android notification reached the notification drawer but did not show a
+heads-up popup or launcher dot. Provider/device delivery therefore succeeded;
+heads-up presentation and dots remain dependent on the Android notification
+category and Pixel Launcher settings. After production deployment
+`dpl_1LAFSxMHPom51NCMuwKX8N7FBeVS`, confirm that the installed site's
+notification category is **Alerting**, **Pop on screen** is enabled, and Pixel
+Launcher notification dots are enabled before repeating tap-through.
+
+The removed-member entitlement observation exposed an application projection
+defect. Candidate `0ed01e5a` now excludes removed/deleted memberships from team
+and paid-feature projection, and its regression test passes. One physical/UI
+recheck remains: remove a non-paying member, sign in or reload as that member,
+and confirm the prior squad and its Pro-only access are absent.
+
+The reported reminder test used a September 10 event on September 8, so it was
+not a same-day scheduler test and cannot determine R1 or R2. For the final R1
+check, use an active parent, adult-player, or youth-player recipient with Game-Day
+Reminders and Tactical Alerts enabled; create a unique event for **today** in the
+team timezone, at least 20 minutes in the future and after 06:00 local time; fully
+close the PWA and wait up to 15 minutes. For R2, turn only Game-Day Reminders off,
+create a second unique eligible same-day event, and wait another scheduler cycle.
+The immediate event-created Tactical Alert is separate from the scheduled
+Game-Day Reminder and must not be counted as an R2 failure.
+
+All broader iPhone/iPad installation, update, offline-shell, logout/cache, and
+multi-state notification checks above remain required if full cross-platform
+physical certification is the release standard.
+
 ## Acceptance boundary
 
 The Push and PWA/offline matrix rows remain physical-device pending until every

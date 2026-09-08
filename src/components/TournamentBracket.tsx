@@ -15,6 +15,13 @@ interface BracketProps {
   tournamentName?: string;
 }
 
+function tournamentDisplayDate(value: string) {
+  const [year, month, day] = String(value || '').split('T')[0].split('-').map(Number);
+  return Number.isInteger(year) && Number.isInteger(month) && Number.isInteger(day)
+    ? new Date(year, month - 1, day)
+    : new Date(value);
+}
+
 // Recursive Tree Node for Single/Double Elimination Brackets
 const formatRoundName = (name?: string) => {
   if (!name) return 'MATCH';
@@ -247,7 +254,7 @@ export default function TournamentBracket({ games, standalone = false, onGameCli
                   </div>
                   <div className="flex justify-between items-center mb-4 border-b border-white/10 pb-2">
                     <span className="text-white/40 text-[8px] uppercase tracking-widest font-black">
-                      {new Date(game.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                      {tournamentDisplayDate(game.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                     </span>
                     <Badge className="bg-white text-black text-[7px] font-black uppercase tracking-widest px-1.5">{game.time}</Badge>
                   </div>

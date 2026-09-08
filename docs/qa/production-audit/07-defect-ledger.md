@@ -452,6 +452,77 @@
 | Verification | Server-authority, aggregate, cancellation, and browser regressions cover owner/delegate boundaries and all exact constituent squads. The immutable Task 4 browser batch renders the complete organization overview at both viewports with zero 403/5xx or console findings. |
 | Status | RESOLVED |
 
+## BUG-058 — Removed member retains squad entitlement projection (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Membership removal and paid-feature access |
+| Description | A removed member no longer had squad access but could retain the prior squad in the client team/entitlement projection. |
+| Root cause | Team hydration accepted membership-map keys without filtering removed, deleted, or missing membership records. |
+| Fix | Centralized active-membership filtering now excludes inactive membership states from both team navigation and owned-team projection. |
+| Verification | Red/green regression covers legacy/active versus removed/deleted/missing records; focused suite 102/102 and full suite 1,335/0 passed. A physical reload of the reported account remains in the device checklist. |
+| Status | RESOLVED IN APPLICATION — PHYSICAL ACCOUNT RECHECK PENDING |
+
+## BUG-059 — Chat directory fails when collection-group index is unavailable (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Team Chat directory |
+| Description | `/api/teams/chat` returned HTTP 500 with Firestore code 9 while the `groupChats.memberIds` collection-group index was unavailable. |
+| Root cause | The directory had a hard runtime dependency on one collection-group query even though the caller's authorized team set was already known. |
+| Fix | The server retains global discovery when indexed and, only for code 9, falls back to deduplicated per-authorized-team queries with transaction-time membership revalidation. The declared index was also deployed to the preview project. |
+| Verification | Route security regressions pass; fresh production Playwright observed `/api/teams/chat` HTTP 200, rendered channels, and zero console errors. |
+| Status | RESOLVED |
+
+## BUG-060 — Chat exposes opaque identity and lacks list lifecycle control (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Chat identity and deletion/hide lifecycle |
+| Description | Chat could display an opaque user identifier, and deleting or hiding a channel required entering it. |
+| Root cause | Detail rendering lacked an authenticated server member directory; the list had no direct lifecycle action or persistent member hide state. |
+| Fix | Authorized detail responses include a sanitized member directory; clients never render raw UIDs. Staff delete and member hide controls now appear on chat cards, with confirmation and server-enforced persistence. |
+| Verification | Identity/hide regressions pass. Production Playwright showed named members, direct Delete controls, HTTP 200, and no opaque ID or console error. Destructive production deletion was intentionally not used. |
+| Status | RESOLVED |
+
+## BUG-061 — PWA install prompt and mobile entry points are unreliable (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | PWA installation and mobile navigation |
+| Description | Shell and Settings could race for the one native install event, and mobile navigation omitted Join Team. |
+| Root cause | Separate component-local prompt state consumed one browser event; the mobile account menu did not include the existing join route. |
+| Fix | A shared install-prompt broker serves late-mounted controls and preserves platform instructions when native install is unavailable; Join Team is now in Account Management. |
+| Verification | Broker regression passes. Production Playwright opened Install App instructions and found Join Team linked to `/teams/join` at 412x915. |
+| Status | RESOLVED |
+
+## BUG-062 — New team activity has no authoritative tactical alert (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Event creation and Tactical Alerts |
+| Description | Creating a team activity persisted the event but had no single server-authoritative push path for active recipients. |
+| Root cause | Event notifications were client-originated and could omit push or duplicate delivery rather than following the committed server write. |
+| Fix | A successful non-demo server create dispatches one formatted event alert to active members excluding the sender; failed writes send nothing, demos stay provider-free, and the client keeps email without duplicate push. |
+| Verification | New route tests cover committed, failed, and demo creates; focused suite 102/102 and full suite 1,335/0 passed. Physical closed-device receipt remains part of the Push row. |
+| Status | RESOLVED IN APPLICATION — PHYSICAL DELIVERY RECHECK PENDING |
+
+## BUG-063 — Operational dialogs overflow or crowd mobile viewports (resolved)
+
+| Field | Evidence |
+|---|---|
+| Severity | P2 MEDIUM |
+| Feature | Activity, chat enrollment, and athlete decommission dialogs |
+| Description | Fixed desktop sizing made key controls difficult to reach on narrow screens. |
+| Fix | The dialogs now use viewport-bounded width/height, internal scrolling, responsive padding and footer layout, and collision-aware date popovers. |
+| Verification | Local Playwright covered all three dialogs. Fresh production Playwright measured the activity dialog at 396x899 inside a 412x915 viewport with body scroll width 412. |
+| Status | RESOLVED |
+
 ## BUG-026 — Visible demo sign-out skips exact demo cleanup (resolved)
 
 | Field | Evidence |

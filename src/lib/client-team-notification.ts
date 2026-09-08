@@ -16,6 +16,7 @@ type TeamNotificationInput = {
   url?: string;
   emailSubject?: string;
   emailHtml?: string;
+  includePush?: boolean;
 };
 
 type DeliveryResult = {
@@ -44,16 +45,19 @@ export async function dispatchTeamNotification(
     'Content-Type': 'application/json',
     Authorization: `Bearer ${input.idToken}`,
   };
-  const requests: Array<{ endpoint: string; body: Record<string, unknown> }> = [{
-    endpoint: '/api/notify',
-    body: {
-      teamId: input.teamId,
-      recipientUserIds: input.memberUserIds,
-      title: input.title,
-      body: input.body,
-      url: input.url,
-    },
-  }];
+  const requests: Array<{ endpoint: string; body: Record<string, unknown> }> = [];
+  if (input.includePush !== false) {
+    requests.push({
+      endpoint: '/api/notify',
+      body: {
+        teamId: input.teamId,
+        recipientUserIds: input.memberUserIds,
+        title: input.title,
+        body: input.body,
+        url: input.url,
+      },
+    });
+  }
   if (input.emailSubject && input.emailHtml) {
     requests.push({
       endpoint: '/api/email/send',

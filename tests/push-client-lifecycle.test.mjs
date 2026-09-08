@@ -147,3 +147,33 @@ test('push cleanup refuses to delete User A endpoints after authentication switc
   await assert.rejects(loaded.module.deletePushDevice('user-a'), /signed-in account is required/i);
   assert.deepEqual(harness.calls, []);
 });
+
+test('logout cleanup invalidates the local subscription and settles when the notification API is unavailable', async t => {
+  let unsubscribed = 0;
+  const subscription = {
+    endpoint: 'https://push.example.test/subscription/offline',
+    keys: { p256dh: 'p'.repeat(87), auth: 'a'.repeat(22) },
+    toJSON() { return { endpoint: this.endpoint, keys: this.keys }; },
+    async unsubscribe() { unsubscribed += 1; return true; },
+  };
+  const harness = {
+    auth: { currentUser: { uid: 'user-a', getIdToken: async () => 'token-a' } },
+    calls: [],
+    permission: 'granted',
+    permissionRequests: 0,
+    registration: { pushManager: { getSubscription: async () => subscription } },
+    workerRegistrations: 0,
+  };
+  installBrowserGlobals(t, harness);
+  globalThis.fetch = async (url, init) => {
+    harness.calls.push({ url, init, body: JSON.parse(init.body) });
+    return { ok: false };
+  };
+  const loaded = await loadPushClient(harness);
+  t.after(loaded.dispose);
+
+  await loaded.module.deletePushDevice('user-a');
+
+  assert.equal(harness.calls.length, 2);
+  assert.equal(unsubscribed, 1);
+});

@@ -286,7 +286,7 @@ test('organization squad seats are explicit, capacity-bound, and organizer-contr
   assert.doesNotMatch(route, /schoolId:[\s\S]*FieldValue\.delete\(\)/);
   assert.doesNotMatch(route, /clubId:[\s\S]*FieldValue\.delete\(\)/);
 
-  assert.match(provider, /return activeTeam\?\.isPro === true/);
+  assert.match(provider, /return activeTeamDoc\?\.isPro === true/);
   assert.doesNotMatch(provider, /activeTeam\?\.clubId && clubData\?\.subscriptionStatus/);
   assert.doesNotMatch(provider, /activeTeam\?\.type === 'school' \|\| activeTeam\?\.type === 'school_squad' \|\| activeTeam\?\.schoolId/);
 

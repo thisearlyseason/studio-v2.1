@@ -29,11 +29,12 @@ import {
   User
 } from 'lucide-react';
 import { useRouter } from 'next/navigation';
-import { format, isFuture, isToday, isSameDay, isSameMonth, startOfDay, isPast, isAfter, isValid, parseISO } from 'date-fns';
+import { format, isSameDay, isSameMonth, isValid, parseISO } from 'date-fns';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, limit } from 'firebase/firestore';
 import { usePendingWaivers } from '@/hooks/use-pending-waivers';
 import { cn } from '@/lib/utils';
+import { calendarEventDate, calendarEventIsUpcoming } from '@/lib/calendar-event-date';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -44,6 +45,15 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+
+function toDateObj(d: any): Date | null {
+  if (!d) return null;
+  if (d instanceof Date) return d;
+  if (d.toDate && typeof d.toDate === 'function') return d.toDate();
+  const calendarDate = calendarEventDate(d);
+  if (calendarDate) return calendarDate;
+  try { return parseISO(d); } catch { return new Date(d); }
+}
 
 export default function UniversalAccountDashboard() {
   const { 
@@ -137,14 +147,6 @@ export default function UniversalAccountDashboard() {
     const list = isParent ? (householdEvents || []) : (activeTeamEvents || []);
     const rawGames = isParent ? (householdGames || []) : [];
     
-    // Helper to safely convert any date-like field to a Date object
-    const toDateObj = (d: any) => {
-      if (!d) return null;
-      if (d instanceof Date) return d;
-      if (d.toDate && typeof d.toDate === 'function') return d.toDate();
-      try { return parseISO(d); } catch (e) { return new Date(d); }
-    };
-
     const synthesizedGames = rawGames.map(g => ({
        ...g,
        eventType: 'game',
@@ -188,13 +190,15 @@ export default function UniversalAccountDashboard() {
 
     const allSourceEvents = [...list, ...synthesizedGames, ...expandedTournamentMatches];
     const now = new Date();
-    const today = startOfDay(now);
-
     const filteredEvents = allSourceEvents.filter(e => {
         if (!e.date) return false;
         const d = toDateObj(e.date);
         if (!d || !isValid(d)) return false;
-        return isSameDay(d, today) || isAfter(d, today);
+        return calendarEventIsUpcoming({
+          date: e.date,
+          endDate: e.isTournamentMatch ? e.date : e.endDate,
+          startTime: e.startTime,
+        }, now);
     });
 
     const uniqueEventsMap = new Map<string, any>();
@@ -311,9 +315,10 @@ export default function UniversalAccountDashboard() {
             
             <div className="space-y-4">
               {upcomingItinerary.length > 0 ? upcomingItinerary.map((event) => {
-                const startD = new Date(event.date);
+                const startD = toDateObj(event.date);
+                if (!startD) return null;
                 // For individual tournament match cards, use game.date as a single day — don't inherit the tournament's multi-day endDate
-                const endD = (event.isTournamentMatch || !event.endDate) ? startD : new Date(event.endDate);
+                const endD = (event.isTournamentMatch || !event.endDate) ? startD : (toDateObj(event.endDate) || startD);
                 const isMultiDay = !isSameDay(startD, endD);
                 
                 const team = (teams || []).find(t => t.id === event.teamId);

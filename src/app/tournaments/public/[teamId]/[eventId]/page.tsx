@@ -8,9 +8,10 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/com
 import { Badge } from '@/components/ui/badge';
 import { Trophy, CalendarDays, MapPin, Clock, Loader2, CheckCircle2, Shield } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
-import { format } from 'date-fns';
+import { format, parseISO } from 'date-fns';
 import { PortalStatus } from '@/components/public/PortalStatus';
 import { calculateTournamentStandings } from '@/lib/tournament-standings';
+import TournamentBracket from '@/components/TournamentBracket';
 
 export default function PublicSpectatorHub() {
   const { teamId, eventId } = useParams();
@@ -24,7 +25,13 @@ export default function PublicSpectatorHub() {
   const standingTeams = event.tournamentTeamsData?.length
     ? event.tournamentTeamsData
     : (event.tournamentTeams || []).map((name: string) => ({ id: name, name }));
-  const standings = calculateTournamentStandings(standingTeams, event.tournamentGames || []);
+  const standings = event.standings || calculateTournamentStandings(standingTeams, event.tournamentGames || []);
+  const playoffDivisions = event.tieredPlayoffs?.playoffs?.status !== 'pending'
+    ? (event.tieredPlayoffs?.divisions?.definitions || []).map((division: any) => ({
+        ...division,
+        games: (event.tournamentGames || []).filter((game: any) => game.phase === 'playoff' && game.playoffDivisionId === division.id),
+      })).filter((division: any) => division.games.length)
+    : [];
   const groupedGames = event.tournamentGames?.reduce((acc: any, game: any) => {
     if (!acc[game.date]) acc[game.date] = [];
     acc[game.date].push(game);
@@ -47,7 +54,7 @@ export default function PublicSpectatorHub() {
             <p className="text-muted-foreground font-black uppercase tracking-[0.2em] text-xs">Official Spectator Hub</p>
           </div>
           <div className="flex flex-wrap gap-4 pt-2">
-            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl shadow-sm border font-bold text-sm"><CalendarDays className="h-4 w-4 text-primary" /> {format(new Date(event.date), 'MMM dd, yyyy')}</div>
+            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl shadow-sm border font-bold text-sm"><CalendarDays className="h-4 w-4 text-primary" /> {format(parseISO(String(event.date).split('T')[0]), 'MMM dd, yyyy')}</div>
             <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl shadow-sm border font-bold text-sm"><MapPin className="h-4 w-4 text-primary" /> {event.location}</div>
           </div>
         </header>
@@ -59,12 +66,12 @@ export default function PublicSpectatorHub() {
               <div className="space-y-12">
                 {Object.entries(groupedGames).map(([date, games]: [any, any]) => (
                   <div key={date} className="space-y-6">
-                    <div className="flex items-center gap-4"><Badge className="bg-black text-white font-black uppercase text-[10px] px-4 h-7">{format(new Date(date), 'EEEE, MMM d')}</Badge><div className="h-px bg-muted flex-1" /></div>
+                    <div className="flex items-center gap-4"><Badge className="bg-black text-white font-black uppercase text-[10px] px-4 h-7">{format(parseISO(String(date).split('T')[0]), 'EEEE, MMM d')}</Badge><div className="h-px bg-muted flex-1" /></div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {games.map((game: any) => (
                         <Card key={game.id} className="rounded-3xl border-none shadow-md overflow-hidden bg-white ring-1 ring-black/5">
                           <div className="p-5 space-y-4">
-                            <div className="flex justify-between items-center"><Badge variant="outline" className="text-[10px] font-black uppercase border-black/10 px-2 h-5">{game.time}</Badge>{game.isCompleted && <Badge className="text-[10px] font-black uppercase h-5 px-2 bg-black text-white">Final</Badge>}</div>
+                            <div className="flex justify-between items-center gap-2"><div className="flex gap-2"><Badge variant="outline" className="text-[10px] font-black uppercase border-black/10 px-2 h-5">{game.time}</Badge>{game.playoffDivisionName && <Badge className="text-[9px] font-black uppercase h-5 bg-primary/10 text-primary">{game.playoffDivisionName}</Badge>}</div>{game.isCompleted && <Badge className="text-[10px] font-black uppercase h-5 px-2 bg-black text-white">Final</Badge>}</div>
                             <div className="grid grid-cols-7 items-center gap-4">
                               <div className="col-span-3 text-right">
                                 <div className="flex items-center justify-end gap-2 mb-1"><p className="font-black text-xs uppercase truncate">{game.team1}</p>{game.winnerId === game.team1 && <CheckCircle2 className="h-4 w-4 text-green-600" />}</div>
@@ -84,6 +91,13 @@ export default function PublicSpectatorHub() {
                 ))}
               </div>
             </section>
+            {playoffDivisions.length > 0 && <section className="space-y-8" data-testid="tiered-public-brackets">
+              <h2 className="text-2xl font-black uppercase tracking-tight">Division Playoff Brackets</h2>
+              {playoffDivisions.map((division: any) => <Card key={division.id} className="rounded-3xl overflow-hidden border-none shadow-xl">
+                <CardHeader><CardTitle className="uppercase">{division.name}</CardTitle><CardDescription>Independent single-elimination championship</CardDescription></CardHeader>
+                <CardContent className="overflow-x-auto pb-8"><TournamentBracket games={division.games} standalone tournamentName={division.name} /></CardContent>
+              </Card>)}
+            </section>}
           </div>
 
           <aside className="space-y-8">
@@ -91,13 +105,13 @@ export default function PublicSpectatorHub() {
               <h2 className="text-xl font-black uppercase tracking-tight">Leaderboard</h2>
               <Card className="rounded-[2rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
                 <CardContent className="p-0">
-                  {standings.map((team, i) => (
+                  {standings.map((team: any, i: number) => (
                     <div key={team.name} className="flex justify-between items-center px-6 py-5 border-b last:border-0 hover:bg-primary/5 transition-colors">
                       <div className="flex items-center gap-4">
                         <span className="text-xs font-black text-primary w-4">{i + 1}</span>
                         <span className="text-sm font-black uppercase tracking-tight">{team.name}</span>
                       </div>
-                      <Badge className="bg-primary text-white border-none font-black text-[10px] px-3 h-6">{team.points} PTS</Badge>
+                      <Badge className="bg-primary text-white border-none font-black text-[10px] px-3 h-6">{team.tournamentPoints ?? team.points} PTS</Badge>
                     </div>
                   ))}
                 </CardContent>

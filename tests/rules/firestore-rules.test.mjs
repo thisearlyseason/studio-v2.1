@@ -806,6 +806,16 @@ test('linked youth members retain access while removed members lose it', async (
   )));
 });
 
+test('registered members cannot forge or restore their server-owned team access projection', async () => {
+  const memberDb = authenticatedDb('member');
+  await assertFails(setDoc(doc(memberDb, 'users', 'member', 'teamMemberships', 'team-a'), {
+    teamId: 'team-a',
+    status: 'active',
+    isPro: true,
+    planId: 'team',
+  }));
+});
+
 test('linked youth authority requires the complete user, player, guardian, team, and active roster binding', async () => {
   const youthDb = authenticatedDb('youth');
   const forgedYouthDb = authenticatedDb('forged-youth');

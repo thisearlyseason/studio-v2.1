@@ -56,6 +56,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getTrialCountdown } from '@/lib/trial-countdown';
+import { pwaInstallPromptBroker, type PwaInstallPrompt } from '@/lib/pwa-install-prompt';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -118,12 +119,6 @@ import { cancelDemoExitPending, clearBrowserSession, clearDemoExitPending, markD
 import { deletePushDevice } from '@/lib/client-push-registration';
 import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
 import { isTeamModuleRouteDisabled } from '@/lib/team-module-visibility';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
-
 const coordinationTabs = [
   { name: 'Feed', href: '/feed', icon: Radio, pro: true },
   { name: 'Schedule', href: '/events', icon: CalendarDays, pro: false },
@@ -438,7 +433,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const [mobileSwitcherOpen, setMobileSwitcherOpen] = useState(false);
 
   // PWA Installation Hook State
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<PwaInstallPrompt | null>(null);
   const [isStandalone, setIsStandalone] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   const [showIOSInstructions, setShowIOSInstructions] = useState(false);
@@ -469,9 +464,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     checkStandalone();
 
     // 2. Intercept the browser's install prompt
+    const unsubscribe = pwaInstallPromptBroker.subscribe(setDeferredPrompt);
     const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
+      pwaInstallPromptBroker.capture(e as PwaInstallPrompt);
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -484,6 +479,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      unsubscribe();
     };
   }, []);
 
@@ -496,10 +492,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       setShowGeneralInstructions(true);
       return;
     }
-    deferredPrompt.prompt();
+    await deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
     console.log(`[PWA] Install prompt outcome: ${outcome}`);
-    setDeferredPrompt(null);
+    pwaInstallPromptBroker.consume();
   };
 
   const showInstallBtn = !isStandalone && !installDismissed;
@@ -626,7 +622,11 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   if (!activeTeam && !user) return null;
 
   const handleLogout = async () => {
-    const isDemoLogout = hasDemoBanner;
+    // Demo cleanup is an authentication-lifecycle operation. Profile flags can
+    // legitimately remain on migrated beta accounts, so only Firebase's
+    // anonymous identity may enter the destructive demo cleanup route.
+    const isDemoLogout = auth.currentUser?.isAnonymous === true;
+    const authenticatedUserId = auth.currentUser?.uid;
     let logoutCompleted = false;
     let demoCleanupRejectedBeforeMutation = false;
     if (isDemoLogout) {
@@ -636,8 +636,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     try {
       // Anonymous demo accounts cannot own notification endpoints. The device
       // route intentionally rejects them, so let demo cleanup handle logout.
-      if (user?.id && !isDemoLogout) {
-        await deletePushDevice(user.id);
+      if (authenticatedUserId && !isDemoLogout) {
+        await deletePushDevice(authenticatedUserId).catch(error => {
+          console.warn('[Logout] Notification cleanup was unavailable; continuing sign-out.', error);
+        });
       }
       if (isDemoLogout) {
         const response = await fetch('/api/demo/exit', { method: 'POST' });
@@ -976,30 +978,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           <div className="flex min-w-0 flex-col flex-1 min-h-0">
             <header className="sticky top-0 z-40 w-full bg-background/80 backdrop-blur-md border-b h-16 md:h-20 flex items-center px-4 md:px-10 justify-between text-foreground">
               <div className="flex items-center gap-4">
-                <div className="md:hidden">
-                  {/* Show squad switcher on mobile for all roles except league creator with no team */}
-                  {!(user?.role === 'league_creator' && !activeTeam) && (
-                    <DropdownMenu open={mobileSwitcherOpen} onOpenChange={setMobileSwitcherOpen}>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label="Switch squad"
-                              data-testid="squad-switcher-trigger"
-                              className="h-10 w-10 rounded-2xl hover:bg-primary/5 text-primary relative transition-all active:scale-95 border-2 border-primary/10"
-                            >
-                              <Zap className="h-5 w-5 fill-current" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">Switch Squad</TooltipContent>
-                      </Tooltip>
-                      <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} user={user} isSchoolMode={isSchoolMode} isPrimaryClubAuthority={isPrimaryClubAuthority} isEliteAccount={isEliteAccount} isEliteClubMode={isEliteClubMode} onClose={() => setMobileSwitcherOpen(false)} />
-                    </DropdownMenu>
-                  )}
-                </div>
+                <div className="md:hidden h-10 w-10" aria-hidden="true" />
                 <div className="hidden md:block">
                   <h2 className="text-xl lg:text-2xl font-black uppercase tracking-tighter text-foreground">
                     {user?.role === 'league_creator' && pathname === '/competition' ? 'Competition Hub' :
@@ -1141,6 +1120,27 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 </DropdownMenu>
               </div>
             </header>
+            {activeTeam && !(user?.role === 'league_creator' && !activeTeam) && (
+              <div className="md:hidden sticky top-16 z-30 border-b bg-background/95 px-3 py-2 backdrop-blur-md">
+                <DropdownMenu open={mobileSwitcherOpen} onOpenChange={setMobileSwitcherOpen}>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label="Switch squad"
+                      data-testid="mobile-active-team-context"
+                      className="flex w-full items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2 text-left active:scale-[0.99]"
+                    >
+                      <span className="min-w-0 truncate text-[11px] font-black uppercase tracking-wide">
+                        <span className="text-muted-foreground">Active Team:</span>{' '}
+                        <span className="text-primary">{activeTeam.name}</span>
+                      </span>
+                      <ChevronDown className="h-4 w-4 shrink-0 text-primary" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} user={user} isSchoolMode={isSchoolMode} isPrimaryClubAuthority={isPrimaryClubAuthority} isEliteAccount={isEliteAccount} isEliteClubMode={isEliteClubMode} onClose={() => setMobileSwitcherOpen(false)} />
+                </DropdownMenu>
+              </div>
+            )}
 
             {/* Banner + scrollable main in their own flex column so the banner
                 expands naturally and never gets clipped by overflow:hidden */}
@@ -1404,6 +1404,22 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                         <div className="space-y-3">
                           <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground px-2">Account Management</p>
                           <div className="grid grid-cols-1 gap-2">
+                            <Link
+                              href="/teams/join"
+                              onClick={() => setIsMoreMenuOpen(false)}
+                              className="flex items-center justify-between rounded-2xl border border-primary/20 bg-primary/5 p-4 transition-all active:scale-[0.98]"
+                            >
+                              <div className="flex items-center gap-4">
+                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary text-white">
+                                  <UserPlus className="h-4 w-4" />
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-xs font-black uppercase tracking-widest text-primary">Join Team</span>
+                                  <span className="text-[8px] font-bold uppercase text-muted-foreground">Enter a squad or invitation code</span>
+                                </div>
+                              </div>
+                              <ChevronRight className="h-4 w-4 text-primary/40" />
+                            </Link>
                             {isSuperAdmin && (
                               <Link
                                 href="/admin"

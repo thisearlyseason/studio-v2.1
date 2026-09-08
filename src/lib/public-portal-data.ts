@@ -1,5 +1,6 @@
 import { calculateTournamentStandings } from './tournament-standings';
 import { buildLeagueSpectatorProjection } from '../../functions/src/league-public-projection';
+import { calculateTieredStandings } from './tiered-playoffs/standings';
 
 const PUBLIC_PLAN_IDS = new Set([
   'team', 'elite', 'league', 'school',
@@ -198,6 +199,13 @@ function tournamentPublicGame(game: any) {
     winnerId: typeof game.winnerId === 'string' ? game.winnerId : null,
     isResetMatch: game.isResetMatch === true,
     isConditional: game.isConditional === true,
+    phase: game.phase === 'playoff' ? 'playoff' : 'preliminary',
+    playoffDivisionId: typeof game.playoffDivisionId === 'string' ? game.playoffDivisionId : '',
+    playoffDivisionName: typeof game.playoffDivisionName === 'string' ? game.playoffDivisionName : '',
+    overallSeed1: Number.isInteger(game.overallSeed1) ? game.overallSeed1 : undefined,
+    overallSeed2: Number.isInteger(game.overallSeed2) ? game.overallSeed2 : undefined,
+    divisionSeed1: Number.isInteger(game.divisionSeed1) ? game.divisionSeed1 : undefined,
+    divisionSeed2: Number.isInteger(game.divisionSeed2) ? game.divisionSeed2 : undefined,
   };
 }
 
@@ -209,7 +217,26 @@ export function spectatorTournament(id: string, event: any) {
     logoUrl: String(team.logoUrl || team.teamLogoUrl || ''),
     division: String(team.division || ''),
   }));
-  const games = (Array.isArray(event.tournamentGames) ? event.tournamentGames : []).map(tournamentPublicGame);
+  const isTiered = event.tournamentType === 'tiered_playoffs' && event.tieredPlayoffs && typeof event.tieredPlayoffs === 'object';
+  const publicationStatus = String(event.tieredPlayoffs?.playoffs?.status || 'pending');
+  const playoffsPublished = isTiered && ['published', 'in_progress', 'complete'].includes(publicationStatus);
+  const sourceGames = (Array.isArray(event.tournamentGames) ? event.tournamentGames : [])
+    .filter((game: any) => !isTiered || game.phase !== 'playoff' || playoffsPublished);
+  const games = sourceGames.map(tournamentPublicGame);
+  const tieredPlayoffs = isTiered ? {
+    divisions: {
+      definitions: (Array.isArray(event.tieredPlayoffs?.divisions?.definitions) ? event.tieredPlayoffs.divisions.definitions : [])
+        .map((division: any) => ({ id: String(division.id || ''), name: String(division.name || ''), size: Number(division.size || 0) })),
+    },
+    playoffs: { status: playoffsPublished ? publicationStatus : 'pending' },
+    ...(playoffsPublished ? { seeding: { approved: (Array.isArray(event.tieredPlayoffs?.seeding?.approved) ? event.tieredPlayoffs.seeding.approved : []).map((row: any) => ({
+      teamId: String(row.teamId || ''), teamName: String(row.teamName || ''), approvedOverallSeed: Number(row.approvedOverallSeed || 0),
+      divisionId: String(row.divisionId || ''), divisionName: String(row.divisionName || ''), divisionSeed: Number(row.divisionSeed || 0),
+    })) } } : {}),
+  } : undefined;
+  const standings = isTiered && event.tieredPlayoffs?.standings
+    ? calculateTieredStandings(teams, (Array.isArray(event.tournamentGames) ? event.tournamentGames : []).filter((game: any) => game.phase !== 'playoff'), event.tieredPlayoffs.standings)
+    : calculateTournamentStandings(teams, games);
   return {
     id,
     isTournament: event.isTournament === true,
@@ -224,7 +251,8 @@ export function spectatorTournament(id: string, event: any) {
     tournamentType: String(event.tournamentType || ''),
     tournamentTeamsData: teams,
     tournamentGames: games,
-    standings: calculateTournamentStandings(teams, games),
+    standings,
+    ...(tieredPlayoffs ? { tieredPlayoffs } : {}),
     isActive: event.isTournament === true && event.isArchived !== true && event.isDeleted !== true && event.is_active !== false && event.isActive !== false && event.status !== 'cancelled',
   };
 }

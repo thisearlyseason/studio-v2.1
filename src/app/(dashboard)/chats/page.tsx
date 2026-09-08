@@ -6,7 +6,7 @@ import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
-import { Plus, MessageSquare, ChevronRight, Hash, Lock, Sparkles, ShieldAlert, Users, Search, MessageCircle, Radio, UserRoundCheck } from 'lucide-react';
+import { Plus, MessageSquare, ChevronRight, Hash, Lock, Sparkles, ShieldAlert, Users, Search, MessageCircle, Radio, UserRoundCheck, Trash2 } from 'lucide-react';
 import { useTeam } from '@/components/providers/team-provider';
 import { 
   Dialog, 
@@ -34,6 +34,16 @@ import { Switch } from '@/components/ui/switch';
 import { toast } from '@/hooks/use-toast';
 import { isStaffPosition } from '@/lib/staff-position';
 import { chatChannelKey, mergeChatChannels } from '@/lib/chat-channel-identity';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '@/components/ui/alert-dialog';
 
 type ChatContext = {
   id: string;
@@ -43,7 +53,7 @@ type ChatContext = {
 };
 
 export default function ChatsPage() {
-  const { activeTeam, setActiveTeam, members, createChat, isStaff, isParent, isPlayer, isSuperAdmin, user, teams, isPrimaryClubAuthority, isSchoolMode, isEliteAccount } = useTeam();
+  const { activeTeam, setActiveTeam, members, createChat, deleteChat, hideChatForUser, isStaff, isParent, isPlayer, isSuperAdmin, user, teams, isPrimaryClubAuthority, isSchoolMode, isEliteAccount } = useTeam();
   const db = useFirestore();
   const auth = useAuth();
   const router = useRouter();
@@ -61,23 +71,25 @@ export default function ChatsPage() {
   const [authorizedChats, setAuthorizedChats] = useState<any[]>([]);
   const [isAuthorizedChatsLoading, setIsAuthorizedChatsLoading] = useState(true);
   const [chatDirectoryError, setChatDirectoryError] = useState('');
-
-  // Localized chat fetching for performance
+  const [pendingChatRemoval, setPendingChatRemoval] = useState<any>(null);
+  const [isRemovingChat, setIsRemovingChat] = useState(false);
   const chatsQuery = useMemoFirebase(() => {
     if (!activeTeam || !db || !user?.id) return null;
-    
     return query(
-      collection(db, 'teams', activeTeam.id, 'groupChats'), 
+      collection(db, 'teams', activeTeam.id, 'groupChats'),
       where('memberIds', 'array-contains', user.id),
       where('isDeleted', '==', false),
-      orderBy('createdAt', 'desc')
+      orderBy('createdAt', 'desc'),
     );
   }, [activeTeam?.id, db, user?.id]);
-
-  const { data: chatsData, isLoading: isChatsLoading } = useCollection(chatsQuery);
+  const { data: currentTeamChats } = useCollection(chatsQuery);
   const teamChats = useMemo(() => {
+    const authorizedKeys = new Set(authorizedChats.map(chat => chatChannelKey(chat, activeTeam?.id || '')));
+    const realtimeAuthorized = (currentTeamChats || []).filter(chat =>
+      authorizedKeys.has(chatChannelKey(chat, activeTeam?.id || ''))
+    );
     const raw = mergeChatChannels(
-      [...authorizedChats, ...(chatsData || [])].filter(chat => chat.isDeleted !== true),
+      [...authorizedChats, ...realtimeAuthorized].filter(chat => chat.isDeleted !== true),
       activeTeam?.id || '',
     ).sort((a, b) => String(b.createdAt || '').localeCompare(String(a.createdAt || '')));
     const withUnread = raw.map(chat => ({
@@ -86,7 +98,7 @@ export default function ChatsPage() {
     }));
     if (!searchTerm.trim()) return withUnread;
     return withUnread.filter(c => c.name.toLowerCase().includes(searchTerm.toLowerCase()));
-  }, [activeTeam?.id, authorizedChats, chatsData, searchTerm, user?.id]);
+  }, [activeTeam?.id, authorizedChats, currentTeamChats, searchTerm, user?.id]);
 
   // Governance: Filter member list based on position
   const filteredMembers = useMemo(() => {
@@ -188,7 +200,7 @@ export default function ChatsPage() {
     setMounted(true);
   }, []);
 
-  if (!mounted || !activeTeam || ((isChatsLoading || isAuthorizedChatsLoading) && !teamChats.length)) {
+  if (!mounted || !activeTeam || (isAuthorizedChatsLoading && !teamChats.length)) {
     return (
       <div className="flex flex-col items-center justify-center py-20 text-center animate-pulse">
         <div className="h-12 w-12 bg-primary/10 rounded-full mb-4 flex items-center justify-center">
@@ -221,6 +233,26 @@ export default function ChatsPage() {
         ? prev.filter(id => id !== memberId) 
         : [...prev, memberId]
     );
+  };
+
+  const confirmChatRemoval = async () => {
+    if (!pendingChatRemoval || isRemovingChat) return;
+    const targetTeamId = pendingChatRemoval.teamId || activeTeam.id;
+    setIsRemovingChat(true);
+    try {
+      if (isStaff) await deleteChat(pendingChatRemoval.id, targetTeamId);
+      else await hideChatForUser(pendingChatRemoval.id, targetTeamId);
+      setAuthorizedChats(current => current.filter(chat => chatChannelKey(chat, activeTeam.id) !== chatChannelKey(pendingChatRemoval, activeTeam.id)));
+      toast({
+        title: isStaff ? 'Channel Deleted' : 'Channel Hidden',
+        description: isStaff ? 'The chat was removed for every member.' : 'The chat was removed from your list.',
+      });
+      setPendingChatRemoval(null);
+    } catch (error) {
+      toast({ title: 'Chat Not Removed', description: error instanceof Error ? error.message : 'Try again.', variant: 'destructive' });
+    } finally {
+      setIsRemovingChat(false);
+    }
   };
 
   const updateParentAccess = async (
@@ -478,9 +510,9 @@ export default function ChatsPage() {
 
         <div className="lg:col-span-3 space-y-4">
           {teamChats.length > 0 ? teamChats.map((chat) => (
-            <Link key={chatChannelKey(chat, activeTeam.id)} href={`/chats/${chat.id}?teamId=${encodeURIComponent(chat.teamId || activeTeam.id)}`}>
-              <Card className="hover:border-primary transition-all duration-300 cursor-pointer group rounded-3xl border-none shadow-sm hover:shadow-xl ring-1 ring-black/5 hover:ring-primary/20 overflow-hidden bg-white">
-                <CardContent className="p-5 flex items-center gap-5">
+              <Card key={chatChannelKey(chat, activeTeam.id)} className="hover:border-primary transition-all duration-300 group rounded-3xl border-none shadow-sm hover:shadow-xl ring-1 ring-black/5 hover:ring-primary/20 overflow-hidden bg-white">
+                <CardContent className="p-3 sm:p-5 flex items-center gap-2 sm:gap-4">
+                  <Link className="flex min-w-0 flex-1 items-center gap-3 sm:gap-5" href={`/chats/${chat.id}?teamId=${encodeURIComponent(chat.teamId || activeTeam.id)}`}>
                   <div className="h-16 w-16 rounded-2xl bg-primary/5 flex items-center justify-center text-primary shrink-0 border border-primary/10 group-hover:bg-primary group-hover:text-white transition-all shadow-inner">
                     <Hash className="h-8 w-8 stroke-[3px]" />
                   </div>
@@ -503,9 +535,19 @@ export default function ChatsPage() {
                     </div>
                   </div>
                   <ChevronRight className="h-6 w-6 text-primary opacity-10 group-hover:opacity-100 group-hover:translate-x-1 transition-all shrink-0" />
+                  </Link>
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="icon"
+                    aria-label={`${isStaff ? 'Delete' : 'Hide'} ${chat.name}`}
+                    className="h-11 w-11 shrink-0 rounded-xl text-muted-foreground hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => setPendingChatRemoval(chat)}
+                  >
+                    <Trash2 className="h-5 w-5" />
+                  </Button>
                 </CardContent>
               </Card>
-            </Link>
           )) : (
             <div className="text-center py-24 bg-muted/10 border-2 border-dashed rounded-[3rem] space-y-6">
               <div className="bg-white w-20 h-20 rounded-[2rem] flex items-center justify-center mx-auto shadow-xl relative">
@@ -521,6 +563,24 @@ export default function ChatsPage() {
           )}
         </div>
       </div>
+      <AlertDialog open={Boolean(pendingChatRemoval)} onOpenChange={open => { if (!open && !isRemovingChat) setPendingChatRemoval(null); }}>
+        <AlertDialogContent className="max-w-md rounded-[2rem] p-6 sm:p-8">
+          <AlertDialogHeader>
+            <AlertDialogTitle>{isStaff ? 'Delete this channel?' : 'Hide this channel?'}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {isStaff
+                ? 'This permanently removes the channel for every member. This action cannot be undone.'
+                : 'This removes the channel from your chat list. Other members will keep access.'}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={isRemovingChat}>Cancel</AlertDialogCancel>
+            <AlertDialogAction disabled={isRemovingChat} onClick={event => { event.preventDefault(); void confirmChatRemoval(); }} className="bg-destructive text-white hover:bg-destructive/90">
+              {isRemovingChat ? 'Removing…' : isStaff ? 'Delete Channel' : 'Hide Channel'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

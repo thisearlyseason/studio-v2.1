@@ -78,6 +78,7 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { PRICING_CONFIG } from '@/lib/pricing';
+import { pwaInstallPromptBroker, type PwaInstallPrompt } from '@/lib/pwa-install-prompt';
 import { deletePushDevice, registerPushDevice } from '@/lib/client-push-registration';
 import { cancelDemoExitPending, clearBrowserSession, clearDemoExitPending, markDemoExitPending, requireDemoExitRetry } from '@/lib/client-auth';
 import { isStaffPosition } from '@/lib/staff-position';
@@ -106,7 +107,7 @@ export default function SettingsPage() {
   const { 
     user, updateUser, members, activeTeam, updateMember, 
     manageSubscription, isPro, resetSquadData, checkCodeUniqueness, 
-    updateTeamCode, isStaff, isPlayer, isParent, isPrimaryClubAuthority, db
+    updateTeamCode, isStaff, isPlayer, isPrimaryClubAuthority, db
   } = useTeam();
   const auth = useAuth();
   const router = useRouter();
@@ -139,7 +140,7 @@ export default function SettingsPage() {
   // PWA install state (mirrors Shell.tsx logic)
   const [isStandalone, setIsStandalone] = useState(false);
   const [settingsInstallDismissed, setSettingsInstallDismissed] = useState(false);
-  const [settingsDeferredPrompt, setSettingsDeferredPrompt] = useState<any>(null);
+  const [settingsDeferredPrompt, setSettingsDeferredPrompt] = useState<PwaInstallPrompt | null>(null);
   const [settingsIsIOS, setSettingsIsIOS] = useState(false);
   const [showSettingsIOSInstructions, setShowSettingsIOSInstructions] = useState(false);
   const [showSettingsGeneralInstructions, setShowSettingsGeneralInstructions] = useState(false);
@@ -154,21 +155,24 @@ export default function SettingsPage() {
     setSettingsInstallDismissed(localStorage.getItem('pwa_install_dismissed') === 'true');
     const ua = navigator.userAgent.toLowerCase();
     setSettingsIsIOS(/iphone|ipad|ipod/.test(ua));
+    const unsubscribe = pwaInstallPromptBroker.subscribe(setSettingsDeferredPrompt);
     const handleBeforeInstall = (e: Event) => {
-      e.preventDefault();
-      setSettingsDeferredPrompt(e);
+      pwaInstallPromptBroker.capture(e as PwaInstallPrompt);
     };
     window.addEventListener('beforeinstallprompt', handleBeforeInstall);
-    return () => window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', handleBeforeInstall);
+      unsubscribe();
+    };
   }, []);
 
   const handleSettingsInstallClick = async () => {
     if (settingsIsIOS) { setShowSettingsIOSInstructions(true); return; }
     if (!settingsDeferredPrompt) { setShowSettingsGeneralInstructions(true); return; }
-    settingsDeferredPrompt.prompt();
+    await settingsDeferredPrompt.prompt();
     const { outcome } = await settingsDeferredPrompt.userChoice;
     console.log(`[PWA Settings] Install prompt outcome: ${outcome}`);
-    setSettingsDeferredPrompt(null);
+    pwaInstallPromptBroker.consume();
   };
 
   const [editForm, setEditForm] = useState({ name: '', email: '', phone: '', position: '', bio: '', schoolName: '', institutionTitle: '' });
@@ -327,7 +331,11 @@ export default function SettingsPage() {
   };
 
   const handleLogout = async () => {
-    const isDemoLogout = auth.currentUser?.isAnonymous === true || user?.isDemo === true;
+    // A legacy profile can retain isDemo after becoming a registered beta
+    // account. Only Firebase's anonymous identity is allowed to invoke the
+    // destructive demo cleanup endpoint.
+    const isDemoLogout = auth.currentUser?.isAnonymous === true;
+    const authenticatedUserId = auth.currentUser?.uid;
     let logoutCompleted = false;
     let demoCleanupRejectedBeforeMutation = false;
     if (isDemoLogout) {
@@ -335,8 +343,10 @@ export default function SettingsPage() {
       requireDemoExitRetry();
     }
     try {
-      if (user?.id && !isDemoLogout) {
-        await deletePushDevice(user.id);
+      if (authenticatedUserId && !isDemoLogout) {
+        await deletePushDevice(authenticatedUserId).catch(error => {
+          console.warn('[Logout] Notification cleanup was unavailable; continuing sign-out.', error);
+        });
       }
       if (isDemoLogout) {
         const response = await fetch('/api/demo/exit', { method: 'POST' });
@@ -666,15 +676,14 @@ export default function SettingsPage() {
           </CardContent>
         </Card>
 
-        {(isParent || isPlayer) && (
-          <Card className="rounded-[2.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
+        <Card className="rounded-[2.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
             <CardHeader className="bg-muted/30 border-b p-8 flex flex-row items-center justify-between">
               <div className="flex items-center gap-4">
                 <div className="bg-blue-100 p-2.5 rounded-xl text-blue-700"><Bell className="h-5 w-5" /></div>
                 <div>
                   <CardTitle className="text-sm font-black uppercase tracking-widest">Game-Day Reminders</CardTitle>
                   <CardDescription className="mt-1 text-[10px] font-bold uppercase tracking-wider">
-                    Players and parents
+                    All active squad members
                   </CardDescription>
                 </div>
               </div>
@@ -695,8 +704,7 @@ export default function SettingsPage() {
                 </p>
               )}
             </CardContent>
-          </Card>
-        )}
+        </Card>
 
         {canManageBilling && (
         <Card className="rounded-[2.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">

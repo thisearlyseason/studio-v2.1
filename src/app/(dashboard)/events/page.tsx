@@ -56,6 +56,8 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { useTeam, TeamEvent, EventType, Member, EventAssignment, TournamentGame, PracticeTemplate } from '@/components/providers/team-provider';
 import { cn } from '@/lib/utils';
+import { eventMutationFailureMessage } from '@/lib/event-mutation-feedback';
+import { calendarDateLabel, calendarEventDate, calendarEventIsUpcoming } from '@/lib/calendar-event-date';
 import { toast } from '@/hooks/use-toast';
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Calendar } from "@/components/ui/calendar";
@@ -296,7 +298,6 @@ export default function EventsPage() {
   };
 
   const filteredEvents = useMemo(() => { 
-    const nowStart = startOfDay(new Date()); 
     const baseList = activeTeamEvents || []; 
 
     // TACTICAL EXPANSION: Flatten tournaments into individual match entries for the itinerary
@@ -346,20 +347,14 @@ export default function EventsPage() {
 
     if (filterMode === 'live') {
       return expandedList
-        .filter(e => {
-          const eventEnd = startOfDay(new Date(e.endDate || e.date));
-          return eventEnd >= nowStart;
-        })
-        .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+        .filter(e => calendarEventIsUpcoming(e))
+        .sort((a, b) => (calendarEventDate(a.date)?.getTime() || 0) - (calendarEventDate(b.date)?.getTime() || 0));
     }
     
     // History mode: Show past events and games, sorted most recent first
     return expandedList
-      .filter(e => {
-        const eventEnd = startOfDay(new Date(e.endDate || e.date));
-        return eventEnd < nowStart;
-      })
-      .sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime()); 
+      .filter(e => !calendarEventIsUpcoming(e))
+      .sort((a, b) => (calendarEventDate(b.date)?.getTime() || 0) - (calendarEventDate(a.date)?.getTime() || 0));
   }, [activeTeamEvents, filterMode]);
 
   const handleCreateEvent = async () => { 
@@ -414,7 +409,13 @@ export default function EventsPage() {
         setIsCreateOpen(false); 
         resetForm(); 
       }
-    } catch (e) { toast({ title: "Deployment Error", variant: "destructive" }); }
+    } catch (e) {
+      toast({
+        title: "Activity Not Scheduled",
+        description: eventMutationFailureMessage(e),
+        variant: "destructive",
+      });
+    }
   };
 
   const resetForm = () => {
@@ -426,8 +427,10 @@ export default function EventsPage() {
     setEditingEvent(event); 
     setNewTitle(event.title); 
     setEventType(event.eventType || 'game'); 
-    setNewDate(format(new Date(event.date), 'yyyy-MM-dd')); 
-    if (event.endDate) setNewEndDate(format(new Date(event.endDate), 'yyyy-MM-dd'));
+    const startDate = calendarEventDate(event.date);
+    const endDate = calendarEventDate(event.endDate);
+    setNewDate(startDate ? format(startDate, 'yyyy-MM-dd') : '');
+    if (endDate) setNewEndDate(format(endDate, 'yyyy-MM-dd'));
     setNewTime(event.startTime); 
     setNewLocation(event.location); 
     setNewDescription(event.description); 
@@ -443,8 +446,10 @@ export default function EventsPage() {
     setEditingEvent(event);
     setNewTitle(event.title);
     setEventType(event.eventType || 'game');
-    setNewDate(format(new Date(event.date), 'yyyy-MM-dd'));
-    if (event.endDate) setNewEndDate(format(new Date(event.endDate), 'yyyy-MM-dd'));
+    const startDate = calendarEventDate(event.date);
+    const endDate = calendarEventDate(event.endDate);
+    setNewDate(startDate ? format(startDate, 'yyyy-MM-dd') : '');
+    if (endDate) setNewEndDate(format(endDate, 'yyyy-MM-dd'));
     setNewTime(event.startTime);
     setNewLocation(event.location);
     setNewDescription(event.description);
@@ -464,8 +469,8 @@ export default function EventsPage() {
     const max = new Date(); max.setDate(max.getDate() + 90);
     const upcoming = activeTeamEvents
       .filter(e => {
-        const d = new Date(e.date + 'T00:00:00');
-        return d >= new Date(now.toDateString()) && d <= max;
+        const d = calendarEventDate(e.date);
+        return d !== null && calendarEventIsUpcoming(e, now) && d <= max;
       })
       .map(e => ({
         id: e.id,
@@ -483,8 +488,8 @@ export default function EventsPage() {
     const max = new Date(); max.setDate(max.getDate() + 90);
     const upcoming = (activeTeamEvents || [])
       .filter(e => {
-        const d = new Date(e.date + 'T00:00:00');
-        return d >= new Date(now.toDateString()) && d <= max;
+        const d = calendarEventDate(e.date);
+        return d !== null && calendarEventIsUpcoming(e, now) && d <= max;
       })
       .map(e => ({
         id: e.id,
@@ -501,8 +506,8 @@ export default function EventsPage() {
 
   const nextTournament = useMemo(() => {
     return (activeTeamEvents || [])
-      .filter(e => new Date(e.date) >= startOfDay(new Date()))
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+      .filter(e => calendarEventIsUpcoming(e))
+      .sort((a, b) => (calendarEventDate(a.date)?.getTime() || 0) - (calendarEventDate(b.date)?.getTime() || 0))[0];
   }, [activeTeamEvents]);
 
   return (
@@ -572,7 +577,7 @@ export default function EventsPage() {
       </div>
 
       <Dialog open={isCreateOpen} onOpenChange={(o) => { if(!o) resetForm(); setIsCreateOpen(o); }}>
-        <DialogContent hideClose className="sm:max-w-4xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl bg-white overflow-y-auto max-h-[90vh] custom-scrollbar">
+        <DialogContent data-testid="launch-activity-form" hideClose className="w-[calc(100vw-1rem)] max-w-6xl sm:max-w-6xl h-[calc(100dvh-1rem)] sm:h-auto max-h-[calc(100dvh-1rem)] p-0 rounded-3xl sm:rounded-[2.5rem] border-none shadow-2xl bg-white overflow-hidden flex flex-col">
           <DialogTitle className="sr-only">Schedule New Team Activity</DialogTitle>
           <DialogDescription className="sr-only">
             Create or update a team activity, including its date, time, location, and logistics assignments.
@@ -582,10 +587,11 @@ export default function EventsPage() {
               <X className="h-4 w-4" />
             </Button>
           </DialogClose>
-          <div className="flex flex-col lg:flex-row">
-            <div className="w-full lg:w-5/12 bg-muted/30 p-10 space-y-8 lg:border-r">
-              <DialogHeader><DialogTitle className="text-3xl font-black uppercase tracking-tight">{editingEvent ? editingSeries ? "Update Weekly Series" : "Update" : "Launch"} Activity</DialogTitle></DialogHeader>
-              <div className="space-y-6">
+          <div data-testid="launch-activity-scroll-region" className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
+          <div className="flex flex-col xl:flex-row">
+            <div className="w-full xl:w-5/12 bg-muted/30 p-4 sm:p-6 xl:p-10 space-y-4 sm:space-y-6 xl:border-r">
+              <DialogHeader><DialogTitle className="text-2xl sm:text-3xl font-black uppercase tracking-tight pr-10">{editingEvent ? editingSeries ? "Update Weekly Series" : "Update" : "Launch"} Activity</DialogTitle></DialogHeader>
+              <div className="space-y-4 sm:space-y-6">
                 <div className="space-y-1.5">
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Activity Type</Label>
                   <Select value={eventType} onValueChange={(v: EventType) => setEventType(v)}>
@@ -603,7 +609,7 @@ export default function EventsPage() {
                     <Input value={opponent} onChange={e => setOpponent(e.target.value)} placeholder="e.g. Tigers Squad" className="h-12 rounded-xl font-black border-2 border-primary/20 bg-primary/5 focus:bg-white transition-all capitalize" />
                   </div>
                 )}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date *</Label>
                     <Popover>
@@ -619,7 +625,7 @@ export default function EventsPage() {
                           {newDate ? format(new Date(newDate.replace(/-/g, '/')), "MMMM d, yyyy") : <span>Pick Date</span>}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0 border-none shadow-2xl rounded-[2rem] overflow-hidden bg-white" align="start">
+                      <PopoverContent collisionPadding={16} className="w-auto max-w-[calc(100vw-2rem)] p-0 border-none shadow-2xl rounded-[2rem] overflow-auto bg-white" align="start">
                         <Calendar
                           mode="single"
                           selected={newDate ? new Date(newDate.replace(/-/g, '/')) : undefined}
@@ -644,7 +650,7 @@ export default function EventsPage() {
                           {newEndDate ? format(new Date(newEndDate.replace(/-/g, '/')), "MMMM d, yyyy") : <span>Pick Date</span>}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0 border-none shadow-2xl rounded-[2rem] overflow-hidden bg-white" align="start">
+                      <PopoverContent collisionPadding={16} className="w-auto max-w-[calc(100vw-2rem)] p-0 border-none shadow-2xl rounded-[2rem] overflow-auto bg-white" align="start">
                         <Calendar
                           mode="single"
                           selected={newEndDate ? new Date(newEndDate.replace(/-/g, '/')) : undefined}
@@ -675,7 +681,7 @@ export default function EventsPage() {
                 )}
               </div>
             </div>
-            <div className="flex-1 p-10 space-y-6 bg-white">
+            <div className="flex-1 p-4 sm:p-6 xl:p-10 space-y-5 sm:space-y-6 bg-white">
               <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Location</Label><LocationAutocomplete
                 value={newLocation}
                 onChange={setNewLocation}
@@ -808,9 +814,10 @@ export default function EventsPage() {
               </div>
             </div>
           </div>
-          <div className="p-8 bg-background border-t shrink-0 flex items-center justify-end gap-4">
-            <Button variant="outline" className="rounded-xl h-12 font-black uppercase text-[10px] border-2" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
-            <Button className="h-12 px-10 rounded-xl font-black uppercase text-[10px] shadow-lg shadow-primary/20" onClick={handleCreateEvent}>Deploy Activity</Button>
+          </div>
+          <div data-testid="launch-activity-actions" className="p-3 sm:p-6 bg-background border-t shrink-0 flex items-center justify-end gap-3 sm:gap-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+            <Button variant="outline" className="flex-1 sm:flex-none rounded-xl h-12 font-black uppercase text-[10px] border-2" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
+            <Button className="flex-1 sm:flex-none h-12 px-4 sm:px-10 rounded-xl font-black uppercase text-[10px] shadow-lg shadow-primary/20" onClick={handleCreateEvent}>Deploy Activity</Button>
           </div>
         </DialogContent>
       </Dialog>
@@ -830,8 +837,11 @@ export default function EventsPage() {
           const dayStart = startOfDay(day);
           const dayEnd = endOfDay(day);
           allDayEvents[key] = (activeTeamEvents || []).filter(ev => {
-            const evStart = startOfDay(new Date(ev.date));
-            const evEnd = startOfDay(new Date(ev.endDate || ev.date));
+            const parsedStart = calendarEventDate(ev.date);
+            const parsedEnd = calendarEventDate(ev.endDate || ev.date);
+            if (!parsedStart || !parsedEnd) return false;
+            const evStart = startOfDay(parsedStart);
+            const evEnd = startOfDay(parsedEnd);
             return isWithinInterval(dayStart, { start: evStart, end: evEnd }) ||
                    isWithinInterval(dayEnd, { start: evStart, end: evEnd }) ||
                    (dayStart >= evStart && dayEnd <= evEnd);
@@ -938,8 +948,8 @@ export default function EventsPage() {
                         <Card className="hover:border-primary/30 transition-all duration-300 cursor-pointer group rounded-3xl border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white">
                           <div className="flex items-stretch h-24">
                             <div className={cn('w-20 flex flex-col items-center justify-center border-r-2 shrink-0 px-2 text-center', EVENT_TYPE_COLORS[event.eventType || 'other'])}>
-                              <span className="text-[9px] font-black uppercase opacity-60 leading-none mb-1">{format(new Date(event.date), 'MMMM').toUpperCase()}</span>
-                              <span className="text-2xl font-black tracking-tighter leading-none">{format(new Date(event.date), 'd')}</span>
+                              <span className="text-[9px] font-black uppercase opacity-60 leading-none mb-1">{calendarDateLabel(event.date)?.month.toUpperCase() || 'DATE'}</span>
+                              <span className="text-2xl font-black tracking-tighter leading-none">{calendarDateLabel(event.date)?.day || '--'}</span>
                             </div>
                             <div className="flex-1 p-4 flex flex-col justify-center min-w-0">
                               <div className="flex gap-2 mb-1">
@@ -978,7 +988,7 @@ export default function EventsPage() {
                 <Card className="hover:border-primary/30 transition-all duration-500 cursor-pointer group rounded-3xl border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white">
                   <div className="flex items-stretch min-h-[96px] sm:h-32">
                     <div className={cn("w-16 sm:w-24 lg:w-32 flex flex-col items-center justify-center border-r-2 shrink-0 px-1 sm:px-2 text-center", EVENT_TYPE_COLORS[event.eventType || 'other'])}>
-                      <span className="text-[8px] sm:text-[9px] font-black uppercase opacity-60 leading-none mb-1">{format(new Date(event.date), 'MMMM').toUpperCase()}</span>
+                      <span className="text-[8px] sm:text-[9px] font-black uppercase opacity-60 leading-none mb-1">{calendarDateLabel(event.date)?.month.toUpperCase() || 'DATE'}</span>
                       <span className="text-xl sm:text-3xl lg:text-4xl font-black tracking-tighter leading-none">{formatDayRange(event.date, event.endDate)}</span>
                     </div>
                     <div className="flex-1 p-3 sm:p-6 flex flex-col justify-center min-w-0">

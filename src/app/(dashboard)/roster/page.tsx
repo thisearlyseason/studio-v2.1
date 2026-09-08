@@ -968,12 +968,12 @@ export default function RosterPage() {
                             <DialogTrigger asChild>
                               <Button variant="outline" className="w-full h-11 rounded-xl border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white font-black uppercase text-[10px] transition-all">Decommission Athlete</Button>
                             </DialogTrigger>
-                            <DialogContent className="rounded-[2.5rem] p-8 border-none bg-white max-w-md text-foreground">
-                              <DialogHeader>
-                                <DialogTitle className="text-2xl font-black uppercase tracking-tight">Personnel Decommission</DialogTitle>
+                            <DialogContent className="left-[50%] top-[50%] -translate-x-1/2 -translate-y-1/2 h-auto w-[calc(100vw-1rem)] max-w-md max-h-[calc(100dvh-1rem)] overflow-hidden rounded-3xl sm:rounded-[2.5rem] p-0 border-none bg-white text-foreground">
+                              <DialogHeader className="px-5 pt-6 sm:px-8 sm:pt-8">
+                                <DialogTitle className="text-xl sm:text-2xl font-black uppercase tracking-tight pr-8">Personnel Decommission</DialogTitle>
                                 <DialogDescription className="font-bold text-muted-foreground uppercase text-[10px] tracking-widest">Permanent Archive Request for {selectedMember.name}</DialogDescription>
                               </DialogHeader>
-                              <div className="space-y-4 py-6">
+                              <div className="space-y-4 px-5 py-5 sm:px-8 sm:py-6 overflow-y-auto">
                                 <div className="space-y-3">
                                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Archive Reason <span className="opacity-40 normal-case">(Required for Audit)</span></Label>
                                   <Textarea 
@@ -987,7 +987,7 @@ export default function RosterPage() {
                                   <p className="text-[10px] font-medium text-red-600 leading-relaxed italic">Decommissioned personnel are immediately removed from active rosters and communications. Their profile remains in the administrative archives for 7 years.</p>
                                 </div>
                               </div>
-                              <DialogFooter>
+                              <DialogFooter className="px-5 pb-5 sm:px-8 sm:pb-8">
                                 <Button 
                                   className="w-full h-14 rounded-2xl bg-red-600 hover:bg-red-700 text-white font-black uppercase tracking-widest shadow-xl shadow-red-600/20"
                                   onClick={async () => {
@@ -998,7 +998,6 @@ export default function RosterPage() {
                                     }
                                     await removeMember(selectedMember.id, reason);
                                     setSelectedMemberId(null);
-                                    toast({ title: "Personnel Decommissioned" });
                                   }}
                                 >
                                   Authorize Full Decommission

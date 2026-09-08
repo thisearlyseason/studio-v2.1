@@ -23,6 +23,7 @@ export const TOURNAMENT_BLUEPRINT_FIELDS = [
   'selectedFields',
   'manualVenue',
   'tournamentType',
+  'tieredPlayoffs',
   'adminEmails',
   'sport',
   'division',
@@ -66,6 +67,14 @@ export function buildTournamentReplicationEvent({
       source[field] === undefined ? [] : [[field, source[field]]]
     )
   );
+  if (blueprint.tournamentType === 'tiered_playoffs' && blueprint.tieredPlayoffs && typeof blueprint.tieredPlayoffs === 'object') {
+    const tiered = blueprint.tieredPlayoffs as Record<string, unknown>;
+    blueprint.tieredPlayoffs = {
+      ...tiered,
+      seeding: { status: 'pending', calculated: [], approved: [], standingsFingerprint: null, lockedAt: null, lockedBy: null },
+      playoffs: { bracketFormat: 'single_elimination', status: 'pending', publishedAt: null, publishedBy: null },
+    };
+  }
 
   return {
     ...blueprint,

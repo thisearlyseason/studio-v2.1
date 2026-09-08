@@ -254,7 +254,10 @@ service cloud.firestore {
 
       match /teamMemberships/{teamId} {
         allow read: if isSignedIn() && isOwner(userId);
-        allow write: if isSignedIn() && isOwner(userId);
+        // Registered-account membership projections are server-owned. This
+        // prevents a removed member from restoring their own team access or
+        // copied paid-plan state. Anonymous demo setup remains client-seeded.
+        allow write: if isAnonymousSession() && isOwner(userId);
       }
 
       match /clubDocuments/{docId} {
@@ -268,6 +271,7 @@ service cloud.firestore {
         allow read: if subCollection != 'tokens' &&
           (isSuperAdmin() || (isSignedIn() && isOwner(userId)));
         allow write: if subCollection != 'tokens' &&
+          subCollection != 'teamMemberships' &&
           (isSuperAdmin() || (isSignedIn() && isOwner(userId)));
       }
     }

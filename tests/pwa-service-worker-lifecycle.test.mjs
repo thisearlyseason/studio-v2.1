@@ -72,17 +72,17 @@ async function dispatchFetch(listeners, path, fetchOptions = {}) {
 }
 
 test('service-worker activation removes every stale cache before claiming clients', async () => {
-  const harness = workerHarness({ cacheNames: ['the-squad-shell-v9', 'the-squad-shell-v8', 'corrupt-partial-cache'] });
+  const harness = workerHarness({ cacheNames: ['the-squad-shell-v10', 'the-squad-shell-v9', 'corrupt-partial-cache'] });
 
   await dispatchLifecycle(harness.listeners, 'activate');
 
-  assert.deepEqual(new Set(harness.deletedCaches), new Set(['the-squad-shell-v8', 'corrupt-partial-cache']));
+  assert.deepEqual(new Set(harness.deletedCaches), new Set(['the-squad-shell-v9', 'corrupt-partial-cache']));
   assert.equal(harness.state.claimed, 1);
-  assert.deepEqual(await harness.caches.keys(), ['the-squad-shell-v9']);
+  assert.deepEqual(await harness.caches.keys(), ['the-squad-shell-v10']);
 });
 
 test('service-worker activation does not claim pages until stale-cache cleanup finishes', async () => {
-  const harness = workerHarness({ cacheNames: ['the-squad-shell-v9', 'corrupt-partial-cache'] });
+  const harness = workerHarness({ cacheNames: ['the-squad-shell-v10', 'corrupt-partial-cache'] });
   let finishDeletion;
   harness.caches.delete = async name => {
     harness.deletedCaches.push(name);

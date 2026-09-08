@@ -704,7 +704,7 @@ export const cleanupAnonymousUsers = onSchedule({
 });
 
 /**
- * Sends one same-day reminder to player and parent accounts for each upcoming
+ * Sends one same-day reminder to opted-in active members for each upcoming
  * team event. Delivery claims prevent overlapping scheduler runs from sending
  * the same reminder more than once.
  */
@@ -777,5 +777,5 @@ export const sendUpcomingEventReminders = onSchedule({
       return { successCount: fcm.successCount + webPush.successCount, failureCount: fcm.failureCount + webPush.failureCount };
     },
   });
-  console.log(`[event-reminders] Sent ${result.sentCount} same-day player/parent reminder(s); ${result.failedCount} failed for retry.`);
+  console.log(`[event-reminders] Sent ${result.sentCount} same-day active-member reminder(s); ${result.failedCount} failed for retry.`);
 });

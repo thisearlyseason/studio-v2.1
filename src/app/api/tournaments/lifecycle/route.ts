@@ -10,13 +10,14 @@ import { enforceUserRateLimit, readJsonBodyWithLimit, RequestBodyError } from '@
 import { normalizeTeamEventInterval, teamEventConflictDates, teamEventIntervalsOverlap } from '@/lib/team-event-interval';
 import { buildTeamEventBooking } from '@/lib/server-team-event-booking';
 import { deliverTournamentCreatedNotification } from '@/lib/server-tournament-created-notification';
+import { validateTieredPlayoffsConfig } from '@/lib/tiered-playoffs/types';
 
 export const runtime = 'nodejs';
 const ID = /^[A-Za-z0-9_-]{1,200}$/;
 // Leave room below Firestore's 500-write ceiling for the receipt and audit.
 const WRITE_BUDGET = 400;
 const EDITABLE = new Set<string>([...TOURNAMENT_BLUEPRINT_FIELDS, 'title', 'isTournament', 'tournamentTeams', 'tournamentTeamsData']);
-const SCHEDULE_FIELDS = new Set(['date', 'endDate', 'startTime', 'endTime', 'location', 'tournamentType', 'tournamentTeams', 'tournamentTeamsData', 'gameLength', 'breakLength', 'gamesPerTeam', 'maxDailyGamesPerTeam', 'poolCount', 'advancePerPool', 'dailyWindows', 'selectedFields', 'manualVenue']);
+const SCHEDULE_FIELDS = new Set(['date', 'endDate', 'startTime', 'endTime', 'location', 'tournamentType', 'tieredPlayoffs', 'tournamentTeams', 'tournamentTeamsData', 'gameLength', 'breakLength', 'gamesPerTeam', 'maxDailyGamesPerTeam', 'poolCount', 'advancePerPool', 'dailyWindows', 'selectedFields', 'manualVenue']);
 const REGISTRATION_FIELDS = new Set(['registrationCost', 'customFormFields', 'waiverIds', 'waiverDocuments', 'teamWaiverText']);
 class LifecycleError extends Error { constructor(message: string, readonly status = 400) { super(message); } }
 function fail(message: string, status = 400): never { throw new LifecycleError(message, status); }
@@ -37,7 +38,7 @@ function editable(value: unknown): DocumentData {
 function validate(data: DocumentData, allowEmptyRoster = false): void {
   if (typeof data.title !== 'string' || !data.title.trim() || data.title.length > 200) fail('A Tournament title is required.');
   if (day(data.endDate || data.date) < day(data.date)) fail('Invalid Tournament date range.');
-  if (!['round_robin', 'single_elimination', 'double_elimination', 'pool_play_knockout'].includes(data.tournamentType)) fail('Invalid Tournament format.');
+  if (!['round_robin', 'single_elimination', 'double_elimination', 'pool_play_knockout', 'tiered_playoffs'].includes(data.tournamentType)) fail('Invalid Tournament format.');
   for (const [field, minimum, maximum] of [['gameLength', 1, 720], ['breakLength', 0, 720], ['gamesPerTeam', 1, 100], ['maxDailyGamesPerTeam', 1, 100]] as const) {
     if (!Number.isInteger(data[field]) || data[field] < minimum || data[field] > maximum) fail(`Invalid ${field}.`);
   }
@@ -52,6 +53,11 @@ function validate(data: DocumentData, allowEmptyRoster = false): void {
   if (teams.length > 1 && data.tournamentType === 'round_robin' && (teams.length * data.gamesPerTeam) % 2 !== 0) fail('This team count cannot each play the requested number of games.');
   if (teams.length && data.tournamentType === 'double_elimination' && (teams.length & (teams.length - 1)) !== 0) fail('Double elimination requires a power-of-two team count.');
   if (teams.length && data.tournamentType === 'pool_play_knockout' && (!Number.isInteger(data.poolCount) || data.poolCount < 2 || data.poolCount > Math.floor(teams.length / 2) || !Number.isInteger(data.advancePerPool) || data.advancePerPool < 1 || data.advancePerPool > Math.floor(teams.length / data.poolCount))) fail('Invalid Tournament pool topology.');
+  if (data.tournamentType === 'tiered_playoffs') {
+    const tieredValidation = validateTieredPlayoffsConfig(data.tieredPlayoffs, teams.length);
+    if (!tieredValidation.valid) fail(tieredValidation.errors[0] || 'Invalid Tiered Playoffs configuration.');
+    if ((teams.length * data.gamesPerTeam) % 2 !== 0) fail('This team count cannot each play the requested number of preliminary games.');
+  }
 }
 function assertAdvancedEntitlement(team: DocumentData, data: DocumentData): void {
   if (team.isPro !== true && data.tournamentType !== 'round_robin') fail('This squad plan supports basic Round Robin tournaments only.', 403);

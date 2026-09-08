@@ -6,6 +6,7 @@ import {
   generateTournamentSchedule,
 } from '@/lib/scheduler-utils';
 import { calculateTournamentStandings } from '@/lib/tournament-standings';
+import { generateTieredPreliminarySchedule } from '@/lib/tiered-playoffs/schedule';
 import { resolveCompetitionAuthority } from '@/lib/server-competition-authority';
 import { canonicalCompetitionRequest, runCompetitionOperation } from '@/lib/server-competition-operation';
 import { assertScheduleMutationLock, withScheduleMutationLock } from '@/lib/server-schedule-deployment';
@@ -203,8 +204,24 @@ function canonicalTournamentSchedule(event: RawEvent): TournamentGame[] {
     | 'round_robin'
     | 'pool_play_knockout'
     | 'single_elimination'
-    | 'double_elimination';
+    | 'double_elimination'
+    | 'tiered_playoffs';
   try {
+    if (tournamentType === 'tiered_playoffs') {
+      const gamesPerTeam = positiveInteger(event.gamesPerTeam, 3);
+      const teamCount = Array.isArray(event.tournamentTeamsData) ? event.tournamentTeamsData.length : 0;
+      const requiredGames = Math.max(1, Math.ceil(teamCount * gamesPerTeam / 2));
+      return generateTieredPreliminarySchedule({
+        teams: Array.isArray(event.tournamentTeamsData) ? event.tournamentTeamsData : [],
+        fields: Array.from({ length: requiredGames }, (_, index) => ({ id: `canonical_${index + 1}`, name: `Canonical ${index + 1}` })),
+        dailyWindows: [{ date: '2000-01-01', startTime: '00:00', endTime: '23:59' }],
+        gamesPerTeam,
+        gameDurationMinutes: 1,
+        transitionMinutes: 0,
+        minimumRestMinutes: 0,
+        maximumGamesPerTeamPerDay: Math.max(1, gamesPerTeam),
+      }).games;
+    }
     return generateTournamentSchedule({
       teams: Array.isArray(event.tournamentTeamsData) ? event.tournamentTeamsData : [],
       fields: [{ id: 'canonical', name: 'Canonical Field' }],

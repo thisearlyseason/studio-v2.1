@@ -13,6 +13,8 @@ import { registerPushDevice } from '@/lib/client-push-registration';
 import { normalizeTeamEvent } from '@/lib/team-event-normalization';
 import { dispatchTeamNotification, shouldDispatchTeamOutbound } from '@/lib/client-team-notification';
 import { isStarterExperience } from '@/lib/plan-catalog';
+import { activeTeamMemberships } from '@/lib/team-membership-security';
+import type { TieredPlayoffsConfig } from '@/lib/tiered-playoffs/types';
 
 import { 
   collection, 
@@ -400,7 +402,8 @@ export type TeamEvent = {
   round?: string | number; // Tournament round identifier
   refereePool?: TournamentReferee[];
   // ── Tournament deployment fields (set by TournamentDeploymentWizard) ──
-  tournamentType?: 'round_robin' | 'single_elimination' | 'double_elimination' | 'pool_play_knockout';
+  tournamentType?: 'round_robin' | 'single_elimination' | 'double_elimination' | 'pool_play_knockout' | 'tiered_playoffs';
+  tieredPlayoffs?: TieredPlayoffsConfig;
   gameLength?: number;
   breakLength?: number;
   gamesPerTeam?: number;
@@ -772,6 +775,16 @@ export type TournamentGame = {
   isResetMatch?: boolean;
   /** True for conditional matches that only occur under specific bracket outcomes */
   isConditional?: boolean;
+  phase?: 'preliminary' | 'playoff';
+  playoffDivisionId?: string;
+  playoffDivisionName?: string;
+  overallSeed1?: number;
+  overallSeed2?: number;
+  divisionSeed1?: number;
+  divisionSeed2?: number;
+  isBye?: boolean;
+  possibleTeamIds?: string[];
+  scheduledStartMs?: number;
   /** Assigned official */
   refereeId?: string;
   refereeName?: string;
@@ -1235,7 +1248,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return Math.abs(h).toString(36).toUpperCase().padStart(8, '0');
   }, []);
 
-  const teamsRaw = useMemo(() => (teamsData || []).map(m => {
+  const teamsRaw = useMemo(() => activeTeamMemberships(teamsData || []).map(m => {
     const tid = m.teamId || m.id;
     const storedCode = (m.code || m.teamCode || m.inviteCode || '').toString().trim().toUpperCase();
     const finalCode = storedCode || generateTeamCode(tid);
@@ -1286,10 +1299,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return teamsRaw[0] || null;
   }, [teamsRaw, activeTeamId]);
   const activeTeamDocRef = useMemoFirebase(() => (isAuthResolved && firebaseUser && db && activeTeamMembership?.id) ? doc(db, 'teams', activeTeamMembership.id) : null, [isAuthResolved, firebaseUser, db, activeTeamMembership?.id]);
-  const { data: activeTeamDoc } = useDoc<Team>(activeTeamDocRef);
+  const { data: activeTeamDoc, isLoading: isActiveTeamDocLoading } = useDoc<Team>(activeTeamDocRef);
 
   const activeTeam = useMemo(() => {
     if (!activeTeamMembership) return null;
+    // Membership projections are only a discovery index. A removed member may
+    // still have a legacy projection created before lifecycle cleanup became
+    // server-owned, so fail closed once canonical team access is denied.
+    if (!isActiveTeamDocLoading && !activeTeamDoc) return null;
     const combined = { ...activeTeamMembership, ...activeTeamDoc };
     // Use the same shared fallback — NEVER 'SF' + slice which was inconsistent
     const storedCode = (combined.code || combined.teamCode || combined.inviteCode || '').toString().trim().toUpperCase();
@@ -1300,7 +1317,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       teamCode: finalCode,
       inviteCode: finalCode
     } as Team;
-  }, [activeTeamMembership, activeTeamDoc, generateTeamCode]);
+  }, [activeTeamMembership, activeTeamDoc, isActiveTeamDocLoading, generateTeamCode]);
 
   const membersQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'members')) : null, [isAuthResolved, activeTeam?.id, db]);
   const { data: membersData, isLoading: isMembersInitialLoading } = useCollection<Member>(membersQuery);
@@ -1568,7 +1585,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!db || !firebaseUser?.uid || (!isParent && !isPlayer)) return;
 
-    const myOwnTeamIds = (teamsData || []).map(t => t.teamId).filter(Boolean);
+    const myOwnTeamIds = activeTeamMemberships(teamsData || []).map(t => t.teamId).filter(Boolean);
     const childrenTeamIds = (myChildren || []).flatMap(c => c.joinedTeamIds || []);
     
     const allTeamIds = Array.from(new Set([...myOwnTeamIds, ...childrenTeamIds])).filter(Boolean);
@@ -1746,8 +1763,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
     // Paid access is allocated per canonical team document. Organization links,
     // account plans, and staff roles never grant an unallocated squad Pro access.
-    return activeTeam?.isPro === true;
-  }, [activeTeam?.isPro, isSuperAdmin]);
+    // Never grant paid access from the denormalized membership projection.
+    // The canonical team document is readable only while membership is valid.
+    return activeTeamDoc?.isPro === true;
+  }, [activeTeamDoc?.isPro, isSuperAdmin]);
 
   const isStarter = useMemo(() => {
     return isStarterExperience({
@@ -1905,59 +1924,40 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const getStaffEvaluation = useCallback(async (memberId: string) => { if (!activeTeam?.id || !db) return ''; const snap = await getDoc(doc(db, 'teams', activeTeam.id, 'members', memberId, 'staffEvaluation', 'current')); return snap.exists() ? (snap.data()?.notes || '') : ''; }, [activeTeam, db]);
 
   const removeMember = useCallback(async (memberId: string, reason?: string) => {
-    if (!activeTeam?.id || !db) return;
+    if (!activeTeam?.id || !firebaseAuth) return;
     try {
-      const memberRef = doc(db, 'teams', activeTeam.id, 'members', memberId);
-      const memberSnap = await getDoc(memberRef);
-      if (memberSnap.exists()) {
-        const mData = memberSnap.data();
-        await updateDoc(memberRef, {
-          status: 'removed',
-          removalReason: reason || null,
-          removedAt: new Date().toISOString()
-        });
-        
-        // Also update their user profile record if they have a userId linked
-        if (mData.userId) {
-          await updateDoc(doc(db, 'users', mData.userId, 'teamMemberships', activeTeam.id), {
-            status: 'removed'
-          }).catch(() => {}); // Secondary record might not exist or be named differently
-        }
-        
-        toast({ title: "Player Removed", description: "Member has been moved to the archived section." });
-      }
+      const token = await getAuthToken(firebaseAuth);
+      const response = await fetch('/api/teams/members/lifecycle', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ teamId: activeTeam.id, memberId, action: 'remove', reason }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Failed to remove member from active roster.');
+      toast({ title: "Player Removed", description: "Member access and squad benefits were revoked immediately." });
     } catch (e) {
       console.error("Remove Member Error:", e);
-      toast({ title: "Operation Failed", description: "Failed to remove member from active roster.", variant: "destructive" });
+      toast({ title: "Operation Failed", description: e instanceof Error ? e.message : "Failed to remove member from active roster.", variant: "destructive" });
+      throw e;
     }
-  }, [activeTeam, db]);
+  }, [activeTeam?.id, firebaseAuth]);
 
   const reinstateMember = useCallback(async (memberId: string) => {
-    if (!activeTeam?.id || !db) return;
+    if (!activeTeam?.id || !firebaseAuth) return;
     try {
-      const memberRef = doc(db, 'teams', activeTeam.id, 'members', memberId);
-      const memberSnap = await getDoc(memberRef);
-      if (memberSnap.exists()) {
-        const mData = memberSnap.data();
-        await updateDoc(memberRef, {
-          status: 'active',
-          removalReason: deleteField(),
-          removedAt: deleteField()
-        });
-        
-        if (mData.userId) {
-          await updateDoc(doc(db, 'users', mData.userId, 'teamMemberships', activeTeam.id), {
-            status: 'active'
-          }).catch(() => {});
-        }
-        
-        toast({ title: "Player Reinstated", description: "Member is now back on the active roster." });
-      }
+      const token = await getAuthToken(firebaseAuth);
+      const response = await fetch('/api/teams/members/lifecycle', {
+        method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ teamId: activeTeam.id, memberId, action: 'reinstate' }),
+      });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || 'Failed to reinstate member.');
+      toast({ title: "Player Reinstated", description: "Member access is restored." });
     } catch (e) {
       console.error("Reinstate Member Error:", e);
-      toast({ title: "Operation Failed", description: "Failed to reinstate member.", variant: "destructive" });
+      toast({ title: "Operation Failed", description: e instanceof Error ? e.message : "Failed to reinstate member.", variant: "destructive" });
+      throw e;
     }
-  }, [activeTeam, db]);
+  }, [activeTeam?.id, firebaseAuth]);
 
   const createNewTeam = useCallback(async (name: string, type: any, pos: string, description?: string, planId?: string, customWaiverTitle?: string, customWaiverContent?: string, schoolId?: string, coachName?: string, coachEmail?: string, overrideOwnerId?: string) => { 
     if (!firebaseUser || !firebaseAuth || !db || !userProfile) return '';
@@ -2131,12 +2131,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       inviteCode: code,
       lastCodeEditedAt: new Date().toISOString()
     });
-    // Also update all memberships for the owner so their local list reflects the change
-    if (firebaseUser) {
-      const membershipRef = doc(db, 'users', firebaseUser.uid, 'teamMemberships', tid);
-      await updateDoc(membershipRef, { code });
-    }
-  }, [db, firebaseUser]);
+  }, [db, checkCodeUniqueness]);
 
   const resetSquadData = useCallback(async (categories: string[]) => {
     if (!activeTeam?.id || !firebaseAuth) throw new Error('Choose an active squad before resetting its season.');
@@ -2297,6 +2292,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
             url: '/dashboard/team',
             emailSubject,
             emailHtml,
+            includePush: false,
           });
         } catch { /* ignore */ }
       });

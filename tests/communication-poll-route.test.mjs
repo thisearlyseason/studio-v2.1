@@ -362,6 +362,46 @@ test('Chat directory honors server-derived remote authority and module revocatio
   } finally {loaded.dispose();}
 });
 
+test('Chat detail directory resolves authorized remote member names instead of exposing user IDs',async()=>{
+  const seed={
+    'teams/host':{ownerUserId:'owner-host',name:'Host',features:{tacticalChat:true}},
+    'teams/source':{ownerUserId:'owner-source',name:'City Central United',features:{tacticalChat:true}},
+    'teams/host/members/viewer':{userId:'viewer',name:'Viewer',position:'Coach',status:'active'},
+    'teams/source/members/remote-member':{userId:'AI2QTHECAWFK123456',name:'Alex Rivera',position:'Assistant Coach',avatar:'https://example.test/alex.jpg',status:'active'},
+    'teams/host/groupChats/channel':{
+      name:'Coordination',memberIds:['viewer','AI2QTHECAWFK123456'],
+      memberAuthorities:{viewer:{teamId:'host',memberId:'viewer'},AI2QTHECAWFK123456:{teamId:'source',memberId:'remote-member'}},isDeleted:false,
+    },
+  };
+  const {db}=communicationDb(seed);
+  const loaded=await loadCommunicationRoute('../../src/app/api/teams/chat/route.ts',db,{uid:'viewer'});
+  try {
+    const response=await loaded.route.GET({nextUrl:new URL('http://127.0.0.1/api/teams/chat?teamId=host&chatId=channel')});
+    assert.equal(response.status,200);
+    const body=await response.json();
+    assert.deepEqual(body.memberDirectory.find(member=>member.userId==='AI2QTHECAWFK123456'),{
+      userId:'AI2QTHECAWFK123456',name:'Alex Rivera',position:'Assistant Coach',avatar:'https://example.test/alex.jpg',squadName:'City Central United',
+    });
+  } finally {loaded.dispose();}
+});
+
+test('Chat directory excludes channels hidden by the current member',async()=>{
+  const seed={
+    'teams/team-a':{ownerUserId:'owner-a',name:'Team A',features:{tacticalChat:true}},
+    'teams/team-a/members/member':{userId:'member',position:'Player',status:'active'},
+    'teams/team-a/groupChats/visible':{name:'Visible',memberIds:['member'],isDeleted:false},
+    'teams/team-a/groupChats/hidden':{name:'Hidden',memberIds:['member'],isDeleted:false},
+    'users/member/hiddenChats/team-a:hidden':{userId:'member',teamId:'team-a',chatId:'hidden'},
+  };
+  const {db}=communicationDb(seed);
+  const loaded=await loadCommunicationRoute('../../src/app/api/teams/chat/route.ts',db,{uid:'member'});
+  try {
+    const response=await loaded.route.GET({nextUrl:new URL('http://127.0.0.1/api/teams/chat?teamId=team-a')});
+    assert.equal(response.status,200);
+    assert.deepEqual((await response.json()).channels.map(channel=>channel.id),['visible']);
+  } finally {loaded.dispose();}
+});
+
 test('Chat list consumes the authenticated server directory and exposes directory failures',async()=>{
   const source=await readFile(new URL('../src/app/(dashboard)/chats/page.tsx',import.meta.url),'utf8');
   assert.doesNotMatch(source,/collectionGroup\(db, 'groupChats'\)/);

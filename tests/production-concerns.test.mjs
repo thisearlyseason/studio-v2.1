@@ -173,7 +173,7 @@ test('anonymous demos survive reloads and clean up visible exits and abandoned s
   assert.match(provider, /sessionStorage\.getItem\(DEMO_START_KEY\)/);
   assert.match(provider, /fetch\('\/api\/demo\/exit', \{ method: 'POST', keepalive: true \}\)/);
   assert.match(provider, /await signOut\(auth\)/);
-  assert.match(shell, /const isDemoLogout = hasDemoBanner/);
+  assert.match(shell, /const isDemoLogout = auth\.currentUser\?\.isAnonymous === true/);
   assert.match(shell, /if \(isDemoLogout\) \{\s+markDemoExitPending\(\);\s+requireDemoExitRetry\(\);\s+\}/);
   assert.ok(shell.indexOf('requireDemoExitRetry()') < shell.indexOf("await fetch('/api/demo/exit'"));
   assert.match(shell, /if \(isDemoLogout\) \{\s+const response = await fetch\('\/api\/demo\/exit', \{ method: 'POST' \}\);\s+if \(!response\.ok\) \{\s+demoCleanupRejectedBeforeMutation = response\.status === 403;\s+throw new Error\('Demo cleanup failed'\);\s+\}\s+\}/);
@@ -194,19 +194,25 @@ test('every visible logout unregisters push while the user is still authenticate
 
   const settingsLogout = settings.match(/const handleLogout = async \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
   assert.match(settings, /import \{ deletePushDevice/);
-  assert.match(settingsLogout, /const isDemoLogout = auth\.currentUser\?\.isAnonymous === true \|\| user\?\.isDemo === true/);
-  assert.match(settingsLogout, /if \(user\?\.id && !isDemoLogout\) \{\s+await deletePushDevice\(user\.id\);\s+\}/);
+  assert.match(settingsLogout, /const isDemoLogout = auth\.currentUser\?\.isAnonymous === true;/);
+  assert.doesNotMatch(settingsLogout, /user\?\.isDemo/);
+  assert.match(settingsLogout, /const authenticatedUserId = auth\.currentUser\?\.uid/);
+  assert.match(settingsLogout, /if \(authenticatedUserId && !isDemoLogout\) \{\s+await deletePushDevice\(authenticatedUserId\)\.catch/);
   assert.match(settingsLogout, /if \(isDemoLogout\) \{\s+const response = await fetch\('\/api\/demo\/exit', \{ method: 'POST' \}\)/);
-  assert.ok(settingsLogout.indexOf('await deletePushDevice(user.id)') < settingsLogout.indexOf('await clearBrowserSession()'));
+  assert.ok(settingsLogout.indexOf('await deletePushDevice(authenticatedUserId)') < settingsLogout.indexOf('await clearBrowserSession()'));
   assert.ok(settingsLogout.indexOf("await fetch('/api/demo/exit'") < settingsLogout.indexOf('await clearBrowserSession()'));
   assert.ok(settingsLogout.indexOf('await clearBrowserSession()') < settingsLogout.indexOf('await signOut(auth)'));
-  assert.doesNotMatch(settingsLogout, /deletePushDevice\(user\.id\)\.catch/);
   const shellLogout = shell.match(/const handleLogout = async \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
-  assert.match(shellLogout, /if \(user\?\.id && !isDemoLogout\) \{\s+await deletePushDevice\(user\.id\);\s+\}/);
-  assert.ok(shellLogout.indexOf('await deletePushDevice(user.id)') < shellLogout.indexOf("await fetch('/api/demo/exit'"));
+  assert.match(shellLogout, /const isDemoLogout = auth\.currentUser\?\.isAnonymous === true;/);
+  assert.doesNotMatch(shellLogout, /hasDemoBanner/);
+  assert.match(shellLogout, /const authenticatedUserId = auth\.currentUser\?\.uid/);
+  assert.match(shellLogout, /if \(authenticatedUserId && !isDemoLogout\) \{\s+await deletePushDevice\(authenticatedUserId\)\.catch/);
+  assert.ok(shellLogout.indexOf('await deletePushDevice(authenticatedUserId)') < shellLogout.indexOf("await fetch('/api/demo/exit'"));
   const deletion = pushRegistration.match(/export async function deletePushDevice[\s\S]*?\n\}/)?.[0] || '';
-  assert.match(deletion, /await clearLegacyFcmRegistrations\(userId\);/);
-  assert.doesNotMatch(deletion, /clearLegacyFcmRegistrations\(userId\)\.catch/);
+  assert.match(deletion, /currentUser\.uid !== userId/);
+  assert.match(deletion, /await clearLegacyFcmRegistrations\(userId\)\.catch/);
+  assert.match(deletion, /await deleteWebPushSubscription\(userId\)\.catch/);
+  assert.match(pushRegistration, /try \{\s+await updateWebPushSubscription[\s\S]*?finally \{[\s\S]*?await subscription\.unsubscribe\(\)/);
 });
 
 test('demo launch creates its protected profile before entering dashboard routes', async () => {

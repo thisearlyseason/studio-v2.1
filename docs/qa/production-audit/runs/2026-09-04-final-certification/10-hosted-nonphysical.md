@@ -114,3 +114,37 @@ zero.
 
 Only the checks in `09-physical-device-checklist.md` require physical hardware.
 They must not be inferred from this hosted supplement.
+
+## Launch-critical mobile and communication repair — 2026-09-08
+
+Production deployment `dpl_1LAFSxMHPom51NCMuwKX8N7FBeVS` serves the repair
+candidate committed as `0ed01e5a` at `www.thesquad.pro`. The deployment reached
+`Ready` and the public health endpoint returned HTTP 200.
+
+The repair excludes removed memberships from team and paid-feature projection,
+adds one server-authoritative event-created alert after a committed event write,
+keeps demo workspaces provider-free, and prevents the client from duplicating
+that push. Chat now falls back safely to authorized per-team reads while a
+collection-group index is unavailable, resolves visible member names without
+exposing raw user IDs, and lets staff delete or members hide a channel from the
+chat list. The mobile account menu now exposes Join Team. The Shell and Settings
+share one captured PWA install prompt and retain usable platform instructions
+when the browser does not expose a native prompt. Activity, enrollment, and
+decommission dialogs are contained by the mobile viewport.
+
+Fresh focused regressions passed 102/102. The complete application suite passed
+1,335 with 0 failures and 8 explicit skips. TypeScript, diff validation, the
+Functions build, and the optimized Next.js production build passed. ESLint
+completed with 0 errors and 1,896 pre-existing warnings.
+
+Fresh production Playwright at 412x915 proved the chat list and direct delete
+controls render, `/api/teams/chat` returns HTTP 200, chat detail shows resolved
+member names instead of opaque IDs, Join Team appears in the mobile menu, the
+Install App control opens usable instructions, and the activity dialog remains
+within 396x899 with a 412-pixel body width. The checked production journeys
+reported zero console errors or warnings and no unexpected application HTTP
+failure. No destructive production mutation was used for this smoke check.
+
+This follow-up does not change the authoritative totals: **84 PASS, 3 BLOCKED,
+1 NOT APPLICABLE, 0 FAIL**. The remaining rows still require the physical checks
+recorded in `09-physical-device-checklist.md`.

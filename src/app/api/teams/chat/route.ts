@@ -56,17 +56,44 @@ function chatTimestamp(value: unknown) {
   return '';
 }
 
-async function listAuthorizedChatChannels(uid: string, tokenRole?: string): Promise<AuthorizedChatChannel[]> {
-  const [snapshot, linkedMemberships] = await Promise.all([
-    adminDb.collectionGroup('groupChats')
-      .where('memberIds', 'array-contains', uid)
-      .limit(500)
-      .get(),
+async function listAuthorizedChatChannels(uid: string, currentTeamId: string, tokenRole?: string): Promise<AuthorizedChatChannel[]> {
+  const [linkedMemberships, hiddenChats] = await Promise.all([
     adminDb.collectionGroup('members')
       .where('userId', '==', uid)
       .limit(500)
       .get(),
+    adminDb.collection('users').doc(uid).collection('hiddenChats').limit(500).get(),
   ]);
+  let snapshot: { docs: FirebaseFirestore.QueryDocumentSnapshot[] };
+  try {
+    snapshot = await adminDb.collectionGroup('groupChats')
+      .where('memberIds', 'array-contains', uid)
+      .limit(500)
+      .get();
+  } catch (error) {
+    if (!(error && typeof error === 'object' && 'code' in error && (error as { code?: unknown }).code === 9)) throw error;
+    // Keep current-team chat usable while a newly deployed collection-group
+    // index finishes building. Full cross-team discovery resumes automatically
+    // as soon as that index is ready.
+    const fallbackTeamIds = new Set([currentTeamId]);
+    linkedMemberships.docs.forEach(member => {
+      const segments = member.ref.path.split('/');
+      if (segments.length === 4 && segments[0] === 'teams' && segments[2] === 'members') fallbackTeamIds.add(segments[1]);
+    });
+    const fallback = await Promise.all([...fallbackTeamIds].map(teamId =>
+      adminDb.collection('teams').doc(teamId).collection('groupChats')
+        .where('memberIds', 'array-contains', uid)
+        .limit(500)
+        .get()
+    ));
+    snapshot = {
+      docs: [...new Map(fallback.flatMap(result => result.docs).map(chat => [chat.ref.path, chat])).values()],
+    };
+  }
+  const hiddenKeys = new Set(hiddenChats.docs.map(hidden => {
+    const data = hidden.data() || {};
+    return `${String(data.teamId || '')}:${String(data.chatId || '')}`;
+  }));
   const membershipRefsByTeam = new Map<string, FirebaseFirestore.DocumentReference[]>();
   for (const membership of linkedMemberships.docs) {
     const segments = membership.ref.path.split('/');
@@ -134,6 +161,7 @@ async function listAuthorizedChatChannels(uid: string, tokenRole?: string): Prom
   }));
   return summaries
     .filter((channel): channel is AuthorizedChatChannel => Boolean(channel))
+    .filter(channel => !hiddenKeys.has(`${channel.teamId}:${channel.id}`))
     .sort((left, right) => (right.lastMessageAt || right.createdAt).localeCompare(left.lastMessageAt || left.createdAt));
 }
 
@@ -164,6 +192,53 @@ async function teamRecipients(teamId: string, onlyStaff = false): Promise<Recipi
     .filter(doc => !onlyStaff || isStaffMember(doc.data()))
     .map(doc => recipientFrom({ ...doc.data(), userId: doc.data().userId || doc.id }, name, teamId, doc.id))
     .filter((value): value is Recipient => Boolean(value));
+}
+
+async function chatMemberDirectory(teamId: string, chatId: string) {
+  const chat = await adminDb.collection('teams').doc(teamId).collection('groupChats').doc(chatId).get();
+  if (!chat.exists || chat.data()?.isDeleted === true) return [];
+  const data = chat.data() || {};
+  const memberIds = Array.isArray(data.memberIds)
+    ? data.memberIds.filter((id: unknown): id is string => typeof id === 'string' && ID_PATTERN.test(id))
+    : [];
+  const authorities = data.memberAuthorities && typeof data.memberAuthorities === 'object'
+    ? data.memberAuthorities as Record<string, { teamId?: unknown; memberId?: unknown }>
+    : {};
+  const storedMetadata = data.staffMetadata && typeof data.staffMetadata === 'object'
+    ? data.staffMetadata as Record<string, { name?: unknown; position?: unknown; avatar?: unknown; squadName?: unknown }>
+    : {};
+
+  return (await Promise.all(memberIds.map(async userId => {
+    const authority = authorities[userId];
+    const sourceTeamId = typeof authority?.teamId === 'string' && ID_PATTERN.test(authority.teamId)
+      ? authority.teamId : teamId;
+    const sourceMemberId = typeof authority?.memberId === 'string' && ID_PATTERN.test(authority.memberId)
+      ? authority.memberId : userId;
+    const [team, member] = await Promise.all([
+      adminDb.collection('teams').doc(sourceTeamId).get(),
+      adminDb.collection('teams').doc(sourceTeamId).collection('members').doc(sourceMemberId).get(),
+    ]);
+    const memberData = member.data() || {};
+    if (member.exists && memberData.status !== 'removed' && memberData.isDeleted !== true &&
+        (memberData.userId === userId || (sourceMemberId === userId && !memberData.userId))) {
+      return {
+        userId,
+        name: String(memberData.name || 'Squad Member'),
+        position: String(memberData.position || memberData.role || 'Member'),
+        avatar: String(memberData.avatar || ''),
+        squadName: String(team.data()?.name || team.data()?.teamName || 'Squad'),
+      };
+    }
+    const metadata = storedMetadata[userId];
+    if (!metadata) return null;
+    return {
+      userId,
+      name: String(metadata.name || 'Squad Member'),
+      position: String(metadata.position || 'Member'),
+      avatar: String(metadata.avatar || ''),
+      squadName: String(metadata.squadName || ''),
+    };
+  }))).filter((member): member is NonNullable<typeof member> => Boolean(member));
 }
 
 function uniqueRecipients(recipients: Recipient[], excludeUid: string) {
@@ -253,16 +328,25 @@ export async function GET(req: NextRequest) {
   const auth = await verifyFirebaseToken(req);
   if (auth instanceof NextResponse) return auth;
   const teamId = req.nextUrl.searchParams.get('teamId') || '';
+  const requestedChatId = req.nextUrl.searchParams.get('chatId') || '';
   if (!ID_PATTERN.test(teamId)) return NextResponse.json({ error: 'Invalid squad.' }, { status: 400 });
+  if (requestedChatId && !ID_PATTERN.test(requestedChatId)) return NextResponse.json({ error: 'Invalid tactical channel.' }, { status: 400 });
   try {
     const result = await buildContexts(teamId, auth.uid, auth.role);
     if (!result) return NextResponse.json({ error: 'You do not belong to this squad.' }, { status: 403 });
     if (!tacticalChatEnabled(result.authority.teamData)) {
       return NextResponse.json({ error: 'Tactical chat is unavailable for this squad.' }, { status: 403 });
     }
-    const channels = await listAuthorizedChatChannels(auth.uid, auth.role);
+    const channels = await listAuthorizedChatChannels(auth.uid, teamId, auth.role);
+    const requestedChannel = requestedChatId
+      ? channels.find(channel => channel.teamId === teamId && channel.id === requestedChatId)
+      : null;
+    if (requestedChatId && !requestedChannel) {
+      return NextResponse.json({ error: 'You are no longer authorized for this chat.' }, { status: 403 });
+    }
+    const memberDirectory = requestedChannel ? await chatMemberDirectory(teamId, requestedChatId) : undefined;
     return NextResponse.json(
-      { contexts: result.contexts, channels },
+      { contexts: result.contexts, channels, ...(memberDirectory ? { memberDirectory } : {}) },
       { headers: { 'Cache-Control': 'private, no-store' } },
     );
   } catch (error) {

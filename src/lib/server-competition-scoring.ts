@@ -13,6 +13,8 @@ import { scorekeeperTournament } from '@/lib/public-portal-data';
 import { BracketProgressionError, hasCompletedBracketDescendant, recordTournamentScore, validateBracketScoreSubmission } from '@/lib/scheduler-utils';
 import { TournamentScheduleDeploymentError, withTournamentScheduleMutationLock } from '@/lib/server-tournament-schedule-deployment';
 import type { TournamentGame } from '@/components/providers/team-provider';
+import { reconcileTieredAfterPlayoffMutation, reconcileTieredAfterPreliminaryMutation } from '@/lib/tiered-playoffs/lifecycle';
+import type { TieredPlayoffsConfig } from '@/lib/tiered-playoffs/types';
 
 type Data = Record<string, any>;
 export type CompetitionScoringCommand = {
@@ -406,10 +408,16 @@ export async function runTournamentScoringCommand(input: TournamentScoringComman
       Object.entries(candidate).filter(([, value]) => value !== undefined),
     ) as TournamentGame);
     const updatedGame = games.find(candidate => candidate.id === input.gameId)!;
+    const nextTieredPlayoffs = currentEvent.tournamentType === 'tiered_playoffs' && currentEvent.tieredPlayoffs
+      ? game.phase === 'playoff'
+        ? reconcileTieredAfterPlayoffMutation(currentEvent.tieredPlayoffs as TieredPlayoffsConfig, games)
+        : reconcileTieredAfterPreliminaryMutation(currentEvent.tieredPlayoffs as TieredPlayoffsConfig, games)
+      : currentEvent.tieredPlayoffs;
     const nextScheduleVersion = input.expectedScheduleVersion + 1;
     const resultingScore = updatedGame.isCompleted ? { home: Number(updatedGame.score1 || 0), away: Number(updatedGame.score2 || 0) } : null;
     transaction.update(eventRef, {
       tournamentGames: games, scheduleVersion: nextScheduleVersion, scheduleUpdatedAt: now, scheduleUpdatedBy: preflight.actorUid,
+      ...(nextTieredPlayoffs ? { tieredPlayoffs: nextTieredPlayoffs } : {}),
       ...(migratedHash ? { credentialVersion: migratedCredentialVersion, scorekeeperConfigured: true, scoringCode: FieldValue.delete(), scoringCodeHash: FieldValue.delete() } : {}),
     });
     if (migratedHash) transaction.set(credentialRef, { ...currentCredential, teamId: input.teamId, eventId: input.eventId, scorekeeperCodeHash: migratedHash, credentialVersion: migratedCredentialVersion, updatedAt: now, migratedFromLegacy: true });
@@ -425,6 +433,7 @@ export async function runTournamentScoringCommand(input: TournamentScoringComman
     const tournament = JSON.parse(JSON.stringify(scorekeeperTournament(input.eventId, {
       ...currentEvent,
       tournamentGames: games,
+      ...(nextTieredPlayoffs ? { tieredPlayoffs: nextTieredPlayoffs } : {}),
       scheduleVersion: nextScheduleVersion,
       credentialVersion: migratedCredentialVersion,
       scorekeeperConfigured: Boolean(migratedHash || currentCredential.scorekeeperCodeHash || currentEvent.scorekeeperConfigured),

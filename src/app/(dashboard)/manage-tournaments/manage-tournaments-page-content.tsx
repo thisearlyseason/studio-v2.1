@@ -87,6 +87,8 @@ import { getFacilityFieldName } from '@/lib/facility-rename';
 import { authHeader, getAuthToken } from '@/lib/client-auth';
 import { calculateTournamentStandings } from '@/lib/tournament-standings';
 import { EventSafetyPanel } from '@/components/safety/event-safety-panel';
+import { buildTieredPlayoffsConfig } from '@/lib/tiered-playoffs/config';
+import { calculateTieredStandings } from '@/lib/tiered-playoffs/standings';
 
 interface TournamentTeam extends TeamIdentity {
   coach?: string;
@@ -126,7 +128,7 @@ function FacilityFieldLoader({ facilityId, selectedFields, onToggleField }: { fa
 }
 
 interface DivisionConfig {
-  tournamentType: 'round_robin' | 'single_elimination' | 'double_elimination' | 'pool_play_knockout';
+  tournamentType: 'round_robin' | 'single_elimination' | 'double_elimination' | 'pool_play_knockout' | 'tiered_playoffs';
   gameLength: string;
   breakLength: string;
   gamesPerTeam: string;
@@ -139,6 +141,15 @@ interface DivisionConfig {
   customVenueName: string;
   customFieldsText: string;
   dailyWindows: DailyWindow[];
+  tieredSizing: 'automatic' | 'custom';
+  tieredDivisionNames: string;
+  tieredDivisionSizes: string;
+  tieredWinPoints: string;
+  tieredTiePoints: string;
+  tieredLossPoints: string;
+  tieredMaximumDifferential: string;
+  tieredFinalResolution: 'manual' | 'random_draw';
+  tieredAvoidRematches: boolean;
 }
 
 const getDefaultDivisionConfig = (startDate = '', endDate = ''): DivisionConfig => {
@@ -172,7 +183,16 @@ const getDefaultDivisionConfig = (startDate = '', endDate = ''): DivisionConfig 
     allocatedFields: [],
     customVenueName: '',
     customFieldsText: '',
-    dailyWindows
+    dailyWindows,
+    tieredSizing: 'automatic',
+    tieredDivisionNames: 'A Division, B Division',
+    tieredDivisionSizes: '',
+    tieredWinPoints: '3',
+    tieredTiePoints: '1',
+    tieredLossPoints: '0',
+    tieredMaximumDifferential: '',
+    tieredFinalResolution: 'manual',
+    tieredAvoidRematches: false,
   };
 };
 
@@ -254,6 +274,27 @@ function useTournamentScoringMutation() {
   };
 }
 
+function useTieredPlayoffsMutation() {
+  const auth = useAuth();
+  const pending = useRef(new Map<string, string>());
+  return async (input: Record<string, unknown>) => {
+    const body = JSON.parse(JSON.stringify(input)) as Record<string, unknown>;
+    const key = JSON.stringify(body);
+    const requestId = pending.current.get(key) || crypto.randomUUID();
+    pending.current.set(key, requestId);
+    const token = await getAuthToken(auth);
+    if (!token) throw new Error('Your session has expired. Sign in again.');
+    const response = await fetch('/api/tournaments/tiered-playoffs', {
+      method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+      body: JSON.stringify({ ...body, requestId }),
+    });
+    const result = await response.json().catch(() => ({}));
+    if (!response.ok) throw new Error(result.error || 'Unable to update Tiered Playoffs.');
+    pending.current.delete(key);
+    return result;
+  };
+}
+
 function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchive, editEvent }: { isOpen: boolean, onOpenChange: (o: boolean) => void, onComplete: () => void, onArchive?: () => void, editEvent?: TeamEvent }) {
   const { activeTeam, user, hasFeature, isStarter } = useTeam();
   const db = useFirestore();
@@ -273,7 +314,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
     endDate: '',
     location: '',
     description: '',
-    tournamentType: 'round_robin' as 'round_robin' | 'single_elimination' | 'double_elimination' | 'pool_play_knockout',
+    tournamentType: 'round_robin' as 'round_robin' | 'single_elimination' | 'double_elimination' | 'pool_play_knockout' | 'tiered_playoffs',
     gameLength: '60',
     breakLength: '15',
     gamesPerTeam: '3',
@@ -328,7 +369,16 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
         allocatedFields: editEvent.selectedFields || [],
         customVenueName: editEvent.manualVenue || '',
         customFieldsText: editEvent.manualVenue ? (editEvent.selectedFields || []).join(', ') : '',
-        dailyWindows: editEvent.dailyWindows || []
+        dailyWindows: editEvent.dailyWindows || [],
+        tieredSizing: editEvent.tieredPlayoffs?.divisions.sizing || 'automatic',
+        tieredDivisionNames: editEvent.tieredPlayoffs?.divisions.definitions.map(division => division.name).join(', ') || 'A Division, B Division',
+        tieredDivisionSizes: editEvent.tieredPlayoffs?.divisions.definitions.map(division => division.size).join(', ') || '',
+        tieredWinPoints: String(editEvent.tieredPlayoffs?.standings.points.win ?? 3),
+        tieredTiePoints: String(editEvent.tieredPlayoffs?.standings.points.tie ?? 1),
+        tieredLossPoints: String(editEvent.tieredPlayoffs?.standings.points.loss ?? 0),
+        tieredMaximumDifferential: editEvent.tieredPlayoffs?.standings.maximumDifferentialPerGame == null ? '' : String(editEvent.tieredPlayoffs.standings.maximumDifferentialPerGame),
+        tieredFinalResolution: editEvent.tieredPlayoffs?.standings.finalResolution || 'manual',
+        tieredAvoidRematches: editEvent.tieredPlayoffs?.divisions.avoidPreliminaryRematches || false,
       };
 
       setForm({
@@ -615,6 +665,24 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
         adminEmails: form.adminEmails || [],
         sport: form.sport.trim() || activeTeam?.sport || 'General',
         divisionTitle: divTitle || '',
+        ...(divConfig.tournamentType === 'tiered_playoffs' ? {
+          tieredPlayoffs: buildTieredPlayoffsConfig({
+            teamCount: filteredTeams.length,
+            gamesPerTeam,
+            gameDurationMinutes: gameLength,
+            transitionMinutes: breakLength,
+            minimumRestMinutes: breakLength,
+            maximumGamesPerTeamPerDay: maxDailyGamesPerTeam,
+            sizing: divConfig.tieredSizing,
+            divisionNames: divConfig.tieredDivisionNames.split(',').map(name => name.trim()),
+            divisionSizes: divConfig.tieredDivisionSizes.split(',').map(size => Number(size.trim())).filter(Number.isFinite),
+            points: { win: Number(divConfig.tieredWinPoints), tie: Number(divConfig.tieredTiePoints), loss: Number(divConfig.tieredLossPoints) },
+            rankingRules: ['tournament_points', 'head_to_head', 'differential', 'points_for'],
+            finalResolution: divConfig.tieredFinalResolution,
+            maximumDifferentialPerGame: divConfig.tieredMaximumDifferential.trim() ? Number(divConfig.tieredMaximumDifferential) : null,
+            avoidPreliminaryRematches: divConfig.tieredAvoidRematches,
+          }),
+        } : {}),
       };
 
       return eventPayload;
@@ -704,10 +772,14 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
           <div className="flex-1 flex flex-col overflow-hidden relative">
             <div className="absolute top-10 right-10 opacity-5 pointer-events-none w-64 h-64"><Trophy className="w-full h-full" /></div>
             
-            <ScrollArea showScrollHint scrollHintLabel="More tournament settings" className="flex-1 px-6 sm:px-8 lg:px-16 pt-12 sm:pt-16 pb-32 min-h-0">
-              <div className="max-w-3xl mx-auto space-y-12">
+            <ScrollArea
+              showScrollHint
+              scrollHintLabel="More tournament settings"
+              className="flex-1 px-6 sm:px-8 lg:px-16 pt-12 sm:pt-16 pb-32 min-h-0 [&_[data-radix-scroll-area-viewport]>div]:!block [&_[data-radix-scroll-area-viewport]>div]:!w-full [&_[data-radix-scroll-area-viewport]>div]:!min-w-0"
+            >
+              <div className="max-w-3xl w-full min-w-0 mx-auto space-y-12">
                 {step === 1 && (
-                  <div className="space-y-12 animate-in slide-in-from-right-4 duration-500">
+                  <div className="min-w-0 space-y-12 animate-in slide-in-from-right-4 duration-500">
                     <div>
                       <Badge className="bg-primary/20 text-primary border border-primary/30 uppercase font-black tracking-widest text-[8px] mb-4">Phase 1: Base Configuration</Badge>
                       <h3 className="text-4xl font-black uppercase tracking-tighter mb-2 text-white">Identity & Operations</h3>
@@ -1048,10 +1120,10 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
                       };
 
                       return (
-                        <div className="space-y-8">
-                          <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div className="min-w-0 space-y-8">
+                          <div className="min-w-0 grid grid-cols-1 lg:grid-cols-2 gap-8">
                             {/* Card 1: Format & Chrono Sync */}
-                            <div className="bg-[#0a0a0a] p-8 rounded-[2rem] border border-white/5 space-y-6 text-left text-white">
+                            <div className="min-w-0 bg-[#0a0a0a] p-5 sm:p-8 rounded-[2rem] border border-white/5 space-y-6 text-left text-white">
                               <h4 className="font-black text-sm uppercase tracking-widest text-primary">Format & Chrono Sync</h4>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                                 <div className="space-y-2">
@@ -1082,6 +1154,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
                                       <SelectContent className="bg-black border-white/10 text-white font-black uppercase text-[10px]">
                                         <SelectItem value="round_robin" className="focus:bg-white/10">Round Robin (Total Points)</SelectItem>
                                         <SelectItem value="pool_play_knockout" className="focus:bg-white/10">Pool Play & Playoffs</SelectItem>
+                                        <SelectItem value="tiered_playoffs" className="focus:bg-white/10">Tiered Playoffs</SelectItem>
                                         <SelectItem value="single_elimination" className="focus:bg-white/10">Single Elimination Matrix</SelectItem>
                                         <SelectItem value="double_elimination" className="focus:bg-white/10">Double Elimination Topology</SelectItem>
                                       </SelectContent>
@@ -1161,6 +1234,43 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
                                       />
                                     </div>
                                   </>
+                                )}
+                                {activeConfig.tournamentType === 'tiered_playoffs' && (
+                                  <div className="min-w-0 sm:col-span-2 rounded-2xl border border-primary/30 bg-primary/5 p-4 sm:p-5 space-y-5" data-testid="tiered-playoffs-setup">
+                                    <div>
+                                      <p className="text-xs font-black uppercase tracking-widest text-white">Tiered Playoffs</p>
+                                      <p className="text-[10px] text-white/50 mt-1">All teams share preliminary standings, then split into independent seeded championship brackets.</p>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                                      <div className="space-y-2">
+                                        <Label className="text-[9px] font-black uppercase text-white/40">Division names, highest to lowest</Label>
+                                        <Input value={activeConfig.tieredDivisionNames} onChange={e => updateActiveConfig({ tieredDivisionNames: e.target.value })} placeholder="A Division, B Division" className="h-11 bg-white/5 border-white/15" />
+                                      </div>
+                                      <div className="space-y-2">
+                                        <Label className="text-[9px] font-black uppercase text-white/40">Division sizing</Label>
+                                        <Select value={activeConfig.tieredSizing} onValueChange={(value: 'automatic' | 'custom') => updateActiveConfig({ tieredSizing: value })}>
+                                          <SelectTrigger className="h-11 bg-white/5 border-white/15"><SelectValue /></SelectTrigger>
+                                          <SelectContent><SelectItem value="automatic">Automatic balanced sizes</SelectItem><SelectItem value="custom">Custom sizes</SelectItem></SelectContent>
+                                        </Select>
+                                      </div>
+                                      {activeConfig.tieredSizing === 'custom' && <div className="space-y-2 sm:col-span-2">
+                                        <Label className="text-[9px] font-black uppercase text-white/40">Division sizes in matching order</Label>
+                                        <Input value={activeConfig.tieredDivisionSizes} onChange={e => updateActiveConfig({ tieredDivisionSizes: e.target.value })} placeholder="6, 6, 6, 4" className="h-11 bg-white/5 border-white/15" />
+                                      </div>}
+                                      {(['tieredWinPoints', 'tieredTiePoints', 'tieredLossPoints'] as const).map((field, index) => <div key={field} className="space-y-2">
+                                        <Label className="text-[9px] font-black uppercase text-white/40">{['Win points', 'Tie points', 'Loss points'][index]}</Label>
+                                        <Input type="number" min={0} value={activeConfig[field]} onChange={e => updateActiveConfig({ [field]: e.target.value })} className="h-11 bg-white/5 border-white/15" />
+                                      </div>)}
+                                      <div className="space-y-2">
+                                        <Label className="text-[9px] font-black uppercase text-white/40">Max differential per game (optional)</Label>
+                                        <Input type="number" min={0} value={activeConfig.tieredMaximumDifferential} onChange={e => updateActiveConfig({ tieredMaximumDifferential: e.target.value })} className="h-11 bg-white/5 border-white/15" />
+                                      </div>
+                                      <div className="flex items-center gap-3 sm:col-span-2">
+                                        <Checkbox checked={activeConfig.tieredAvoidRematches} onCheckedChange={checked => updateActiveConfig({ tieredAvoidRematches: checked === true })} />
+                                        <Label className="text-[10px] font-black uppercase text-white/70">Avoid preliminary rematches in the first playoff round when possible</Label>
+                                      </div>
+                                    </div>
+                                  </div>
                                 )}
                               </div>
                             </div>
@@ -1262,7 +1372,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
                           </div>
 
                           {/* Card 3: Daily Operational Windows */}
-                          <div className="bg-[#0a0a0a] p-8 rounded-[2rem] border border-white/5 space-y-6 text-left text-white">
+                          <div data-testid="daily-operational-windows" className="min-w-0 bg-[#0a0a0a] p-5 sm:p-8 rounded-[2rem] border border-white/5 space-y-6 text-left text-white">
                             <div className="flex items-center justify-between">
                               <h4 className="font-black text-sm uppercase tracking-widest text-primary">Daily Operational Windows</h4>
                               {(!activeConfig.dailyWindows || activeConfig.dailyWindows.length === 0) && (
@@ -1280,8 +1390,8 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
                             {activeConfig.dailyWindows && activeConfig.dailyWindows.length > 0 ? (
                               <div className="grid gap-4">
                                 {activeConfig.dailyWindows.map((win, idx) => (
-                                  <div key={win.date} className="bg-white/5 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between border border-white/5 gap-4">
-                                    <div className="flex items-center gap-3">
+                                  <div key={win.date} data-testid="daily-window-row" className="min-w-0 bg-white/5 p-4 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between border border-white/5 gap-4">
+                                    <div className="flex min-w-0 items-center gap-3">
                                       <CalendarIcon className="h-4 w-4 text-white/30" />
                                       <span className="font-black uppercase tracking-widest text-xs">
                                         {(() => {
@@ -1294,7 +1404,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
                                         })()}
                                       </span>
                                     </div>
-                                    <div className="flex items-center gap-3">
+                                    <div data-testid="daily-window-controls" className="flex min-w-0 flex-wrap items-center gap-3">
                                       <Input 
                                         type="time" 
                                         value={win.startTime} 
@@ -1478,6 +1588,17 @@ function TournamentDetailView({
   const lifecycle = useTournamentLifecycle();
   const scheduleMutation = useTournamentScheduleMutation();
   const scoringMutation = useTournamentScoringMutation();
+  const tieredMutation = useTieredPlayoffsMutation();
+  const runTieredAction = async (action: 'preview-seeding' | 'apply-seed-override' | 'reset-seeding' | 'lock-seeding' | 'reopen-seeding' | 'generate-brackets' | 'publish-playoffs', payload: Record<string, unknown> = {}) => {
+    if (!activeTeam || isProcessing) return;
+    setIsProcessing(true);
+    try {
+      await tieredMutation({ action, teamId: activeTeam.id, eventId: event.id, expectedVersion: tournamentVersion(event), expectedScheduleVersion: tournamentScheduleVersion(event), payload });
+      toast({ title: 'Tiered Playoffs Updated', description: 'The requested playoff stage was completed and saved.' });
+    } catch (error) {
+      toast({ title: 'Tiered Playoffs Blocked', description: error instanceof Error ? error.message : 'Unable to update playoff state.', variant: 'destructive' });
+    } finally { setIsProcessing(false); }
+  };
   const resolveSelectedDispute = async (resolution: 'uphold' | 'void') => {
     if (!activeTeam || !selectedGame || !resolutionReason.trim()) return;
     try {
@@ -1526,7 +1647,7 @@ function TournamentDetailView({
   }, [allEvents, event]);
 
   // Local state for division-level logistics editor
-  const [logisticsType, setLogisticsType] = useState<'round_robin' | 'single_elimination' | 'double_elimination' | 'pool_play_knockout'>('round_robin');
+  const [logisticsType, setLogisticsType] = useState<'round_robin' | 'single_elimination' | 'double_elimination' | 'pool_play_knockout' | 'tiered_playoffs'>('round_robin');
   const [logisticsGameLength, setLogisticsGameLength] = useState('60');
   const [logisticsBreakLength, setLogisticsBreakLength] = useState('15');
   const [logisticsGamesPerTeam, setLogisticsGamesPerTeam] = useState('3');
@@ -1940,7 +2061,10 @@ function TournamentDetailView({
     );
   }, [event.tournamentGames]);
   
-  const standings = useMemo(() => calculateTournamentStandings(event.tournamentTeamsData || [], event.tournamentGames || []), [event]);
+  const standings = useMemo(() => event.tournamentType === 'tiered_playoffs' && event.tieredPlayoffs
+    ? calculateTieredStandings(event.tournamentTeamsData || [], (event.tournamentGames || []).filter(game => game.phase !== 'playoff'), event.tieredPlayoffs.standings)
+        .map(row => ({ ...row, points: row.tournamentPoints }))
+    : calculateTournamentStandings(event.tournamentTeamsData || [], event.tournamentGames || []), [event]);
 
   // MISS-4: Per-pool standings for pool_play_knockout — computed per pool index
   const poolStandings = useMemo(() => {
@@ -2320,6 +2444,41 @@ function TournamentDetailView({
                     <ScorekeeperCodeEditor event={event} />
                   </div>
                 </div>
+
+                {event.tournamentType === 'tiered_playoffs' && event.tieredPlayoffs && (
+                  <div className="bg-[#050505] rounded-[3rem] border border-primary/30 overflow-hidden" data-testid="tiered-playoffs-operations">
+                    <div className="h-1 bg-primary" />
+                    <div className="p-6 sm:p-10 space-y-6">
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+                        <div>
+                          <p className="text-[10px] font-black uppercase tracking-widest text-primary">Tiered Playoffs Control</p>
+                          <h3 className="text-2xl font-black uppercase text-white">Seeding & Division Brackets</h3>
+                          <p className="text-xs text-white/50 mt-2">Status: {event.tieredPlayoffs.seeding.status.replace('_', ' ')} · Playoffs: {event.tieredPlayoffs.playoffs.status.replace('_', ' ')}</p>
+                        </div>
+                        <div className="flex flex-wrap gap-2">
+                          {event.tieredPlayoffs.seeding.status === 'pending' && <Button disabled={isProcessing} onClick={() => runTieredAction('preview-seeding')}>Review Seeding</Button>}
+                          {event.tieredPlayoffs.seeding.status === 'review' && <>
+                            <Button variant="outline" disabled={isProcessing} onClick={() => runTieredAction('reset-seeding')}>Reset Overrides</Button>
+                            <Button disabled={isProcessing} onClick={() => runTieredAction('lock-seeding')}>Lock Seeding</Button>
+                          </>}
+                          {event.tieredPlayoffs.seeding.status === 'stale' && <Button disabled={isProcessing} onClick={() => runTieredAction('reopen-seeding')}>Recalculate Safely</Button>}
+                          {event.tieredPlayoffs.seeding.status === 'locked' && event.tieredPlayoffs.playoffs.status === 'pending' && <Button disabled={isProcessing} onClick={() => runTieredAction('generate-brackets')}>Generate Division Brackets</Button>}
+                          {event.tieredPlayoffs.playoffs.status === 'ready' && <Button disabled={isProcessing} onClick={() => runTieredAction('publish-playoffs')}>Publish Playoffs</Button>}
+                        </div>
+                      </div>
+                      {event.tieredPlayoffs.seeding.status === 'stale' && <div className="rounded-2xl border border-amber-400/40 bg-amber-400/10 p-4 text-xs font-bold text-amber-200">Preliminary results changed after seeding was locked. Existing brackets remain untouched. Recalculation is allowed only before any playoff result exists.</div>}
+                      {event.tieredPlayoffs.seeding.approved.length > 0 && <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {[...event.tieredPlayoffs.seeding.approved].sort((a, b) => a.approvedOverallSeed - b.approvedOverallSeed).map(placement => <div key={placement.teamId} className="rounded-2xl border border-white/10 bg-white/5 p-4 flex items-center justify-between gap-4">
+                          <div><p className="text-sm font-black text-white">#{placement.approvedOverallSeed} {placement.teamName}</p><p className="text-[10px] uppercase text-white/50">{placement.divisionName} · Seed {placement.divisionSeed}{placement.overriddenBy ? ' · Manual override' : ''}</p></div>
+                          {event.tieredPlayoffs?.seeding.status === 'review' && <Select value={String(placement.approvedOverallSeed)} onValueChange={value => runTieredAction('apply-seed-override', { teamId: placement.teamId, targetOverallSeed: Number(value) })}>
+                            <SelectTrigger className="w-24 bg-black border-white/20 text-white"><SelectValue /></SelectTrigger>
+                            <SelectContent>{event.tieredPlayoffs.seeding.approved.map((_, index) => <SelectItem key={index + 1} value={String(index + 1)}>Seed {index + 1}</SelectItem>)}</SelectContent>
+                          </Select>}
+                        </div>)}
+                      </div>}
+                    </div>
+                  </div>
+                )}
 
                 {/* ── DARK SYSTEM: Bracket Telemetry ── */}
                 <div className="bg-[#050505] rounded-[3rem] border border-white/10 overflow-hidden">
@@ -2813,7 +2972,17 @@ function TournamentDetailView({
                 )}
              </TabsContent>
              <TabsContent value="bracket" className="mt-0">
-               {(event.tournamentGames || []).length > 0 ? (
+               {event.tournamentType === 'tiered_playoffs' && event.tieredPlayoffs ? (
+                 (event.tournamentGames || []).some(game => game.phase === 'playoff') ? <div className="space-y-10">
+                   {event.tieredPlayoffs.divisions.definitions.map(division => {
+                     const games = (event.tournamentGames || []).filter(game => game.phase === 'playoff' && game.playoffDivisionId === division.id);
+                     return games.length ? <Card key={division.id} className="rounded-[2.5rem] overflow-hidden border-none shadow-xl">
+                       <CardHeader><CardTitle className="uppercase">{division.name}</CardTitle><CardDescription>Independent single-elimination championship bracket</CardDescription></CardHeader>
+                       <CardContent className="overflow-x-auto"><TournamentBracket games={games} onGameClick={handleGameClick} tournamentName={`${event.title} · ${division.name}`} /></CardContent>
+                     </Card> : null;
+                   })}
+                 </div> : <div className="text-center py-20 border-4 border-dashed rounded-[3rem] bg-muted/5"><h3 className="text-2xl font-black uppercase">Playoff Seeding Pending</h3><p className="text-xs text-muted-foreground mt-3">Complete preliminary results, review placement, then generate division brackets.</p></div>
+               ) : (event.tournamentGames || []).length > 0 ? (
                  <TournamentBracket 
                    games={event.tournamentGames || []} 
                    onGameClick={handleGameClick} 
