@@ -12,6 +12,15 @@ export async function selectScheduleTeam(page, { teamId, url }) {
   await page.goto(url);
 }
 
+export function operationScenarioTimeoutMs(runBrowser, scenarioId) {
+  if (!runBrowser) return 60_000;
+  if (scenarioId === 'practice-film-upload-coach-marks-watch' ||
+      scenarioId === 'files-library-crud-download' ||
+      scenarioId === 'files-avatar-branding-player-media-paths') return 120_000;
+  if (scenarioId === 'chat-channel-message-unread') return 90_000;
+  return 60_000;
+}
+
 export async function runOperationScenarioSequence(ids, { execute, finalize, onError, failFast, timeoutMs = 60_000 }) {
   const failures = [];
   for (const id of ids) {
