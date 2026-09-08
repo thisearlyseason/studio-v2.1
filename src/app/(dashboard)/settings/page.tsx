@@ -332,6 +332,7 @@ export default function SettingsPage() {
 
   const handleLogout = async () => {
     const isDemoLogout = auth.currentUser?.isAnonymous === true || user?.isDemo === true;
+    const authenticatedUserId = auth.currentUser?.uid;
     let logoutCompleted = false;
     let demoCleanupRejectedBeforeMutation = false;
     if (isDemoLogout) {
@@ -339,8 +340,10 @@ export default function SettingsPage() {
       requireDemoExitRetry();
     }
     try {
-      if (user?.id && !isDemoLogout) {
-        await deletePushDevice(user.id);
+      if (authenticatedUserId && !isDemoLogout) {
+        await deletePushDevice(authenticatedUserId).catch(error => {
+          console.warn('[Logout] Notification cleanup was unavailable; continuing sign-out.', error);
+        });
       }
       if (isDemoLogout) {
         const response = await fetch('/api/demo/exit', { method: 'POST' });

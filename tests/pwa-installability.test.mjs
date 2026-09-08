@@ -49,22 +49,26 @@ test('worker never caches authenticated dashboard HTML', async () => {
   assert.doesNotMatch(worker, /messaging\.onBackgroundMessage/);
 });
 
-test('manifest makes every Android launcher candidate explicitly maskable', async () => {
+test('manifest provides dedicated full-frame and Android maskable launcher candidates', async () => {
   const manifest = JSON.parse(await source('../public/manifest.json'));
-  const regular192 = manifest.icons.find(icon => icon.sizes === '192x192');
-  const regular512 = manifest.icons.find(icon => icon.sizes === '512x512');
+  const regular192 = manifest.icons.find(icon => icon.sizes === '192x192' && icon.purpose === 'any');
+  const regular512 = manifest.icons.find(icon => icon.sizes === '512x512' && icon.purpose === 'any');
+  const maskable192 = manifest.icons.find(icon => icon.sizes === '192x192' && icon.purpose === 'maskable');
+  const maskable512 = manifest.icons.find(icon => icon.sizes === '512x512' && icon.purpose === 'maskable');
 
   assert.ok(regular192);
   assert.ok(regular512);
-  assert.equal(manifest.icons.length, 2);
-  assert.equal(regular192.purpose, 'any maskable');
-  assert.equal(regular512.purpose, 'any maskable');
+  assert.ok(maskable192);
+  assert.ok(maskable512);
+  assert.equal(manifest.icons.length, 4);
+  assert.notEqual(maskable192.src, regular192.src);
+  assert.notEqual(maskable512.src, regular512.src);
 
   const root = new URL('../public/', import.meta.url);
   const [actual192, expected192, maskableMetadata] = await Promise.all([
     sharp(fileURLToPath(new URL(regular192.src.slice(1), root))).removeAlpha().raw().toBuffer(),
     sharp(fileURLToPath(new URL(regular512.src.slice(1), root))).resize(192, 192).removeAlpha().raw().toBuffer(),
-    sharp(fileURLToPath(new URL(regular512.src.slice(1), root))).metadata(),
+    sharp(fileURLToPath(new URL(maskable512.src.slice(1), root))).metadata(),
   ]);
   const meanDifference = actual192.reduce(
     (sum, value, index) => sum + Math.abs(value - expected192[index]),

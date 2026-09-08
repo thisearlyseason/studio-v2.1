@@ -629,6 +629,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const handleLogout = async () => {
     const isDemoLogout = hasDemoBanner;
+    const authenticatedUserId = auth.currentUser?.uid;
     let logoutCompleted = false;
     let demoCleanupRejectedBeforeMutation = false;
     if (isDemoLogout) {
@@ -638,8 +639,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     try {
       // Anonymous demo accounts cannot own notification endpoints. The device
       // route intentionally rejects them, so let demo cleanup handle logout.
-      if (user?.id && !isDemoLogout) {
-        await deletePushDevice(user.id);
+      if (authenticatedUserId && !isDemoLogout) {
+        await deletePushDevice(authenticatedUserId).catch(error => {
+          console.warn('[Logout] Notification cleanup was unavailable; continuing sign-out.', error);
+        });
       }
       if (isDemoLogout) {
         const response = await fetch('/api/demo/exit', { method: 'POST' });
