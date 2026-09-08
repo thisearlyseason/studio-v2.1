@@ -47,6 +47,7 @@ test('anonymous demos expose edit but not create, clone, archive, or delete', ()
     clone: false,
     archive: false,
     delete: false,
+    readPrivate: false,
   });
   assert.deepEqual(leagueLifecycleClientPolicy({ isDemo: false, canManage: true }), {
     create: true,
@@ -54,6 +55,7 @@ test('anonymous demos expose edit but not create, clone, archive, or delete', ()
     clone: true,
     archive: true,
     delete: true,
+    readPrivate: true,
   });
   assert.deepEqual(leagueLifecycleClientPolicy({ isDemo: false, canManage: false }), {
     create: false,
@@ -61,6 +63,7 @@ test('anonymous demos expose edit but not create, clone, archive, or delete', ()
     clone: false,
     archive: false,
     delete: false,
+    readPrivate: false,
   });
 });
 

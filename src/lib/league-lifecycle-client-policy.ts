@@ -4,6 +4,7 @@ export type LeagueLifecycleClientPolicy = {
   clone: boolean;
   archive: boolean;
   delete: boolean;
+  readPrivate: boolean;
 };
 
 export function leagueLifecycleClientPolicy({
@@ -19,6 +20,7 @@ export function leagueLifecycleClientPolicy({
     clone: canManage && !isDemo,
     archive: canManage && !isDemo,
     delete: canManage && !isDemo,
+    readPrivate: canManage && !isDemo,
   };
 }
 
