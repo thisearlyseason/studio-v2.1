@@ -82,7 +82,7 @@ import { WeatherPulse } from '@/components/WeatherPulse';
 import { useCollection, useMemoFirebase } from '@/firebase';
 import { collection, limit, orderBy, query } from 'firebase/firestore';
 import { rsvpParticipantId } from '@/lib/team-rsvp-policy';
-import { calendarEventDate } from '@/lib/calendar-event-date';
+import { calendarDateLabel, calendarEventDate, calendarEventIsUpcoming } from '@/lib/calendar-event-date';
 
 const EVENT_TYPE_COLORS: Record<EventType, string> = {
   game: 'bg-primary border-primary text-white',
@@ -1234,7 +1234,9 @@ export default function MasterCalendarPage() {
             );
             if (!isMyGame) return;
 
-            const gameDate = startOfDay(new Date(game.date));
+            const parsedGameDate = calendarEventDate(game.date);
+            if (!parsedGameDate) return;
+            const gameDate = startOfDay(parsedGameDate);
             if (isSameDay(gameDate, dayStart)) {
               if (!map[dayKey]) map[dayKey] = [];
               const matchId = game.id || `${event.id}_match_${idx}`;
@@ -1285,8 +1287,8 @@ export default function MasterCalendarPage() {
   const nextTournament = useMemo(() => {
     return allEvents
       .filter(e => e.isTournament || e.eventType === 'game')
-      .filter(e => new Date(e.date) >= startOfDay(new Date()))
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())[0];
+      .filter(e => calendarEventIsUpcoming(e))
+      .sort((a, b) => (calendarEventDate(a.date)?.getTime() || 0) - (calendarEventDate(b.date)?.getTime() || 0))[0];
   }, [allEvents]);
 
   return (
@@ -1524,12 +1526,15 @@ export default function MasterCalendarPage() {
                     const end = event.endDate || event.date;
                     return dayKey >= start && dayKey <= end;
                   }))
-                  .sort(([a], [b]) => a.localeCompare(b)).map(([dayKey, dayEvents]) => (
+                  .sort(([a], [b]) => a.localeCompare(b)).map(([dayKey, dayEvents]) => {
+                    const label = calendarDateLabel(dayKey);
+                    if (!label) return null;
+                    return (
                   <div key={dayKey} className="space-y-4">
                     <div className="flex items-center gap-4">
                       <div className="text-center w-12 shrink-0">
-                        <p className="text-[10px] font-black uppercase text-primary leading-none">{format(new Date(dayKey), 'MMM')}</p>
-                        <p className="text-3xl font-black tracking-tighter text-foreground">{format(new Date(dayKey), 'dd')}</p>
+                        <p className="text-[10px] font-black uppercase text-primary leading-none">{label.month}</p>
+                        <p className="text-3xl font-black tracking-tighter text-foreground">{label.day}</p>
                       </div>
                       <div className="h-px bg-muted flex-1" />
                     </div>
@@ -1537,7 +1542,8 @@ export default function MasterCalendarPage() {
                       {dayEvents.map(event => <EventItem key={event.id} event={event} teams={teams} onClick={() => setActiveDetailedEventId(event.id)} />)}
                     </div>
                   </div>
-                ))}
+                    );
+                  })}
               </div>
             </ScrollArea>
           )}
