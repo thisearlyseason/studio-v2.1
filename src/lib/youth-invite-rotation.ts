@@ -34,4 +34,9 @@ export function youthInviteRollbackPlan({
   };
 }
 
+export function canRedeemYouthInvite(player: Record<string, unknown>, token: string): boolean {
+  return player.inviteToken === token && player.hasLogin !== true &&
+    !(typeof player.userId === 'string' && player.userId);
+}
+
 export { INVITE_PLAYER_FIELDS };

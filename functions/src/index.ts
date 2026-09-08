@@ -474,16 +474,29 @@ export const purgeExpiredDeletionRequests = onSchedule({
   }
 
   const requestedUids = new Set(requests.docs.map(request => request.id));
-  const userMapDocuments = await loadUserMapDocumentsByUid(
+  const userMapScan = await loadUserMapDocumentsByUid(
     USER_MAP_TARGETS,
     requestedUids,
-    async target => (await db.collectionGroup(target.collectionGroup).get()).docs,
+    async (target, cursor) => {
+      let query: admin.firestore.Query = db.collectionGroup(target.collectionGroup)
+        .orderBy(admin.firestore.FieldPath.documentId())
+        .limit(500);
+      if (cursor) query = query.startAfter(cursor as admin.firestore.QueryDocumentSnapshot);
+      const snapshot = await query.get();
+      return {
+        documents: snapshot.docs,
+        nextCursor: snapshot.size === 500 ? snapshot.docs[snapshot.docs.length - 1] : undefined,
+      };
+    },
   );
 
   let purged = 0;
   for (const request of requests.docs) {
     const uid = request.id;
     try {
+      if (userMapScan.failedTargets.length > 0) {
+        throw new Error(`dynamic-map scan failed for ${userMapScan.failedTargets.join(', ')}`);
+      }
       const [user, ownedTeams, ownedLeagues] = await Promise.all([
         db.collection('users').doc(uid).get(),
         db.collection('teams').where('ownerUserId', '==', uid).limit(1).get(),
@@ -550,7 +563,7 @@ export const purgeExpiredDeletionRequests = onSchedule({
 
       for (const target of USER_MAP_TARGETS) {
         const userEntry = new admin.firestore.FieldPath(target.mapField, uid);
-        const matchingDocuments = userMapDocuments
+        const matchingDocuments = userMapScan.documentsByTarget
           .get(`${target.collectionGroup}:${target.mapField}`)
           ?.get(uid) || [];
         await Promise.all(matchingDocuments.map(async (document) => {

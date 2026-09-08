@@ -13,19 +13,41 @@ const {
 
 test('embedded user-map collections are enumerated once per purge batch, not once per user', async () => {
   const calls = [];
-  const documents = [
+  const firstPage = [
     { id: 'both', data: () => ({ signups: { user_a: {}, user_b: {} } }) },
+  ];
+  const secondPage = [
     { id: 'other', data: () => ({ signups: { user_c: {} } }) },
   ];
-  const indexed = await loadUserMapDocumentsByUid(
+  const result = await loadUserMapDocumentsByUid(
     [{ collectionGroup: 'volunteers', mapField: 'signups' }],
     new Set(['user_a', 'user_b']),
-    async target => { calls.push(target.collectionGroup); return documents; },
+    async (target, cursor) => {
+      calls.push(`${target.collectionGroup}:${cursor || 'start'}`);
+      return cursor ? { documents: secondPage } : { documents: firstPage, nextCursor: 'page-2' };
+    },
   );
 
-  assert.deepEqual(calls, ['volunteers']);
-  assert.deepEqual(indexed.get('volunteers:signups')?.get('user_a')?.map(doc => doc.id), ['both']);
-  assert.deepEqual(indexed.get('volunteers:signups')?.get('user_b')?.map(doc => doc.id), ['both']);
+  assert.deepEqual(calls, ['volunteers:start', 'volunteers:page-2']);
+  assert.deepEqual(result.failedTargets, []);
+  assert.deepEqual(result.documentsByTarget.get('volunteers:signups')?.get('user_a')?.map(doc => doc.id), ['both']);
+  assert.deepEqual(result.documentsByTarget.get('volunteers:signups')?.get('user_b')?.map(doc => doc.id), ['both']);
+});
+
+test('a failed dynamic-map scan is surfaced without discarding other target results', async () => {
+  const result = await loadUserMapDocumentsByUid(
+    [
+      { collectionGroup: 'volunteers', mapField: 'signups' },
+      { collectionGroup: 'events', mapField: 'userRsvps' },
+    ],
+    new Set(['user_a']),
+    async target => {
+      if (target.collectionGroup === 'events') throw new Error('index unavailable');
+      return { documents: [{ data: () => ({ signups: { user_a: {} } }) }] };
+    },
+  );
+  assert.deepEqual(result.failedTargets, ['events:userRsvps']);
+  assert.equal(result.documentsByTarget.get('volunteers:signups')?.get('user_a')?.length, 1);
 });
 
 test('embedded user-map cleanup selects only documents containing the exact UID key', () => {

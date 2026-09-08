@@ -24,23 +24,43 @@ type UserMapDocument = {
 export async function loadUserMapDocumentsByUid<T extends UserMapDocument>(
   targets: UserMapTarget[],
   userIds: Set<string>,
-  load: (target: UserMapTarget) => Promise<T[]>,
-): Promise<Map<string, Map<string, T[]>>> {
-  const result = new Map<string, Map<string, T[]>>();
+  load: (
+    target: UserMapTarget,
+    cursor?: unknown,
+  ) => Promise<{ documents: T[]; nextCursor?: unknown }>,
+): Promise<{
+  documentsByTarget: Map<string, Map<string, T[]>>;
+  failedTargets: string[];
+}> {
+  const documentsByTarget = new Map<string, Map<string, T[]>>();
+  const failedTargets: string[] = [];
   await Promise.all(targets.map(async target => {
+    const key = `${target.collectionGroup}:${target.mapField}`;
     const byUid = new Map<string, T[]>();
-    const documents = await load(target);
-    for (const document of documents) {
-      const candidate = document.data()?.[target.mapField];
-      if (candidate === null || typeof candidate !== 'object') continue;
-      for (const uid of userIds) {
-        if (!Object.prototype.hasOwnProperty.call(candidate, uid)) continue;
-        byUid.set(uid, [...(byUid.get(uid) || []), document]);
-      }
+    try {
+      let cursor: unknown;
+      do {
+        const page = await load(target, cursor);
+        for (const document of page.documents) {
+          const candidate = document.data()?.[target.mapField];
+          if (candidate === null || typeof candidate !== 'object') continue;
+          for (const uid of userIds) {
+            if (!Object.prototype.hasOwnProperty.call(candidate, uid)) continue;
+            byUid.set(uid, [...(byUid.get(uid) || []), document]);
+          }
+        }
+        cursor = page.nextCursor;
+      } while (cursor !== undefined);
+    } catch {
+      failedTargets.push(key);
+    } finally {
+      documentsByTarget.set(key, byUid);
     }
-    result.set(`${target.collectionGroup}:${target.mapField}`, byUid);
   }));
-  return result;
+  return {
+    documentsByTarget,
+    failedTargets: failedTargets.sort(),
+  };
 }
 
 /**

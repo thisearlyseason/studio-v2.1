@@ -7,6 +7,7 @@ import { youthInvitationEmail } from '@/lib/email-templates';
 import { getResend } from '@/lib/server-resend-client';
 import {
   captureYouthInvitePlayerState,
+  canRedeemYouthInvite,
   INVITE_PLAYER_FIELDS,
   youthInviteRollbackPlan,
   type YouthInvitePlayerState,
@@ -237,40 +238,50 @@ export async function POST(req: NextRequest) {
     const sentAt = new Date().toISOString();
     const expiresAt = new Date(Date.now() + INVITE_LIFETIME_MS).toISOString();
     const inviteRef = adminDb.collection('invites').doc(token);
-    const previousPlayer = captureYouthInvitePlayerState(player);
-    const previousToken = typeof player.inviteToken === 'string' && TOKEN_PATTERN.test(player.inviteToken)
-      ? player.inviteToken
-      : null;
-    const previousInviteRef = previousToken ? adminDb.collection('invites').doc(previousToken) : null;
-    const previousInviteSnapshot = previousInviteRef ? await previousInviteRef.get() : null;
-    const previousInviteData = previousInviteSnapshot?.data() || null;
-    const previousInvite = previousInviteSnapshot?.exists && previousInviteData && inviteIsUsable(previousInviteData)
-      ? previousInviteData
-      : null;
-    const batch = adminDb.batch();
-    if (previousInviteRef) {
-      batch.delete(previousInviteRef);
-    }
-    batch.create(inviteRef, {
-      token,
-      childId,
-      childFirstName: typeof player.firstName === 'string' ? player.firstName : 'Athlete',
-      childLastName: typeof player.lastName === 'string' ? player.lastName : '',
-      parentId: auth.uid,
-      createdBy: auth.uid,
-      email,
-      authorizedMemberships,
-      expiresAt,
-      used: false,
-      createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    const previousState = await adminDb.runTransaction(async transaction => {
+      const freshPlayerSnapshot = await transaction.get(playerRef);
+      const freshPlayer = freshPlayerSnapshot.data() || {};
+      if (
+        !freshPlayerSnapshot.exists ||
+        (auth.role !== 'superadmin' && freshPlayer.parentId !== auth.uid) ||
+        freshPlayer.hasLogin === true ||
+        (typeof freshPlayer.userId === 'string' && freshPlayer.userId)
+      ) {
+        throw new RequestBodyError('This child is no longer eligible for an invitation.', 409);
+      }
+      const previousPlayer = captureYouthInvitePlayerState(freshPlayer);
+      const previousToken = typeof freshPlayer.inviteToken === 'string' && TOKEN_PATTERN.test(freshPlayer.inviteToken)
+        ? freshPlayer.inviteToken
+        : null;
+      const previousInviteRef = previousToken ? adminDb.collection('invites').doc(previousToken) : null;
+      const previousInviteSnapshot = previousInviteRef ? await transaction.get(previousInviteRef) : null;
+      const previousInviteData = previousInviteSnapshot?.data() || null;
+      const previousInvite = previousInviteSnapshot?.exists && previousInviteData && inviteIsUsable(previousInviteData)
+        ? previousInviteData
+        : null;
+
+      if (previousInviteRef) transaction.delete(previousInviteRef);
+      transaction.create(inviteRef, {
+        token,
+        childId,
+        childFirstName: typeof freshPlayer.firstName === 'string' ? freshPlayer.firstName : 'Athlete',
+        childLastName: typeof freshPlayer.lastName === 'string' ? freshPlayer.lastName : '',
+        parentId: auth.uid,
+        createdBy: auth.uid,
+        email,
+        authorizedMemberships,
+        expiresAt,
+        used: false,
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+      });
+      transaction.update(playerRef, {
+        pendingInviteEmail: email,
+        inviteToken: token,
+        inviteSentAt: sentAt,
+        inviteExpiresAt: expiresAt,
+      });
+      return { previousInviteRef, previousInvite, previousPlayer };
     });
-    batch.update(playerRef, {
-      pendingInviteEmail: email,
-      inviteToken: token,
-      inviteSentAt: sentAt,
-      inviteExpiresAt: expiresAt,
-    });
-    await batch.commit();
 
     const childName = [player.firstName, player.lastName]
       .filter((value): value is string => typeof value === 'string' && Boolean(value.trim()))
@@ -296,9 +307,9 @@ export async function POST(req: NextRequest) {
         inviteRef,
         playerRef,
         token,
-        previousInviteRef,
-        previousInvite,
-        previousPlayer,
+        previousState.previousInviteRef,
+        previousState.previousInvite,
+        previousState.previousPlayer,
       );
       console.error('[invites/youth POST] Email delivery failed:', deliveryError);
       throw new RequestBodyError('Invitation email delivery failed.', 502);
@@ -368,6 +379,7 @@ export async function PUT(req: NextRequest) {
         freshInvite.childId !== invite.childId ||
         freshInvite.email !== invite.email ||
         !playerSnapshot.exists ||
+        !canRedeemYouthInvite(playerData, token) ||
         playerData.parentId !== freshInvite.parentId ||
         authorizedMemberships === null
       ) {

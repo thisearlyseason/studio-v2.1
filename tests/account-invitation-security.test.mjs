@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
-import { youthInviteRollbackPlan } from '../src/lib/youth-invite-rotation.ts';
+import { canRedeemYouthInvite, youthInviteRollbackPlan } from '../src/lib/youth-invite-rotation.ts';
 
 test('league invite redemption rejects anonymous and unverified accounts', async () => {
   const source = await readFile(new URL('../functions/src/index.ts', import.meta.url), 'utf8');
@@ -73,4 +73,15 @@ test('failed replacement delivery restores the prior valid youth invitation', ()
   assert.equal(youthInviteRollbackPlan({
     currentToken: 'newer', replacementToken: 'new', previousInvite, previousPlayer,
   }), null, 'a later rotation must not be overwritten');
+});
+
+test('only the current invite can redeem a player that still has no login', async () => {
+  assert.equal(canRedeemYouthInvite({ inviteToken: 'current', hasLogin: false }, 'current'), true);
+  assert.equal(canRedeemYouthInvite({ inviteToken: 'newer', hasLogin: false }, 'current'), false);
+  assert.equal(canRedeemYouthInvite({ inviteToken: 'current', hasLogin: true }, 'current'), false);
+
+  const route = await readFile(new URL('../src/app/api/invites/youth/route.ts', import.meta.url), 'utf8');
+  const createSection = route.slice(route.indexOf('export async function POST'), route.indexOf('export async function PUT'));
+  assert.match(createSection, /adminDb\.runTransaction/);
+  assert.match(route.slice(route.indexOf('export async function PUT')), /canRedeemYouthInvite\(playerData, token\)/);
 });
