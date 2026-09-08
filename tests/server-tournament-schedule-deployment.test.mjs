@@ -2,6 +2,8 @@ import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
 import { generateTournamentSchedule } from '../src/lib/scheduler-utils.ts';
+import { buildTieredPlayoffsDraftConfig } from '../src/lib/tiered-playoffs/config.ts';
+import { generateTieredPreliminarySchedule } from '../src/lib/tiered-playoffs/schedule.ts';
 import {
   executeCompensatedScheduleMutation,
   isAuthorizedTeamStaffFromRecords,
@@ -65,6 +67,44 @@ test('server preparation accepts every supported Tournament topology', () => {
     const prepared = prepareTournamentScheduleForDeployment(event(overrides), schedule(overrides));
     assert.ok(prepared.length > 0, tournamentType);
   }
+});
+
+test('Tiered preliminary deployment does not require playoff divisions', () => {
+  const dailyWindows = [{ date: '2026-09-01', startTime: '08:00', endTime: '20:00' }];
+  const tieredPlayoffs = buildTieredPlayoffsDraftConfig({
+    gamesPerTeam: 2,
+    gameDurationMinutes: 30,
+    transitionMinutes: 5,
+    minimumRestMinutes: 5,
+    maximumGamesPerTeamPerDay: 2,
+    points: { win: 3, tie: 1, loss: 0 },
+    rankingRules: ['tournament_points', 'head_to_head', 'differential'],
+    finalResolution: 'manual',
+    maximumDifferentialPerGame: null,
+    avoidPreliminaryRematches: true,
+  });
+  const generated = generateTieredPreliminarySchedule({
+    teams,
+    fields,
+    dailyWindows,
+    gamesPerTeam: 2,
+    gameDurationMinutes: 30,
+    transitionMinutes: 5,
+    minimumRestMinutes: 5,
+    maximumGamesPerTeamPerDay: 2,
+  }).games;
+  const prepared = prepareTournamentScheduleForDeployment(event({
+    tournamentType: 'tiered_playoffs',
+    tieredPlayoffs,
+    gamesPerTeam: 2,
+    gameLength: 30,
+    breakLength: 5,
+    maxDailyGamesPerTeam: 2,
+    dailyWindows,
+  }), generated);
+  assert.equal(tieredPlayoffs.divisions.definitions.length, 0);
+  assert.equal(prepared.length, 8);
+  assert.ok(prepared.every(game => game.phase === 'preliminary'));
 });
 
 test('tournament staff authorization uses only direct server-authoritative staff membership', () => {
