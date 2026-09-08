@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { signOut } from 'firebase/auth';
 import { Loader2, MailCheck } from 'lucide-react';
@@ -10,6 +10,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuth, useUser } from '@/firebase';
 import { toast } from '@/hooks/use-toast';
 import { clearBrowserSession, establishBrowserSession, sendBrandedVerificationEmail } from '@/lib/client-auth';
+import { completePendingSignupEnrollment } from '@/lib/pending-signup-enrollment';
 
 const RESEND_COOLDOWN_MS = 60_000;
 
@@ -19,25 +20,35 @@ export default function VerifyEmailPage() {
   const router = useRouter();
   const [checking, setChecking] = useState(false);
   const [cooldownUntil, setCooldownUntil] = useState(0);
+  const completingRef = useRef(false);
+
+  const finishVerifiedSession = useCallback(async (verifiedUser: NonNullable<typeof user>) => {
+    if (completingRef.current) return;
+    completingRef.current = true;
+    try {
+      await establishBrowserSession(verifiedUser);
+      const enrollment = await completePendingSignupEnrollment(verifiedUser);
+      const next = enrollment.pendingEnrollment
+        ? '/dashboard'
+        : sessionStorage.getItem('squad_post_verify_path') || '/dashboard';
+      sessionStorage.removeItem('squad_post_verify_path');
+      window.location.replace(next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard');
+    } catch (error) {
+      completingRef.current = false;
+      toast({
+        title: 'Account Setup Needs Attention',
+        description: error instanceof Error ? error.message : 'Your verified account could not be completed. Please try again.',
+        variant: 'destructive',
+      });
+    }
+  }, []);
 
   useEffect(() => {
     if (!isUserLoading && !user) router.replace('/login');
     if (user?.emailVerified) {
-      void establishBrowserSession(user)
-        .then(() => {
-          const next = sessionStorage.getItem('squad_post_verify_path') || '/dashboard';
-          sessionStorage.removeItem('squad_post_verify_path');
-          router.replace(next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard');
-        })
-        .catch(() => {
-          toast({
-            title: 'Session Setup Failed',
-            description: 'Your verified login could not be secured. Please try again.',
-            variant: 'destructive',
-          });
-        });
+      void finishVerifiedSession(user);
     }
-  }, [isUserLoading, router, user]);
+  }, [finishVerifiedSession, isUserLoading, router, user]);
 
   const checkVerification = async () => {
     if (!auth.currentUser) return;
@@ -49,10 +60,7 @@ export default function VerifyEmailPage() {
         toast({ title: 'Not Verified Yet', description: 'Open the link in your email, then try again.' });
         return;
       }
-      await establishBrowserSession(auth.currentUser);
-      const next = sessionStorage.getItem('squad_post_verify_path') || '/dashboard';
-      sessionStorage.removeItem('squad_post_verify_path');
-      window.location.replace(next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard');
+      await finishVerifiedSession(auth.currentUser);
     } finally {
       setChecking(false);
     }

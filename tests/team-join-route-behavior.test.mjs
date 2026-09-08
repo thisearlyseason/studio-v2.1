@@ -26,7 +26,7 @@ async function loadRoute() {
     '@/lib/server-team-access': `export async function findActiveTeamMember() { return null; }`,
     '@/lib/public-portal-data': `export function permitsLegacyOrPaidPortals() { return globalThis.__TASK4_JOIN_PUBLIC_PORTAL_ENTITLED ?? true; }`,
     'firebase-admin/firestore': `
-      export const FieldValue = { arrayUnion: (...values) => ({ __arrayUnion: values }), serverTimestamp: () => 'server-time' };
+      export const FieldValue = { arrayUnion: (...values) => ({ __arrayUnion: values }), delete: () => ({ __delete: true }), serverTimestamp: () => 'server-time' };
       export const Timestamp = { fromMillis: value => ({ toMillis: () => value, toDate: () => new Date(value) }) };
     `,
   };
@@ -47,10 +47,12 @@ function memoryDb(initial) {
     id: ref.id, ref, exists: records.has(ref.path),
     data: () => structuredClone(records.get(ref.path)),
   });
-  const applyMerge = (prior, value) => Object.fromEntries(Object.entries({ ...(prior || {}), ...value }).map(([key, item]) => [
-    key,
-    item?.__arrayUnion ? [...new Set([...(prior?.[key] || []), ...item.__arrayUnion])] : item,
-  ]));
+  const applyMerge = (prior, value) => Object.fromEntries(Object.entries({ ...(prior || {}), ...value })
+    .filter(([, item]) => !item?.__delete)
+    .map(([key, item]) => [
+      key,
+      item?.__arrayUnion ? [...new Set([...(prior?.[key] || []), ...item.__arrayUnion])] : item,
+    ]));
   class DocRef {
     constructor(path) { this.path = path; this.id = path.split('/').at(-1); }
     collection(name) { return new CollectionRef(`${this.path}/${name}`); }
@@ -182,6 +184,53 @@ test('adult self enrollment resolves the persisted player identity from the auth
   assert.deepEqual(records.get('players/p_existing-adult').joinedTeamIds, ['team-old', 'team-a']);
   assert.equal(records.has('players/p_adult-1'), false);
   assert.equal(records.get('teams/team-a/members/adult-1').playerId, 'p_existing-adult');
+});
+
+test('verified adult signup consumes its pending squad code and clears it atomically', async () => {
+  const { db, records } = memoryDb({
+    'teams/team-a': { id: 'team-a', name: 'Team A', code: 'TEAMCODE1', isActive: true },
+    'users/adult-1': {
+      id: 'adult-1', role: 'adult_player', fullName: 'Adult One', pendingTeamJoinCode: 'TEAMCODE1',
+    },
+    'players/p_adult-1': {
+      id: 'p_adult-1', firstName: 'Adult', lastName: 'One', userId: 'adult-1', joinedTeamIds: [],
+    },
+  });
+  globalThis.__TASK4_JOIN_DB = db;
+  globalThis.__TASK4_JOIN_AUTH = { uid: 'adult-1', email: 'adult@example.test', emailVerified: true, role: 'adult_player' };
+  const route = await loadRoute();
+  const response = await route.POST(request('/api/teams/join', {
+    usePendingSignupCode: true,
+    enrollmentIntent: 'player',
+  }));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.pendingEnrollment, true);
+  assert.equal(body.teamId, 'team-a');
+  assert.equal(records.get('users/adult-1').pendingTeamJoinCode, undefined);
+  assert.equal(records.get('users/adult-1/teamMemberships/team-a').teamId, 'team-a');
+  assert.equal(records.get('teams/team-a/members/adult-1').playerId, 'p_adult-1');
+});
+
+test('pending signup enrollment is a no-op for non-athlete accounts', async () => {
+  const { db, records } = memoryDb({
+    'teams/team-a': { id: 'team-a', name: 'Team A', code: 'TEAMCODE1', isActive: true },
+    'users/parent-1': { id: 'parent-1', role: 'parent', fullName: 'Parent One', pendingTeamJoinCode: 'TEAMCODE1' },
+  });
+  globalThis.__TASK4_JOIN_DB = db;
+  globalThis.__TASK4_JOIN_AUTH = { uid: 'parent-1', email: 'parent@example.test', emailVerified: true, role: 'parent' };
+  const route = await loadRoute();
+  const response = await route.POST(request('/api/teams/join', {
+    usePendingSignupCode: true,
+    enrollmentIntent: 'player',
+  }));
+  const body = await response.json();
+
+  assert.equal(response.status, 200);
+  assert.equal(body.pendingEnrollment, false);
+  assert.equal(records.has('users/parent-1/teamMemberships/team-a'), false);
+  assert.equal(records.has('teams/team-a/members/parent-1'), false);
 });
 
 test('adult self enrollment accepts the canonical player id submitted by the join page', async () => {

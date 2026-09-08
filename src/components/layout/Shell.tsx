@@ -119,12 +119,6 @@ import { cancelDemoExitPending, clearBrowserSession, clearDemoExitPending, markD
 import { deletePushDevice } from '@/lib/client-push-registration';
 import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
 import { isTeamModuleRouteDisabled } from '@/lib/team-module-visibility';
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip"
-
 const coordinationTabs = [
   { name: 'Feed', href: '/feed', icon: Radio, pro: true },
   { name: 'Schedule', href: '/events', icon: CalendarDays, pro: false },
@@ -984,30 +978,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           <div className="flex min-w-0 flex-col flex-1 min-h-0">
             <header className="sticky top-0 z-40 w-full bg-background/80 backdrop-blur-md border-b h-16 md:h-20 flex items-center px-4 md:px-10 justify-between text-foreground">
               <div className="flex items-center gap-4">
-                <div className="md:hidden">
-                  {/* Show squad switcher on mobile for all roles except league creator with no team */}
-                  {!(user?.role === 'league_creator' && !activeTeam) && (
-                    <DropdownMenu open={mobileSwitcherOpen} onOpenChange={setMobileSwitcherOpen}>
-                      <Tooltip>
-                        <TooltipTrigger asChild>
-                          <DropdownMenuTrigger asChild>
-                            <Button
-                              variant="ghost"
-                              size="icon"
-                              aria-label="Switch squad"
-                              data-testid="squad-switcher-trigger"
-                              className="h-10 w-10 rounded-2xl hover:bg-primary/5 text-primary relative transition-all active:scale-95 border-2 border-primary/10"
-                            >
-                              <Zap className="h-5 w-5 fill-current" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                        </TooltipTrigger>
-                        <TooltipContent side="bottom">Switch Squad</TooltipContent>
-                      </Tooltip>
-                      <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} user={user} isSchoolMode={isSchoolMode} isPrimaryClubAuthority={isPrimaryClubAuthority} isEliteAccount={isEliteAccount} isEliteClubMode={isEliteClubMode} onClose={() => setMobileSwitcherOpen(false)} />
-                    </DropdownMenu>
-                  )}
-                </div>
+                <div className="md:hidden h-10 w-10" aria-hidden="true" />
                 <div className="hidden md:block">
                   <h2 className="text-xl lg:text-2xl font-black uppercase tracking-tighter text-foreground">
                     {user?.role === 'league_creator' && pathname === '/competition' ? 'Competition Hub' :
@@ -1149,6 +1120,27 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 </DropdownMenu>
               </div>
             </header>
+            {activeTeam && !(user?.role === 'league_creator' && !activeTeam) && (
+              <div className="md:hidden sticky top-16 z-30 border-b bg-background/95 px-3 py-2 backdrop-blur-md">
+                <DropdownMenu open={mobileSwitcherOpen} onOpenChange={setMobileSwitcherOpen}>
+                  <DropdownMenuTrigger asChild>
+                    <button
+                      type="button"
+                      aria-label="Switch squad"
+                      data-testid="mobile-active-team-context"
+                      className="flex w-full items-center justify-between gap-3 rounded-xl border border-primary/20 bg-primary/5 px-3 py-2 text-left active:scale-[0.99]"
+                    >
+                      <span className="min-w-0 truncate text-[11px] font-black uppercase tracking-wide">
+                        <span className="text-muted-foreground">Active Team:</span>{' '}
+                        <span className="text-primary">{activeTeam.name}</span>
+                      </span>
+                      <ChevronDown className="h-4 w-4 shrink-0 text-primary" />
+                    </button>
+                  </DropdownMenuTrigger>
+                  <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} user={user} isSchoolMode={isSchoolMode} isPrimaryClubAuthority={isPrimaryClubAuthority} isEliteAccount={isEliteAccount} isEliteClubMode={isEliteClubMode} onClose={() => setMobileSwitcherOpen(false)} />
+                </DropdownMenu>
+              </div>
+            )}
 
             {/* Banner + scrollable main in their own flex column so the banner
                 expands naturally and never gets clipped by overflow:hidden */}

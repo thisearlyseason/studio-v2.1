@@ -40,6 +40,8 @@ test('desktop and mobile squad switchers share a stable accessible name', async 
 
   assert.equal(labels.length, 3);
   assert.match(shell, /data-team-switch-id=\{team\.id\}/);
+  assert.match(shell, /data-testid="mobile-active-team-context"/);
+  assert.match(shell, /Active Team:/);
 });
 
 test('alert inbox relies on the standard dialog close control only', async () => {

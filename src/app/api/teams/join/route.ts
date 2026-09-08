@@ -132,7 +132,19 @@ export async function POST(req: NextRequest) {
     const limited = await enforceUserRateLimit(auth.uid, 'team-join', 10, 60 * 60 * 1000);
     if (limited) return limited;
     const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 8_000);
-    const code = typeof body.code === 'string' ? body.code.trim().toUpperCase() : '';
+    const usePendingSignupCode = body.usePendingSignupCode === true;
+    const userRef = adminDb.collection('users').doc(auth.uid);
+    const initialUserSnapshot = usePendingSignupCode ? await userRef.get() : null;
+    const initialUser = initialUserSnapshot?.data() || {};
+    if (usePendingSignupCode && initialUser.role !== 'adult_player') {
+      return NextResponse.json({ ok: true, pendingEnrollment: false });
+    }
+    const submittedCode = typeof body.code === 'string' ? body.code : '';
+    const pendingCode = typeof initialUser.pendingTeamJoinCode === 'string' ? initialUser.pendingTeamJoinCode : '';
+    const code = (usePendingSignupCode ? pendingCode : submittedCode).trim().toUpperCase();
+    if (usePendingSignupCode && !code) {
+      return NextResponse.json({ ok: true, pendingEnrollment: false });
+    }
     const sessionToken = typeof body.sessionToken === 'string' ? body.sessionToken.trim() : '';
     const submittedPlayerId = typeof body.playerId === 'string' ? body.playerId : '';
     // The dashboard represents self-enrollment as p_<authenticated uid>.
@@ -178,7 +190,6 @@ export async function POST(req: NextRequest) {
     if (requestedPlayerEnrollment && hasStaffRole(existingSelfMembership?.data)) {
       return NextResponse.json({ error: 'You already have staff access to this squad.' }, { status: 409 });
     }
-    const userRef = adminDb.collection('users').doc(auth.uid);
     const playerRef = adminDb.collection('players').doc(playerId);
     const memberRef = existingSelfMembership?.ref
       || teamSnapshot.ref.collection('members').doc(joiningLinkedChild ? playerId : auth.uid);
@@ -223,6 +234,10 @@ export async function POST(req: NextRequest) {
       }
 
       const user = userSnapshot.data() || {};
+      if (usePendingSignupCode && (
+        user.role !== 'adult_player' ||
+        String(user.pendingTeamJoinCode || '').trim().toUpperCase() !== code
+      )) return 'pending_unavailable';
       const existingPlayer = playerSnapshot.data() || {};
       if (joiningLinkedChild && existingPlayer.parentId !== auth.uid) throw new Error('CHILD_FORBIDDEN');
       if (requestedPlayerEnrollment && hasStaffRole(memberSnapshot.data())) throw new Error('STAFF_MEMBERSHIP_EXISTS');
@@ -311,6 +326,9 @@ export async function POST(req: NextRequest) {
         code: code || team.code || team.teamCode || team.inviteCode || '', joinedAt: now,
         type: team.type || 'team', isPro: team.isPro === true, planId: team.planId || 'free',
       }, { merge: true });
+      if (usePendingSignupCode) {
+        transaction.set(userRef, { pendingTeamJoinCode: FieldValue.delete() }, { merge: true });
+      }
       if (sessionRef) transaction.delete(sessionRef);
       return { state: memberSnapshot.exists ? 'existing' as const : 'joined' as const, waiverAlreadySigned };
     });
@@ -318,9 +336,11 @@ export async function POST(req: NextRequest) {
     if (result === 'expired') return NextResponse.json({ error: 'This squad invitation has expired.' }, { status: 410 });
     if (result === 'inactive') return NextResponse.json({ error: 'This squad is not accepting new members.' }, { status: 409 });
     if (result === 'waiver_changed') return NextResponse.json({ error: 'The required waiver changed. Reopen the invitation and review it again.' }, { status: 409 });
+    if (result === 'pending_unavailable') return NextResponse.json({ ok: true, pendingEnrollment: false });
     return NextResponse.json({
       ok: true,
       success: true,
+      pendingEnrollment: usePendingSignupCode,
       teamId: teamSnapshot.id,
       playerId,
       memberId: memberRef.id,

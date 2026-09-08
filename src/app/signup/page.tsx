@@ -214,8 +214,9 @@ export default function SignupPage() {
       };
       const role = roleMap[regTarget as string] || 'adult_player';
 
-      const teamJoinPath = joinCode.trim()
-        ? `/teams/join?code=${encodeURIComponent(joinCode.trim().toUpperCase())}`
+      const normalizedJoinCode = joinCode.trim().toUpperCase();
+      const teamJoinPath = normalizedJoinCode
+        ? `/teams/join?code=${encodeURIComponent(normalizedJoinCode)}`
         : '';
       const postVerificationPath =
         planChoice && planChoice !== 'starter'
@@ -244,6 +245,7 @@ export default function SignupPage() {
         upcomingEventNotificationsEnabled: false,
         createdAt: new Date().toISOString(),
         avatarUrl: `https://picsum.photos/seed/${user.uid}/150/150`,
+        ...(regTarget === 'self' && normalizedJoinCode ? { pendingTeamJoinCode: normalizedJoinCode } : {}),
       });
 
       // Adult player: create matching player record
