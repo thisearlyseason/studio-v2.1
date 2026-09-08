@@ -1287,10 +1287,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return teamsRaw[0] || null;
   }, [teamsRaw, activeTeamId]);
   const activeTeamDocRef = useMemoFirebase(() => (isAuthResolved && firebaseUser && db && activeTeamMembership?.id) ? doc(db, 'teams', activeTeamMembership.id) : null, [isAuthResolved, firebaseUser, db, activeTeamMembership?.id]);
-  const { data: activeTeamDoc } = useDoc<Team>(activeTeamDocRef);
+  const { data: activeTeamDoc, isLoading: isActiveTeamDocLoading } = useDoc<Team>(activeTeamDocRef);
 
   const activeTeam = useMemo(() => {
     if (!activeTeamMembership) return null;
+    // Membership projections are only a discovery index. A removed member may
+    // still have a legacy projection created before lifecycle cleanup became
+    // server-owned, so fail closed once canonical team access is denied.
+    if (!isActiveTeamDocLoading && !activeTeamDoc) return null;
     const combined = { ...activeTeamMembership, ...activeTeamDoc };
     // Use the same shared fallback — NEVER 'SF' + slice which was inconsistent
     const storedCode = (combined.code || combined.teamCode || combined.inviteCode || '').toString().trim().toUpperCase();
@@ -1301,7 +1305,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       teamCode: finalCode,
       inviteCode: finalCode
     } as Team;
-  }, [activeTeamMembership, activeTeamDoc, generateTeamCode]);
+  }, [activeTeamMembership, activeTeamDoc, isActiveTeamDocLoading, generateTeamCode]);
 
   const membersQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'members')) : null, [isAuthResolved, activeTeam?.id, db]);
   const { data: membersData, isLoading: isMembersInitialLoading } = useCollection<Member>(membersQuery);
@@ -1747,8 +1751,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
     // Paid access is allocated per canonical team document. Organization links,
     // account plans, and staff roles never grant an unallocated squad Pro access.
-    return activeTeam?.isPro === true;
-  }, [activeTeam?.isPro, isSuperAdmin]);
+    // Never grant paid access from the denormalized membership projection.
+    // The canonical team document is readable only while membership is valid.
+    return activeTeamDoc?.isPro === true;
+  }, [activeTeamDoc?.isPro, isSuperAdmin]);
 
   const isStarter = useMemo(() => {
     return isStarterExperience({
