@@ -13,6 +13,7 @@ export async function deleteFeedPostOptimistically({
   try {
     await deleteRemote();
   } catch (error) {
+    if (typeof error === 'object' && error !== null && 'status' in error && error.status === 404) return;
     restore(postId);
     throw error;
   }

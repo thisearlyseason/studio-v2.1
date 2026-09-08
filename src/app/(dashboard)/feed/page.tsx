@@ -218,7 +218,7 @@ export default function FeedPage() {
       body: JSON.stringify({ teamId: activeTeam.id, ...payload, ...(creates ? {idempotencyKey} : {}) }),
     });
     const result = await response.json().catch(() => ({}));
-    if (!response.ok) throw new Error(result.error || 'Unable to update the squad feed.');
+    if (!response.ok) throw Object.assign(new Error(result.error || 'Unable to update the squad feed.'), { status: response.status });
     pendingRequestKeys.current.delete(requestIdentity);
     return result;
   };

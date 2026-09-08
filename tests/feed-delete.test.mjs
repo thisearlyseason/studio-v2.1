@@ -33,3 +33,16 @@ test('feed deletion restores the post when the remote delete fails', async () =>
   );
   assert.deepEqual(events, ['hide:post-b', 'restore:post-b']);
 });
+
+test('feed deletion keeps an already-absent post hidden', async () => {
+  const events = [];
+  const missing = Object.assign(new Error('Post not found.'), { status: 404 });
+
+  await deleteFeedPostOptimistically({
+    postId: 'post-c',
+    hide: postId => events.push(`hide:${postId}`),
+    restore: postId => events.push(`restore:${postId}`),
+    deleteRemote: async () => { throw missing; },
+  });
+  assert.deepEqual(events, ['hide:post-c']);
+});
