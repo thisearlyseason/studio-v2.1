@@ -248,3 +248,37 @@ update/offline/account-switch privacy. Their required Android and iPhone/iPad
 steps are listed in `runs/2026-09-04-final-certification/09-physical-device-checklist.md`.
 Until those are recorded, the release is non-physical production certified and
 live-demo ready, but not fully physical-device certified.
+
+## Owner-reported mobile findings and production repair — 2026-09-08
+
+The owner completed Android opt-out, sender-exclusion, wrong-team-exclusion, and
+account-switch checks, and reported a passing iPhone notification path. The Pixel
+8 received an Android drawer notification, proving device delivery, while its
+heads-up presentation and launcher dot still require notification-category and
+Pixel Launcher acceptance. The reported September 10 reminder attempt on
+September 8 was not a same-day scheduler test; R1/R2 remain physical retests with
+the corrected procedure in the device checklist.
+
+The same review exposed launch-critical application defects: removed memberships
+could remain in team/entitlement projection; event creation did not have a single
+authoritative server push; one chat collection-group index dependency could turn
+the directory into HTTP 500; a chat displayed an opaque member ID; chat deletion
+required entering the channel; two install controls could race for the native PWA
+prompt; Join Team was missing from the mobile menu; and three operational dialogs
+overflowed or were difficult to use on mobile.
+
+Candidate `0ed01e5a` repairs those boundaries and adds regression coverage.
+Focused tests passed 102/102; the full application suite passed 1,335 with zero
+failures and eight explicit skips; TypeScript, Functions, and the optimized
+production build passed; ESLint completed with zero errors and existing warnings.
+Vercel production deployment `dpl_1LAFSxMHPom51NCMuwKX8N7FBeVS` reached Ready
+and is aliased to `www.thesquad.pro` and `thesquad.pro`.
+
+Fresh 412x915 production Playwright verified HTTP 200 chat directory loading,
+direct list delete controls, resolved member names, Join Team, functional install
+guidance, a viewport-contained activity dialog, and zero console errors or
+warnings on the checked paths. The manifest reports **The Squad**, standalone
+display, and current 192/512 icon assets. The live demo is ready. The strict
+matrix remains **84 PASS, 3 BLOCKED, 1 NOT APPLICABLE, 0 FAIL** because hardware
+presentation, corrected same-day reminder receipt/suppression, and the remaining
+iPhone/iPad installed-PWA lifecycle cannot be certified by Playwright.
