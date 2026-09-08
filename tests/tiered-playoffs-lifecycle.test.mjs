@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { reconcileTieredAfterPreliminaryMutation } from '../src/lib/tiered-playoffs/lifecycle.ts';
+import { reconcileTieredAfterPlayoffMutation, reconcileTieredAfterPreliminaryMutation } from '../src/lib/tiered-playoffs/lifecycle.ts';
 import { tieredStandingsFingerprint } from '../src/lib/tiered-playoffs/seeding.ts';
 
 const game = score1 => ({ id: 'g1', phase: 'preliminary', team1Id: 'a', team2Id: 'b', score1, score2: 0, isCompleted: true, isDisputed: false });
@@ -26,4 +26,10 @@ test('changed preliminary result marks locked placement stale and preserves appr
   assert.equal(next.seeding.status, 'stale');
   assert.deepEqual(next.seeding.approved, config.seeding.approved);
   assert.equal(next.playoffs.status, 'ready');
+});
+
+test('published division results move playoffs through in-progress to complete', () => {
+  const config = { ...base('locked'), playoffs: { bracketFormat: 'single_elimination', status: 'published', publishedAt: 'now', publishedBy: 'owner' } };
+  assert.equal(reconcileTieredAfterPlayoffMutation(config, [{ phase: 'playoff', isCompleted: true }, { phase: 'playoff', isCompleted: false }]).playoffs.status, 'in_progress');
+  assert.equal(reconcileTieredAfterPlayoffMutation(config, [{ phase: 'playoff', isCompleted: true }, { phase: 'playoff', isCompleted: true }]).playoffs.status, 'complete');
 });

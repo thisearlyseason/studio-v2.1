@@ -13,7 +13,7 @@ import { scorekeeperTournament } from '@/lib/public-portal-data';
 import { BracketProgressionError, hasCompletedBracketDescendant, recordTournamentScore, validateBracketScoreSubmission } from '@/lib/scheduler-utils';
 import { TournamentScheduleDeploymentError, withTournamentScheduleMutationLock } from '@/lib/server-tournament-schedule-deployment';
 import type { TournamentGame } from '@/components/providers/team-provider';
-import { reconcileTieredAfterPreliminaryMutation } from '@/lib/tiered-playoffs/lifecycle';
+import { reconcileTieredAfterPlayoffMutation, reconcileTieredAfterPreliminaryMutation } from '@/lib/tiered-playoffs/lifecycle';
 import type { TieredPlayoffsConfig } from '@/lib/tiered-playoffs/types';
 
 type Data = Record<string, any>;
@@ -408,8 +408,10 @@ export async function runTournamentScoringCommand(input: TournamentScoringComman
       Object.entries(candidate).filter(([, value]) => value !== undefined),
     ) as TournamentGame);
     const updatedGame = games.find(candidate => candidate.id === input.gameId)!;
-    const nextTieredPlayoffs = currentEvent.tournamentType === 'tiered_playoffs' && game.phase !== 'playoff' && currentEvent.tieredPlayoffs
-      ? reconcileTieredAfterPreliminaryMutation(currentEvent.tieredPlayoffs as TieredPlayoffsConfig, games)
+    const nextTieredPlayoffs = currentEvent.tournamentType === 'tiered_playoffs' && currentEvent.tieredPlayoffs
+      ? game.phase === 'playoff'
+        ? reconcileTieredAfterPlayoffMutation(currentEvent.tieredPlayoffs as TieredPlayoffsConfig, games)
+        : reconcileTieredAfterPreliminaryMutation(currentEvent.tieredPlayoffs as TieredPlayoffsConfig, games)
       : currentEvent.tieredPlayoffs;
     const nextScheduleVersion = input.expectedScheduleVersion + 1;
     const resultingScore = updatedGame.isCompleted ? { home: Number(updatedGame.score1 || 0), away: Number(updatedGame.score2 || 0) } : null;

@@ -115,3 +115,24 @@ test('post-generation disqualification forfeits only playable matches without de
   assert.equal(affected.isCompleted, true);
   assert.notEqual(affected.winnerId, 't1');
 });
+
+test('stale locked placement can be explicitly reopened only before playoff results exist', async () => {
+  for (const playoffCompleted of [false, true]) {
+    const { db, records } = communicationDb(seed, { serializeTransactions: true });
+    assert.equal((await call(db, command('preview-seeding', 1))).status, 200);
+    assert.equal((await call(db, command('lock-seeding', 2))).status, 200);
+    assert.equal((await call(db, command('generate-brackets', 3))).status, 200);
+    const event = records.get('teams/team-a/events/cup');
+    event.tieredPlayoffs.seeding.status = 'stale';
+    if (playoffCompleted) event.tournamentGames.find(game => game.phase === 'playoff').isCompleted = true;
+    const before = structuredClone([...records]);
+    const response = await call(db, command('reopen-seeding', 4, {}, `tiered-reopen-${playoffCompleted}`));
+    assert.equal(response.status, playoffCompleted ? 409 : 200);
+    if (playoffCompleted) assert.deepEqual([...records], before);
+    else {
+      const stored = records.get('teams/team-a/events/cup');
+      assert.equal(stored.tieredPlayoffs.seeding.status, 'pending');
+      assert.equal(stored.tournamentGames.some(game => game.phase === 'playoff'), false);
+    }
+  }
+});

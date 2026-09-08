@@ -10,7 +10,7 @@ import { validateTieredPlayoffsConfig, type TieredPlayoffsConfig } from '@/lib/t
 import { recordTournamentScore } from '@/lib/scheduler-utils';
 
 const ID = /^[A-Za-z0-9_-]{1,200}$/;
-const ACTIONS = new Set(['preview-seeding', 'apply-seed-override', 'reset-seeding', 'lock-seeding', 'generate-brackets', 'publish-playoffs', 'withdraw-team', 'disqualify-team']);
+const ACTIONS = new Set(['preview-seeding', 'apply-seed-override', 'reset-seeding', 'lock-seeding', 'reopen-seeding', 'generate-brackets', 'publish-playoffs', 'withdraw-team', 'disqualify-team']);
 
 export class TieredPlayoffsCommandError extends Error {
   constructor(public readonly code: string, message: string, public readonly status = 400) {
@@ -163,6 +163,17 @@ export async function executeTieredPlayoffsCommand(input: TieredPlayoffsCommandI
       if (fingerprint !== config.seeding.standingsFingerprint) fail('SEEDING_STALE', 'Preliminary results changed. Recalculate placement before locking.', 409);
       nextConfig.seeding = { ...nextConfig.seeding, status: 'locked', lockedAt: now, lockedBy: input.actor.uid };
       result = { approved: nextConfig.seeding.approved, lockedAt: now };
+    } else if (input.action === 'reopen-seeding') {
+      if (Object.keys(input.payload).length) fail('UNSUPPORTED_PAYLOAD', 'Reopening seeding does not accept additional fields.');
+      if (config.seeding.status !== 'stale') fail('SEEDING_STATE_CONFLICT', 'Only stale locked seeding can be reopened.', 409);
+      const playoffGames = nextGames.filter((game: DocumentData) => game.phase === 'playoff');
+      if (playoffGames.some((game: DocumentData) => game.isCompleted === true || game.isDisputed === true)) {
+        fail('PLAYOFF_RESULTS_LOCKED', 'Completed or disputed playoff results prevent structural reseeding.', 409);
+      }
+      nextGames = nextGames.filter((game: DocumentData) => game.phase !== 'playoff');
+      nextConfig.seeding = { status: 'pending', calculated: [], approved: [], standingsFingerprint: null, lockedAt: null, lockedBy: null };
+      nextConfig.playoffs = { ...nextConfig.playoffs, status: 'pending', publishedAt: null, publishedBy: null };
+      result = { reopened: true };
     } else if (input.action === 'generate-brackets') {
       if (Object.keys(input.payload).length) fail('UNSUPPORTED_PAYLOAD', 'Bracket generation does not accept additional fields.');
       if (config.seeding.status !== 'locked' || config.playoffs.status !== 'pending') fail('PLAYOFF_STATE_CONFLICT', 'Lock current playoff seeds before generating brackets.', 409);

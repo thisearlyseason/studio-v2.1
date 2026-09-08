@@ -21,3 +21,14 @@ export function reconcileTieredAfterPreliminaryMutation(
   }
   return { ...config, seeding: { ...config.seeding, status: 'stale' } };
 }
+
+export function reconcileTieredAfterPlayoffMutation(
+  config: TieredPlayoffsConfig,
+  games: TournamentGame[],
+): TieredPlayoffsConfig {
+  if (!['published', 'in_progress'].includes(config.playoffs.status)) return config;
+  const playoffs = games.filter(game => game.phase === 'playoff');
+  if (!playoffs.length || !playoffs.some(game => game.isCompleted === true)) return config;
+  const status = playoffs.every(game => game.isCompleted === true) ? 'complete' : 'in_progress';
+  return { ...config, playoffs: { ...config.playoffs, status } };
+}
