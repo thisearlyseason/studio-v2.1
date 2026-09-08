@@ -328,9 +328,8 @@ export default function SettingsPage() {
 
   const handleLogout = async () => {
     try {
-      // Clean up FCM token before signing out (non-blocking — don't let it prevent logout)
       if (user?.id) {
-        deletePushDevice(user.id).catch(() => {});
+        await deletePushDevice(user.id);
       }
       await clearBrowserSession();
       await signOut(auth);

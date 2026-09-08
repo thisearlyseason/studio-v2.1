@@ -34,9 +34,41 @@ test('operations handler registry is an exact immutable match for the frozen Tas
 test('operations handler registry rejects missing, duplicate, and adjacent handlers before any lifecycle starts', () => {
   const missing = Object.fromEntries(Object.entries(handlers).slice(1));
   assert.throws(() => assertOperationsHandlerExactness(missing), /missing handler/);
-  const extra = { ...handlers, 'sports-hub-rss-refresh-admin-publish': async () => undefined };
+  const extra = { ...handlers, 'billing-pricing-checkout-trial': async () => undefined };
   assert.throws(() => assertOperationsHandlerExactness(extra), /unexpected handler/);
   assert.throws(() => assertOperationsHandlerExactness({ ...handlers, 'events-event-crud-recurrence': 'not-a-handler' }), /must be a function/);
+});
+
+test('newly assigned local gaps execute without inventing observed evidence', async () => {
+  const gapIds = [
+    'games-team-score-create-edit-reset',
+    'leagues-divisions-teams-filters-forms',
+    'volunteers-opportunity-public-signup',
+    'sports-hub-rss-refresh-admin-publish',
+    'public-portals-embed-panels',
+    'administration-entitlement-account-control-plans',
+    'administration-beta-bugs-embeds-newsletter-sports-hub',
+  ];
+  const scenarios = gapIds.map(id => CERTIFICATION_SCENARIOS.find(scenario => scenario.id === id));
+  const output = await runOperationsBatch({
+    commit: '0123456789abcdef0123456789abcdef01234567',
+    browserEnabled: true,
+    now: () => '2026-09-07T12:00:00.000Z',
+    certificationObservation: {
+      code: 0,
+      startedAt: '2026-09-07T12:00:00.000Z',
+      completedAt: '2026-09-07T12:00:01.000Z',
+      stdout: '',
+    },
+    operations: { execute: ({ handler, ...input }) => handler(input) },
+  }, scenarios);
+  assert.deepEqual(output.results.map(result => result.scenarioId), gapIds);
+  assert.deepEqual(output.runErrors, []);
+  for (const result of output.results) {
+    assert.equal(result.outcome, 'BLOCKED_PRECONDITION');
+    assert.deepEqual(result.missingDimensions, ['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive']);
+    for (const dimension of Object.values(result.dimensions)) assert.equal(dimension.state, 'BLOCKED_PRECONDITION');
+  }
 });
 
 test('every operations scenario has an explicit case contract for every local dimension', () => {
