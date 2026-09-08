@@ -312,6 +312,29 @@ test('demo workspaces never dispatch external team notifications', async () => {
   assert.deepEqual(attemptedRequests, []);
 });
 
+test('server-authoritative event alerts can keep email without duplicating client push', async () => {
+  const attemptedRequests = [];
+  const recordingFetch = async (endpoint) => {
+    attemptedRequests.push(endpoint);
+    return new Response(null, { status: 204 });
+  };
+  const result = await dispatchTeamNotification({
+    source: 'event',
+    team: {},
+    idToken: 'test-token',
+    teamId: 'team-a',
+    memberUserIds: ['player'],
+    title: 'New event',
+    body: 'Today at 6:30 PM',
+    emailSubject: 'New event',
+    emailHtml: '<p>Today at 6:30 PM</p>',
+    includePush: false,
+  }, recordingFetch);
+
+  assert.deepEqual(attemptedRequests, ['/api/email/send']);
+  assert.deepEqual(result, { status: 'dispatched', requestCount: 1 });
+});
+
 test('production feed does not ship the retired Tenor integration', async () => {
   const feed = await readSource('../src/app/(dashboard)/feed/page.tsx');
 

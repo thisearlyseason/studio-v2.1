@@ -56,6 +56,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { getTrialCountdown } from '@/lib/trial-countdown';
+import { pwaInstallPromptBroker, type PwaInstallPrompt } from '@/lib/pwa-install-prompt';
 import { Button } from '@/components/ui/button';
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
@@ -438,7 +439,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   const [mobileSwitcherOpen, setMobileSwitcherOpen] = useState(false);
 
   // PWA Installation Hook State
-  const [deferredPrompt, setDeferredPrompt] = useState<any>(null);
+  const [deferredPrompt, setDeferredPrompt] = useState<PwaInstallPrompt | null>(null);
   const [isStandalone, setIsStandalone] = useState(false);
   const [isIOS, setIsIOS] = useState(false);
   const [showIOSInstructions, setShowIOSInstructions] = useState(false);
@@ -469,9 +470,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     checkStandalone();
 
     // 2. Intercept the browser's install prompt
+    const unsubscribe = pwaInstallPromptBroker.subscribe(setDeferredPrompt);
     const handleBeforeInstallPrompt = (e: Event) => {
-      e.preventDefault();
-      setDeferredPrompt(e);
+      pwaInstallPromptBroker.capture(e as PwaInstallPrompt);
     };
 
     window.addEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
@@ -484,6 +485,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
     return () => {
       window.removeEventListener('beforeinstallprompt', handleBeforeInstallPrompt);
+      unsubscribe();
     };
   }, []);
 
@@ -496,10 +498,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       setShowGeneralInstructions(true);
       return;
     }
-    deferredPrompt.prompt();
+    await deferredPrompt.prompt();
     const { outcome } = await deferredPrompt.userChoice;
     console.log(`[PWA] Install prompt outcome: ${outcome}`);
-    setDeferredPrompt(null);
+    pwaInstallPromptBroker.consume();
   };
 
   const showInstallBtn = !isStandalone && !installDismissed;
@@ -1404,6 +1406,22 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                         <div className="space-y-3">
                           <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground px-2">Account Management</p>
                           <div className="grid grid-cols-1 gap-2">
+                            <Link
+                              href="/teams/join"
+                              onClick={() => setIsMoreMenuOpen(false)}
+                              className="flex items-center justify-between rounded-2xl border border-primary/20 bg-primary/5 p-4 transition-all active:scale-[0.98]"
+                            >
+                              <div className="flex items-center gap-4">
+                                <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-xl bg-primary text-white">
+                                  <UserPlus className="h-4 w-4" />
+                                </div>
+                                <div className="flex flex-col">
+                                  <span className="text-xs font-black uppercase tracking-widest text-primary">Join Team</span>
+                                  <span className="text-[8px] font-bold uppercase text-muted-foreground">Enter a squad or invitation code</span>
+                                </div>
+                              </div>
+                              <ChevronRight className="h-4 w-4 text-primary/40" />
+                            </Link>
                             {isSuperAdmin && (
                               <Link
                                 href="/admin"

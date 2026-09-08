@@ -93,6 +93,7 @@ function ChatRoomInner() {
   const [pollOptions, setPollOptions] = useState<{text: string, image?: string}[]>([{text: '', image: undefined}, {text: '', image: undefined}]);
   const [chatImage, setChatImage] = useState<string | undefined>();
   const [sendAttempt, setSendAttempt] = useState<ChatSendDraft | null>(null);
+  const [memberDirectory, setMemberDirectory] = useState<Array<{ userId: string; name: string; position: string; avatar?: string; squadName?: string }>>([]);
   
   const scrollRef = useRef<HTMLDivElement>(null);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -131,6 +132,24 @@ function ChatRoomInner() {
       });
     }).catch(() => undefined);
   }, [effectiveTeamId, chatId, user?.id, auth, isMessagesLoading, messages.length]);
+
+  useEffect(() => {
+    if (!effectiveTeamId || !chatId || !auth) return;
+    let cancelled = false;
+    getAuthToken(auth).then(token => {
+      if (!token) throw new Error('Your session has expired.');
+      return fetch(`/api/teams/chat?teamId=${encodeURIComponent(effectiveTeamId)}&chatId=${encodeURIComponent(String(chatId))}`, {
+        headers: authHeader(token),
+      });
+    }).then(async response => {
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Unable to load channel members.');
+      if (!cancelled) setMemberDirectory(Array.isArray(payload.memberDirectory) ? payload.memberDirectory : []);
+    }).catch(() => {
+      if (!cancelled) setMemberDirectory([]);
+    });
+    return () => { cancelled = true; };
+  }, [effectiveTeamId, chatId, auth]);
 
   // Scroll to bottom whenever new messages arrive
   useEffect(() => {
@@ -252,13 +271,16 @@ function ChatRoomInner() {
   const staffMetadata: Record<string, { name: string; position: string; avatar: string; squadName?: string }> = currentChat?.staffMetadata || {};
   const staffKeywords = ['coach', 'director', 'coordinator', 'staff', 'manager', 'trainer'];
 
-  // Resolve each member ID: real teamMember → staffMetadata → truncated ID placeholder
+  // Resolve each member ID from the authorized server directory first. Never
+  // expose an internal user ID as a display name.
   const activeMemberEntries = currentMemberIds.map(uid => {
+    const directoryMember = memberDirectory.find(member => member.userId === uid);
+    if (directoryMember) return { id: uid, ...directoryMember };
     const found = teamMembers.find(m => m.userId === uid || m.id === uid);
     if (found) return { ...found, squadName: staffMetadata[uid]?.squadName };
     const meta = staffMetadata[uid];
     if (meta) return { id: uid, userId: uid, name: meta.name, position: meta.position, avatar: meta.avatar, squadName: meta.squadName };
-    return { id: uid, userId: uid, name: uid.length > 16 ? uid.slice(0, 12) + '...' : uid, position: 'Staff Member', avatar: undefined, squadName: undefined };
+    return { id: uid, userId: uid, name: 'Squad Member', position: 'Member', avatar: undefined, squadName: undefined };
   });
 
   // For hub broadcast channels, only coaches/directors appear in the "Recruit to Channel" list
@@ -550,18 +572,18 @@ function ChatRoomInner() {
       </Dialog>
 
       <Dialog open={isMembersDialogOpen} onOpenChange={setIsMembersDialogOpen}>
-        <DialogContent className="sm:max-w-md rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden">
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-md max-h-[calc(100dvh-1rem)] rounded-3xl sm:rounded-[2.5rem] border-none shadow-2xl p-0 overflow-y-auto">
           <DialogTitle className="sr-only">Squad Enrollment Management</DialogTitle>
           <div className="h-2 bg-primary w-full" />
-          <div className="p-8 space-y-6">
+          <div className="p-5 sm:p-8 space-y-5 sm:space-y-6">
             <DialogHeader>
-              <DialogTitle className="text-2xl font-black uppercase tracking-tight">Squad Enrollment</DialogTitle>
+              <DialogTitle className="text-xl sm:text-2xl font-black uppercase tracking-tight pr-8">Squad Enrollment</DialogTitle>
               <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Manage access to coordination channel</DialogDescription>
             </DialogHeader>
             <div className="space-y-6">
               <div className="space-y-3">
                 <p className="text-[10px] font-black uppercase text-muted-foreground px-1 tracking-widest">Active Teammates ({currentMemberIds.length})</p>
-                <div className="max-h-[200px] overflow-y-auto pr-2 custom-scrollbar space-y-2">
+                <div className="max-h-[28dvh] sm:max-h-[200px] overflow-y-auto pr-2 custom-scrollbar space-y-2">
                   {activeMemberEntries.map(m => {
                     const memberId = m.userId || m.id;
                     const isSelf = memberId === user?.id;

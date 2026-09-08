@@ -16,6 +16,8 @@ import { normalizeTeamEventInterval, teamEventConflictDates, teamEventIntervalsO
 import { validateTeamEventInput } from '@/lib/team-event-input';
 import { eventActionNeedsGeneratedId } from '@/lib/team-event-action';
 import { awaitLocalCertificationRequestBarrier } from '@/lib/local-certification-request-barrier';
+import { sendNotificationToUsers } from '@/lib/server-notification-delivery';
+import { teamEventCreatedNotification } from '@/lib/team-event-notification';
 
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 const REGISTRATION_CODE_PATTERN = /^[A-Z0-9_-]{4,32}$/;
@@ -346,6 +348,22 @@ export async function POST(req: NextRequest) {
       if (result.status === 'conflict') return NextResponse.json({ error: 'Event request already exists.' }, { status: 409 });
       if (result.status === 'managed') {
         return NextResponse.json({ error: 'Published schedule events must be changed through their schedule.' }, { status: 409 });
+      }
+      if (result.status === 'created' && access.teamData.isDemo !== true && access.teamData.outboundProvidersEnabled !== false) {
+        try {
+          const members = await access.teamRef.collection('members').get();
+          const recipientUserIds = members.docs.flatMap(member => {
+            const data = member.data();
+            const userId = typeof data.userId === 'string' ? data.userId.trim() : '';
+            return isActiveTeamMembership(data) && userId && userId !== auth.uid ? [userId] : [];
+          });
+          await sendNotificationToUsers({
+            recipientUserIds,
+            ...teamEventCreatedNotification(safeEventData(body.event)),
+          });
+        } catch (error) {
+          console.warn('[teams/events/action] Event saved, but tactical alert delivery failed:', error);
+        }
       }
       return NextResponse.json({ success: true, eventId: 'eventId' in result ? result.eventId : eventId });
     }

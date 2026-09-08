@@ -60,13 +60,13 @@ export function communicationDb(initial,{beforeTransaction,serializeTransactions
     constructor(path,filters=[],group=false) {Object.assign(this,{path,filters,group});}
     doc(id=`generated-${++sequence}`) {return new Ref(`${this.path}/${id}`);}
     where(field,operator,value) {
-      if(!['==','array-contains'].includes(operator)) throw Error('Unsupported test query');
+      if(!['==','array-contains','in'].includes(operator)) throw Error('Unsupported test query');
       return new Query(this.path,[...this.filters,[field,operator,value]],this.group);
     }
     limit(max) {const query=new Query(this.path,this.filters,this.group);query.max=max;return query;}
     orderBy() {return this;}
     async get() {
-      const docs=[...records].filter(([path,value])=>(this.group ? path.split('/').at(-2)===this.path : path.startsWith(`${this.path}/`)&&path.split('/').length===this.path.split('/').length+1)&&this.filters.every(([field,operator,want])=>operator==='array-contains'?Array.isArray(value[field])&&value[field].includes(want):value[field]===want)).slice(0,this.max).map(([path])=>snapshot(new Ref(path)));
+      const docs=[...records].filter(([path,value])=>(this.group ? path.split('/').at(-2)===this.path : path.startsWith(`${this.path}/`)&&path.split('/').length===this.path.split('/').length+1)&&this.filters.every(([field,operator,want])=>operator==='array-contains'?Array.isArray(value[field])&&value[field].includes(want):operator==='in'?Array.isArray(want)&&want.includes(value[field]):value[field]===want)).slice(0,this.max).map(([path])=>snapshot(new Ref(path)));
       return {docs,size:docs.length,empty:docs.length===0};
     }
   }

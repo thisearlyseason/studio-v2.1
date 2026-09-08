@@ -572,7 +572,7 @@ export default function EventsPage() {
       </div>
 
       <Dialog open={isCreateOpen} onOpenChange={(o) => { if(!o) resetForm(); setIsCreateOpen(o); }}>
-        <DialogContent hideClose className="sm:max-w-4xl p-0 sm:rounded-[2.5rem] border-none shadow-2xl bg-white overflow-y-auto max-h-[90vh] custom-scrollbar">
+        <DialogContent hideClose className="w-[calc(100vw-1rem)] max-w-4xl max-h-[calc(100dvh-1rem)] p-0 rounded-3xl sm:rounded-[2.5rem] border-none shadow-2xl bg-white overflow-y-auto custom-scrollbar">
           <DialogTitle className="sr-only">Schedule New Team Activity</DialogTitle>
           <DialogDescription className="sr-only">
             Create or update a team activity, including its date, time, location, and logistics assignments.
@@ -583,8 +583,8 @@ export default function EventsPage() {
             </Button>
           </DialogClose>
           <div className="flex flex-col lg:flex-row">
-            <div className="w-full lg:w-5/12 bg-muted/30 p-10 space-y-8 lg:border-r">
-              <DialogHeader><DialogTitle className="text-3xl font-black uppercase tracking-tight">{editingEvent ? editingSeries ? "Update Weekly Series" : "Update" : "Launch"} Activity</DialogTitle></DialogHeader>
+            <div className="w-full lg:w-5/12 bg-muted/30 p-5 sm:p-8 lg:p-10 space-y-6 sm:space-y-8 lg:border-r">
+              <DialogHeader><DialogTitle className="text-2xl sm:text-3xl font-black uppercase tracking-tight pr-10">{editingEvent ? editingSeries ? "Update Weekly Series" : "Update" : "Launch"} Activity</DialogTitle></DialogHeader>
               <div className="space-y-6">
                 <div className="space-y-1.5">
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Activity Type</Label>
@@ -603,7 +603,7 @@ export default function EventsPage() {
                     <Input value={opponent} onChange={e => setOpponent(e.target.value)} placeholder="e.g. Tigers Squad" className="h-12 rounded-xl font-black border-2 border-primary/20 bg-primary/5 focus:bg-white transition-all capitalize" />
                   </div>
                 )}
-                <div className="grid grid-cols-2 gap-4">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Date *</Label>
                     <Popover>
@@ -619,7 +619,7 @@ export default function EventsPage() {
                           {newDate ? format(new Date(newDate.replace(/-/g, '/')), "MMMM d, yyyy") : <span>Pick Date</span>}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0 border-none shadow-2xl rounded-[2rem] overflow-hidden bg-white" align="start">
+                      <PopoverContent collisionPadding={16} className="w-auto max-w-[calc(100vw-2rem)] p-0 border-none shadow-2xl rounded-[2rem] overflow-auto bg-white" align="start">
                         <Calendar
                           mode="single"
                           selected={newDate ? new Date(newDate.replace(/-/g, '/')) : undefined}
@@ -644,7 +644,7 @@ export default function EventsPage() {
                           {newEndDate ? format(new Date(newEndDate.replace(/-/g, '/')), "MMMM d, yyyy") : <span>Pick Date</span>}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent className="w-auto p-0 border-none shadow-2xl rounded-[2rem] overflow-hidden bg-white" align="start">
+                      <PopoverContent collisionPadding={16} className="w-auto max-w-[calc(100vw-2rem)] p-0 border-none shadow-2xl rounded-[2rem] overflow-auto bg-white" align="start">
                         <Calendar
                           mode="single"
                           selected={newEndDate ? new Date(newEndDate.replace(/-/g, '/')) : undefined}
@@ -675,7 +675,7 @@ export default function EventsPage() {
                 )}
               </div>
             </div>
-            <div className="flex-1 p-10 space-y-6 bg-white">
+            <div className="flex-1 p-5 sm:p-8 lg:p-10 space-y-6 bg-white">
               <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Location</Label><LocationAutocomplete
                 value={newLocation}
                 onChange={setNewLocation}
@@ -808,9 +808,9 @@ export default function EventsPage() {
               </div>
             </div>
           </div>
-          <div className="p-8 bg-background border-t shrink-0 flex items-center justify-end gap-4">
-            <Button variant="outline" className="rounded-xl h-12 font-black uppercase text-[10px] border-2" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
-            <Button className="h-12 px-10 rounded-xl font-black uppercase text-[10px] shadow-lg shadow-primary/20" onClick={handleCreateEvent}>Deploy Activity</Button>
+          <div className="p-4 sm:p-8 bg-background border-t shrink-0 flex items-center justify-end gap-3 sm:gap-4">
+            <Button variant="outline" className="flex-1 sm:flex-none rounded-xl h-12 font-black uppercase text-[10px] border-2" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
+            <Button className="flex-1 sm:flex-none h-12 px-4 sm:px-10 rounded-xl font-black uppercase text-[10px] shadow-lg shadow-primary/20" onClick={handleCreateEvent}>Deploy Activity</Button>
           </div>
         </DialogContent>
       </Dialog>

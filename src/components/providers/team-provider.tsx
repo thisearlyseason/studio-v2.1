@@ -13,6 +13,7 @@ import { registerPushDevice } from '@/lib/client-push-registration';
 import { normalizeTeamEvent } from '@/lib/team-event-normalization';
 import { dispatchTeamNotification, shouldDispatchTeamOutbound } from '@/lib/client-team-notification';
 import { isStarterExperience } from '@/lib/plan-catalog';
+import { activeTeamMemberships } from '@/lib/team-membership-security';
 
 import { 
   collection, 
@@ -1235,7 +1236,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return Math.abs(h).toString(36).toUpperCase().padStart(8, '0');
   }, []);
 
-  const teamsRaw = useMemo(() => (teamsData || []).map(m => {
+  const teamsRaw = useMemo(() => activeTeamMemberships(teamsData || []).map(m => {
     const tid = m.teamId || m.id;
     const storedCode = (m.code || m.teamCode || m.inviteCode || '').toString().trim().toUpperCase();
     const finalCode = storedCode || generateTeamCode(tid);
@@ -1568,7 +1569,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!db || !firebaseUser?.uid || (!isParent && !isPlayer)) return;
 
-    const myOwnTeamIds = (teamsData || []).map(t => t.teamId).filter(Boolean);
+    const myOwnTeamIds = activeTeamMemberships(teamsData || []).map(t => t.teamId).filter(Boolean);
     const childrenTeamIds = (myChildren || []).flatMap(c => c.joinedTeamIds || []);
     
     const allTeamIds = Array.from(new Set([...myOwnTeamIds, ...childrenTeamIds])).filter(Boolean);
@@ -2297,6 +2298,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
             url: '/dashboard/team',
             emailSubject,
             emailHtml,
+            includePush: false,
           });
         } catch { /* ignore */ }
       });

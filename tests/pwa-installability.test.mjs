@@ -4,8 +4,24 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import vm from 'node:vm';
 import sharp from 'sharp';
+import { PwaInstallPromptBroker } from '../src/lib/pwa-install-prompt.ts';
 
 const source = path => readFile(new URL(path, import.meta.url), 'utf8');
+
+test('one captured install prompt remains available to late-mounted install controls', async () => {
+  const broker = new PwaInstallPromptBroker();
+  const prompt = { prompt() {}, userChoice: Promise.resolve({ outcome: 'accepted' }) };
+  let firstConsumer;
+  let lateConsumer;
+  broker.subscribe(value => { firstConsumer = value; });
+  broker.capture(prompt);
+  broker.subscribe(value => { lateConsumer = value; });
+
+  assert.equal(firstConsumer, prompt);
+  assert.equal(lateConsumer, prompt);
+  assert.equal(broker.consume(), prompt);
+  assert.equal(broker.current(), null);
+});
 
 test('root application registers The Squad service worker without orphaning legacy Schedule installs', async () => {
   const layout = await source('../src/app/layout.tsx');

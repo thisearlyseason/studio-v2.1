@@ -968,9 +968,9 @@ export default function RosterPage() {
                             <DialogTrigger asChild>
                               <Button variant="outline" className="w-full h-11 rounded-xl border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white font-black uppercase text-[10px] transition-all">Decommission Athlete</Button>
                             </DialogTrigger>
-                            <DialogContent className="rounded-[2.5rem] p-8 border-none bg-white max-w-md text-foreground">
+                            <DialogContent className="w-[calc(100vw-1rem)] max-w-md max-h-[calc(100dvh-1rem)] overflow-y-auto rounded-3xl sm:rounded-[2.5rem] p-5 sm:p-8 border-none bg-white text-foreground">
                               <DialogHeader>
-                                <DialogTitle className="text-2xl font-black uppercase tracking-tight">Personnel Decommission</DialogTitle>
+                                <DialogTitle className="text-xl sm:text-2xl font-black uppercase tracking-tight pr-8">Personnel Decommission</DialogTitle>
                                 <DialogDescription className="font-bold text-muted-foreground uppercase text-[10px] tracking-widest">Permanent Archive Request for {selectedMember.name}</DialogDescription>
                               </DialogHeader>
                               <div className="space-y-4 py-6">
