@@ -4,6 +4,30 @@
 **Environment:** local development plus isolated Firebase preview  
 **Status:** Phase 2 findings followed up through 2026-09-08. Every recorded implementation defect is repaired and exact-environment verified at its required boundary; BUG-011 is retired by product decision. BUG-005 has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
 
+## BUG-056 — Realtime listeners survive anonymous-demo revocation
+
+| Field | Evidence |
+|---|---|
+| Severity | P1 HIGH |
+| Feature | Authentication and shared realtime data — demo logout/reload |
+| Reproduction | A real Feed logout returned HTTP 204 and reached `/login`, but shared Firestore listeners continued through server-side anonymous revocation and emitted six permission-denied warnings. An interrupted cleanup could also leave the page without a durable way to retry safely after reload. |
+| Root cause | Feed polling and the shared collection hook were not synchronously gated before the cleanup request. The existing teardown marker also could not distinguish ordinary pagehide recovery from an ambiguous logout request that must be retried. |
+| Repair | Logout now pauses Feed polling and shared Firestore subscriptions before any await, aborts in-flight Feed reads, suppresses late callbacks, and records a separate durable retry-required marker. A definitive pre-mutation 403 cancels the pause and resumes the existing session; an ambiguous network failure remains paused and retries cleanup on reload. Successful cleanup clears both markers without resubscribing anonymous readers. |
+| Verification | Focused lifecycle regressions passed 80/80 and independent review found no Critical or Important issue. Protected staging workflow `34210404824` passed on `a146e122` and served `studio-build-2026-09-08-014`. Exact staging Playwright proved clean Feed and Settings 204 logouts, 403 recovery with resumed HTTP 200 Feed/Firestore reads and the same demo timer, and network-failure persistence followed by reload cleanup HTTP 204. Release gate `34211938839` passed after merge `a3312cb7`. Exact production Playwright then proved both logout surfaces return 204, reach `/login`, clear lifecycle markers, and emit zero application console or HTTP errors. |
+| Status | RESOLVED AND EXACT-PRODUCTION VERIFIED |
+
+## BUG-055 — Concurrent Feed deletion can surface a stale comment 404
+
+| Field | Evidence |
+|---|---|
+| Severity | P2 MEDIUM |
+| Feature | Feed — post/comment deletion lifecycle |
+| Reproduction | Deleting a post while the comment refresh loop still held its identifier allowed one stale comment request to return 404 and expose a failure toast after the user had successfully deleted the post. |
+| Root cause | The optimistic delete hid the card only after the mutation resolved, while an already scheduled comment read could still address the deleted parent. The comment-read boundary treated the expected concurrent disappearance as an application failure. |
+| Repair | The Feed hides the target immediately, the delete boundary is idempotent for an already-removed post, and stale comment reads for that deleted parent are absorbed without restoring the card or showing an error. |
+| Verification | Test-first delete regressions passed, including the controlled concurrent-404 case. Protected staging workflows through `34210404824` passed. Exact production merge `a3312cb7` created a fresh post and comment, deleted the post, reloaded, and observed the post still absent with only HTTP 200/201 Feed responses and zero console warnings/errors. |
+| Status | RESOLVED AND EXACT-PRODUCTION VERIFIED |
+
 ## BUG-054 — Demo Scout fixture uses retired activation state
 
 | Field | Evidence |
