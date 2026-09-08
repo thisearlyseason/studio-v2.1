@@ -628,7 +628,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   if (!activeTeam && !user) return null;
 
   const handleLogout = async () => {
-    const isDemoLogout = hasDemoBanner;
+    // Demo cleanup is an authentication-lifecycle operation. Profile flags can
+    // legitimately remain on migrated beta accounts, so only Firebase's
+    // anonymous identity may enter the destructive demo cleanup route.
+    const isDemoLogout = auth.currentUser?.isAnonymous === true;
     const authenticatedUserId = auth.currentUser?.uid;
     let logoutCompleted = false;
     let demoCleanupRejectedBeforeMutation = false;

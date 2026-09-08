@@ -331,7 +331,10 @@ export default function SettingsPage() {
   };
 
   const handleLogout = async () => {
-    const isDemoLogout = auth.currentUser?.isAnonymous === true || user?.isDemo === true;
+    // A legacy profile can retain isDemo after becoming a registered beta
+    // account. Only Firebase's anonymous identity is allowed to invoke the
+    // destructive demo cleanup endpoint.
+    const isDemoLogout = auth.currentUser?.isAnonymous === true;
     const authenticatedUserId = auth.currentUser?.uid;
     let logoutCompleted = false;
     let demoCleanupRejectedBeforeMutation = false;

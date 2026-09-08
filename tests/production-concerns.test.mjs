@@ -173,7 +173,7 @@ test('anonymous demos survive reloads and clean up visible exits and abandoned s
   assert.match(provider, /sessionStorage\.getItem\(DEMO_START_KEY\)/);
   assert.match(provider, /fetch\('\/api\/demo\/exit', \{ method: 'POST', keepalive: true \}\)/);
   assert.match(provider, /await signOut\(auth\)/);
-  assert.match(shell, /const isDemoLogout = hasDemoBanner/);
+  assert.match(shell, /const isDemoLogout = auth\.currentUser\?\.isAnonymous === true/);
   assert.match(shell, /if \(isDemoLogout\) \{\s+markDemoExitPending\(\);\s+requireDemoExitRetry\(\);\s+\}/);
   assert.ok(shell.indexOf('requireDemoExitRetry()') < shell.indexOf("await fetch('/api/demo/exit'"));
   assert.match(shell, /if \(isDemoLogout\) \{\s+const response = await fetch\('\/api\/demo\/exit', \{ method: 'POST' \}\);\s+if \(!response\.ok\) \{\s+demoCleanupRejectedBeforeMutation = response\.status === 403;\s+throw new Error\('Demo cleanup failed'\);\s+\}\s+\}/);
@@ -194,7 +194,8 @@ test('every visible logout unregisters push while the user is still authenticate
 
   const settingsLogout = settings.match(/const handleLogout = async \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
   assert.match(settings, /import \{ deletePushDevice/);
-  assert.match(settingsLogout, /const isDemoLogout = auth\.currentUser\?\.isAnonymous === true \|\| user\?\.isDemo === true/);
+  assert.match(settingsLogout, /const isDemoLogout = auth\.currentUser\?\.isAnonymous === true;/);
+  assert.doesNotMatch(settingsLogout, /user\?\.isDemo/);
   assert.match(settingsLogout, /const authenticatedUserId = auth\.currentUser\?\.uid/);
   assert.match(settingsLogout, /if \(authenticatedUserId && !isDemoLogout\) \{\s+await deletePushDevice\(authenticatedUserId\)\.catch/);
   assert.match(settingsLogout, /if \(isDemoLogout\) \{\s+const response = await fetch\('\/api\/demo\/exit', \{ method: 'POST' \}\)/);
@@ -202,6 +203,8 @@ test('every visible logout unregisters push while the user is still authenticate
   assert.ok(settingsLogout.indexOf("await fetch('/api/demo/exit'") < settingsLogout.indexOf('await clearBrowserSession()'));
   assert.ok(settingsLogout.indexOf('await clearBrowserSession()') < settingsLogout.indexOf('await signOut(auth)'));
   const shellLogout = shell.match(/const handleLogout = async \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
+  assert.match(shellLogout, /const isDemoLogout = auth\.currentUser\?\.isAnonymous === true;/);
+  assert.doesNotMatch(shellLogout, /hasDemoBanner/);
   assert.match(shellLogout, /const authenticatedUserId = auth\.currentUser\?\.uid/);
   assert.match(shellLogout, /if \(authenticatedUserId && !isDemoLogout\) \{\s+await deletePushDevice\(authenticatedUserId\)\.catch/);
   assert.ok(shellLogout.indexOf('await deletePushDevice(authenticatedUserId)') < shellLogout.indexOf("await fetch('/api/demo/exit'"));
