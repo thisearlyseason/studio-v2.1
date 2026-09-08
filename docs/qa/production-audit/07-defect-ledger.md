@@ -2,7 +2,7 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-08. BUG-052 is exact-production verified. BUG-053 and BUG-054 are repaired locally and await exact deployment verification; BUG-011 is retired by product decision. BUG-005 has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+**Status:** Phase 2 findings followed up through 2026-09-08. Every recorded implementation defect is repaired and exact-environment verified at its required boundary; BUG-011 is retired by product decision. BUG-005 has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
 
 ## BUG-054 — Demo Scout fixture uses retired activation state
 
@@ -12,9 +12,9 @@
 | Feature | Demo and Recruiting — public Scout profile |
 | Reproduction | Exact production Squad Pro demo created deterministic player Alex Rivera, but `GET /api/public/recruiting/{playerId}` returned HTTP 404. |
 | Root cause | The browser demo seeder set only legacy `players.recruitingProfileEnabled`; the public boundary intentionally requires `players/{id}/recruitingProfile/profile.status` to be `active` or `committed`. No current profile or metrics document was created. |
-| Repair | Alex remains the single public demo prospect and now receives current-schema active profile and metrics documents after the parent player is committed. Every other demo player remains private. |
-| Verification | A regression failed first because no current activation state or profile/metrics writes existed. It now passes; typecheck passes, scoped lint has zero errors, and `git diff --check` passes. Exact deployment, successful public API rendering, allowlist inspection, and demo cleanup remain required. |
-| Status | RESOLVED LOCALLY; EXACT DEPLOYMENT VERIFICATION PENDING |
+| Repair | Alex remains the single public demo prospect and now receives current-schema active profile and metrics documents after the parent player is committed. The roster projection exposes its public link and the page-consumed profile contains height and weight. Every other demo player remains private. |
+| Verification | Regressions failed first for the missing activation state, profile/metrics writes, roster link flag, and page-consumed measurements, then passed after repair. Release gate `34195203926` passed. Exact production merge `4efd498d` created a fresh Squad Pro demo whose roster exposed the Alex Rivera public link; the API returned HTTP 200 with active allowlisted data and no private identifiers, and desktop/mobile pages rendered the complete profile and highlight without overflow or console errors. Cleanup returned HTTP 204. |
+| Status | RESOLVED AND EXACT-PRODUCTION VERIFIED |
 
 ## BUG-053 — Service worker claims clients before stale-cache deletion completes
 
@@ -25,8 +25,8 @@
 | Reproduction | A controlled service-worker activation held stale-cache deletion pending while `clients.claim()` ran immediately. |
 | Root cause | The activate handler registered cache deletion with `event.waitUntil(...)` but invoked `clients.claim()` outside that promise chain. A new worker could control pages before legacy or corrupt caches were removed. |
 | Repair | Client claiming is chained after all non-current cache deletions resolve. |
-| Verification | The race regression was RED (`claimed` was 1 while deletion was pending) and is GREEN after repair. The focused Push/PWA pack passes, typecheck and scoped lint pass, and real local Chromium removed seeded v8/corrupt caches while retaining v9; an offline `/dashboard` request showed only the public shell and no seeded private marker. Exact deployment/update verification remains required. |
-| Status | RESOLVED LOCALLY; EXACT DEPLOYMENT VERIFICATION PENDING |
+| Verification | The race regression was RED (`claimed` was 1 while deletion was pending) and is GREEN after repair. The focused Push/PWA pack, typecheck, scoped lint, release gate `34194166323`, and production merge `471853dd` pass. Fresh production Chrome seeded v8 and corrupt private caches, activated the deployed worker, and observed only v9 afterward; offline `/dashboard` rendered the public security shell with no seeded private marker. |
+| Status | RESOLVED AND EXACT-PRODUCTION VERIFIED |
 
 ## BUG-052 — Logout can retain the prior account's push endpoint
 
@@ -37,7 +37,7 @@
 | Reproduction | Code-path review showed the primary Shell logout never removed the current browser subscription. Settings started removal without awaiting it and immediately cleared the authenticated session. |
 | Root cause | Push deletion requires the still-authenticated Firebase user, but the two visible logout surfaces either skipped it or raced it against session clearing. The shared deletion helper also ignored legacy-token cleanup failure. A later account on the same installed PWA could therefore retain an endpoint owned by the prior account. |
 | Repair | Registered-account logout surfaces now await complete legacy and Web Push teardown before clearing the browser session or signing out. Anonymous demos skip the registered-only device endpoint and proceed directly through authoritative demo cleanup. Any registered teardown failure leaves the user authenticated so the endpoint cannot silently outlive its authority. |
-| Verification | Test-first regressions failed on the missing Shell import, Settings fire-and-forget behavior, ignored legacy cleanup, and the anonymous-demo 403 discovered on the first exact deployment. The affected pack passes 21/21, typecheck passes, and scoped lint reports zero errors. Release gate `34192250393` passed and production deployment `dpl_4KWviEUxxuYtFtDSWXe1v7w9t6pM` serves merge `c5d1a97f`. Fresh production Playwright launched a Starter demo, returned HTTP 204 from `/api/demo/exit`, reached `/login`, made no rejected notification-device request, and recorded zero console errors. Physical registered-account A-to-B endpoint isolation remains a coverage requirement, not an open implementation defect. |
+| Verification | Test-first regressions failed on the missing Shell import, Settings fire-and-forget behavior, ignored legacy cleanup, and anonymous-demo 403s discovered on exact deployments. The affected packs, typecheck, scoped lint, release gates `34192250393` and `34196012848`, and production merges `c5d1a97f` and `3b26001e` pass. Fresh production Playwright proved both Shell and Settings demo exits: the final Settings run returned `/api/demo/exit` HTTP 204, made no notification-device request, reached `/login`, denied a later `/dashboard` revisit, and recorded zero browser errors. Physical registered-account A-to-B endpoint isolation remains a coverage requirement, not an open implementation defect. |
 | Status | RESOLVED AND EXACT-PRODUCTION VERIFIED |
 
 ## BUG-051 — Demo logout emits permission errors while revoking an anonymous workspace
