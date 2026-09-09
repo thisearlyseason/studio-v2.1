@@ -10,8 +10,9 @@ const exec = promisify(execFile);
 const cli = process.env.PLAYWRIGHT_CLI;
 if (!cli) throw new Error('Set PLAYWRIGHT_CLI to the installed Playwright CLI wrapper.');
 const session = `registration-feedback-${process.pid}`;
-const portal = await readFile('src/app/register/tournament/[teamId]/[eventId]/page.tsx','utf8');
-const checkboxAt = portal.indexOf('<Checkbox id="waiver_agree"');
+const dedicated = process.argv.includes('--dedicated');
+const portal = await readFile(dedicated ? 'src/app/tournaments/[teamId]/waiver/[eventId]/page.tsx' : 'src/app/register/tournament/[teamId]/[eventId]/page.tsx','utf8');
+const checkboxAt = portal.indexOf(dedicated ? '<Checkbox' : '<Checkbox id="waiver_agree"');
 assert.ok(checkboxAt > 0, 'Waiver consent control must exist');
 const rowStart = portal.lastIndexOf('<div ',checkboxAt);
 const waiverRow = portal.slice(rowStart,portal.indexOf('</div>',checkboxAt)+6);
@@ -23,7 +24,7 @@ const bundle = await build({
     import {Checkbox} from './src/components/ui/checkbox';
     import {Label} from './src/components/ui/label';
     import {ScrollArea} from './src/components/ui/scroll-area';
-    function App(){const [waiverAgreed,setWaiverAgreed]=React.useState(false);const isPlayerPipeline=false;return <><h1>Registration still usable</h1>
+    function App(){const [waiverAgreed,setWaiverAgreed]=React.useState(false);const agreed=waiverAgreed,setAgreed=setWaiverAgreed;const isPlayerPipeline=false;return <><h1>Registration still usable</h1>
       <form><ScrollArea style={{height:300}}><ScrollArea style={{height:150}}>Existing participation agreement</ScrollArea>${waiverRow}</ScrollArea></form>
       <button onClick={()=>toast({title:'Signature Required',description:'Accept and sign the agreements.',variant:'destructive'})}>Submit unsigned</button>
       <button onClick={()=>toast({title:'Registration received',description:'Saved successfully.'})}>Submit signed</button>
@@ -53,7 +54,7 @@ try {
       await page.waitForTimeout(150);
       if(errors.length)throw Error(errors.join('; '));
       if(!await page.getByRole('checkbox').isChecked())throw Error('Consent did not persist');
-      await page.locator('label[for="waiver_agree"]').click();
+      await page.locator(${JSON.stringify(`label[for="${dedicated ? 'agree' : 'waiver_agree'}"]`)}).click();
       if(await page.getByRole('checkbox').isChecked())throw Error('Label did not toggle consent exactly once');
       for(const label of ['Submit unsigned','Submit signed','Submit unsigned']){
         await page.getByRole('button',{name:label,exact:true}).click();
@@ -66,7 +67,7 @@ try {
     }
     return {errors,toastUpdates:6,viewports:2};
   }`]);
-  console.log('PASS: actual portal consent row and production-mode Toaster handle checkbox/label toggles and six validation/success updates at desktop/mobile widths without a page error.');
+  console.log(`PASS: actual ${dedicated ? 'dedicated waiver' : 'registration'} portal consent row and production-mode Toaster handle checkbox/label toggles and six validation/success updates at desktop/mobile widths without a page error.`);
 } finally {
   await run(['close']).catch(() => {});
   await new Promise(resolve => server.close(resolve));

@@ -733,7 +733,15 @@ export async function POST(req: NextRequest) {
         const parsedSignedDate = /^\d{4}-\d{2}-\d{2}$/.test(signedDate)
           ? new Date(`${signedDate}T00:00:00.000Z`)
           : null;
-        const today = new Date().toISOString().slice(0, 10);
+        const signatureTimeZone = String(body.signatureTimeZone ?? 'UTC');
+        let today: string;
+        try {
+          if (signatureTimeZone.length > 100) throw new Error('Invalid timezone');
+          const parts = new Intl.DateTimeFormat('en-CA', { timeZone: signatureTimeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).formatToParts(new Date());
+          today = ['year', 'month', 'day'].map(type => parts.find(part => part.type === type)?.value).join('-');
+        } catch {
+          return NextResponse.json({ error: 'A valid signature timezone is required.' }, { status: 400 });
+        }
         const isValidSignedDate = parsedSignedDate != null &&
           !Number.isNaN(parsedSignedDate.getTime()) &&
           parsedSignedDate.toISOString().startsWith(signedDate) && signedDate === today;
@@ -764,7 +772,7 @@ export async function POST(req: NextRequest) {
           if (!config.exists || config.data()?.is_active !== true || !config.data()?.config_hash || !Number.isInteger(Number(config.data()?.form_version))) return { ok: false as const, status: 409, error: 'Tournament waiver configuration is unavailable.' };
           const configData = config.data()!;
           if(Number(configData.form_version)!==expectedVersion||String(configData.config_hash)!==expectedHash)return {ok:false as const,status:409,error:'Tournament waiver changed. Review the current version.'};
-          const waiverText = [configData.require_default_waiver ? configData.default_waiver_text : '', configData.custom_waiver_text || '', ...(configData.team_waivers_content || []).map((item: any) => item.content || '')].filter(Boolean).join('\n\n');
+          const waiverText = [configData.require_default_waiver ? (configData.default_waiver_text || TOURNAMENT_DEFAULT_WAIVER) : '', configData.custom_waiver_text || '', ...(configData.team_waivers_content || []).map((item: any) => item.content || '')].filter(Boolean).join('\n\n');
           if (!waiverText) return { ok: false as const, status: 409, error: 'Tournament waiver configuration is unavailable.' };
           const waiverHash = createHash('sha256').update(`${configData.form_version}:${configData.config_hash}:${waiverText}`).digest('hex');
           const archiveId = `arch_tournament_${createHash('sha256').update(`${eventId}:${sourceTeamId}:${waiverHash}`).digest('hex')}`;
