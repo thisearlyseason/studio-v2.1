@@ -713,6 +713,7 @@ export const sendUpcomingEventReminders = onSchedule({
   region: 'us-central1',
   timeoutSeconds: 540,
   memory: '512MiB',
+  secrets: ['WEB_PUSH_VAPID_SUBJECT', 'NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY', 'WEB_PUSH_VAPID_PRIVATE_KEY'],
 }, async () => {
   const now = new Date();
   const teamCache = new Map<string, admin.firestore.DocumentSnapshot>();

@@ -2,7 +2,51 @@
 
 **Run:** `2026-08-21T232919Z`  
 **Environment:** local development plus isolated Firebase preview  
-**Status:** Phase 2 findings followed up through 2026-09-08. Every recorded implementation defect is repaired and exact-environment verified at its required boundary; BUG-011 is retired by product decision. BUG-005 has physical Android closed-app push, tap-through, launcher-dot, and adaptive-icon acceptance; its broader negative-case and iPhone/iPad certification requirements remain blocked in the coverage matrix. Provider evidence and deterministic emulator evidence are recorded separately from the still-incomplete coverage matrix.
+**Status:** Updated 2026-09-09: the three physical follow-up findings below are OPEN. Earlier resolved defects remain resolved at their recorded boundaries; the prior all-defects-resolved statement no longer describes current certification. BUG-011 remains retired by product decision. Physical evidence is not interchangeable with browser/provider acceptance.
+
+## PHYS-20260909-1 — Android installation cannot be found
+
+- Severity: P1 HIGH; status: OWNER-REPORTED FAIL, ROOT CAUSE UNCONFIRMED.
+- Chrome displayed Install, Installing, and possibly Installed, but the owner
+  found no icon after approximately 15 minutes. App-drawer versus home-screen
+  shortcut diagnosis is pending. Do not infer a manifest or OS failure yet.
+- Blocks the new Android notification/presentation checks. iPhone install passed.
+
+## PHYS-20260909-2 — iPhone home-screen badge missing
+
+- Severity: P2 MEDIUM; status: CODE REPAIRED AND LOCALLY VERIFIED; DEPLOYMENT / PHYSICAL RETEST PENDING.
+- Owner received iPhone popup notifications, but no red home-screen badge with
+  badges enabled. The pre-repair source and deployed worker never called `setAppBadge` or
+  `clearAppBadge`; the notification `badge` image is a different API field.
+- Synthetic current-worker push: one notification call, zero app-badge calls.
+- Candidate repair updates the app badge from outstanding OS notifications and
+  clears it on tap, dismissal, matching-chat read, opt-out, and logout. Window and
+  worker updates share a lock; acquisition failure preserves push delivery.
+- Twenty focused tests and independent review passed, including three reproduced
+  concurrency failures. Local Chrome exercised real worker push delivery with an
+  instrumented app-badge boundary. This does not prove iPhone icon presentation.
+
+## PHYS-20260909-3 — Production reminder Function lacks Web Push configuration
+
+- Severity: P1 HIGH; status: OPEN, EXACT-PRODUCTION FAILURE CONFIRMED.
+- City Central United / Tigers game, created 2026-09-09 at 18:09:40 UTC, was
+  eligible for the 18:22 UTC normal scheduler run. Athlete profiles had both
+  notification preferences enabled and Web Push subscriptions.
+- That run logged zero sends/six failures. Exact event delivery ledgers showed
+  first-attempt failure: `No registered device accepted the reminder.`
+- Deployed scheduled Function has no VAPID subject/public/private environment
+  values and no secret environment bindings. The configuration loader returns
+  null, so the sender returns failure without making a Web Push delivery call.
+- Repair must bind the existing matching production key pair and contact subject,
+  add a configuration/deployment guard, and verify the scheduled boundary. Do not
+  rotate working keys, expose secrets, or label provider acceptance device PASS.
+- Candidate declares all three Function secrets, tests the compiled deployment
+  manifest, and fails deployment verification if bindings are absent. Production
+  application is BLOCKED: Vercel's existing private key is Sensitive/non-readable,
+  the local export is redacted, and staging's valid key pair differs. The owner
+  must supply the original production private key securely; no keys were rotated.
+- Evidence and owner result reconciliation:
+  `runs/2026-09-04-final-certification/09-physical-device-checklist.md`.
 
 ## BUG-057 — Parent demo redirects before rich family seeding completes
 

@@ -61,6 +61,7 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { normalizeChatMessage } from '@/lib/chat-message-normalization';
+import { clearDeviceNotifications } from '@/lib/device-notification-presentation';
 import { validatePollInput } from '@/lib/poll-policy';
 import { beginChatSend, failChatSend, finishChatSend, type ChatSendDraft } from '@/lib/chat-send-state';
 
@@ -130,6 +131,8 @@ function ChatRoomInner() {
         method: 'PATCH', headers: { 'Content-Type': 'application/json', ...authHeader(token) },
         body: JSON.stringify({ teamId: effectiveTeamId, chatId }),
       });
+    }).then(response => {
+      if (response?.ok) return clearDeviceNotifications({ chatId: String(chatId), teamId: effectiveTeamId });
     }).catch(() => undefined);
   }, [effectiveTeamId, chatId, user?.id, auth, isMessagesLoading, messages.length]);
 

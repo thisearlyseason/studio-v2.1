@@ -3,6 +3,7 @@
 import { getApp } from 'firebase/app';
 import { getAuth } from 'firebase/auth';
 import { registerPrimaryServiceWorker } from '@/lib/service-worker-registration';
+import { clearDeviceNotifications } from '@/lib/device-notification-presentation';
 
 export type PushTransport = 'web-push';
 
@@ -135,6 +136,7 @@ export async function deletePushDevice(userId: string): Promise<void> {
   const failures: unknown[] = [];
   await clearLegacyFcmRegistrations(userId).catch(error => failures.push(error));
   await deleteWebPushSubscription(userId).catch(error => failures.push(error));
+  await clearDeviceNotifications();
   if (failures.length > 0) {
     console.warn('[Web Push] Device cleanup was partially unavailable; sign-out will continue.');
   }

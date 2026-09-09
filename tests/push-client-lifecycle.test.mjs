@@ -177,3 +177,21 @@ test('logout cleanup invalidates the local subscription and settles when the not
   assert.equal(harness.calls.length, 2);
   assert.equal(unsubscribed, 1);
 });
+
+test('opt-out clears old cards and the app badge even when the device has no remaining subscription', async t => {
+  const effects = [];
+  const harness = {
+    auth: { currentUser: { uid: 'user-a', getIdToken: async () => 'token-a' } }, calls: [],
+    permission: 'granted', permissionRequests: 0, workerRegistrations: 0,
+    registration: {
+      pushManager: { getSubscription: async () => null },
+      getNotifications: async () => [{ close: () => effects.push('closed') }],
+    },
+  };
+  installBrowserGlobals(t, harness);
+  globalThis.navigator.clearAppBadge = async () => effects.push('cleared');
+  const loaded = await loadPushClient(harness); t.after(loaded.dispose);
+  await loaded.module.deletePushDevice('user-a');
+  assert.ok(effects.includes('closed'));
+  assert.ok(effects.includes('cleared'));
+});

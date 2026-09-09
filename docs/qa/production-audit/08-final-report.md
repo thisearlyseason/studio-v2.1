@@ -282,3 +282,51 @@ display, and current 192/512 icon assets. The live demo is ready. The strict
 matrix remains **84 PASS, 3 BLOCKED, 1 NOT APPLICABLE, 0 FAIL** because hardware
 presentation, corrected same-day reminder receipt/suppression, and the remaining
 iPhone/iPad installed-PWA lifecycle cannot be certified by Playwright.
+
+## New owner device failures and read-only diagnosis — 2026-09-09
+
+This update supersedes earlier no-open-defects and physical-pending-only claims.
+The separately verified PR73 repair release remains deployed; these new findings
+are not repaired by that release. At 18:18 UTC public health served
+`423e871b40a56fa1bd99a34867bc9408bdea0428`.
+
+- Android installation: owner-reported FAIL; native installation versus a missing
+  launcher shortcut remains unconfirmed. Android push presentation is BLOCKED by
+  that dependency, not independently demonstrated broken.
+- iPhone installation and popup receipt: owner PASS. Missing red home-screen badge
+  is FAIL: the deployed code never invokes the distinct app-badging API.
+- Game-Day Reminders: confirmed FAIL on the normal 18:22 UTC production run for
+  the owner's Tigers game. The scheduled Function lacks all required Web Push
+  configuration/bindings, so registered recipients fail before a provider send.
+  Reminder-off suppression remains unverified; toggling a preference is not proof.
+- Tests 4 and 7 remain owner PASS for their tested paths. Test 8 is owner-reported
+  PASS with platform/subcheck scope unresolved; Android reinstall cannot be
+  certified while Android installation is failing.
+
+See PHYS-20260909-1 through PHYS-20260909-3 in the defect ledger and the appended
+device checklist. Investigation made no application, infrastructure, secret, or
+customer-data changes. Physical certification is incomplete and the production
+reminder configuration is a confirmed unresolved server-side defect.
+
+## Approved physical-notification repair candidate — 2026-09-09
+
+The app badge integration is repaired with outstanding-card counting and scoped
+read/dismiss/tap/opt-out/logout cleanup. Deterministic tests reproduce and prevent
+stale concurrent badge writes; lock acquisition failure preserves push delivery.
+Twenty focused tests, independent review, type checking, lint (zero errors), and
+the production build passed. The full application run passed 1,490 tests with
+eight pre-existing skips before the final worker-only acquisition fallback; its
+two additional regressions pass in the final focused run. Local Chrome exercised
+the actual service worker with an instrumented badge API; it is not physical proof.
+
+The reminder Function now declares the three required Web Push secret bindings,
+and release workflows test the compiled manifest and deployed binding metadata.
+The Function build and manifest test pass. Applying this configuration to production
+is blocked on the original private VAPID key: Vercel marks it Sensitive and will
+not return it; the local export is redacted; staging's pair does not match. No key
+was rotated, and the failing production scheduler has not been represented as fixed.
+
+Android's manifest checks passed in Chrome, but installation visibility still needs
+the owner's app-drawer result. No speculative installer changes were made. Existing
+unaffected passes remain authoritative. Certification remains **84 PASS, 3 FAIL,
+1 NOT APPLICABLE** until deployment/provider and physical acceptance are recorded.

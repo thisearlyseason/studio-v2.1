@@ -129,3 +129,79 @@ The Push and PWA/offline matrix rows remain physical-device pending until every
 applicable item above has recorded evidence. WebKit emulation, Android viewport
 emulation, an HTTP 201 from a push provider, or a synthetic service-worker `push`
 event must not be recorded as physical-device acceptance.
+
+## Owner device results and read-only diagnosis — 2026-09-09
+
+This section supersedes earlier pending/pass assumptions only for the dimensions
+below. It records owner observations, not automated physical-device execution.
+The owner used Safari on iPhone and Chrome on Android; exact models and OS/browser
+versions were not supplied for this run. Production health at 18:18:54 UTC served
+revision `423e871b40a56fa1bd99a34867bc9408bdea0428`.
+
+| Checklist test | Owner observation | Reconciled status |
+| --- | --- | --- |
+| 1 installation | iPhone PASS. Android displayed Install, then Installing, possibly Installed, but no app icon appeared after about 15 minutes. | iPhone owner PASS; Android reported FAIL, pending app-drawer versus installation diagnosis. |
+| 2 notifications | iPhone popup PASS, home-screen red badge absent despite enabled settings. Android unavailable. | iPhone receipt owner PASS; iPhone app badge FAIL; Android BLOCKED by installation. |
+| 3 Android presentation | Could not test because the installation could not be found. | BLOCKED by test 1, not a separate demonstrated push-delivery failure. |
+| 4 removal protection | PASS. | Owner PASS for the tested device/path; platform not specified. |
+| 5 reminder enabled | No reminder for City Central United, Tigers Game, recipient athlete. | Reported failure under investigation; distinguish an elapsed scheduler cycle from waiting before the first eligible run. |
+| 6 reminder disabled | Toggle works, but delivery did not work when enabled. | BLOCKED: this does not establish preference-off suppression. |
+| 7 logout/offline privacy | PASS. | Owner PASS for the tested device/path; platform not specified. |
+| 8 multiple devices/update/reinstall | PASS. | Retain owner report, but platform and individual subchecks need clarification; cannot certify Android reinstall while test 1 is failing. |
+
+Read-only findings:
+
+- The deployed worker displays a notification and sets the notification's small
+  image via `badge`, but neither the worker nor application calls `setAppBadge`
+  or `clearAppBadge`. A synthetic push against the current worker recorded one
+  `showNotification` call and zero app-badge calls. This reproduces the missing
+  application integration, not a physical badge PASS. WebKit requires the Badging
+  API for this distinct home-screen indicator:
+  https://webkit.org/blog/14112/badging-for-home-screen-web-apps/.
+- Production reminder scheduling is ENABLED every 15 minutes. The latest run
+  initially inspected was 18:07:21 UTC, with zero reminders sent and zero failures.
+  The matching `Tigers game` event was created at 18:09:40 UTC on September 9,
+  after that run; its stored date is `2026-09-09` and start time is `15:09`.
+  Team timezone is absent, so the implementation uses America/Edmonton. Matching
+  active athlete profiles have both preferences enabled and registered Web Push
+  subscriptions. Delivery-ledger entries were absent at 18:20 UTC, before the
+  next expected scheduler run around 18:22 UTC. No reminder was manually sent or
+  scheduler triggered, and no customer account/event data was changed.
+
+Full physical certification remains incomplete. Retain unrelated established
+passes; do not ask the owner to repeat the complete audit.
+
+### First eligible scheduler run — confirmed failure
+
+At 18:22:21 UTC the normal production scheduler ran without manual intervention.
+Its 18:22:23 summary reported zero sent and six failures. The exact Tigers game
+ledger entries for the matching coach and two adult-player profiles each showed
+`status: failed`, `attempts: 1`, and `No registered device accepted the reminder.`
+Thus test 5 is now a confirmed FAIL, not merely a pending scheduler interval.
+
+Read-only deployed Function inspection found none of
+`WEB_PUSH_VAPID_SUBJECT`, `NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY`, or
+`WEB_PUSH_VAPID_PRIVATE_KEY` in its environment, and no secret environment
+bindings. `reminderWebPushConfiguration()` therefore returns null and
+`sendReminderWebPush()` reports every registered subscription as failed before
+attempting delivery. No secret values were printed or changed. Repair must bind
+the correct existing production push configuration to the scheduled Function;
+do not rotate the public/private key pair and invalidate working subscriptions.
+
+The owner clarified that the iPhone symptom is the red home-screen badge. Android
+showed Installing and possibly Installed; checking the launcher app drawer for
+The Squad or the legacy Schedule label is still needed to isolate native
+installation failure from a missing home-screen shortcut.
+# Approved repair follow-up — 2026-09-09
+
+- Badge code and race-condition regressions are repaired locally; wait for the
+  production release confirmation before repeating the iPhone badge check. Open
+  the installed app online to update it, then background it, send from a different
+  account, and verify the card, red badge, and chat tap-through. Check that reading
+  the matching chat or signing out clears the remaining card/badge.
+- Do not repeat the reminder test yet. Production's original private VAPID key
+  must be securely restored to the Function environment and provider delivery
+  verified first. The repair deliberately preserves existing push registrations.
+- Android: search the app drawer for **The Squad** and **Schedule**. Report whether
+  either opens the installed app. Manifest/browser checks cannot determine whether
+  Android completed installation or merely omitted a home-screen shortcut.
