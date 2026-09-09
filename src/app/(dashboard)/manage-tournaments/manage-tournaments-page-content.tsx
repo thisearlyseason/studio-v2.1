@@ -1801,7 +1801,7 @@ function TournamentDetailView({
         startTime: '08:00',
         endTime: '20:00',
         gameLength: event.gameLength || 60,
-        breakLength: event.breakLength || 15,
+        breakLength: event.breakLength ?? 15,
         gamesPerTeam: event.gamesPerTeam || 3,
         maxDailyGamesPerTeam: event.maxDailyGamesPerTeam || 3,
         tournamentType: event.tournamentType || 'round_robin',
