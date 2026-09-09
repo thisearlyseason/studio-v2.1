@@ -1,6 +1,29 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { generateIntelligentTournamentSchedule } from '../src/lib/intelligent-scheduler.ts';
+
+test('tournament generation preserves zero turnaround and still defaults missing legacy values', async () => {
+  const source = await readFile(new URL('../src/app/(dashboard)/manage-tournaments/manage-tournaments-page-content.tsx', import.meta.url), 'utf8');
+  const generation = source.slice(source.indexOf('const handleGenerateSchedule = async'));
+  const expression = generation.match(/breakLength:\s*([^,\n]+)/)?.[1];
+  assert.ok(expression, 'the actual generation config must supply turnaround');
+  const turnaround = new Function('event', `return ${expression};`);
+  assert.equal(turnaround({ breakLength: 0 }), 0);
+  assert.equal(turnaround({ breakLength: 15 }), 15);
+  assert.equal(turnaround({}), 15);
+  const { games, report } = generateIntelligentTournamentSchedule({
+    teams: ['Alpha', 'Bravo', 'Charlie', 'Delta'].map((name, i) => ({ id: `qa-${i}`, name })),
+    fields: [{ id: 'qa-field-1', name: 'Field 1' }, { id: 'qa-field-2', name: 'Field 2' }],
+    startDate: '2026-10-10', endDate: '2026-10-10', startTime: '08:00', endTime: '09:30',
+    dailyWindows: [{ date: '2026-10-10', startTime: '08:00', endTime: '09:30' }],
+    gameLength: 30, breakLength: turnaround({ breakLength: 0 }), gamesPerTeam: 3,
+    maxDailyGamesPerTeam: 4, tournamentType: 'tiered_playoffs',
+  });
+  assert.equal(report.isValid, true, report.conflicts.join('; '));
+  assert.equal(games.length, 6);
+  assert.deepEqual([...new Set(games.map(game => game.time))].sort(), ['8:00 AM', '8:30 AM', '9:00 AM']);
+});
 
 test('Tournament architect creates Tiered Playoffs as a divisionless draft', async () => {
   const source = await readFile(new URL('../src/app/(dashboard)/manage-tournaments/manage-tournaments-page-content.tsx', import.meta.url), 'utf8');
