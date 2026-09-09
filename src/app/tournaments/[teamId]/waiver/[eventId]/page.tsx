@@ -37,6 +37,7 @@ import BrandLogo from '@/components/BrandLogo';
 import { format } from 'date-fns';
 import { PortalStatus } from '@/components/public/PortalStatus';
 import { useUser } from '@/firebase';
+import { TOURNAMENT_DEFAULT_WAIVER } from '@/lib/registration-waiver-text';
 
 export default function PublicTournamentWaiverPage() {
   const { teamId, eventId } = useParams();
@@ -80,7 +81,7 @@ export default function PublicTournamentWaiverPage() {
       if (!token) throw new Error('Sign in with an authorized squad staff account to continue.');
       const response = await fetch('/api/public/portals/action', {
         method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ kind: 'tournament', action: 'waiver', teamId, eventId, teamName: selectedTeam, signer: coachName, signedDate: signDate, registrationCode, expectedVersion: config?.form_version, expectedHash: config?.config_hash }),
+        body: JSON.stringify({ kind: 'tournament', action: 'waiver', teamId, eventId, teamName: selectedTeam, signer: coachName, signedDate: signDate, signatureTimeZone: Intl.DateTimeFormat().resolvedOptions().timeZone, registrationCode, expectedVersion: config?.form_version, expectedHash: config?.config_hash }),
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Verification failed.');
@@ -177,8 +178,8 @@ export default function PublicTournamentWaiverPage() {
               </div>
               <div className="p-1 bg-muted rounded-2xl border-2">
                 <div className="h-48 p-5 bg-white rounded-xl overflow-y-auto">
-                  {(config?.default_waiver_text || config?.custom_waiver_text || config?.team_waivers_content?.length) ? (
-                    <p className="text-sm font-bold leading-relaxed whitespace-pre-wrap text-foreground/80">{[config.require_default_waiver ? config.default_waiver_text : '', config.custom_waiver_text || '', ...(config.team_waivers_content || []).map(item=>item.content)].filter(Boolean).join('\n\n')}</p>
+                  {(config?.require_default_waiver || config?.custom_waiver_text || config?.team_waivers_content?.length) ? (
+                    <p className="text-sm font-bold leading-relaxed whitespace-pre-wrap text-foreground/80">{[config.require_default_waiver ? (config.default_waiver_text || TOURNAMENT_DEFAULT_WAIVER) : '', config.custom_waiver_text || '', ...(config.team_waivers_content || []).map(item=>item.content)].filter(Boolean).join('\n\n')}</p>
                   ) : (
                     <div className="text-center py-10 opacity-40 space-y-2">
                       <FileText className="h-8 w-8 mx-auto" />
@@ -237,14 +238,14 @@ export default function PublicTournamentWaiverPage() {
                 </div>
               </div>
 
-              <div className="flex items-center space-x-3 p-4 bg-primary/5 rounded-2xl border border-primary/10 group cursor-pointer" onClick={() => setAgreed(!agreed)}>
+              <div className="flex items-center space-x-3 p-4 bg-primary/5 rounded-2xl border border-primary/10 group">
                 <Checkbox 
                   id="agree" 
                   checked={agreed} 
                   onCheckedChange={(v) => setAgreed(!!v)} 
                   className="h-6 w-6 rounded-lg border-2" 
                 />
-                <Label htmlFor="agree" className="text-[10px] font-black uppercase tracking-tight cursor-pointer leading-tight text-foreground">
+                <Label htmlFor="agree" className="flex-1 text-[10px] font-black uppercase tracking-tight cursor-pointer leading-tight text-foreground">
                   I verify that I have authority to sign for this squad and accept all terms.
                 </Label>
               </div>

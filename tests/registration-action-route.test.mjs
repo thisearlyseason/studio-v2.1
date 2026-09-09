@@ -3,6 +3,7 @@ import test from 'node:test';
 import {communicationDb,loadCommunicationRoute} from './helpers/communication-route-harness.mjs';
 import {effectiveLeagueRegistrationConfig,registrationConfigHash} from '../src/lib/registration-policy.ts';
 import {hashLeagueScorekeeperPin,hashTournamentScorekeeperCode} from '../src/lib/server-competition-credential.ts';
+import {TOURNAMENT_DEFAULT_WAIVER} from '../src/lib/registration-waiver-text.ts';
 
 process.env.COMPETITION_CREDENTIAL_HMAC_SECRET='current-competition-test-secret-at-least-32-bytes';
 process.env.COMPETITION_CREDENTIAL_HMAC_PREVIOUS_SECRETS='previous-competition-test-secret-at-least-32-bytes';
@@ -173,6 +174,26 @@ test('tournament replay canonicalizes every configured email field but rejects a
   }finally{app.dispose();}
 });
 
+for (const scenario of [
+  {name:'default-only',overrides:{require_default_waiver:true},expected:TOURNAMENT_DEFAULT_WAIVER},
+  {name:'default with custom and library terms',overrides:{require_default_waiver:true,custom_waiver_text:'Additional team terms',team_waivers_content:[{id:'library',content:'Library agreement'}]},expected:`${TOURNAMENT_DEFAULT_WAIVER}\n\nAdditional team terms\n\nLibrary agreement`},
+  {name:'explicit default text',overrides:{require_default_waiver:true,default_waiver_text:'Organizer standard terms'},expected:'Organizer standard terms'},
+  {name:'disabled default',overrides:{require_default_waiver:false,default_waiver_text:'Unused terms',custom_waiver_text:'Custom only'},expected:'Custom only'},
+]) test(`dedicated tournament waiver archives complete ${scenario.name} terms`,async()=>{
+  const config=teamConfig(scenario.overrides),code='VALIDCODE';
+  const {db,records}=communicationDb({'teams/a':{ownerUserId:'owner',planId:'team'},'teams/a/events/e':{isTournament:true,isArchived:false,title:'Cup',tournamentTeamsData:[{id:'p_entry',name:'Alpha',sourceTeamId:'a'}],teamAgreements:{}},'teams/a/events/e/registration/team_config':config,[`tournamentRegistrationCodes/${code}`]:{teamId:'a',eventId:'e'}},{serializeTransactions:true});
+  const app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{uid:'owner'});
+  const body={kind:'tournament',action:'waiver',teamId:'a',eventId:'e',teamName:'Alpha',signer:'Coach Owner',registrationCode:code,signedDate:new Date().toISOString().slice(0,10),expectedVersion:1,expectedHash:config.config_hash};
+  try{
+    const response=await app.route.POST(request(body));assert.equal(response.status,200,JSON.stringify(await response.json()));
+    const archives=[...records.entries()].filter(([path])=>path.includes('/archived_waivers/arch_tournament_'));
+    assert.equal(archives.length,1);assert.equal(archives[0][1].waiverText,scenario.expected);assert.equal(archives[0][1].immutable,true);
+    assert.equal(records.get('teams/a/events/e').teamAgreements.Alpha.agreed,true);
+    const replay=await app.route.POST(request(body));assert.equal(replay.status,200);assert.equal((await replay.json()).replay,true);
+    assert.equal((await app.route.POST(request({...body,expectedHash:'0'.repeat(64)}))).status,409);
+  }finally{app.dispose();}
+});
+
 test('tournament waiver exact replay preserves signedAt and tampering fails closed',async()=>{
   const config=teamConfig({require_default_waiver:true,default_waiver_text:'Exact terms'}),code='VALIDCODE',seed={'teams/a':{ownerUserId:'owner',planId:'team'},'teams/a/events/e':{isTournament:true,isArchived:false,title:'Cup',tournamentTeamsData:[{id:'p_entry',name:'Alpha',sourceTeamId:'a'}],teamAgreements:{}},'teams/a/events/e/registration/team_config':config,[`tournamentRegistrationCodes/${code}`]:{teamId:'a',eventId:'e'}};
   const {db,records}=communicationDb(seed,{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{uid:'owner'}),body={kind:'tournament',action:'waiver',teamId:'a',eventId:'e',teamName:'Alpha',signer:'Coach Owner',registrationCode:code,signedDate:new Date().toISOString().slice(0,10),expectedVersion:1,expectedHash:config.config_hash};
@@ -180,6 +201,23 @@ test('tournament waiver exact replay preserves signedAt and tampering fails clos
     assert.equal((await app.route.POST(request(body))).status,200);const archivePath=[...records.keys()].find(path=>path.includes('/archived_waivers/arch_tournament_')),signedAt=records.get(archivePath).signedAt;
     const replay=await app.route.POST(request(body));assert.equal(replay.status,200);assert.equal((await replay.json()).replay,true);assert.equal(records.get(archivePath).signedAt,signedAt);
     records.set(archivePath,{...records.get(archivePath),signedAt:'2000-01-01T00:00:00.000Z'});assert.equal((await app.route.POST(request(body))).status,409);
+  }finally{app.dispose();}
+});
+
+test('dedicated tournament waiver accepts today in the signer timezone but rejects stale dates and invalid zones',async()=>{
+  const now=new Date(),utcToday=now.toISOString().slice(0,10);
+  const signatureTimeZone=['Etc/GMT+12','Pacific/Kiritimati'].find(timeZone=>new Intl.DateTimeFormat('en-CA',{timeZone,year:'numeric',month:'2-digit',day:'2-digit'}).format(now)!==utcToday);
+  assert.ok(signatureTimeZone,'At least one supported timezone must have a different local day');
+  const signedDate=new Intl.DateTimeFormat('en-CA',{timeZone:signatureTimeZone,year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
+  const config=teamConfig({require_default_waiver:true}),code='VALIDCODE';
+  const {db}=communicationDb({'teams/a':{ownerUserId:'owner',planId:'team'},'teams/a/events/e':{isTournament:true,isArchived:false,title:'Cup',tournamentTeamsData:[{id:'p_entry',name:'Alpha',sourceTeamId:'a'}],teamAgreements:{}},'teams/a/events/e/registration/team_config':config,[`tournamentRegistrationCodes/${code}`]:{teamId:'a',eventId:'e'}},{serializeTransactions:true});
+  const app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{uid:'owner'});
+  const body={kind:'tournament',action:'waiver',teamId:'a',eventId:'e',teamName:'Alpha',signer:'Coach Owner',registrationCode:code,signedDate,signatureTimeZone,expectedVersion:1,expectedHash:config.config_hash};
+  try{
+    const valid=await app.route.POST(request(body));assert.equal(valid.status,200,JSON.stringify(await valid.json()));
+    assert.equal((await app.route.POST(request({...body,signedDate:utcToday}))).status,400);
+    assert.equal((await app.route.POST(request({...body,signatureTimeZone:'Not/A_Timezone'}))).status,400);
+    assert.equal((await app.route.POST(request({...body,signedDate:'2000-01-01'}))).status,400);
   }finally{app.dispose();}
 });
 
