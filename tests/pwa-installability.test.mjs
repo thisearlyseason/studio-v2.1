@@ -4,7 +4,12 @@ import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import vm from 'node:vm';
 import sharp from 'sharp';
-import { PwaInstallPromptBroker } from '../src/lib/pwa-install-prompt.ts';
+import React from 'react';
+import { renderToStaticMarkup } from 'react-dom/server';
+import * as pwaInstall from '../src/lib/pwa-install-prompt.ts';
+import { LandingPwaInstallButton } from '../src/components/pwa/LandingPwaInstallButton.tsx';
+
+const { PwaInstallPromptBroker } = pwaInstall;
 
 const source = path => readFile(new URL(path, import.meta.url), 'utf8');
 
@@ -21,6 +26,66 @@ test('one captured install prompt remains available to late-mounted install cont
   assert.equal(lateConsumer, prompt);
   assert.equal(broker.consume(), prompt);
   assert.equal(broker.current(), null);
+});
+
+test('landing install requests use the captured native prompt once', async () => {
+  assert.equal(typeof pwaInstall.requestPwaInstall, 'function');
+
+  const events = [];
+  const result = await pwaInstall.requestPwaInstall({
+    isIOS: false,
+    prompt: {
+      prompt() { events.push('prompt'); },
+      userChoice: Promise.resolve({ outcome: 'accepted' }),
+    },
+    showIOSInstructions() { events.push('ios-instructions'); },
+    showGeneralInstructions() { events.push('general-instructions'); },
+    consumePrompt() { events.push('consume'); },
+  });
+
+  assert.equal(result, 'accepted');
+  assert.deepEqual(events, ['prompt', 'consume']);
+});
+
+test('landing install requests explain manual installation when no native prompt is available', async () => {
+  assert.equal(typeof pwaInstall.requestPwaInstall, 'function');
+
+  const iosEvents = [];
+  const iosResult = await pwaInstall.requestPwaInstall({
+    isIOS: true,
+    prompt: null,
+    showIOSInstructions() { iosEvents.push('ios-instructions'); },
+    showGeneralInstructions() { iosEvents.push('general-instructions'); },
+    consumePrompt() { iosEvents.push('consume'); },
+  });
+  assert.equal(iosResult, 'instructions');
+  assert.deepEqual(iosEvents, ['ios-instructions']);
+
+  const generalEvents = [];
+  const generalResult = await pwaInstall.requestPwaInstall({
+    isIOS: false,
+    prompt: null,
+    showIOSInstructions() { generalEvents.push('ios-instructions'); },
+    showGeneralInstructions() { generalEvents.push('general-instructions'); },
+    consumePrompt() { generalEvents.push('consume'); },
+  });
+  assert.equal(generalResult, 'instructions');
+  assert.deepEqual(generalEvents, ['general-instructions']);
+});
+
+test('landing install action stays legible on transparent and scrolled navigation', () => {
+  const transparent = renderToStaticMarkup(React.createElement(LandingPwaInstallButton, {
+    placement: 'navigation',
+    isScrolled: false,
+  }));
+  const scrolled = renderToStaticMarkup(React.createElement(LandingPwaInstallButton, {
+    placement: 'navigation',
+    isScrolled: true,
+  }));
+
+  assert.match(transparent, /text-white/);
+  assert.match(scrolled, /text-foreground/);
+  assert.doesNotMatch(scrolled, /border-white\/30 bg-white\/10/);
 });
 
 test('root application registers The Squad service worker without orphaning legacy Schedule installs', async () => {
