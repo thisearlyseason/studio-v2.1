@@ -330,3 +330,32 @@ Android's manifest checks passed in Chrome, but installation visibility still ne
 the owner's app-drawer result. No speculative installer changes were made. Existing
 unaffected passes remain authoritative. Certification remains **84 PASS, 3 FAIL,
 1 NOT APPLICABLE** until deployment/provider and physical acceptance are recorded.
+
+## Production notification repair deployment — 2026-09-09
+
+The owner could not recover the original production VAPID private key and approved
+a controlled rotation. A new matched pair was generated and validated without
+printing either key. Vercel production and Google Secret Manager now hold the
+matched values; the incorrect service-account JSON uploaded as the private-key
+secret was disabled. Only the production deployer and Function runtime received
+least-privilege access to the three Web Push secrets.
+
+Vercel deployment `dpl_FTjiJ69U5LfdStEPmzERTh6qgniE` is Ready on both production
+aliases. Direct verification found the rotated public key in the live browser
+bundle and the app-badge repair in the live service worker. Protected production
+workflow `34393784014` passed verification, dependency audits, indexes, Functions,
+the explicit secret-binding guard, rules drift checks, Function inventory, and the
+calendar endpoint. Reminder revision `sendupcomingeventreminders-00007-mox` is ACTIVE.
+
+The server-side reminder configuration failure and client badge integration gap
+are repaired. They remain BLOCKED for physical acceptance because installed devices
+must reopen once to replace old-key PushSubscriptions. Android installation remains
+FAIL pending device diagnosis. The strict matrix is therefore **84 PASS, 2 BLOCKED,
+1 FAIL, 1 NOT APPLICABLE**, not fully physical-device certified.
+
+After the athlete phone reopened the production app, its Web Push registration
+renewed at 19:36:57 UTC. The normal 19:37 scheduler run recorded one provider
+success for the exact City Central United / Tigers game; the event's other two
+recipient ledgers remained failed on subscriptions that had not yet renewed.
+This proves the repaired production scheduler/provider path for the renewed device.
+Physical card receipt/tap-through and reminders-off suppression remain owner checks.

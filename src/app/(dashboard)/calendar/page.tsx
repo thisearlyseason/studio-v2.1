@@ -1,7 +1,7 @@
 
 "use client";
 
-import React, { useState, useMemo, useEffect, useCallback } from 'react';
+import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
   format, 
@@ -962,6 +962,7 @@ export default function MasterCalendarPage() {
   const [selectedChildIds, setSelectedChildIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeDetailedEventId, setActiveDetailedEventId] = useState<string | null>(null);
+  const handledReminderDeepLink = useRef<string | null>(null);
 
   const recordedGamesQuery = useMemoFirebase(() => {
     if (!db || !activeTeam?.id) return null;
@@ -1073,6 +1074,28 @@ export default function MasterCalendarPage() {
 
     return Array.from(map.values());
   }, [householdEvents, activeTeamEvents, householdGames, recordedGames, teams, activeTeam]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const eventId = params.get('eventId');
+    const teamId = params.get('teamId');
+    if (!eventId || !teamId) return;
+
+    const linkKey = `${teamId}:${eventId}`;
+    if (handledReminderDeepLink.current === linkKey) return;
+    const linkedEvent = allEvents.find(event => event.id === eventId && event.teamId === teamId);
+    if (!linkedEvent) return;
+
+    handledReminderDeepLink.current = linkKey;
+    setSelectedTeamIds(previous => previous.includes(teamId) ? previous : [teamId, ...previous]);
+    const linkedDate = calendarEventDate(linkedEvent.date);
+    if (linkedDate) {
+      setCurrentDate(linkedDate);
+      setSelectedDay(linkedDate);
+    }
+    setActiveDetailedEventId(linkedEvent.id);
+  }, [allEvents]);
 
   const activeDetailedEvent = useMemo(() => {
     if (!activeDetailedEventId) return null;

@@ -144,12 +144,14 @@ self.addEventListener('notificationclick', (event) => {
     Promise.all([withNotificationPresentationLock(async () => {
       event.notification.close();
       await syncAppBadge();
-    }), clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+    }), clients.matchAll({ type: 'window', includeUncontrolled: true }).then(async (windowClients) => {
       for (const client of windowClients) {
         if ('focus' in client) {
-          client.focus();
-          if ('navigate' in client) client.navigate(targetUrl);
-          return;
+          const destination = 'navigate' in client
+            ? await client.navigate(targetUrl)
+            : client;
+          if (destination && 'focus' in destination) return destination.focus();
+          return client.focus();
         }
       }
       if (clients.openWindow) return clients.openWindow(targetUrl);

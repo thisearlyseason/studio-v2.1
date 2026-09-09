@@ -205,3 +205,20 @@ installation failure from a missing home-screen shortcut.
 - Android: search the app drawer for **The Squad** and **Schedule**. Report whether
   either opens the installed app. Manifest/browser checks cannot determine whether
   Android completed installation or merely omitted a home-screen shortcut.
+
+## Production repair deployed — 2026-09-09
+
+- The badge repair is live on both production aliases.
+- The original VAPID private key was unavailable, so the owner approved a matched
+  production-key rotation. Both providers and ACTIVE reminder Function revision
+  `sendupcomingeventreminders-00007-mox` now use the validated pair; deployed
+  secret-binding verification passed in workflow `34393784014`.
+- Before testing, open each installed app online for at least 15 seconds while
+  signed in and notifications enabled. This replaces its old PushSubscription.
+- Then repeat only: iPhone notification card + red icon badge + tap-through;
+  same-day eligible reminder receipt; reminders-off suppression; and the unresolved
+  Android install/presentation path. Do not repeat prior targeting/privacy passes.
+- Athlete subscription renewal was observed at 19:36:57 UTC. The normal 19:37
+  scheduler recorded one provider success for the exact Tigers game. Record the
+  owner's physical card/tap result before closing R1; provider acceptance alone
+  is insufficient. Two stale recipient subscriptions remained failed as expected.
