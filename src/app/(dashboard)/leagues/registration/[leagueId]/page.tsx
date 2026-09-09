@@ -1,5 +1,7 @@
 "use client";
 
+import { LEAGUE_DEFAULT_WAIVER } from '@/lib/registration-waiver-text';
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { useTeam, LeagueRegistrationConfig, RegistrationEntry, RegistrationFormField, LeagueArchiveWaiver, TeamDocument } from '@/components/providers/team-provider';
@@ -887,7 +889,7 @@ export default function LeagueRegistrationAdminPage() {
                                 </div>
                                 <ScrollArea className="h-[150px] pr-4">
                                   <p className="text-[11px] font-bold leading-relaxed text-rose-800/70 italic bg-white/50 p-6 rounded-2xl border border-rose-100">
-                                    {localConfig?.default_waiver_text || "The standard waiver covers liability, medical consent, and media participation for league activities. This text is managed by the platform and provides a consistent baseline for all participants."}
+                                    {localConfig?.default_waiver_text || LEAGUE_DEFAULT_WAIVER}
                                   </p>
                                 </ScrollArea>
                                 <div className="flex items-center gap-2 px-2">

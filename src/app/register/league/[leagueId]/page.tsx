@@ -1,5 +1,7 @@
 "use client";
 
+import { LEAGUE_DEFAULT_WAIVER } from '@/lib/registration-waiver-text';
+
 import React, { useState, useMemo, useEffect, Suspense, useCallback } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { LeagueRegistrationConfig, RegistrationFormField } from '@/components/providers/team-provider';
@@ -888,7 +890,7 @@ function RegistrationForm() {
                           </div>
                           <ScrollArea className="h-48 rounded-[2.5rem] bg-muted/5 border-2 border-black/5 shadow-inner">
                             <div className="p-14 font-medium text-xs leading-relaxed text-foreground/80">
-                              {config.default_waiver_text || 'I hereby assume all risks, hazards, and liabilities associated with participation in this program. I waive, release, and discharge the organization, its directors, coaches, and facility providers from any and all claims for personal injury, property damage, or wrongful death occurring during or arising from program participation. I understand the inherent physical risks of athletic competition and certify that the participant is medically cleared to engage. I grant permission for emergency medical treatment if necessary, and acknowledge responsibility for any associated costs.'}
+                              {config.default_waiver_text || LEAGUE_DEFAULT_WAIVER}
                             </div>
                           </ScrollArea>
                         </div>

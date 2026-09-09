@@ -5,6 +5,22 @@ import {communicationDb,loadCommunicationRoute} from './helpers/communication-ro
 const base={title:'Team Registration',description:'Register',is_active:true,type:'team',form_schema:[{id:'name',label:'Team name',type:'short_text',required:true}],form_version:1};
 const request=body=>new Request('http://127.0.0.1/api/registrations/config',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
 
+test('saving a reloaded registration config ignores server audit metadata and preserves trusted attribution',async()=>{
+  for(const kind of ['league','tournament']){
+    const root=kind==='league'?'leagues/l':'teams/t/events/e';
+    const {db,records}=communicationDb({'leagues/l':{creatorId:'owner'},'teams/t':{ownerUserId:'owner',planId:'elite'},'teams/t/events/e':{isTournament:true,teamId:'t'}});
+    const app=await loadCommunicationRoute('../../src/app/api/registrations/config/route.ts',db,{uid:'owner'});
+    const target={targetKind:kind,targetId:kind==='league'?'l':'t',eventId:'e',configId:'team_config'};
+    try{
+      assert.equal((await app.route.POST(request({...target,expectedVersion:0,config:base}))).status,200);
+      const {config_hash,...stored}=records.get(`${root}/registration/team_config`);
+      const saved=await app.route.POST(request({...target,expectedVersion:1,expectedHash:config_hash,config:{...stored,title:'After reload',updatedBy:'spoofed',updatedAt:'1900-01-01'}}));
+      assert.equal(saved.status,200);const current=records.get(`${root}/registration/team_config`);
+      assert.equal(current.title,'After reload');assert.equal(current.updatedBy,'owner');assert.notEqual(current.updatedAt,'1900-01-01');assert.equal(current.form_version,2);
+    }finally{app.dispose();}
+  }
+});
+
 test('publishing tournament registration opens its public gate; closing the last form closes it',async()=>{
   const {db,records}=communicationDb({'teams/t':{ownerUserId:'owner',planId:'elite'},'teams/t/events/e':{isTournament:true,teamId:'t'}},{enforceReadBeforeWrite:true});
   const app=await loadCommunicationRoute('../../src/app/api/registrations/config/route.ts',db,{uid:'owner'});

@@ -1,5 +1,7 @@
 "use client";
 
+import { TOURNAMENT_DEFAULT_WAIVER } from '@/lib/registration-waiver-text';
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { useTeam, LeagueRegistrationConfig, RegistrationEntry, RegistrationFormField, TeamEvent, TeamDocument } from '@/components/providers/team-provider';
@@ -652,7 +654,7 @@ export default function TournamentRegistrationAdminPage() {
                       <div className="space-y-2 bg-white p-6 rounded-3xl border-2 border-rose-100 shadow-sm animate-in zoom-in-95 duration-200">
                         <Label className="text-[10px] font-black uppercase tracking-widest text-rose-900 ml-1">Standard Waiver</Label>
                         <Textarea 
-                          value={localConfig?.default_waiver_text || 'I hereby assume all risks, hazards, and liabilities associated with participation in this program...'} 
+                          value={localConfig?.default_waiver_text || TOURNAMENT_DEFAULT_WAIVER}
                           onChange={e => handleUpdateConfig({ default_waiver_text: e.target.value })} 
                           className="rounded-2xl min-h-[150px] border-none font-medium bg-rose-50/30 text-xs leading-relaxed" 
                         />
