@@ -53,6 +53,11 @@
   public key. Physical recipients must reopen the app to renew subscriptions;
   provider/device receipt, preference-off suppression, and tap-through remain
   BLOCKED, not PASS.
+- The athlete phone renewed its production subscription at 19:36:57 UTC. The
+  normal 19:37 scheduler run then recorded `status: sent`, provider success count
+  one, for the exact City Central United / Tigers game ledger. Two other recipient
+  ledgers remained failed on stale subscriptions. Physical card/tap observation
+  and preference-off suppression remain owner acceptance, not inferred PASS.
 - Evidence and owner result reconciliation:
   `runs/2026-09-04-final-certification/09-physical-device-checklist.md`.
 

@@ -352,3 +352,10 @@ are repaired. They remain BLOCKED for physical acceptance because installed devi
 must reopen once to replace old-key PushSubscriptions. Android installation remains
 FAIL pending device diagnosis. The strict matrix is therefore **84 PASS, 2 BLOCKED,
 1 FAIL, 1 NOT APPLICABLE**, not fully physical-device certified.
+
+After the athlete phone reopened the production app, its Web Push registration
+renewed at 19:36:57 UTC. The normal 19:37 scheduler run recorded one provider
+success for the exact City Central United / Tigers game; the event's other two
+recipient ledgers remained failed on subscriptions that had not yet renewed.
+This proves the repaired production scheduler/provider path for the renewed device.
+Physical card receipt/tap-through and reminders-off suppression remain owner checks.

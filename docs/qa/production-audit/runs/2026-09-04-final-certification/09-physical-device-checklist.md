@@ -218,3 +218,7 @@ installation failure from a missing home-screen shortcut.
 - Then repeat only: iPhone notification card + red icon badge + tap-through;
   same-day eligible reminder receipt; reminders-off suppression; and the unresolved
   Android install/presentation path. Do not repeat prior targeting/privacy passes.
+- Athlete subscription renewal was observed at 19:36:57 UTC. The normal 19:37
+  scheduler recorded one provider success for the exact Tigers game. Record the
+  owner's physical card/tap result before closing R1; provider acceptance alone
+  is insufficient. Two stale recipient subscriptions remained failed as expected.
