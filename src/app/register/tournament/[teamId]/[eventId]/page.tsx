@@ -1,6 +1,8 @@
 
 "use client";
 
+import { TOURNAMENT_DEFAULT_WAIVER } from '@/lib/registration-waiver-text';
+
 import React, { useState, useMemo, useEffect, Suspense } from 'react';
 import { cn } from '@/lib/utils';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
@@ -606,7 +608,7 @@ function RegistrationForm() {
                             <div className="space-y-2">
                               <p className="text-[10px] font-black uppercase tracking-widest text-primary ml-1">Standard Liability Waiver</p>
                               <ScrollArea className="h-40 p-5 rounded-2xl bg-muted/10 border-2 font-medium text-xs leading-relaxed">
-                                {config.default_waiver_text || 'I hereby assume all risks, hazards, and liabilities associated with participation in this tournament. I waive, release, and discharge the organization, its directors, host facilities, and affiliated sponsors from any and all claims for personal injury, property damage, or wrongful death occurring during or arising from program participation. I understand the inherent physical risks of athletic competition and certify that the participant is medically cleared to engage. I grant permission for emergency medical treatment if necessary, and acknowledge responsibility for any associated costs.'}
+                                {config.default_waiver_text || TOURNAMENT_DEFAULT_WAIVER}
                               </ScrollArea>
                             </div>
                           )}

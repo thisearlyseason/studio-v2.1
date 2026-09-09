@@ -29,6 +29,10 @@ export async function POST(req:NextRequest){
     const credentialRef=targetKind==='tournament'?parentRef.collection('private').doc('scoring'):null;
     const registrationConfig={...(body.config as Record<string,unknown>)};
     delete registrationConfig.scoringCode;
+    // Firestore snapshots include these server-owned fields after the first save.
+    // Ignore echoed values and always stamp fresh authenticated audit metadata below.
+    delete registrationConfig.updatedAt;
+    delete registrationConfig.updatedBy;
     const normalized=validateRegistrationConfig({...registrationConfig,...(targetKind==='league'?{payment_migrated:true}:{}),form_version:Math.max(1,expectedVersion+1)});
     const mutate=async(transaction:Transaction,authorityAlreadyChecked=false)=>{
       if(targetKind==='tournament'&&!authorityAlreadyChecked)await resolveCompetitionAuthority({transaction,actorUid:auth.uid,actorRole:auth.role,teamId:targetId,domain:'tournament'});

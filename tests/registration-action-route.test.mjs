@@ -10,6 +10,33 @@ process.env.COMPETITION_CREDENTIAL_HMAC_PREVIOUS_SECRETS='previous-competition-t
 const request=(body,url='http://127.0.0.1/api/public/portals/action')=>new Request(url,{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
 const teamConfig=overrides=>{const value={title:'Tournament form',description:'',is_active:true,type:'team',form_schema:[{id:'teamName',label:'Team Name',type:'short_text',required:true},{id:'name',label:'Head Coach Name',type:'short_text',required:true},{id:'email',label:'Email Address',type:'email',required:true}],form_version:1,registration_cost:'0',offline_payment_instructions:'',currency:'CAD',waiver_mode:'none',require_default_waiver:false,default_waiver_text:'',custom_waiver_text:'',team_waivers_content:[],...overrides};return{...value,config_hash:registrationConfigHash(value)};};
 
+test('default tournament waiver requires a signature and archives the same fallback text shown publicly',async()=>{
+  const config=teamConfig({require_default_waiver:true});
+  const {db,records}=communicationDb({'teams/t':{planId:'elite'},'teams/t/events/e':{isTournament:true,registrationOpen:true,tournamentTeamsData:[],tournamentGames:[]},'teams/t/events/e/registration/team_config':config});
+  const app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
+  const body={kind:'tournament',action:'register',teamId:'t',eventId:'e',protocolId:'team_config',requestId:'default-waiver-receipt-001',formVersion:1,formHash:config.config_hash,answers:{teamName:'Alpha',name:'QA Coach',email:'qa-coach@example.test'}};
+  try{
+    assert.equal((await app.route.POST(request(body))).status,400);
+    const signed=await app.route.POST(request({...body,signature:'QA Coach'}));assert.equal(signed.status,200);
+    const entry=[...records.entries()].find(([path])=>path.startsWith('teams/t/events/e/registrationEntries/'))?.[1];
+    assert.match(entry.waiver_signed_text,/participation in this tournament/);assert.match(entry.waiver_signed_text,/host facilities/);assert.notEqual(entry.waiver_signed_text,'QA Coach');
+  }finally{app.dispose();}
+});
+
+test('default league waiver enforces signature and preserves league-specific receipt wording',async()=>{
+  const raw=teamConfig({require_default_waiver:true}),league={creatorId:'owner',is_active:true,registrationEntryCount:0};
+  const config=effectiveLeagueRegistrationConfig(raw,league);
+  const {db,records}=communicationDb({'users/owner':{plan_type:'league'},'leagues/l':league,'leagues/l/registration/team_config':raw});
+  const app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
+  const body={kind:'league',action:'register',leagueId:'l',protocolId:'team_config',requestId:'league-default-waiver-001',formVersion:1,formHash:config.config_hash,answers:{teamName:'Alpha',name:'QA Coach',email:'qa-coach@example.test',phone:'5551234567'}};
+  try{
+    assert.equal((await app.route.POST(request(body))).status,400);
+    const signed=await app.route.POST(request({...body,signature:'QA Coach'}));assert.equal(signed.status,200,JSON.stringify(await signed.json()));
+    const entry=[...records.entries()].find(([path])=>path.startsWith('leagues/l/registrationEntries/'))?.[1];
+    assert.match(entry.waiver_signed_text,/coaches, and facility providers/);assert.doesNotMatch(entry.waiver_signed_text,/host facilities/);
+  }finally{app.dispose();}
+});
+
 test('public event final seat is serialized and a missing legacy counter migrates exactly',async()=>{
   const seed={'teams/a':{planId:'team'},'teams/a/events/e':{title:'Open',date:'2099-01-01',registrationOpen:true,registrationCapacity:2,customFormFields:[],registrationFormVersion:1},'teams/a/events/e/registrations/legacy':{email:'legacy@example.test'}};
   const {db,records}=communicationDb(seed,{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/event-registration/route.ts',db,{});

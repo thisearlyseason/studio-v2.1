@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
+import { LEAGUE_DEFAULT_WAIVER, TOURNAMENT_DEFAULT_WAIVER } from '@/lib/registration-waiver-text';
 import { FieldPath, FieldValue, type DocumentReference, type DocumentSnapshot } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase-admin';
 import { isActiveTournamentPortal, leagueBillingOwnerUserId, permitsLegacyOrPaidPortals } from '@/lib/public-portal-data';
@@ -434,7 +435,7 @@ export async function POST(req: NextRequest) {
       if(typeof answers.email==='string'&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(answers.email))return NextResponse.json({error:'Enter a valid email address.'},{status:400});
       if(typeof answers.phone==='string'&&answers.phone.replace(/\D/g,'').length<7)return NextResponse.json({error:'Enter a valid phone number.'},{status:400});
       const waiverParts = [
-        config.require_default_waiver ? config.default_waiver_text : '',
+        config.require_default_waiver ? (config.default_waiver_text || (kind === 'tournament' ? TOURNAMENT_DEFAULT_WAIVER : LEAGUE_DEFAULT_WAIVER)) : '',
         config.custom_waiver_text || '',
         ...(config.team_waivers_content || []).map((waiver: any) => waiver.content || ''),
       ].filter(Boolean);
