@@ -38,6 +38,7 @@ import { format } from 'date-fns';
 import { PortalStatus } from '@/components/public/PortalStatus';
 import { useUser } from '@/firebase';
 import { TOURNAMENT_DEFAULT_WAIVER } from '@/lib/registration-waiver-text';
+import { calendarEventDate } from '@/lib/calendar-event-date';
 
 export default function PublicTournamentWaiverPage() {
   const { teamId, eventId } = useParams();
@@ -143,7 +144,7 @@ export default function PublicTournamentWaiverPage() {
               <Clock className="h-5 w-5 text-primary" />
               <div className="min-w-0">
                 <p className="text-[8px] font-black uppercase opacity-40">Start Date</p>
-                <p className="text-sm font-black uppercase">{event.date ? format(new Date(event.date), 'EEEE, MMM d') : 'TBD'}</p>
+                <p className="text-sm font-black uppercase">{calendarEventDate(event.date) ? format(calendarEventDate(event.date)!, 'EEEE, MMM d') : 'TBD'}</p>
               </div>
             </div>
             <div className="flex items-center gap-4 bg-white/50 backdrop-blur-sm p-4 rounded-2xl border border-white shadow-sm">
