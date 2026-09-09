@@ -3,6 +3,36 @@ export type PwaInstallPrompt = Event & {
   userChoice: Promise<{ outcome: string }>;
 };
 
+type PwaInstallRequest = {
+  isIOS: boolean;
+  prompt: Pick<PwaInstallPrompt, 'prompt' | 'userChoice'> | null;
+  showIOSInstructions: () => void;
+  showGeneralInstructions: () => void;
+  consumePrompt: () => void;
+};
+
+export async function requestPwaInstall({
+  isIOS,
+  prompt,
+  showIOSInstructions,
+  showGeneralInstructions,
+  consumePrompt,
+}: PwaInstallRequest): Promise<string> {
+  if (isIOS) {
+    showIOSInstructions();
+    return 'instructions';
+  }
+  if (!prompt) {
+    showGeneralInstructions();
+    return 'instructions';
+  }
+
+  await prompt.prompt();
+  const { outcome } = await prompt.userChoice;
+  consumePrompt();
+  return outcome;
+}
+
 type PromptListener = (prompt: PwaInstallPrompt | null) => void;
 
 export class PwaInstallPromptBroker {

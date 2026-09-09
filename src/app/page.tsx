@@ -56,6 +56,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import BrandLogo from '@/components/BrandLogo';
 import { LandingChatbot } from '@/components/LandingChatbot';
+import { LandingPwaInstallButton } from '@/components/pwa/LandingPwaInstallButton';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
 import { useUser, useAuth } from '@/firebase';
@@ -516,6 +517,7 @@ export default function LandingPage() {
           </div>
 
           <div className="hidden md:flex items-center gap-4">
+            <LandingPwaInstallButton placement="navigation" isScrolled={isScrolled} />
             <Link href={accountHref}>
               <Button variant="ghost" className={cn("font-bold", isScrolled ? "text-foreground" : "text-white hover:bg-white/10")}>
                 {accountLabel}
@@ -562,6 +564,7 @@ export default function LandingPage() {
                   <a href="#pricing" className="text-xl font-black uppercase tracking-tight hover:text-primary transition-colors py-2 border-b border-muted">Pricing</a>
                   <Link href="/sports-hub" className="text-xl font-black uppercase tracking-tight text-primary py-2 border-b border-muted flex items-center gap-2">Sports Hub</Link>
                   <div className="flex flex-col gap-4 mt-12 pt-6">
+                    <LandingPwaInstallButton placement="menu" />
                     {BETA_MODE ? (
                       <div className="w-full h-14 rounded-2xl bg-primary/10 border-2 border-primary/20 flex items-center justify-center gap-2 text-primary font-black uppercase tracking-widest text-[10px]">
                         <span className="relative flex h-2 w-2"><span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-primary opacity-75"></span><span className="relative inline-flex rounded-full h-2 w-2 bg-primary"></span></span>
