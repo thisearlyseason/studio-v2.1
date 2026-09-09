@@ -35,11 +35,18 @@ export async function POST(req:NextRequest){
       const [parent,current,credential]=await Promise.all([transaction.get(parentRef),transaction.get(configRef),...(credentialRef&&scoringCodeHash?[transaction.get(credentialRef)]:[])]);
       if(!parent.exists)throw new RegistrationInputError('Registration target not found.',404);
       if(targetKind==='tournament'&&parent.data()?.isArchived===true)throw new RegistrationInputError('Archived Tournament registration cannot be reactivated.',409);
+      if(targetKind==='tournament'&&parent.data()?.status==='cancelled'&&normalized.is_active)throw new RegistrationInputError('Cancelled Tournament registration cannot be activated.',409);
       if(targetKind==='league'&&auth.role!=='superadmin'&&parent.data()?.creatorId!==auth.uid)throw new RegistrationInputError('League organizer access required.',403);
       if(targetKind==='tournament'&&parent.data()?.isTournament!==true)throw new RegistrationInputError('Tournament staff access required.',403);
       const currentData=current.data()||{},currentVersion=Number(currentData.form_version||0),currentHash=String(currentData.config_hash||'');
       if(current.exists&&(expectedVersion!==currentVersion||(currentHash ? expectedHash!==currentHash : Boolean(expectedHash))))throw new RegistrationInputError('Registration configuration changed. Reload before saving.',409);
       if(!current.exists&&expectedVersion!==0)throw new RegistrationInputError('Registration configuration changed. Reload before saving.',409);
+      // The public portal requires both a published form and an open event.
+      // Keep that event gate in the same transaction, preserving other live forms.
+      const otherForms=targetKind==='tournament'&&!normalized.is_active
+        ?await transaction.get(parentRef.collection('registration').where('is_active','==',true))
+        :null;
+      const registrationOpen=normalized.is_active||Boolean(otherForms?.docs.some(form=>form.id!==configId));
       let credentialVersion:number|undefined;
       if(targetKind==='tournament'&&scoringCodeHash&&credentialRef){
         const lifecycleVersion=Number(parent.data()?.lifecycleVersion||0),eventCredentialVersion=Number(parent.data()?.credentialVersion||0),privateCredentialVersion=Number(credential?.data()?.credentialVersion||0);
@@ -48,6 +55,7 @@ export async function POST(req:NextRequest){
         credentialVersion=privateCredentialVersion+1;
       }
       transaction.set(configRef,{...normalized,updatedAt:new Date().toISOString(),updatedBy:auth.uid});
+      if(targetKind==='tournament')transaction.update(parentRef,{registrationOpen});
       if(targetKind==='tournament'&&scoringCodeHash&&credentialRef&&credentialVersion!==undefined){
         transaction.set(credentialRef,{teamId:targetId,eventId,scorekeeperCodeHash:scoringCodeHash,credentialVersion,updatedAt:new Date().toISOString(),updatedBy:auth.uid});
         transaction.update(parentRef,{credentialVersion,scorekeeperConfigured:true,scoringCode:FieldValue.delete(),scoringCodeHash:FieldValue.delete()});
