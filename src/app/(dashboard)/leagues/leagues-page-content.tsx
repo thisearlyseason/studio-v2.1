@@ -67,8 +67,14 @@ import { generateIntelligentLeagueSchedule } from '@/lib/intelligent-scheduler';
 import { addSquadBranding, addSquadFooter } from '@/lib/pdf-utils';
 import { Calendar } from '@/components/ui/calendar';
 import { format, isSameDay, startOfDay, endOfDay } from 'date-fns';
+import { calendarEventDate } from '@/lib/calendar-event-date';
 import { DateRange } from 'react-day-picker';
 import { jsPDF } from 'jspdf';
+
+function formatLeagueScheduleDate(value: unknown, pattern: string): string {
+  const date = calendarEventDate(value);
+  return date ? format(date, pattern) : 'Date unavailable';
+}
 import { useTeam, League, TournamentGame, Field, Facility, LeagueArchiveWaiver } from '@/components/providers/team-provider';
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
 import { Select, SelectContent, SelectItem,  SelectTrigger,
@@ -713,7 +719,7 @@ function LeagueOverview({
         addSquadBranding(doc, `${league.name} SCHEDULE`, "OFFICIAL COMPETITIVE FIXTURES LOG");
         y = 70; 
       }
-      doc.setFont("helvetica", "bold"); doc.text(format(new Date(g.date), 'MMMM d, yyyy'), 25, y);
+      doc.setFont("helvetica", "bold"); doc.text(formatLeagueScheduleDate(g.date, 'MMMM d, yyyy'), 25, y);
       doc.text(`${g.team1.toUpperCase()} vs ${g.team2.toUpperCase()}`, 60, y);
       doc.setFont("helvetica", "normal"); doc.text(g.location || 'TBD', 140, y);
       doc.setFont("helvetica", "bold"); doc.text(g.time, pageWidth - 25, y, { align: 'right' });
@@ -934,7 +940,7 @@ function LeagueOverview({
                     >
                       {/* Date/Time */}
                       <div className="min-w-[90px] shrink-0 text-left">
-                        <p className="font-black text-[11px] uppercase tracking-tight leading-none">{format(new Date(game.date), 'MMM d, yyyy')}</p>
+                        <p className="font-black text-[11px] uppercase tracking-tight leading-none">{formatLeagueScheduleDate(game.date, 'MMM d, yyyy')}</p>
                         <p className="text-[10px] font-bold text-muted-foreground mt-0.5">{game.time}</p>
                         <div className="flex gap-1 mt-1">
                           {getDoubleHeaderLabel(game) && <Badge className="bg-primary/10 text-primary border-none text-[7px] h-4 font-black">DH</Badge>}
@@ -1033,7 +1039,7 @@ function LeagueOverview({
                   >
                     {/* Meta strip */}
                     <div className="flex justify-between items-center px-6 pt-5 pb-3 border-b border-muted/30">
-                      <p className="font-black text-[10px] uppercase tracking-widest text-muted-foreground">{format(new Date(game.date), 'MMM d, yyyy')} · {game.time}</p>
+                      <p className="font-black text-[10px] uppercase tracking-widest text-muted-foreground">{formatLeagueScheduleDate(game.date, 'MMM d, yyyy')} · {game.time}</p>
                       <p className="font-bold text-[10px] uppercase text-muted-foreground truncate max-w-[120px]">{game.location || 'Venue TBD'}</p>
                     </div>
 

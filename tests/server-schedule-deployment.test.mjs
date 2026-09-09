@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { transform } from 'esbuild';
 import {
   prepareLeagueScheduleClearUpdates,
   prepareLeagueScheduleForDeployment,
@@ -216,6 +217,23 @@ test('schedule deployment keeps complete logos in the authoritative team map wit
     assert.ok(dto.teams.alpha.teamLogoUrl === inline, 'Complete authoritative inline logo must remain available');
     assert.ok(dto.teams.beta.teamLogoUrl === hosted, 'Complete authoritative URL must remain available');
   }
+});
+
+test('generated schedule submissions omit redundant logos without mutating the local preview', async () => {
+  const source = await readFile(new URL('../src/components/providers/team-provider.tsx', import.meta.url), 'utf8');
+  const callback = source.match(/  const updateLeagueSchedule = useCallback[\s\S]*?\n  \}, \[[^\]]+\]\);/)[0];
+  const compiled = (await transform(`${callback}\nreturn updateLeagueSchedule;`, {loader:'ts'})).code;
+  let submitted;
+  const update = new Function('useCallback','firebaseAuth','getAuthToken','requestLeagueMutation','toast',compiled)(
+    fn=>fn,{},async()=>'fixture-token',async(url,body)=>{assert.equal(url,'/api/leagues/schedule');submitted=JSON.parse(JSON.stringify(body));return Response.json({success:true});},()=>{},
+  );
+  const logo = `data:image/png;base64,${(await readFile(new URL('../public/logo-dark.png', import.meta.url))).toString('base64')}`;
+  const games = Array.from({length:20},(_,i)=>game({id:`match-${i}`,team1LogoUrl:logo,team2LogoUrl:logo}));
+  const before=structuredClone(games);
+  await update('league-1',games);
+  assert.ok(Buffer.byteLength(JSON.stringify(submitted))<20_000,'Repeated logos must not hit the API body limit');
+  assert.deepEqual(submitted.games,games.map(({team1LogoUrl,team2LogoUrl,...match})=>match));
+  assert.deepEqual(games,before,'The scheduler preview must retain the complete logos');
 });
 
 test('replacement normalizes trusted team names and stable resource identities', () => {

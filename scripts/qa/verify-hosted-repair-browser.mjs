@@ -7,6 +7,7 @@ import { promisify } from 'node:util';
 import { build } from 'esbuild';
 import postcss from 'postcss';
 import tailwindcss from 'tailwindcss';
+import ts from 'typescript';
 import { prepareLeagueScheduleForDeployment } from '../../src/lib/server-schedule-deployment.ts';
 import { scorekeeperLeague } from '../../src/lib/public-portal-data.ts';
 
@@ -24,6 +25,14 @@ const normalized = prepareLeagueScheduleForDeployment('fixture', {
   schedulerConfig:{gameLength:'60',selectedFields:['Main']}, schedule:[],
 }, 'replace', [{id:'match-a',team1Id:'a',team2Id:'b',date:'2026-10-01',time:'09:00',location:'Main',resourceId:'Main'}]);
 const projected = scorekeeperLeague('fixture',{teams:{a:{teamName:'Alpha',status:'accepted',teamLogoUrl:originalLogo}},schedule:normalized.games});
+const leagueTree=ts.createSourceFile('league.tsx',await readFile('src/app/(dashboard)/leagues/leagues-page-content.tsx','utf8'),ts.ScriptTarget.Latest,true,ts.ScriptKind.TSX);
+let leagueDateHelper='';const leagueDateLabels=[];
+function collectLeagueDates(node){
+  if(ts.isFunctionDeclaration(node)&&node.name?.text==='formatLeagueScheduleDate')leagueDateHelper=node.getText(leagueTree);
+  if(ts.isCallExpression(node)&&node.expression.getText(leagueTree)==='formatLeagueScheduleDate'&&node.arguments[0]?.getText(leagueTree)==='game.date')leagueDateLabels.push(node.parent.parent.getText(leagueTree));
+  ts.forEachChild(node,collectLeagueDates);
+}
+collectLeagueDates(leagueTree);assert.equal(leagueDateLabels.length,2);
 const fixture = {
   games:[{id:'recorded',opponent:'Recorded Tigers',date:'2026-10-01',myScore:3,opponentScore:1,result:'Win'},
     {id:'legacy',opponent:'Legacy Tigers',date:'2026-10-01T01:00:00.000Z',myScore:2,opponentScore:2,result:'Tie'}],
@@ -38,7 +47,7 @@ const stubs = {
   '@/hooks/use-public-portal': `export const usePublicPortal=()=>({data:window.qa.portal,isLoading:false,error:null,status:200,retry:()=>{}});`,
 };
 const bundle = await build({
-  stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {TooltipProvider} from './src/components/ui/tooltip';import Games from './src/app/(dashboard)/games/page';import Tournament from './src/app/register/tournament/[teamId]/[eventId]/page';createRoot(document.getElementById('root')).render(<TooltipProvider>{location.pathname === '/tournament' ? <Tournament/> : location.pathname === '/logo' ? <img alt="Deployed team logo" src=${JSON.stringify(projected.teams.a.teamLogoUrl)}/> : <Games/>}</TooltipProvider>);`,loader:'tsx',resolveDir:cwd},
+  stdin:{contents:`import React from 'react';import {createRoot} from 'react-dom/client';import {TooltipProvider} from './src/components/ui/tooltip';import {format} from 'date-fns';import {calendarEventDate} from './src/lib/calendar-event-date';import Games from './src/app/(dashboard)/games/page';import Tournament from './src/app/register/tournament/[teamId]/[eventId]/page';${leagueDateHelper};function LeagueDates(){const game={date:'2026-10-01',time:'09:00'};return <main aria-label="League dates" className="p-6">${leagueDateLabels.join('')}</main>;}createRoot(document.getElementById('root')).render(<TooltipProvider>{location.pathname === '/league' ? <LeagueDates/> : location.pathname === '/tournament' ? <Tournament/> : location.pathname === '/logo' ? <img alt="Deployed team logo" src=${JSON.stringify(projected.teams.a.teamLogoUrl)}/> : <Games/>}</TooltipProvider>);`,loader:'tsx',resolveDir:cwd},
   bundle:true,write:false,platform:'browser',format:'iife',jsx:'automatic',
   define:{'process.env.NODE_ENV':'"production"','process.env':'{}'},alias:{'@':path.join(cwd,'src')},
   plugins:[{name:'page-boundaries',setup(bundler){
@@ -68,7 +77,7 @@ try{
   const result=await run(['run-code',`async page=>{
     const results=[];
     for(const zone of ['America/Edmonton','Pacific/Auckland']) for(const width of [390,1440]){
-      const context=await page.context().browser().newContext({timezoneId:zone,viewport:{width,height:960}});
+      const context=await page.context().browser().newContext({timezoneId:zone,reducedMotion:'reduce',viewport:{width,height:960}});
       const screen=await context.newPage();const errors=[];screen.on('pageerror',e=>errors.push(e.message));
       try{
         await screen.goto(${JSON.stringify(origin)}+'/games');
@@ -79,7 +88,7 @@ try{
         await card.click();await screen.getByRole('dialog').waitFor();await screen.locator('body').ariaSnapshot();
         const dialog=screen.getByRole('dialog');
         if(!(await dialog.textContent()).includes('October 1st, 2026'))throw Error('Edit date shifted');
-        await screen.screenshot({path:${JSON.stringify(output)}+'/'+zone.replace('/','-')+'-'+width+'-score.png'});
+        await screen.screenshot({animations:'disabled',path:${JSON.stringify(output)}+'/'+zone.replace('/','-')+'-'+width+'-score.png'});
         const legacyExpected=zone==='America/Edmonton'?'September 30, 2026':'October 1, 2026';
         await screen.keyboard.press('Escape');
         const legacy=screen.getByRole('heading',{name:'Legacy Tigers',exact:true}).locator('xpath=ancestor::div[contains(@class,"rounded-3xl")][1]');
@@ -98,12 +107,16 @@ try{
         const timeline=screen.getByText('Timeline',{exact:true}).locator('..');
         if(!(await timeline.textContent()).includes('Oct 1 - Oct 2'))throw Error('Tournament timeline shifted');
         if(await screen.evaluate(()=>document.documentElement.scrollWidth>innerWidth+1))throw Error('Tournament overflow');
-        await screen.screenshot({path:${JSON.stringify(output)}+'/'+zone.replace('/','-')+'-'+width+'-tournament.png'});
+        await screen.screenshot({animations:'disabled',path:${JSON.stringify(output)}+'/'+zone.replace('/','-')+'-'+width+'-tournament.png'});
+        await screen.goto(${JSON.stringify(origin)}+'/league');await screen.getByRole('main',{name:'League dates'}).waitFor();
+        await screen.locator('body').ariaSnapshot();
+        const labels=await screen.getByRole('main',{name:'League dates'}).locator('p').allTextContents();
+        if(labels.length!==2||labels.some(text=>!text.includes('Oct 1, 2026')))throw Error('League label shifted');
         await screen.goto(${JSON.stringify(origin)}+'/logo');
         await screen.getByAltText('Deployed team logo').waitFor();
         if(!await screen.getByAltText('Deployed team logo').evaluate(img=>img.complete&&img.naturalWidth>0))throw Error('Normalized logo corrupt');
         if(errors.length)throw Error(errors.join(';'));
-        results.push({zone,width,scoreHistory:true,editDate:true,legacyInstant:true,scheduledMatch:true,tournamentTimeline:true,normalizedLogo:true,pageErrors:errors});
+        results.push({zone,width,scoreHistory:true,editDate:true,legacyInstant:true,scheduledMatch:true,tournamentTimeline:true,leagueDates:true,normalizedLogo:true,pageErrors:errors});
       }finally{await context.close();}
     }return results;
   }`]);

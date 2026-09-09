@@ -60,3 +60,26 @@ test('malformed historical dates do not crash score history or public registrati
   assert.deepEqual(result.chartData, []);
   assert.match(renderTimeline({date:'not-a-date',endDate:'invalid'}), /TBA/);
 });
+
+test('related League ledger, calendar card and PDF export use the same local match day', async () => {
+  const source = await readFile(new URL('../src/app/(dashboard)/leagues/leagues-page-content.tsx', import.meta.url), 'utf8');
+  const league = ts.createSourceFile('league.tsx', source, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  const expressions = [];
+  let helper = '';
+  function visit(node) {
+    if (ts.isFunctionDeclaration(node) && node.name?.text === 'formatLeagueScheduleDate') helper = node.getText(league);
+    if (ts.isCallExpression(node) && ['format', 'formatLeagueScheduleDate'].includes(node.expression.getText(league))
+      && /^(new Date\()?g(ame)?\.date\)?$/.test(node.arguments[0]?.getText(league) ?? '')) expressions.push(node.getText(league));
+    ts.forEachChild(node, visit);
+  }
+  visit(league);
+  assert.equal(expressions.length, 3);
+  const code = (await transform(`${helper}\nreturn [${expressions.join(',')}];`, {loader:'ts'})).code;
+  const prior = process.env.TZ;
+  process.env.TZ = 'America/Edmonton';
+  try {
+    const evaluate = value => new Function('g', 'game', 'format', 'calendarEventDate', code)({date:value},{date:value},format,calendarEventDate);
+    assert.deepEqual(evaluate('2026-10-01'), ['October 1, 2026', 'Oct 1, 2026', 'Oct 1, 2026']);
+    assert.deepEqual(evaluate('invalid'), ['Date unavailable', 'Date unavailable', 'Date unavailable']);
+  } finally { if (prior === undefined) delete process.env.TZ; else process.env.TZ = prior; }
+});
