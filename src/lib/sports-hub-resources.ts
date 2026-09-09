@@ -4,8 +4,10 @@
  * Internal resources use /sports-hub/resources/[id] viewer pages.
  */
 import { EXPANDED_RESOURCES } from './sports-hub-expanded-resources';
+import { SCORE_SHEET_RESOURCES } from './sports-hub-score-sheets';
 
 export type ResourceType =
+  | 'score-sheet'
   | 'practice-plan'
   | 'drill'
   | 'season-planner'
@@ -35,6 +37,7 @@ export interface Resource {
   isFeatured: boolean;
   isVideo: boolean;
   videoUrl?: string;
+  downloadUrl?: string;
   /** YouTube channel or creator credit shown on video resources */
   videoCredit?: string;
   /** Internal viewer slug — all non-video resources use /sports-hub/resources/[id] */
@@ -50,6 +53,7 @@ export interface ResourceContent {
 }
 
 export const RESOURCES: Resource[] = [
+  ...SCORE_SHEET_RESOURCES,
   ...EXPANDED_RESOURCES,
   // ─── PRACTICE PLANS ───────────────────────────────────────────────────────
   {
@@ -2458,6 +2462,7 @@ Start at comfortable speed and increase over 2–3 weeks. Once you can complete 
 ];
 
 export const RESOURCES_BY_TYPE = {
+  'score-sheet': RESOURCES.filter(r => r.type === 'score-sheet'),
   'practice-plan': RESOURCES.filter(r => r.type === 'practice-plan'),
   'drill': RESOURCES.filter(r => r.type === 'drill'),
   'season-planner': RESOURCES.filter(r => r.type === 'season-planner'),
