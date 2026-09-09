@@ -75,8 +75,30 @@ function baseConfig(input: TieredPlayoffsDraftSetup): TieredPlayoffsConfig {
   };
 }
 
-export function buildTieredPlayoffsDraftConfig(input: TieredPlayoffsDraftSetup): TieredPlayoffsConfig {
-  return baseConfig(input);
+export function buildTieredPlayoffsDraftConfig(input: TieredPlayoffsDraftSetup, existing?: TieredPlayoffsConfig): TieredPlayoffsConfig {
+  if (!existing) return baseConfig(input);
+  // The architect edits setup fields, not division definitions or live bracket
+  // state. The lifecycle API separately rejects changes to deployed schedules.
+  return {
+    ...existing,
+    preliminary: {
+      ...existing.preliminary,
+      gamesPerTeam: input.gamesPerTeam,
+      gameDurationMinutes: input.gameDurationMinutes,
+      transitionMinutes: input.transitionMinutes,
+      // The architect links rest to turnaround; preserve independently configured rest.
+      minimumRestMinutes: existing.preliminary.minimumRestMinutes === existing.preliminary.transitionMinutes
+        ? input.minimumRestMinutes
+        : existing.preliminary.minimumRestMinutes,
+      maximumGamesPerTeamPerDay: input.maximumGamesPerTeamPerDay,
+    },
+    standings: {
+      ...existing.standings,
+      points: input.points,
+      finalResolution: input.finalResolution,
+      maximumDifferentialPerGame: input.maximumDifferentialPerGame,
+    },
+  };
 }
 
 export function buildTieredPlayoffsConfig(input: TieredPlayoffsSetup): TieredPlayoffsConfig {
