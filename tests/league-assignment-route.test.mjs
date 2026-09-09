@@ -22,6 +22,30 @@ const fixture = {
 const respond = { action: 'respond', leagueId: 'league-a', entryId: 'entry', teamId: 'squad', status: 'accepted', requestId: 'accept-request-0001', expectedVersion: 1, expectedAssignmentVersion: 1 };
 const request = body => new Request('http://localhost/api/leagues/assignments', { method: 'PATCH', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
+test('assignment inbox query is supported by the shipped Firestore indexes', async () => {
+  const config = JSON.parse(await readFile(new URL('../firestore.indexes.json', import.meta.url), 'utf8'));
+  const { db } = communicationDb(fixture);
+  const runTransaction = db.runTransaction.bind(db);
+  // Firestore requires an explicit group-scope index; the in-memory SDK otherwise
+  // accepts this query even when deploying this configuration would return 503.
+  db.runTransaction = work => runTransaction(transaction => work({ ...transaction, get(ref) {
+    if (ref.group) for (const [field, operator] of ref.filters) {
+      assert.equal(operator, '==');
+      const supported = config.fieldOverrides.some(entry => entry.collectionGroup === ref.path
+        && entry.fieldPath === field && entry.indexes.some(index => index.queryScope === 'COLLECTION_GROUP'
+          && ['ASCENDING', 'DESCENDING'].includes(index.order)));
+      if (!supported) throw Object.assign(new Error('Missing collection-group index'), { code: 9 });
+    }
+    return transaction.get(ref);
+  } }));
+  const app = await loadCommunicationRoute(routePath, db, { uid: 'staff' });
+  try {
+    const response = await app.route.GET({ nextUrl: new URL('http://localhost/api/leagues/assignments?teamId=squad') });
+    assert.equal(response.status, 200);
+    assert.equal((await response.json()).assignments[0].answers.fullName, 'Applicant');
+  } finally { app.dispose(); }
+});
+
 for (const uncertainFirst of [false, true]) test(`Team page refreshes remaining same-League assignments only after confirmed success (${uncertainFirst ? 'uncertain retry' : 'ordinary decisions'})`, async () => {
   const { db, records } = communicationDb({ ...fixture,
     'leagues/league-a/registrationEntries/second': { ...fixture['leagues/league-a/registrationEntries/entry'], answers: { fullName: 'Second Applicant' } },

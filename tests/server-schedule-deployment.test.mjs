@@ -10,6 +10,7 @@ import {
   validateLeagueDeploymentIntegrity,
 } from '../src/lib/server-schedule-deployment.ts';
 import { generateLeagueSchedule } from '../src/lib/scheduler-utils.ts';
+import { publicLeague, scorekeeperLeague } from '../src/lib/public-portal-data.ts';
 import { communicationDb, loadCommunicationRoute } from './helpers/communication-route-harness.mjs';
 
 const scheduleFixture = {
@@ -194,6 +195,28 @@ function game(overrides = {}) {
     ...overrides,
   };
 }
+
+test('schedule deployment keeps complete logos in the authoritative team map without duplicating image bytes', async () => {
+  const inline = `data:image/png;base64,${(await readFile(new URL('../public/logo-dark.png', import.meta.url))).toString('base64')}`;
+  const hosted = `https://example.test/logo.png?token=${'a'.repeat(2100)}`;
+  assert.ok(inline.length > 2000);
+  const input = league();
+  input.teams.alpha.teamLogoUrl = inline;
+  input.teams.beta.teamLogoUrl = hosted;
+  const result = prepareLeagueScheduleForDeployment('league-1', input, 'replace', Array.from({length:20}, (_, i) => game({
+    id:`match-${i}`, date:`2026-09-${String(i+1).padStart(2,'0')}`, team1LogoUrl:'https://untrusted.test/spoof.png',
+  })));
+  for (const match of result.games) {
+    assert.equal(match.team1LogoUrl, undefined);
+    assert.equal(match.team2LogoUrl, undefined);
+  }
+  assert.ok(Buffer.byteLength(JSON.stringify(result)) < 20_000, 'Schedule receipts must not multiply image bytes');
+  for (const project of [publicLeague, scorekeeperLeague]) {
+    const dto = project('league-1', {...input,schedule:result.games});
+    assert.ok(dto.teams.alpha.teamLogoUrl === inline, 'Complete authoritative inline logo must remain available');
+    assert.ok(dto.teams.beta.teamLogoUrl === hosted, 'Complete authoritative URL must remain available');
+  }
+});
 
 test('replacement normalizes trusted team names and stable resource identities', () => {
   const result = prepareLeagueScheduleForDeployment(

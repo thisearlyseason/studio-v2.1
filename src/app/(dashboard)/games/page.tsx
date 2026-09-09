@@ -32,6 +32,7 @@ import {
 } from "@/components/ui/chart";
 import { Line, LineChart, CartesianGrid, XAxis, YAxis } from "recharts";
 import { format } from 'date-fns';
+import { calendarEventDate } from '@/lib/calendar-event-date';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { DatePicker } from "@/components/ui/date-picker";
 import { useAuth } from '@/firebase';
@@ -55,7 +56,7 @@ export default function GamesPage() {
   }, [activeTeam?.id, db]);
 
   const { data: rawGames, isLoading } = useCollection(gamesQuery);
-  const games = useMemo(() => (rawGames || []).map(g => ({ ...g, date: new Date(g.date) })), [rawGames]);
+  const games = useMemo(() => (rawGames || []).map(g => ({ ...g, date: calendarEventDate(g.date) })), [rawGames]);
 
   const [isRecordOpen, setIsRecordOpen] = useState(false);
   const [editingGame, setEditingGame] = useState<any>(null);
@@ -83,7 +84,7 @@ export default function GamesPage() {
     const items = games.map(g => ({
       ...g,
       isRecorded: true,
-      displayDate: new Date(g.date),
+      displayDate: g.date,
       time: 'Final' // Recorded games don't strictly need time displayed
     }));
 
@@ -101,7 +102,7 @@ export default function GamesPage() {
             eventId: e.id,
             opponent: opp,
             date: e.date,
-            displayDate: new Date(e.date),
+            displayDate: calendarEventDate(e.date),
             isRecorded: false,
             location: e.location,
             time: e.startTime,
@@ -113,7 +114,7 @@ export default function GamesPage() {
       // Tournament games are managed by the tournament engine — exclude from team scorekeeping
     });
 
-    return items.sort((a, b) => b.displayDate.getTime() - a.displayDate.getTime());
+    return items.sort((a, b) => (b.displayDate?.getTime() ?? 0) - (a.displayDate?.getTime() ?? 0));
   }, [games, activeTeamEvents, recordedEventIds, activeTeam?.id, activeTeam?.name]);
 
   useEffect(() => {
@@ -137,12 +138,8 @@ export default function GamesPage() {
         }
         
         // Format date for the input
-        try {
-          const d = new Date(event.date);
-          setDate(d.toISOString().split('T')[0]);
-        } catch (e) {
-          setDate('');
-        }
+        const d = calendarEventDate(event.date);
+        setDate(d ? format(d, 'yyyy-MM-dd') : '');
         
         setLocation(event.location);
       }
@@ -151,8 +148,8 @@ export default function GamesPage() {
 
   const chartData = useMemo(() => {
     if (!games.length) return [];
-    return [...games].sort((a, b) => a.date.getTime() - b.date.getTime()).map(g => ({
-      date: format(g.date, 'MMM d'),
+    return games.filter(g => g.date !== null).sort((a, b) => a.date!.getTime() - b.date!.getTime()).map(g => ({
+      date: format(g.date!, 'MMM d'),
       myScore: g.myScore,
       opponentScore: g.opponentScore,
       opponentName: g.opponent,
@@ -313,7 +310,7 @@ export default function GamesPage() {
               if (game.isRecorded) {
                 setEditingGame(game);
                 setOpponent(game.opponent);
-                setDate(new Date(game.date).toISOString().split('T')[0]);
+                setDate(game.displayDate ? format(game.displayDate, 'yyyy-MM-dd') : '');
                 setMyScore((game.myScore ?? 0).toString());
                 setOpponentScore((game.opponentScore ?? 0).toString());
                 setLocation(game.location || '');
@@ -322,7 +319,7 @@ export default function GamesPage() {
               } else {
                 setEditingGame(null);
                 setOpponent(game.opponent);
-                setDate(new Date(game.date).toISOString().split('T')[0]);
+                setDate(game.displayDate ? format(game.displayDate, 'yyyy-MM-dd') : '');
                 setMyScore('');
                 setOpponentScore('');
                 setLocation(game.location || '');
@@ -340,7 +337,7 @@ export default function GamesPage() {
                 ) : (
                   <Badge className="bg-primary/20 text-primary border-none text-[8px] font-black uppercase px-2 h-5 tracking-widest text-black">UPCOMING • {game.time ? (() => { try { return format(new Date(`2000-01-01T${game.time}`), 'h:mm a'); } catch { return game.time; } })() : 'TBD'}</Badge>
                 )}
-                <span className="text-[10px] font-black text-muted-foreground uppercase">{format(new Date(game.displayDate), 'MMMM d, yyyy')}</span>
+                <span className="text-[10px] font-black text-muted-foreground uppercase">{game.displayDate ? format(game.displayDate, 'MMMM d, yyyy') : 'Date unavailable'}</span>
               </div>
               <div className="flex items-center justify-between gap-4">
                 <div className="min-w-0 flex-1">
@@ -384,11 +381,12 @@ export default function GamesPage() {
                     <SelectItem value="manual">-- Manual Entry --</SelectItem>
                     {scheduledMatches.map(event => {
                       const isRecorded = recordedEventIds.has(event.id) && event.id !== editingGame?.eventId;
+                      const eventDate = calendarEventDate(event.date);
                       return (
                         <SelectItem key={event.id} value={event.id} disabled={isRecorded}>
                           <div className="flex flex-col items-start py-1">
                             <span className="font-black text-xs uppercase">{event.title}</span>
-                            <span className="text-[10px] opacity-50 uppercase">{format(new Date(event.date), 'MMMM d, yyyy')} @ {event.location} {isRecorded ? '(Already Recorded)' : ''}</span>
+                            <span className="text-[10px] opacity-50 uppercase">{eventDate ? format(eventDate, 'MMMM d, yyyy') : 'Date unavailable'} @ {event.location} {isRecorded ? '(Already Recorded)' : ''}</span>
                           </div>
                         </SelectItem>
                       );

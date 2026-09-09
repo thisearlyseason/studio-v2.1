@@ -52,6 +52,7 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import BrandLogo from '@/components/BrandLogo';
 import { toast } from '@/hooks/use-toast';
 import { format } from 'date-fns';
+import { calendarEventDate } from '@/lib/calendar-event-date';
 import { PortalStatus } from '@/components/public/PortalStatus';
 import { useAuth } from '@/firebase';
 import { authHeader, getAuthToken } from '@/lib/client-auth';
@@ -374,8 +375,11 @@ function RegistrationForm() {
               <div className="space-y-1">
                 <p className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Timeline</p>
                 <p className="font-bold text-sm uppercase">
-                  {format(new Date(event.date), 'MMM d')} 
-                  {event.endDate ? ` - ${format(new Date(event.endDate), 'MMM d')}` : ''}
+                  {(() => {
+                    const start = calendarEventDate(event.date);
+                    const end = calendarEventDate(event.endDate);
+                    return `${start ? format(start, 'MMM d') : 'TBA'}${end ? ` - ${format(end, 'MMM d')}` : ''}`;
+                  })()}
                 </p>
               </div>
               {event.ages && (
