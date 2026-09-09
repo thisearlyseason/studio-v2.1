@@ -303,9 +303,19 @@ export default async function ResourceViewerPage({ params }: Params) {
       {resource.downloadUrl && (
         <div className="mb-10 rounded-2xl border-2 border-primary/20 bg-primary/5 p-6">
           <h2 className="text-xl font-bold mb-2">Print-ready score sheet</h2>
-          <p className="mb-4 text-sm text-muted-foreground">Landscape PDF with scoring tables and a scorer guide. Letter size; fits A4.</p>
-          <Button asChild><a href={resource.downloadUrl} download>Download score sheet PDF</a></Button>
-          <a href={resource.downloadUrl} target="_blank" rel="noopener noreferrer" className="ml-4 inline-block py-3 text-sm underline">Preview PDF</a>
+          <p className="mb-4 text-sm text-muted-foreground">Choose your page orientation. Both PDFs include scoring tables and a scorer guide. Letter size; fits A4.</p>
+          <div className="flex flex-col gap-4">
+            <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+              <Button asChild><a href={resource.downloadUrl} download>Download landscape PDF</a></Button>
+              <a href={resource.downloadUrl} target="_blank" rel="noopener noreferrer" className="py-3 text-sm underline">Preview landscape PDF</a>
+            </div>
+            {resource.portraitDownloadUrl && (
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+                <Button asChild><a href={resource.portraitDownloadUrl} download>Download portrait PDF</a></Button>
+                <a href={resource.portraitDownloadUrl} target="_blank" rel="noopener noreferrer" className="py-3 text-sm underline">Preview portrait PDF</a>
+              </div>
+            )}
+          </div>
         </div>
       )}
       {!resource.isVideo && !resource.downloadUrl && (

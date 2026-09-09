@@ -38,6 +38,7 @@ export interface Resource {
   isVideo: boolean;
   videoUrl?: string;
   downloadUrl?: string;
+  portraitDownloadUrl?: string;
   /** YouTube channel or creator credit shown on video resources */
   videoCredit?: string;
   /** Internal viewer slug — all non-video resources use /sports-hub/resources/[id] */
