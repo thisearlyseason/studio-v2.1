@@ -3028,7 +3028,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (!firebaseAuth) throw new Error('Your session is unavailable. Refresh and try again.');
     const token = await getAuthToken(firebaseAuth);
     if (!token) throw new Error('Your session has expired. Sign in again.');
-    const response = await requestLeagueMutation('/api/leagues/schedule', { action: 'replace', leagueId: lId, games: s });
+    // The server resolves enrolled team identity; do not repeat inline logos in
+    // every match and exhaust the request limit before schedule validation.
+    const games = s.map(game => ({ ...game, team1LogoUrl: undefined, team2LogoUrl: undefined }));
+    const response = await requestLeagueMutation('/api/leagues/schedule', { action: 'replace', leagueId: lId, games });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) {
       const detail = Array.isArray(payload.conflicts) && payload.conflicts.length > 0

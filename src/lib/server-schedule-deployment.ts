@@ -57,8 +57,6 @@ export type NormalizedLeagueGame = {
   team2: string;
   team1Id: string;
   team2Id: string;
-  team1LogoUrl?: string;
-  team2LogoUrl?: string;
   score1: number;
   score2: number;
   date: string;
@@ -394,8 +392,9 @@ function normalizeGame(
     team2: text(team2.teamName, 160) || text(raw.team2, 160) || 'Team 2',
     team1Id,
     team2Id,
-    team1LogoUrl: text(team1.teamLogoUrl, 2_000) || undefined,
-    team2LogoUrl: text(team2.teamLogoUrl, 2_000) || undefined,
+    // League screens resolve logos from league.teams by ID. Keep complete URLs
+    // there once: per-match snapshots either corrupt inline images when sliced
+    // or multiply image bytes until schedule/receipt documents exceed 1 MiB.
     score1,
     score2,
     date,

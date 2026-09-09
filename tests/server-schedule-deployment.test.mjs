@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import { transform } from 'esbuild';
 import {
   prepareLeagueScheduleClearUpdates,
   prepareLeagueScheduleForDeployment,
@@ -10,6 +11,7 @@ import {
   validateLeagueDeploymentIntegrity,
 } from '../src/lib/server-schedule-deployment.ts';
 import { generateLeagueSchedule } from '../src/lib/scheduler-utils.ts';
+import { publicLeague, scorekeeperLeague } from '../src/lib/public-portal-data.ts';
 import { communicationDb, loadCommunicationRoute } from './helpers/communication-route-harness.mjs';
 
 const scheduleFixture = {
@@ -24,6 +26,37 @@ const scheduleFixture = {
 };
 const replacement = { action: 'replace', leagueId: 'league-a', requestId: 'deploy-request-0001', expectedVersion: 1, games: [{ id: 'game-a', team1Id: 'alpha', team2Id: 'beta', date: '2026-09-01', time: '09:00', resourceId: 'field-a', location: 'field-a' }] };
 const scheduleRequest = body => new Request('http://localhost/api/leagues/schedule', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+
+test('schedule deployment queries are supported by the shipped Firestore indexes', async t => {
+  const config = JSON.parse(await readFile(new URL('../firestore.indexes.json', import.meta.url), 'utf8'));
+  const { db, records } = communicationDb(scheduleFixture);
+  const runTransaction = db.runTransaction.bind(db);
+  const missingIndexes = new Set();
+  // The in-memory SDK does not enforce Firestore's group-scope index requirement.
+  // Enforce it at the SDK boundary while the actual schedule route runs unchanged.
+  db.runTransaction = work => runTransaction(transaction => work({ ...transaction, async get(ref) {
+    if (ref.group) for (const [field, operator] of ref.filters) {
+      assert.equal(operator, '==');
+      const supported = config.fieldOverrides.some(entry => entry.collectionGroup === ref.path
+        && entry.fieldPath === field && entry.indexes.some(index => index.queryScope === 'COLLECTION_GROUP'
+          && ['ASCENDING', 'DESCENDING'].includes(index.order)));
+      if (!supported) {
+        missingIndexes.add(`${ref.path}.${field}`);
+        throw Object.assign(new Error(`Missing collection-group index: ${ref.path}.${field}`), { code: 9 });
+      }
+    }
+    return transaction.get(ref);
+  } }));
+  t.mock.method(console, 'error', () => {});
+  const app = await loadCommunicationRoute('../../src/app/api/leagues/schedule/route.ts', db, { uid: 'owner' });
+  try {
+    const response = await app.route.POST(scheduleRequest(replacement));
+    assert.equal(response.status, 200, `Missing shipped indexes: ${[...missingIndexes].join(', ')}`);
+    assert.equal(records.get('leagues/league-a').schedule.length, 1);
+    assert.equal([...records.keys()].filter(path => path.startsWith('scheduleBookings/')).length, 1);
+    assert.equal([...records.keys()].filter(path => path.includes('/events/')).length, 2);
+  } finally { app.dispose(); }
+});
 
 test('schedule request versions must be numeric bounded integers without coercion', async () => {
   for (const expectedVersion of ['1', null, true, -1, Number.MAX_SAFE_INTEGER + 1]) {
@@ -194,6 +227,45 @@ function game(overrides = {}) {
     ...overrides,
   };
 }
+
+test('schedule deployment keeps complete logos in the authoritative team map without duplicating image bytes', async () => {
+  const inline = `data:image/png;base64,${(await readFile(new URL('../public/logo-dark.png', import.meta.url))).toString('base64')}`;
+  const hosted = `https://example.test/logo.png?token=${'a'.repeat(2100)}`;
+  assert.ok(inline.length > 2000);
+  const input = league();
+  input.teams.alpha.teamLogoUrl = inline;
+  input.teams.beta.teamLogoUrl = hosted;
+  const result = prepareLeagueScheduleForDeployment('league-1', input, 'replace', Array.from({length:20}, (_, i) => game({
+    id:`match-${i}`, date:`2026-09-${String(i+1).padStart(2,'0')}`, team1LogoUrl:'https://untrusted.test/spoof.png',
+  })));
+  for (const match of result.games) {
+    assert.equal(match.team1LogoUrl, undefined);
+    assert.equal(match.team2LogoUrl, undefined);
+  }
+  assert.ok(Buffer.byteLength(JSON.stringify(result)) < 20_000, 'Schedule receipts must not multiply image bytes');
+  for (const project of [publicLeague, scorekeeperLeague]) {
+    const dto = project('league-1', {...input,schedule:result.games});
+    assert.ok(dto.teams.alpha.teamLogoUrl === inline, 'Complete authoritative inline logo must remain available');
+    assert.ok(dto.teams.beta.teamLogoUrl === hosted, 'Complete authoritative URL must remain available');
+  }
+});
+
+test('generated schedule submissions omit redundant logos without mutating the local preview', async () => {
+  const source = await readFile(new URL('../src/components/providers/team-provider.tsx', import.meta.url), 'utf8');
+  const callback = source.match(/  const updateLeagueSchedule = useCallback[\s\S]*?\n  \}, \[[^\]]+\]\);/)[0];
+  const compiled = (await transform(`${callback}\nreturn updateLeagueSchedule;`, {loader:'ts'})).code;
+  let submitted;
+  const update = new Function('useCallback','firebaseAuth','getAuthToken','requestLeagueMutation','toast',compiled)(
+    fn=>fn,{},async()=>'fixture-token',async(url,body)=>{assert.equal(url,'/api/leagues/schedule');submitted=JSON.parse(JSON.stringify(body));return Response.json({success:true});},()=>{},
+  );
+  const logo = `data:image/png;base64,${(await readFile(new URL('../public/logo-dark.png', import.meta.url))).toString('base64')}`;
+  const games = Array.from({length:20},(_,i)=>game({id:`match-${i}`,team1LogoUrl:logo,team2LogoUrl:logo}));
+  const before=structuredClone(games);
+  await update('league-1',games);
+  assert.ok(Buffer.byteLength(JSON.stringify(submitted))<20_000,'Repeated logos must not hit the API body limit');
+  assert.deepEqual(submitted.games,games.map(({team1LogoUrl,team2LogoUrl,...match})=>match));
+  assert.deepEqual(games,before,'The scheduler preview must retain the complete logos');
+});
 
 test('replacement normalizes trusted team names and stable resource identities', () => {
   const result = prepareLeagueScheduleForDeployment(
