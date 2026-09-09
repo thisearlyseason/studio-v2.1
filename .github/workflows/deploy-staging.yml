@@ -40,6 +40,7 @@ jobs:
       - run: npm ci
       - run: npm --prefix functions ci
       - run: npm run verify
+      - run: npm --prefix functions test
 
       - name: Validate staging configuration
         env:
@@ -92,6 +93,11 @@ jobs:
 
       - name: Deploy Functions
         run: npx firebase deploy --project "$FIREBASE_PROJECT_ID" --only functions --non-interactive --force
+
+      - name: Verify reminder runtime secret bindings
+        run: |
+          gcloud functions describe sendUpcomingEventReminders --gen2 --region=us-central1 \
+            --project="$FIREBASE_PROJECT_ID" --format=json | node scripts/check-reminder-runtime-config.mjs
 
       - name: Deploy Firestore and Storage rules
         run: npx firebase deploy --project "$FIREBASE_PROJECT_ID" --only firestore:rules,storage --non-interactive

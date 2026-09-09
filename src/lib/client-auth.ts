@@ -8,6 +8,7 @@
  *   })
  */
 import { sendEmailVerification, type Auth, type User } from 'firebase/auth';
+import { clearDeviceNotifications } from '@/lib/device-notification-presentation';
 
 export const DEMO_EXIT_PENDING_KEY = 'squad_demo_exit_pending';
 export const DEMO_EXIT_RETRY_REQUIRED_KEY = 'squad_demo_exit_retry_required';
@@ -105,5 +106,6 @@ export async function bootstrapDemoWorkspace(user: User, planId: string): Promis
 }
 
 export async function clearBrowserSession(): Promise<void> {
+  await clearDeviceNotifications();
   await fetch('/api/auth/session', { method: 'DELETE' }).catch(() => {});
 }

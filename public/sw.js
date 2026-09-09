@@ -73,6 +73,43 @@ function showSquadNotification({ title, body, imageUrl, url, tag }) {
   });
 }
 
+// App-icon badging is distinct from the notification's monochrome badge image.
+// Count outstanding OS notifications, not replacements of the same tagged card.
+let notificationPresentationQueue = Promise.resolve();
+function withNotificationPresentationLock(operation) {
+  const run = async () => {
+    if (!self.navigator?.locks?.request) return operation();
+    let started = false;
+    try {
+      return await self.navigator.locks.request('squad-notification-presentation', () => {
+        started = true;
+        return operation();
+      });
+    } catch (error) {
+      // Lock acquisition is an enhancement, never a prerequisite for delivery.
+      // Do not retry a failed notification operation that already held the lock.
+      if (started) throw error;
+      return operation();
+    }
+  };
+  // Web Locks also coordinate with window cleanup. Older browsers retain worker
+  // event ordering through this queue, even when they cannot display app badges.
+  const result = notificationPresentationQueue.then(run, run);
+  notificationPresentationQueue = result.catch(() => {});
+  return result;
+}
+
+async function syncAppBadge() {
+  try {
+    if (!self.navigator?.setAppBadge) return;
+    const notifications = await self.registration.getNotifications();
+    if (notifications.length) await self.navigator.setAppBadge(notifications.length);
+    else await self.navigator.clearAppBadge();
+  } catch {
+    // Unsupported/disabled badging must never prevent notification delivery.
+  }
+}
+
 // Browser-native Web Push is the only PWA transport. A single transport avoids
 // Firebase token lifecycle conflicts with the browser's PushSubscription.
 self.addEventListener('push', (event) => {
@@ -86,23 +123,28 @@ self.addEventListener('push', (event) => {
       }
       const webPush = payload?.webPush;
       if (!webPush || typeof webPush !== 'object') return;
-      await showSquadNotification({
-        title: typeof webPush.title === 'string' ? webPush.title : 'The Squad',
-        body: typeof webPush.body === 'string' ? webPush.body : '',
-        imageUrl: typeof webPush.imageUrl === 'string' ? webPush.imageUrl : undefined,
-        url: typeof webPush.url === 'string' ? webPush.url : '/dashboard',
-        tag: 'squad-web-push',
+      await withNotificationPresentationLock(async () => {
+        await showSquadNotification({
+          title: typeof webPush.title === 'string' ? webPush.title : 'The Squad',
+          body: typeof webPush.body === 'string' ? webPush.body : '',
+          imageUrl: typeof webPush.imageUrl === 'string' ? webPush.imageUrl : undefined,
+          url: typeof webPush.url === 'string' ? webPush.url : '/dashboard',
+          tag: 'squad-web-push',
+        });
+        await syncAppBadge();
       });
     })()
   );
 });
 
 self.addEventListener('notificationclick', (event) => {
-  event.notification.close();
   const targetUrl = event.notification.data?.url || '/dashboard';
 
   event.waitUntil(
-    clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
+    Promise.all([withNotificationPresentationLock(async () => {
+      event.notification.close();
+      await syncAppBadge();
+    }), clients.matchAll({ type: 'window', includeUncontrolled: true }).then((windowClients) => {
       for (const client of windowClients) {
         if ('focus' in client) {
           client.focus();
@@ -111,6 +153,10 @@ self.addEventListener('notificationclick', (event) => {
         }
       }
       if (clients.openWindow) return clients.openWindow(targetUrl);
-    })
+    })])
   );
+});
+
+self.addEventListener('notificationclose', (event) => {
+  event.waitUntil(withNotificationPresentationLock(syncAppBadge));
 });
