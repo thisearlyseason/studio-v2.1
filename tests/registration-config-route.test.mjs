@@ -5,6 +5,34 @@ import {communicationDb,loadCommunicationRoute} from './helpers/communication-ro
 const base={title:'Team Registration',description:'Register',is_active:true,type:'team',form_schema:[{id:'name',label:'Team name',type:'short_text',required:true}],form_version:1};
 const request=body=>new Request('http://127.0.0.1/api/registrations/config',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(body)});
 
+test('publishing tournament registration opens its public gate; closing the last form closes it',async()=>{
+  const {db,records}=communicationDb({'teams/t':{ownerUserId:'owner',planId:'elite'},'teams/t/events/e':{isTournament:true,teamId:'t'}},{enforceReadBeforeWrite:true});
+  const app=await loadCommunicationRoute('../../src/app/api/registrations/config/route.ts',db,{uid:'owner'});
+  const save=async(configId,active)=>{
+    const current=records.get(`teams/t/events/e/registration/${configId}`);
+    const response=await app.route.POST(request({targetKind:'tournament',targetId:'t',eventId:'e',configId,expectedVersion:current?.form_version||0,expectedHash:current?.config_hash||'',config:{...base,is_active:active}}));
+    assert.equal(response.status,200);
+  };
+  try{
+    await save('team_config',true);assert.equal(records.get('teams/t/events/e').registrationOpen,true);
+    await save('alternate',true);
+    await save('team_config',false);assert.equal(records.get('teams/t/events/e').registrationOpen,true,'another published form remains available');
+    await save('alternate',false);assert.equal(records.get('teams/t/events/e').registrationOpen,false);
+    await save('team_config',true);assert.equal(records.get('teams/t/events/e').registrationOpen,true,'explicit republishing reopens registration');
+  }finally{app.dispose();}
+});
+
+test('cancelled tournament cannot publish registration and unauthorized actors cannot open the gate',async()=>{
+  for(const [actor,status,event] of [['owner',409,{status:'cancelled'}],['other',403,{}],['owner',409,{isArchived:true}]]){
+    const {db,records}=communicationDb({'teams/t':{ownerUserId:'owner',planId:'elite'},'teams/t/events/e':{isTournament:true,teamId:'t',registrationOpen:false,...event}});
+    const app=await loadCommunicationRoute('../../src/app/api/registrations/config/route.ts',db,{uid:actor});
+    try{
+      const response=await app.route.POST(request({targetKind:'tournament',targetId:'t',eventId:'e',configId:'team_config',expectedVersion:0,config:base}));
+      assert.equal(response.status,status);assert.equal(records.get('teams/t/events/e').registrationOpen,false);assert.equal(records.has('teams/t/events/e/registration/team_config'),false);
+    }finally{app.dispose();}
+  }
+});
+
 test('registration config service binds organizer authority and requires exact version/hash on update',async()=>{
   const {db,records}=communicationDb({'leagues/l':{creatorId:'owner'}}),app=await loadCommunicationRoute('../../src/app/api/registrations/config/route.ts',db,{uid:'owner'});
   try{
