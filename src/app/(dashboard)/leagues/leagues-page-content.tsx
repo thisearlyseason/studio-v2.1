@@ -3379,7 +3379,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                         <span className="text-[9px] font-black uppercase tracking-[0.25em] text-white/40">Feature In Development</span>
                         <span className="bg-amber-400 text-black text-[9px] font-black uppercase tracking-widest px-4 py-1.5 rounded-full shadow-lg">Coming Soon</span>
                       </div>
-                      <div className="pointer-events-none select-none">
+                      <fieldset disabled aria-label="Division Architect — Coming Soon" className="pointer-events-none select-none">
                       <div>
                         <Label className="text-[10px] font-black uppercase tracking-widest text-primary ml-2">Division Architect</Label>
                         <p className="text-[10px] font-medium text-white/40 italic leading-relaxed px-2">Define competitive tiers (e.g. Gold, Silver, U12) to partition squads and participants.</p>
@@ -3411,7 +3411,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                           </div>
                         )}
                       </div>
-                      </div>
+                      </fieldset>
                     </div>
 
                     {(lifecyclePolicy.archive || lifecyclePolicy.delete) && (

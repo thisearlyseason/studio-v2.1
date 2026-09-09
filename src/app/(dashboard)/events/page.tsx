@@ -617,7 +617,7 @@ export default function EventsPage() {
                         <Button
                           variant={"outline"}
                           className={cn(
-                           "h-12 w-full justify-start text-left font-black rounded-xl border-2 px-4 italic uppercase tracking-tight bg-white hover:bg-muted/50 transition-all text-[10px]",
+                           "h-12 w-full justify-start text-left font-black rounded-xl border-2 px-4 italic uppercase tracking-tight bg-white hover:bg-muted/50 hover:text-foreground transition-all text-[10px]",
                             !newDate && "text-muted-foreground"
                           )}
                         >
@@ -642,7 +642,7 @@ export default function EventsPage() {
                         <Button
                           variant={"outline"}
                           className={cn(
-                           "h-12 w-full justify-start text-left font-black rounded-xl border-2 px-4 italic uppercase tracking-tight bg-white hover:bg-muted/50 transition-all text-[10px]",
+                           "h-12 w-full justify-start text-left font-black rounded-xl border-2 px-4 italic uppercase tracking-tight bg-white hover:bg-muted/50 hover:text-foreground transition-all text-[10px]",
                             !newEndDate && "text-muted-foreground"
                           )}
                         >

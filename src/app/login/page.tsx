@@ -31,6 +31,7 @@ export default function LoginPage() {
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
+  const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isDemoLoading, setIsDemoLoading] = useState(false);
   const [forgotMode, setForgotMode] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
@@ -135,24 +136,30 @@ export default function LoginPage() {
 
   const handleGoogleLogin = async () => {
     setIsLoading(true);
+    setIsGoogleLoading(true);
     try {
       const provider = new GoogleAuthProvider();
       // Auth is initialized through the shared provider. Supplying the browser
       // resolver from this same ESM module keeps the provider/resolver class
       // identities aligned so Firebase includes providerId in the handler URL.
-      await withTimeout(
-        signInWithPopup(auth, provider, browserPopupRedirectResolver),
-        15000,
-        'Google login timed out. Check your connection and try again.',
-      );
+      // This promise includes the user's time choosing an account. Firebase
+      // reports cancellation/network failures; a request timer cannot safely
+      // cancel the popup and would falsely fail a still-active sign-in.
+      await signInWithPopup(auth, provider, browserPopupRedirectResolver);
     } catch (error: any) {
+      if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') return;
       toast({
         title: "Google Login Failed",
-        description: error.message || "Could not sign in with Google.",
+        description: error.code === 'auth/popup-blocked'
+          ? 'Allow pop-ups for The Squad in your browser, then try again.'
+          : error.code === 'auth/network-request-failed'
+            ? 'Check your connection, then try signing in with Google again.'
+            : 'Could not sign in with Google. Please try again or use your email and password.',
         variant: "destructive",
       });
     } finally {
       setIsLoading(false);
+      setIsGoogleLoading(false);
     }
   };
 
@@ -322,7 +329,7 @@ export default function LoginPage() {
                   type="button" 
                   variant="outline" 
                   onClick={handleGoogleLogin}
-                  className="w-full h-14 rounded-2xl bg-white border border-gray-200 text-black font-bold hover:bg-gray-50 flex items-center justify-center gap-3"
+                  className="w-full h-14 rounded-2xl bg-white border border-gray-200 text-black font-bold hover:bg-gray-50 hover:text-black flex items-center justify-center gap-3"
                   disabled={isLoading || isDemoLoading}
                 >
                   <svg viewBox="0 0 24 24" className="h-5 w-5" aria-hidden="true">
@@ -331,8 +338,13 @@ export default function LoginPage() {
                     <path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" fill="#FBBC05"/>
                     <path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/>
                   </svg>
-                  Continue with Google
+                  {isGoogleLoading ? 'Waiting for Google...' : 'Continue with Google'}
                 </Button>
+              )}
+              {isGoogleLoading && (
+                <p role="status" className="text-sm text-center text-muted-foreground">
+                  Complete sign-in in the Google window. Closing it cancels this attempt.
+                </p>
               )}
 
               <div className="relative">
