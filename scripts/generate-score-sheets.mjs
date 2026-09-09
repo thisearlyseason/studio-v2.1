@@ -1,4 +1,4 @@
-// Rebuild the printable vector PDFs: node scripts/generate-score-sheets.mjs
+// Rebuild landscape PDFs by default; pass --portrait for portrait PDFs.
 import { readFile, mkdir, writeFile } from 'node:fs/promises';
 import { jsPDF } from 'jspdf';
 
@@ -9,7 +9,9 @@ await mkdir(out, { recursive: true });
 const logo = await readFile(new URL('public/logo-dark.png', root));
 const RED = '#C8102E';
 let pdf, y, title, pages;
-const W = 279.4, H = 215.9, M = 12, CW = W - M * 2;
+const portrait = process.argv.includes('--portrait');
+const orientation = portrait ? 'portrait' : 'landscape';
+const W = portrait ? 215.9 : 279.4, H = portrait ? 279.4 : 215.9, M = 12, CW = W - M * 2;
 function text(value, x, yy, size = 9, bold = false) {
   pdf.setFont('helvetica', bold ? 'bold' : 'normal'); pdf.setFontSize(size); pdf.setTextColor('#151515');
   pdf.text(Array.isArray(value) ? value : String(value), x, yy);
@@ -21,10 +23,11 @@ function page(label) {
   const iw = 29, ih = iw * img.height / img.width;
   pdf.addImage(logo, 'PNG', M, 16, iw, Math.min(ih, 16));
   text(title.toUpperCase(), M + 37, 23, 18, true);
-  text(label, M + 37, 30, 9);
-  text('Date: __________________   Venue: __________________________   League / event: __________________________', M, 42);
-  text('Home / A: ____________________________________   Away / B: ____________________________________', M, 51);
-  text('Rules / format / period length: __________________________   Scorer: ______________________________', M, 60);
+  pdf.setFontSize(9);
+  text(portrait ? pdf.splitTextToSize(label, CW - 37) : label, M + 37, 30, 9);
+  text(portrait ? 'Date: ______________   Venue: __________________   League / event: __________________' : 'Date: __________________   Venue: __________________________   League / event: __________________________', M, 42);
+  text(portrait ? 'Home / A: __________________________   Away / B: __________________________' : 'Home / A: ____________________________________   Away / B: ____________________________________', M, 51);
+  text(portrait ? 'Rules / period length: ______________________   Scorer: ______________________' : 'Rules / format / period length: __________________________   Scorer: ______________________________', M, 60);
   pdf.setDrawColor('#BFC3C9'); pdf.setLineWidth(0.2);
   pdf.line(M, H - 13, W - M, H - 13);
   text('THE SQUAD  /  SPORTS HUB     •     thesquad.pro', M, H - 8, 8, true);
@@ -32,6 +35,8 @@ function page(label) {
   y = 69;
 }
 function table(label, headers, widths, rows, height = 8, values = []) {
+  // Taller portrait rows keep the narrower grids useful for handwriting.
+  if (portrait) height = Math.max(height, 11);
   if (y + 9 + (rows + 1) * height > H - 18) throw new Error(`Overflow: ${title} / ${label}`);
   text(label.toUpperCase(), M, y, 9, true); y += 4;
   const factor = CW / widths.reduce((a,b) => a+b,0);
@@ -42,7 +47,13 @@ function table(label, headers, widths, rows, height = 8, values = []) {
       pdf.setFillColor(row === 0 ? '#F0F1F3' : '#FFFFFF');
       pdf.setDrawColor('#BFC3C9'); pdf.rect(x, y, widths[i], height, 'FD');
       const value = row === 0 ? h : values[row-1]?.[i] ?? '';
-      if (value) text(value, x + 1.6, y + height / 2 + 1, 7.5, row === 0);
+      if (value) {
+        pdf.setFont('helvetica', row === 0 ? 'bold' : 'normal'); pdf.setFontSize(7.5);
+        const padding = portrait ? 1 : 1.6;
+        const lines = portrait ? pdf.splitTextToSize(String(value), widths[i] - padding * 2) : [String(value)];
+        if (portrait && lines.length * 3 > height - 1) throw new Error(`Cell overflow: ${title} / ${value}`);
+        text(lines, x + padding, y + height / 2 + 1 - (lines.length - 1) * 1.5, 7.5, row === 0);
+      }
       x += widths[i];
     });
     y += height;
@@ -50,6 +61,7 @@ function table(label, headers, widths, rows, height = 8, values = []) {
   y += 8;
 }
 function note(value) {
+  pdf.setFont('helvetica', 'normal'); pdf.setFontSize(8);
   const lines = pdf.splitTextToSize(value, CW);
   if (y + lines.length * 4 > H - 18) throw new Error(`Note overflow: ${title}`);
   text(lines, M, y, 8); y += lines.length * 4 + 5;
@@ -59,7 +71,7 @@ function summary(s) {
   table('Score by period (OT = overtime)', ['Team', ...Array.from({length:s.periods},(_,i)=>String(i+1)), 'OT','Total'], [4,...Array(s.periods).fill(1),1,1],2,8,[['Home / A'],['Away / B']]);
 }
 for (const s of catalog) {
-  pdf = new jsPDF({ orientation:'landscape', unit:'mm', format:'letter', compress:true });
+  pdf = new jsPDF({ orientation, unit:'mm', format:'letter', compress:true });
   pdf.setProperties({title:`The Squad - ${s.name} Score Sheet`,author:'The Squad',subject:'Printable community sport scorekeeping'});
   pdf.setCreationDate(new Date('2026-09-09T00:00:00Z'));
   title = s.name; pages = 0;
@@ -69,7 +81,7 @@ for (const s of catalog) {
       const innings = s.periods;
       const widths = [8,40, ...Array(innings).fill(16),8,8,8,8];
       const header = ['#','Batter / substitute',...Array.from({length:innings},(_,i)=>String(i+1)),'AB','R','H','RBI'];
-      const rowHeight = s.id === 'slo-pitch' ? 8 : 9.5;
+      const rowHeight = portrait ? 11 : s.id === 'slo-pitch' ? 8 : 9.5;
       const start = y + 4, factor = CW / widths.reduce((a,b)=>a+b,0);
       table('Batting order - record substitute names and positions in the same slot',header,widths, s.id==='slo-pitch'?12:10,rowHeight,Array.from({length:s.id==='slo-pitch'?12:10},(_,i)=>[String(i+1)]));
       const left = M + 48 * factor, cell = 16 * factor;
@@ -137,9 +149,9 @@ for (const s of catalog) {
   page('SCORER GUIDE / LOCAL RULES');
   note(s.guide);
   note('Before play, confirm competition rules, time limits, substitutions and tie-break format with the organizer. These are original community worksheets, not governing-body official forms. Use the required official form when mandated.');
-  note('Print landscape on Letter paper at actual size, or fit to printable area on A4. Print extra log pages for overtime, extra innings, extended sets or large rosters. Use the same game details on every continuation page.');
+  note(`Print ${orientation} on Letter paper at actual size, or fit to printable area on A4. Print extra log pages for overtime, extra innings, extended sets or large rosters. Use the same game details on every continuation page.`);
   table('Local rules / corrections / match notes',['Notes'],[1],6,9);
   note(`Scoring reference: ${s.source}`);
-  await writeFile(new URL(`the-squad-${s.id}.pdf`,out),Buffer.from(pdf.output('arraybuffer')));
+  await writeFile(new URL(`the-squad-${s.id}${portrait ? '-portrait' : ''}.pdf`,out),Buffer.from(pdf.output('arraybuffer')));
   console.log(`${s.id}: ${pages} pages`);
 }
