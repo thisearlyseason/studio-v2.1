@@ -631,9 +631,9 @@ function RegistrationForm() {
                             </div>
                           ))}
 
-                          <div className="flex items-center space-x-4 p-5 bg-primary/5 rounded-[2rem] border-2 border-primary/10 group cursor-pointer transition-all hover:bg-primary/10" onClick={() => setWaiverAgreed(!waiverAgreed)}>
+                          <div className="flex items-center space-x-4 p-5 bg-primary/5 rounded-[2rem] border-2 border-primary/10 group transition-all hover:bg-primary/10">
                             <Checkbox id="waiver_agree" checked={waiverAgreed} onCheckedChange={v => setWaiverAgreed(!!v)} className="h-6 w-6 rounded-lg border-2 border-primary" />
-                            <Label htmlFor="waiver_agree" className="text-[10px] font-black uppercase tracking-tight cursor-pointer leading-tight">
+                            <Label htmlFor="waiver_agree" className="flex-1 text-[10px] font-black uppercase tracking-tight cursor-pointer leading-tight">
                               {isPlayerPipeline ? "I confirm that I (or the athlete in my care) have reviewed and accept the tournament rules and liability terms above." : "I confirm that our team has reviewed and accepts the tournament rules and liability terms above."}
                             </Label>
                           </div>
