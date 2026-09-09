@@ -676,7 +676,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
         sport: form.sport.trim() || activeTeam?.sport || 'General',
         divisionTitle: divTitle || '',
         ...(divConfig.tournamentType === 'tiered_playoffs' ? {
-          tieredPlayoffs: editEvent?.tieredPlayoffs || buildTieredPlayoffsDraftConfig({
+          tieredPlayoffs: buildTieredPlayoffsDraftConfig({
             gamesPerTeam,
             gameDurationMinutes: gameLength,
             transitionMinutes: breakLength,
@@ -687,7 +687,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
             finalResolution: divConfig.tieredFinalResolution,
             maximumDifferentialPerGame: divConfig.tieredMaximumDifferential.trim() ? Number(divConfig.tieredMaximumDifferential) : null,
             avoidPreliminaryRematches: divConfig.tieredAvoidRematches,
-          }),
+          }, editEvent?.tieredPlayoffs),
         } : {}),
       };
 
