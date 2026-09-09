@@ -14,7 +14,7 @@
 
 ## PHYS-20260909-2 — iPhone home-screen badge missing
 
-- Severity: P2 MEDIUM; status: CODE REPAIRED AND LOCALLY VERIFIED; DEPLOYMENT / PHYSICAL RETEST PENDING.
+- Severity: P2 MEDIUM; status: DEPLOYED; PHYSICAL RETEST PENDING.
 - Owner received iPhone popup notifications, but no red home-screen badge with
   badges enabled. The pre-repair source and deployed worker never called `setAppBadge` or
   `clearAppBadge`; the notification `badge` image is a different API field.
@@ -25,26 +25,34 @@
 - Twenty focused tests and independent review passed, including three reproduced
   concurrency failures. Local Chrome exercised real worker push delivery with an
   instrumented app-badge boundary. This does not prove iPhone icon presentation.
+- Merge `21e5313c` and Vercel deployment `dpl_FTjiJ69U5LfdStEPmzERTh6qgniE`
+  are live on both production aliases. The live worker contains the badge repair.
+  Physical iPhone icon-badge presentation remains BLOCKED pending owner retest.
 
 ## PHYS-20260909-3 — Production reminder Function lacks Web Push configuration
 
-- Severity: P1 HIGH; status: OPEN, EXACT-PRODUCTION FAILURE CONFIRMED.
+- Severity: P1 HIGH; status: SERVER REPAIR DEPLOYED; PHYSICAL RECEIPT RETEST PENDING.
 - City Central United / Tigers game, created 2026-09-09 at 18:09:40 UTC, was
   eligible for the 18:22 UTC normal scheduler run. Athlete profiles had both
   notification preferences enabled and Web Push subscriptions.
 - That run logged zero sends/six failures. Exact event delivery ledgers showed
   first-attempt failure: `No registered device accepted the reminder.`
-- Deployed scheduled Function has no VAPID subject/public/private environment
+- The pre-repair scheduled Function had no VAPID subject/public/private environment
   values and no secret environment bindings. The configuration loader returns
   null, so the sender returns failure without making a Web Push delivery call.
-- Repair must bind the existing matching production key pair and contact subject,
-  add a configuration/deployment guard, and verify the scheduled boundary. Do not
-  rotate working keys, expose secrets, or label provider acceptance device PASS.
-- Candidate declares all three Function secrets, tests the compiled deployment
-  manifest, and fails deployment verification if bindings are absent. Production
-  application is BLOCKED: Vercel's existing private key is Sensitive/non-readable,
-  the local export is redacted, and staging's valid key pair differs. The owner
-  must supply the original production private key securely; no keys were rotated.
+- Repair had to bind a matched production key pair and contact subject, add a
+  configuration/deployment guard, and verify the scheduled boundary.
+- The original private key was irrecoverable. With owner approval, a new matched
+  pair was generated, cryptographically validated, stored as Sensitive/Secret
+  values in Vercel and Google Secret Manager, and the incorrect uploaded
+  service-account JSON secret version was disabled. Least-privilege deployer and
+  runtime access is limited to the three Web Push secrets.
+- Protected workflow `34393784014` passed all gates and deployed ACTIVE revision
+  `sendupcomingeventreminders-00007-mox`; the explicit runtime metadata guard
+  confirms all three bindings. The live browser bundle contains the matching
+  public key. Physical recipients must reopen the app to renew subscriptions;
+  provider/device receipt, preference-off suppression, and tap-through remain
+  BLOCKED, not PASS.
 - Evidence and owner result reconciliation:
   `runs/2026-09-04-final-certification/09-physical-device-checklist.md`.
 
