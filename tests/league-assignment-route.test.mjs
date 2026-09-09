@@ -3,6 +3,7 @@ import test from 'node:test';
 import { readFile } from 'node:fs/promises';
 import { transform } from 'esbuild';
 import { communicationDb, loadCommunicationRoute } from './helpers/communication-route-harness.mjs';
+import { teamAssignmentPage } from './helpers/team-assignment-page-harness.mjs';
 
 const routePath = '../../src/app/api/leagues/assignments/route.ts';
 const fixture = {
@@ -50,25 +51,21 @@ for (const uncertainFirst of [false, true]) test(`Team page refreshes remaining 
       current => ({ current }), fn => fn, {}, {}, activeTeam,
       () => { throw new Error('Displayed versions must not be refreshed before submit'); }, () => {}, async () => 'token', transport, () => ({}), () => {},
     );
-    const pageSource = await readFile(new URL('../src/app/(dashboard)/team/page.tsx', import.meta.url), 'utf8');
-    const pageBlock = pageSource.slice(pageSource.indexOf('  const [assignments, setAssignments]'), pageSource.indexOf('  const [editForm, setEditForm]'));
-    const pageCode = (await transform(`${pageBlock}\nreturn handleAssignmentResponse;`, { loader: 'ts' })).code;
+    const page = await teamAssignmentPage({ activeTeam, fetch: transport, respondToAssignment });
+    const handle = page.render().respond;
     let displayed = [];
-    let cleanup;
-    const handle = new Function('useState', 'useRef', 'useEffect', 'firebaseAuth', 'activeTeam', 'isStaff', 'hasFeature', 'getAuthToken', 'fetch', 'authHeader', 'respondToAssignment', pageCode)(
-      initial => [initial, update => { displayed = typeof update === 'function' ? update(displayed) : update; }],
-      current => ({ current }), effect => { cleanup = effect(); }, {}, activeTeam, true, () => true, async () => 'token', transport, () => ({}), respondToAssignment,
-    );
-    for (let attempts = 0; displayed.length !== 2 && attempts < 100; attempts++) await new Promise(resolve => setImmediate(resolve));
+    for (let attempts = 0; displayed.length !== 2 && attempts < 100; attempts++) displayed = (await page.settle()).assignments;
     assert.equal(displayed.length, 2);
     const first = displayed.find(entry => entry.id === 'entry');
     await handle(first, 'accepted');
+    displayed = page.render().assignments;
     assert.equal(statuses[0], 200);
     if (uncertainFirst) {
       assert.equal(gets, 1);
       assert.equal(displayed.length, 2);
       assert.equal(displayed[0].lifecycleVersion, 1);
       await handle(first, 'accepted');
+      displayed = page.render().assignments;
       assert.deepEqual(bodies[1], bodies[0]);
       assert.equal(statuses[1], 200);
     }
@@ -78,12 +75,13 @@ for (const uncertainFirst of [false, true]) test(`Team page refreshes remaining 
     assert.equal(displayed[0].lifecycleVersion, 2);
     assert.equal(displayed[0].assignmentVersion, 1);
     await handle(displayed[0], 'accepted');
+    displayed = page.render().assignments;
     assert.equal(statuses.at(-1), 200);
     assert.equal(bodies.at(-1).expectedVersion, 2);
     assert.equal(gets, 3);
     assert.deepEqual(displayed, []);
     assert.equal(records.get('leagues/league-a/registrationEntries/second').status, 'accepted');
-    cleanup?.();
+    page.dispose();
   } finally { app.dispose(); }
 });
 

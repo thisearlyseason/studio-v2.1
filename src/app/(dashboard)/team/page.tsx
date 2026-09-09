@@ -108,42 +108,61 @@ export default function TeamProfilePage() {
     }
   };
 
-  const [assignments, setAssignments] = useState<RegistrationEntry[]>([]);
+  const [assignmentState, setAssignmentState] = useState<{
+    teamId: string | null;
+    userId: string | null;
+    entries: RegistrationEntry[];
+    status: 'idle' | 'loading' | 'ready' | 'error';
+    error: string | null;
+  }>({ teamId: null, userId: null, entries: [], status: 'idle', error: null });
+  const canLoadAssignments = Boolean(firebaseAuth && authUser?.uid && !authUser.isAnonymous &&
+    activeTeam?.id && !activeTeam.isDemo && isStaff && hasFeature?.('league_registration'));
+  const assignmentScopeMatches = canLoadAssignments && assignmentState.teamId === activeTeam?.id &&
+    assignmentState.userId === authUser?.uid;
+  const assignments = assignmentScopeMatches ? assignmentState.entries : [];
+  const assignmentError = assignmentScopeMatches ? assignmentState.error : null;
+  const isAssignmentsLoading = canLoadAssignments &&
+    (!assignmentScopeMatches || assignmentState.status === 'loading' || assignmentState.status === 'idle');
   const refreshAssignments = useRef<() => Promise<void>>(async () => {});
 
   useEffect(() => {
     refreshAssignments.current = async () => {};
-    if (!firebaseAuth || !activeTeam?.id || !isStaff || !hasFeature?.('league_registration')) {
-      setAssignments([]);
+    if (!canLoadAssignments || !firebaseAuth || !activeTeam?.id || !authUser?.uid) {
+      setAssignmentState({ teamId: null, userId: null, entries: [], status: 'idle', error: null });
       return;
     }
     let cancelled = false;
+    const scope = { teamId: activeTeam.id, userId: authUser.uid };
     const loadAssignments = async () => {
+      setAssignmentState({ ...scope, entries: [], status: 'loading', error: null });
       try {
         const token = await getAuthToken(firebaseAuth);
-        if (!token) return;
-        const response = await fetch(`/api/leagues/assignments?teamId=${encodeURIComponent(activeTeam.id)}`, {
+        if (cancelled) return;
+        if (!token) throw new Error('Your session has expired. Sign in again to load league assignments.');
+        const response = await fetch(`/api/leagues/assignments?teamId=${encodeURIComponent(scope.teamId)}`, {
           headers: authHeader(token),
         });
         const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.error || 'Unable to load league assignments.');
-        if (!cancelled) setAssignments(Array.isArray(payload.assignments) ? payload.assignments : []);
+        if (!response.ok) throw new Error(typeof payload?.error === 'string' ? payload.error : 'Unable to load league assignments.');
+        if (!Array.isArray(payload?.assignments)) throw new Error('Unable to read league assignments. Please try again.');
+        if (!cancelled) setAssignmentState({ ...scope, entries: payload.assignments, status: 'ready', error: null });
       } catch (error) {
+        if (cancelled) return;
         console.error('[TeamProfile] Failed to load league assignments:', error);
-        if (!cancelled) setAssignments([]);
+        setAssignmentState({ ...scope, entries: [], status: 'error',
+          error: error instanceof Error ? error.message : 'Unable to load league assignments.' });
       }
     };
     refreshAssignments.current = loadAssignments;
     void loadAssignments();
     return () => { cancelled = true; refreshAssignments.current = async () => {}; };
-  }, [activeTeam?.id, firebaseAuth, hasFeature, isStaff]);
+  }, [activeTeam?.id, authUser?.uid, canLoadAssignments, firebaseAuth]);
 
   const handleAssignmentResponse = async (entry: RegistrationEntry, status: 'accepted' | 'declined') => {
     const updated = await respondToAssignment(entry.league_id, entry.id, status, {
       lifecycleVersion: entry.lifecycleVersion ?? 0, assignmentVersion: entry.assignmentVersion ?? 0,
     });
     if (updated) {
-      setAssignments([]);
       await refreshAssignments.current();
     }
   };
@@ -382,6 +401,27 @@ export default function TeamProfilePage() {
                 </Link>
               </Button>
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {(assignmentError || isAssignmentsLoading) && (
+        <Card className="rounded-3xl">
+          <CardHeader>
+            <CardTitle>League Assignments</CardTitle>
+          </CardHeader>
+          <CardContent>
+            {assignmentError ? (
+              <div role="alert" className="space-y-3">
+                <p className="font-semibold">League assignments could not be loaded.</p>
+                <p className="text-sm text-muted-foreground">{assignmentError}</p>
+                <Button variant="outline" onClick={() => void refreshAssignments.current()}>Retry assignments</Button>
+              </div>
+            ) : (
+              <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground">
+                <Loader2 className="h-4 w-4 animate-spin" aria-hidden="true" /> Loading league assignments...
+              </p>
+            )}
           </CardContent>
         </Card>
       )}

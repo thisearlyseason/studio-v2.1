@@ -403,12 +403,12 @@ export default function GamesPage() {
               </div>
               <div className="grid grid-cols-2 gap-6">
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase ml-1">Us</Label>
-                  <Input type="number" placeholder="0" value={myScore} onChange={e => setMyScore(e.target.value)} className="h-16 rounded-2xl font-black text-3xl text-center border-2" />
+                  <Label htmlFor="match-us-score" className="text-[10px] font-black uppercase ml-1">Us</Label>
+                  <Input id="match-us-score" type="number" placeholder="0" value={myScore} onChange={e => setMyScore(e.target.value)} className="h-16 rounded-2xl font-black text-3xl text-center border-2" />
                 </div>
                 <div className="space-y-2">
-                  <Label className="text-[10px] font-black uppercase ml-1">Them</Label>
-                  <Input type="number" placeholder="0" value={opponentScore} onChange={e => setOpponentScore(e.target.value)} className="h-16 rounded-2xl font-black text-3xl text-center border-2" />
+                  <Label htmlFor="match-them-score" className="text-[10px] font-black uppercase ml-1">Them</Label>
+                  <Input id="match-them-score" type="number" placeholder="0" value={opponentScore} onChange={e => setOpponentScore(e.target.value)} className="h-16 rounded-2xl font-black text-3xl text-center border-2" />
                 </div>
               </div>
               <div className="space-y-2">

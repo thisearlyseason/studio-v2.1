@@ -7,6 +7,11 @@ const caseId = (scenarioId, dimension) => `operations-${scenarioId}-${dimension}
 // dimension placeholder. Every frozen Task 5 case is represented exactly once;
 // console/network/persistence envelopes remain separate evidence observations.
 export const SCHEDULE_CASE_REQUIREMENTS = Object.freeze({
+  'games-team-score-create-edit-reset': Object.freeze({
+    ...Object.fromEntries(DIMENSION_NAMES.map(dimension => [dimension, [caseId('games-team-score-create-edit-reset', dimension)]])),
+    negativePath: [caseId('games-team-score-create-edit-reset', 'negativePath'), 'games-form-clear'],
+    persistence: [caseId('games-team-score-create-edit-reset', 'persistence'), 'games-zero-score-edit'],
+  }),
   'leagues-create-edit-clone-delete': Object.freeze({
     happyPath: ['league-create', 'league-edit', 'league-clone', 'league-delete'],
     negativePath: ['league-duplicate', 'league-quota', 'league-partial-clone'],

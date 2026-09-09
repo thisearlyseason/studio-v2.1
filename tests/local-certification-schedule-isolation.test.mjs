@@ -95,6 +95,88 @@ test('long-running browser media workflows have explicit bounded lifecycle caps'
   assert.equal(scheduleIsolation.operationScenarioTimeoutMs(true, 'files-avatar-branding-player-media-paths'), 120_000);
 });
 
+test('the full Event browser lifecycle can finish after one minute while a stalled lifecycle still times out', async t => {
+  t.mock.timers.enable({ apis: ['setTimeout'] });
+  const outcome = [];
+  const pending = runOperationScenarioSequence(['events-event-crud-recurrence'], {
+    timeoutMs: id => scheduleIsolation.operationScenarioTimeoutMs(true, id),
+    execute: async () => { await new Promise(resolve => setTimeout(resolve, 65_000)); outcome.push('observed'); },
+    finalize: async () => outcome.push('cleaned'),
+    onError: () => outcome.push('failed'),
+  });
+  const settled = pending.then(() => null, error => error);
+  await Promise.resolve();
+  t.mock.timers.tick(65_000);
+  assert.equal(await settled, null, 'three Event logins, CRUD, recurrence and API reconciliation share one bounded lifecycle');
+  assert.deepEqual(outcome, ['observed', 'cleaned']);
+
+  const stalled = runOperationScenarioSequence(['events-event-crud-recurrence'], {
+    timeoutMs: id => scheduleIsolation.operationScenarioTimeoutMs(true, id),
+    execute: (_id, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })),
+    finalize: async () => outcome.push('stalled-cleaned'),
+    onError: (_id, error) => outcome.push(error.message),
+  });
+  const rejected = assert.rejects(stalled, /1 selected operation scenario/);
+  await Promise.resolve();
+  t.mock.timers.tick(90_000);
+  await rejected;
+  assert.deepEqual(outcome.slice(2), ['stalled-cleaned', 'Operation scenario events-event-crud-recurrence timed out after 90000ms.']);
+});
+
+test('an aborted operation phase cannot emit completion or begin its next phase', async () => {
+  assert.equal(typeof scheduleIsolation.runOperationStage, 'function');
+  const controller = new AbortController();
+  const phases = [];
+  const calls = [];
+  const run = execute => scheduleIsolation.runOperationStage('event-crud', {
+    signal: controller.signal, execute, onStage: phase => phases.push(phase),
+  });
+  await assert.rejects(() => run(async () => {
+    calls.push('crud');
+    controller.abort(new Error('scenario deadline reached'));
+  }), /scenario deadline reached/);
+  await assert.rejects(() => run(async () => calls.push('recurrence')), /scenario deadline reached/);
+  assert.deepEqual(calls, ['crud']);
+  assert.deepEqual(phases.map(({ stage, state }) => ({ stage, state })), [
+    { stage: 'event-crud', state: 'started' },
+    { stage: 'event-crud', state: 'failed' },
+  ]);
+  assert.ok(phases.every(phase => typeof phase.startedAt === 'string'));
+  assert.ok(phases[1].elapsedMs >= 0);
+});
+
+test('a synchronous browser command cannot conceal a passed scenario deadline', async t => {
+  t.mock.timers.enable({ apis: ['Date'], now: 0 });
+  const calls = [];
+  let failure;
+  await assert.rejects(() => runOperationScenarioSequence(['events'], {
+    timeoutMs: 60_000,
+    execute: async (_id, { checkDeadline }) => {
+      assert.equal(typeof checkDeadline, 'function', 'the runner must expose a wall-clock deadline checkpoint');
+      calls.push('browser-command');
+      t.mock.timers.setTime(60_001);
+      checkDeadline();
+      calls.push('next-browser-command');
+    },
+    finalize: async () => calls.push('cleanup'),
+    onError: (_id, error) => { failure = error; },
+  }), /selected operation scenario/);
+  assert.match(failure.message, /events timed out after 60000ms/);
+  assert.deepEqual(calls, ['browser-command', 'cleanup']);
+});
+
+test('an aborted operation clears its termination guard after the execution settles', async () => {
+  const timeoutCount = () => process.getActiveResourcesInfo().filter(type => type === 'Timeout').length;
+  const before = timeoutCount();
+  await assert.rejects(() => runOperationScenarioSequence(['events'], {
+    timeoutMs: 1,
+    execute: (_id, { signal }) => new Promise((_, reject) => signal.addEventListener('abort', () => reject(signal.reason), { once: true })),
+    finalize: async () => {},
+    onError: () => {},
+  }), /selected operation scenario/);
+  assert.equal(timeoutCount(), before, 'completed cancellation must not leave a live termination timer');
+});
+
 test('attendance and RSVP cannot reuse an authenticated browser profile name', () => {
   assert.notEqual(operationSessionName('run', 'attendance', 'parent'), operationSessionName('run', 'rsvp', 'parent'));
   const longA = operationSessionName('final-certification-run-with-long-id', 'tournaments-create-configure-replicate-archive', 'ui-owner-tournament-archive-cancel');

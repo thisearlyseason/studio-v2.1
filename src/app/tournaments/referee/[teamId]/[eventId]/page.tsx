@@ -147,7 +147,7 @@ export default function RefereePortalPage({ params: rawParams }: { params: Promi
               )}
               <span className="flex items-center gap-1.5">
                 <Trophy className="h-3 w-3" />
-                {(event.referees || []).length} Official{(event.referees || []).length !== 1 ? 's' : ''} · {(event.tournamentGames || []).length} Matches
+                {activeRef ? `Your Assigned Match${myGames.length !== 1 ? 'es' : ''}: ${myGames.length}` : 'Match Assignments'}
               </span>
             </div>
           )}

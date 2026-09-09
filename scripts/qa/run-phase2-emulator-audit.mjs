@@ -30,6 +30,7 @@ import { CERTIFICATION_SCENARIOS } from './certification/scenario-catalog.mjs';
 import { DIMENSION_NAMES, serializeEvidenceFailure } from './certification/local/evidence.mjs';
 import { createFixtureMutations } from './certification/local/fixture-mutations.mjs';
 import { observeCalendarResponse } from './certification/local/calendar-response-observation.mjs';
+import { createGamesBrowserObserver, validateGamesBrowserObservation } from './certification/local/games-browser.mjs';
 import { validateAttendanceLedger, validateAttendanceBounds } from './certification/local/attendance-observation.mjs';
 import { operationActorAliases } from './certification/local/operation-actors.mjs';
 import { validateRsvpRoleObservations } from './certification/local/rsvp-observation.mjs';
@@ -42,7 +43,7 @@ import {createLibraryBrowserObserver,validateLibraryDownload,completeLibraryUplo
 import {createIncidentBrowserObserver,validateIncidentDownload} from './certification/local/incident-browser.mjs';
 import {createMediaBrowserObserver,generatedMp4Body,parseMediaBrowserEnvelope} from './certification/local/media-browser.mjs';
 import {beforeImageMatches} from './certification/local/document-restoration.mjs';
-import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, operationScenarioTimeoutMs, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots, registerCompetitionDiscovery, snapshotCompetitionRoots } from './certification/local/schedule-isolation.mjs';
+import { withAttendanceMemberships, selectScheduleTeam, runOperationScenarioSequence, runOperationStage, operationScenarioTimeoutMs, operationSessionName, registerScheduleDiscovery, snapshotScheduleRoots, registerCompetitionDiscovery, snapshotCompetitionRoots } from './certification/local/schedule-isolation.mjs';
 import { createResourceRegistry, mergeResourceCleanupResults } from './certification/local/resource-registry.mjs';
 import {
   patchFirestoreFields as patchFirestoreFieldsRequest,
@@ -1419,41 +1420,53 @@ async function apiJsonResult(pathname, token, init = {}) {
 // The route-side gate records each request *after authentication* and before
 // mutation. Unlike the old microtask helper, this proves that both HTTP
 // requests arrived at the server before either is released to commit.
-async function runServerRequestBarrier(label, participants, { timeoutMs = 8_000 } = {}) {
+async function runServerRequestBarrier(label, participants, { timeoutMs = 8_000, signal } = {}) {
   if (!Array.isArray(participants) || participants.length !== 2 || participants.some(item => !item || typeof item.alias !== 'string' || typeof item.execute !== 'function')) {
     throw new Error(`${label} requires exactly two named request participants.`);
   }
+  signal?.throwIfAborted();
   const barrierScope = activeOperationResourceRegistry ? `_${OPERATIONS_SCENARIO_IDS.indexOf(activeCertificationScenario)}` : '';
   const barrierId = `qa_${label}${barrierScope}_${certificationRunId}`.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 120);
   const barrierPath = `qaCertificationRequestBarriers/${barrierId}`;
   registerDynamicFirestoreRoot(barrierPath, `request-barrier-${label}`);
   const startedAt = new Date().toISOString();
-  await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
-    await firestoreAdmin.doc(barrierPath).set({
-      state: 'open',
-      expectedParticipants: participants.map(item => item.alias),
-      arrivals: {},
-      createdAt: startedAt,
-      qaCertificationRun: certificationRunId,
-    });
-  });
   const controller = new AbortController();
-  const requests = participants.map(item => Promise.resolve().then(() => item.execute({
-    signal: controller.signal,
-    headers: {
-      'x-certification-barrier': barrierId,
-      'x-certification-barrier-participant': item.alias,
-    },
-  })));
+  const requestSignal = signal ? AbortSignal.any([signal, controller.signal]) : controller.signal;
+  let rejectCancellation;
+  const cancelled = new Promise((_, reject) => { rejectCancellation = () => reject(requestSignal.reason); });
+  requestSignal.addEventListener('abort', rejectCancellation, { once: true });
+  // Observe cancellation immediately, including while an authoritative read is
+  // pending. The request-settling race below still receives the same rejection.
+  void cancelled.catch(() => {});
+  let settledRequests = Promise.resolve([]);
+  let responseTimeout;
   const deadline = Date.now() + timeoutMs;
   let arrivals = {};
   try {
+    await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
+      await firestoreAdmin.doc(barrierPath).set({
+        state: 'open', expectedParticipants: participants.map(item => item.alias),
+        arrivals: {}, createdAt: startedAt, qaCertificationRun: certificationRunId,
+      });
+    });
+    requestSignal.throwIfAborted();
+    const requests = participants.map(item => Promise.resolve().then(() => {
+      requestSignal.throwIfAborted();
+      return item.execute({ signal: requestSignal, headers: {
+        'x-certification-barrier': barrierId,
+        'x-certification-barrier-participant': item.alias,
+      } });
+    }));
+    settledRequests = Promise.allSettled(requests);
     while (Date.now() < deadline) {
+      requestSignal.throwIfAborted();
       arrivals = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) =>
         firestoreAdmin.doc(barrierPath).get().then(snapshot => snapshot.data()?.arrivals || {}));
+      requestSignal.throwIfAborted();
       if (participants.every(item => typeof arrivals[item.alias] === 'string')) break;
       await new Promise(resolve => setTimeout(resolve, 25));
     }
+    requestSignal.throwIfAborted();
     if (!participants.every(item => typeof arrivals[item.alias] === 'string')) {
       throw new Error(`${label} did not observe both route arrivals before release.`);
     }
@@ -1461,17 +1474,24 @@ async function runServerRequestBarrier(label, participants, { timeoutMs = 8_000 
     await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => {
       await firestoreAdmin.doc(barrierPath).set({ state: 'released', releasedAt }, { merge: true });
     });
+    requestSignal.throwIfAborted();
     const settled = await Promise.race([
-      Promise.allSettled(requests),
-      new Promise((_, reject) => setTimeout(() => reject(new Error(`${label} request responses did not settle after release.`)), timeoutMs)),
+      settledRequests,
+      cancelled,
+      new Promise((_, reject) => { responseTimeout = setTimeout(() => reject(new Error(`${label} request responses did not settle after release.`)), timeoutMs); }),
     ]);
+    requestSignal.throwIfAborted();
     const final = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(barrierPath).get().then(snapshot => snapshot.data() || {}));
+    requestSignal.throwIfAborted();
     return Object.freeze({ settled, barrier: Object.freeze({ barrierId, startedAt, arrivals, releasedAt, finalState: final.state || null, responsesObservedAt: new Date().toISOString() }) });
   } catch (error) {
-    controller.abort();
+    controller.abort(error);
     await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(barrierPath).set({ state: 'cancelled', cancelledAt: new Date().toISOString() }, { merge: true })).catch(() => {});
-    await Promise.allSettled(requests);
+    await settledRequests;
     throw error;
+  } finally {
+    clearTimeout(responseTimeout);
+    requestSignal.removeEventListener('abort', rejectCancellation);
   }
 }
 
@@ -8091,6 +8111,86 @@ async function runGamesTeamScoreLocalAudit() {
   await recordLocalGapRequestCase({ scenarioId, dimension: 'network', actorAlias: 'qa-coach-owner-a', label: networkLabel,
     observed: 'the score API returned its exact validation status', reconciliation: 'captured POST request and 400 response',
     operation: async () => expectEqual((await request(ownerToken, { ...base, gameId: `${gameId}-network`, opponent: '' })).status, 400, networkLabel) });
+
+  if (!runBrowser) return;
+  const session = await browserLogin('qa-coach-owner-a', '/dashboard', 'games-score-owner');
+  const observation = JSON.parse(cli(session, ['run-code', `async page => {
+    const observer = (${createGamesBrowserObserver.toString()})(page, { baseUrl: ${JSON.stringify(BASE_URL)} });
+    const gameId = ${JSON.stringify(gameId)}, teamId = ${JSON.stringify(team.id)}, opponent = ${JSON.stringify(base.opponent)};
+    const dialog = page.getByRole('dialog').filter({ has: page.getByRole('heading', { name: 'Record Result', exact: true }) });
+    const us = dialog.getByRole('spinbutton', { name: 'Us', exact: true });
+    const them = dialog.getByRole('spinbutton', { name: 'Them', exact: true });
+    const submit = dialog.getByRole('button', { name: 'Broadcast Final Score', exact: true });
+    let result;
+    try {
+      observer.start('games-zero-score-edit');
+      await page.setViewportSize({ width: 1440, height: 900 });
+      await page.evaluate(id => localStorage.setItem('sf_session_team_id', id), teamId);
+      await page.goto(${JSON.stringify(`${BASE_URL}/games`)});
+      await page.getByRole('heading', { name: 'Scorekeeping', exact: true }).waitFor({ timeout: 15000 });
+      const alert = page.getByRole('dialog', { name: 'High Priority Team Alert' });
+      if (await alert.isVisible()) { await alert.getByRole('button', { name: 'Got It', exact: true }).click(); await alert.waitFor({ state: 'hidden' }); }
+      await page.getByText(opponent, { exact: true }).click();
+      await dialog.waitFor({ state: 'visible' });
+      const before = [await us.inputValue(), await them.inputValue()];
+      if (JSON.stringify(before) !== '["2","4"]') throw new Error('Games edit opened a different score: ' + JSON.stringify(before));
+      await us.fill('0'); await them.fill('0');
+      const saved = page.waitForResponse(response => {
+        if (response.url().split('?')[0] !== ${JSON.stringify(`${BASE_URL}/api/teams/games`)} || response.request().method() !== 'POST') return false;
+        const body = JSON.parse(response.request().postData() || '{}');
+        return body.teamId === teamId && body.gameId === gameId;
+      }, { timeout: 15000 });
+      await submit.click();
+      const response = await saved;
+      const body = JSON.parse(response.request().postData());
+      const scoreEdit = { status: response.status(), teamId: body.teamId, gameId: body.gameId, myScore: body.myScore, opponentScore: body.opponentScore };
+      if (scoreEdit.status !== 200) throw new Error('Games score edit response: ' + scoreEdit.status);
+      await dialog.waitFor({ state: 'hidden', timeout: 15000 });
+      await page.reload();
+      await page.getByText(opponent, { exact: true }).click();
+      await dialog.waitFor({ state: 'visible' });
+      const reloadedValues = [await us.inputValue(), await them.inputValue()];
+      const bounds = [];
+      for (const viewport of [{ width: 1440, height: 900 }, { width: 390, height: 844 }]) {
+        await page.setViewportSize(viewport);
+        const boxes = {};
+        for (const [name, control] of Object.entries({ dialog, us, them, submit })) {
+          await control.scrollIntoViewIfNeeded(); boxes[name] = await control.boundingBox();
+        }
+        bounds.push({ viewport, pageWidth: await page.evaluate(() => document.documentElement.scrollWidth), boxes });
+        await page.screenshot({ path: ${JSON.stringify(path.join(certificationArtifactDir, 'games-score-dialog-'))} + viewport.width + '.png', fullPage: true });
+      }
+      await page.keyboard.press('Escape');
+      await dialog.waitFor({ state: 'hidden' });
+      observer.start('games-form-clear');
+      await page.reload();
+      await page.getByRole('button', { name: 'Record Match', exact: true }).click();
+      await dialog.waitFor({ state: 'visible' });
+      const freshFormValues = { opponent: await dialog.getByPlaceholder('e.g. Tigers').inputValue(), scores: [await us.inputValue(), await them.inputValue()] };
+      result = { scoreEdit, reloadedValues, freshFormValues, bounds };
+      await page.keyboard.press('Escape');
+    } finally { result = { ...result, ...observer.finish() }; }
+    return result;
+  }`]));
+  validateGamesBrowserObservation(observation, { teamId: team.id, gameId });
+  const storedZero = await withEmulatorAuthAdmin(async (_auth, db) => (await db.doc(gamePath).get()).data());
+  expectEqual(JSON.stringify({ myScore: storedZero?.myScore, opponentScore: storedZero?.opponentScore, result: storedZero?.result }), JSON.stringify({ myScore: 0, opponentScore: 0, result: 'Tie' }), 'Games browser zero-score edit persists as exact authoritative tie');
+  expectEqual(JSON.stringify(observation.reloadedValues), '["0","0"]', 'Games browser zero-score edit survives reload');
+  expectEqual(JSON.stringify(observation.freshFormValues), JSON.stringify({ opponent: '', scores: ['', ''] }), 'Games new match form clears prior opponent and scores');
+  expectEqual(observation.consoleErrors.length, 0, 'Games browser score workflow console errors');
+  expectEqual(validateGamesBrowserObservation(observation, { teamId: team.id, gameId }), true, 'Games browser exact desktop and mobile score controls fit');
+  for (const [dimension, caseId, tag, patterns, observed] of [
+    ['persistence', 'games-zero-score-edit', 'games-zero-score-edit', [/Games browser zero-score edit/], 'visible 0-0 edit persists as a tie after reload and authoritative reread'],
+    ['negativePath', 'games-form-clear', 'games-form-clear', [/Games new match form clears/], 'new match form opens with empty opponent and score inputs'],
+    ['console', LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId].console[0], 'games-console', [/Games browser score workflow console errors/], 'score edit and fresh form emit no console errors'],
+    ['responsive', LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId].responsive[0], 'games-responsive', [/Games browser exact desktop and mobile score controls fit/], 'score dialog and controls fit 1440x900 and 390x844'],
+  ]) {
+    await captureBrowserOperationRequests(caseId, 'qa-coach-owner-a', observation.observedResponses, tag);
+    recordObservedOperationNamedCase(scenarioId, dimension, caseId, observed, patterns, {
+      actor: 'qa-coach-owner-a', operation: 'visible team score edit and new score form', requests: operationRequestEvidence(caseId),
+      reconciliation: 'exact run-owned score document, persisted input values, empty form, and measured dialog controls', timeBound: '15s browser waits',
+    });
+  }
 }
 
 async function runLeagueDivisionLocalAudit() {
@@ -8265,7 +8365,7 @@ async function runCertificationOperationsScenarios() {
     failFast: certificationFailFast,
     timeoutMs: scenarioId => operationScenarioTimeoutMs(runBrowser, scenarioId),
     onError: (scenarioId, error) => recordCertificationRunFailure(scenarioId, error, 'operations-runtime'),
-    execute: async scenarioId => {
+    execute: async (scenarioId, { signal, checkDeadline }) => {
     sessionBaseline = new Set(ownedBrowserSessions);
     activeCertificationScenario = scenarioId;
     activeCertificationAssertions = [];
@@ -8522,18 +8622,21 @@ async function runCertificationOperationsScenarios() {
         return;
       }
       if (scenarioId === 'events-event-crud-recurrence' && runBrowser) {
-        const eventWorkflow = await runEventWorkflowAudit();
+        const stage = (name, execute) => runOperationStage(name, { signal, checkDeadline, execute,
+          onStage: timing => emitCertificationEvent({ type: 'operation-stage', scenarioId, runId: certificationRunId, ...timing }),
+        });
+        const eventWorkflow = await stage('event-crud', () => runEventWorkflowAudit(checkDeadline));
         await captureBrowserOperationRequests('evt-crud', 'qa-coach-owner-a', eventWorkflow.created.observedResponses, 'owner-create');
         await captureBrowserOperationRequests('evt-crud', 'qa-team-member', eventWorkflow.memberResult.observedResponses, 'member-read-rsvp');
         await captureBrowserOperationRequests('evt-crud', 'qa-coach-owner-a', eventWorkflow.ownerResult.observedResponses, 'owner-edit-delete');
         await captureBrowserOperationRequests('evt-persistence', 'qa-coach-owner-a', eventWorkflow.ownerResult.observedResponses, 'evt-persistence');
-        const recurringWorkflow = await runRecurringEventWorkflowAudit();
+        const recurringWorkflow = await stage('event-recurrence', () => runRecurringEventWorkflowAudit(eventWorkflow.owner, checkDeadline));
         await captureBrowserOperationRequests('evt-series', 'qa-coach-owner-a', recurringWorkflow.observedResponses, 'evt-series');
         await captureBrowserOperationRequests('evt-occurrence-edit-delete', 'qa-coach-owner-a', recurringWorkflow.observedResponses, 'evt-occurrence-edit-delete');
         await captureBrowserOperationRequests('evt-responsive', 'qa-coach-owner-a', recurringWorkflow.observedResponses, 'evt-responsive');
         await captureBrowserOperationRequests('evt-console', 'qa-coach-owner-a', recurringWorkflow.observedResponses, 'evt-console');
         await captureBrowserOperationRequests('evt-network', 'qa-coach-owner-a', recurringWorkflow.observedResponses, 'evt-network');
-        await runExactEventApiCasesAudit();
+        await stage('event-api-reconciliation', () => runExactEventApiCasesAudit(signal));
         recordObservedOperationNamedCase(scenarioId, 'happyPath', 'evt-crud', 'owner creates, edits, deletes, and member reads a team event through the browser', [/owner event create persists after reload/, /member sees owner event/, /owner event edit persists after reload/, /owner event delete persists after reload/], { actor: 'qa-coach-owner-a+qa-team-member', operation: 'browser-event-crud', requests: operationRequestEvidence('evt-crud'), reconciliation: 'owner create/edit/delete and active member read each persist through reload', timeBound: 'Playwright response + reload' });
         recordObservedOperationNamedCase(scenarioId, 'happyPath', 'evt-series', 'owner creates, edits, and deletes a four-occurrence weekly series through the browser', [/weekly recurrence creates the exact requested occurrence count/, /weekly recurrence series edit preserves all remaining occurrence dates/, /weekly recurrence series delete removes every occurrence/], { actor: 'qa-coach-owner-a', operation: 'browser-event-series', requests: operationRequestEvidence('evt-series'), reconciliation: 'four occurrences, then three remaining after an occurrence delete, then zero after series delete', timeBound: '15s UI waits' });
         recordObservedOperationNamedCase(scenarioId, 'happyPath', 'evt-occurrence-edit-delete', 'owner edits and deletes exactly one weekly occurrence through the visible controls', [/weekly recurrence one occurrence edit persists through reload/, /weekly recurrence one occurrence delete persists through reload/], { actor: 'qa-coach-owner-a', operation: 'browser-event-occurrence-edit-delete', requests: operationRequestEvidence('evt-occurrence-edit-delete'), reconciliation: 'one changed occurrence then zero changed titles after reload', timeBound: '15s UI waits' });
@@ -13525,39 +13628,45 @@ function browserSelectScheduleTeam(session, teamId) {
   }`]);
 }
 
-async function runEventWorkflowAudit() {
+async function runEventWorkflowAudit(checkDeadline = () => {}) {
   const marker = `phase2-${process.pid}`;
   const owner = await browserLogin('qa-coach-owner-a', '/dashboard', `events-owner-${process.pid}`);
+  checkDeadline();
   const member = await browserLogin('qa-team-member', '/dashboard', `events-member-${process.pid}`);
+  checkDeadline();
   browserSelectScheduleTeam(owner, TEAM_A_ID);
   browserSelectScheduleTeam(member, TEAM_A_ID);
   const created = browserOwnerEventCreate(owner, marker);
+  checkDeadline();
   expectEqual(created.incomplete, 1, 'event rejects incomplete activity');
   expectEqual(created.createdAfterReload > 0, true, 'owner event create persists after reload');
   expectEqual(created.consoleErrors.length, 0, 'owner event create console errors');
   expectEqual(created.failedResponses.length, 0, 'owner event create failed responses');
   const memberResult = browserMemberEventRsvp(member, marker);
+  checkDeadline();
   expectEqual(memberResult.eventVisible > 0, true, 'member sees owner event');
   expectEqual(memberResult.editControls, 0, 'member cannot edit team event');
   expectEqual(memberResult.rsvpAfterReload > 0, true, 'member RSVP persists after reload');
   expectEqual(memberResult.consoleErrors.length, 0, 'member event workflow console errors');
   expectEqual(memberResult.failedResponses.length, 0, 'member event workflow failed responses');
   const ownerResult = browserOwnerEventEditDelete(owner, marker);
+  checkDeadline();
   expectEqual(ownerResult.editedAfterReload > 0, true, 'owner event edit persists after reload');
   expectEqual(ownerResult.editedAfterSecondReload > 0, true, 'owner event edit second reload persistence');
   expectEqual(ownerResult.deletedAfterReload, 0, 'owner event delete persists after reload');
   expectEqual(ownerResult.consoleErrors.length, 0, 'owner event edit/delete console errors');
   expectEqual(ownerResult.failedResponses.length, 0, 'owner event edit/delete failed responses');
-  return { created, memberResult, ownerResult };
+  return { owner, created, memberResult, ownerResult };
 }
 
-async function runExactEventApiCasesAudit() {
+async function runExactEventApiCasesAudit(signal) {
   const teamA = FIXTURES.teams.find(team => team.alias === 'qa-team-a');
   const teamB = FIXTURES.teams.find(team => team.alias === 'qa-team-b');
   if (!teamA || !teamB) throw new Error('Event exact-case fixture teams are missing.');
   const [owner, assistant, member, foreignOwner] = await Promise.all([
     signIn('qa-coach-owner-a'), signIn('qa-team-assistant'), signIn('qa-team-member'), signIn('qa-coach-owner-b'),
   ]);
+  signal?.throwIfAborted();
   if (![owner, assistant, member, foreignOwner].every(result => result.status === 200 && result.body?.idToken)) {
     throw new Error('Event exact-case actor sign-in failed.');
   }
@@ -13566,12 +13675,20 @@ async function runExactEventApiCasesAudit() {
     spring: `${marker}_spring`, fall: `${marker}_fall`, midnight: `${marker}_midnight`,
     conflict: `${marker}_conflict`, duplicate: `${marker}_duplicate`, assistant: `${marker}_assistant`,
   });
-  const create = (token, eventId, event, init = {}) => apiJsonResult('/api/teams/events/action', token, {
-    ...init, method: 'POST', body: JSON.stringify({ action: 'create', teamId: teamA.id, eventId, event }),
+  const create = (token, eventId, event, init = {}) => {
+    signal?.throwIfAborted();
+    return apiJsonResult('/api/teams/events/action', token, {
+    ...init, signal: signal && init.signal ? AbortSignal.any([signal, init.signal]) : signal || init.signal,
+    method: 'POST', body: JSON.stringify({ action: 'create', teamId: teamA.id, eventId, event }),
   });
-  const createForTeam = (token, teamId, eventId, event, init = {}) => apiJsonResult('/api/teams/events/action', token, {
-    ...init, method: 'POST', body: JSON.stringify({ action: 'create', teamId, eventId, event }),
+  };
+  const createForTeam = (token, teamId, eventId, event, init = {}) => {
+    signal?.throwIfAborted();
+    return apiJsonResult('/api/teams/events/action', token, {
+    ...init, signal: signal && init.signal ? AbortSignal.any([signal, init.signal]) : signal || init.signal,
+    method: 'POST', body: JSON.stringify({ action: 'create', teamId, eventId, event }),
   });
+  };
   const payload = (title, date, startTime, endTime, location) => ({
     title, date, endDate: date, startTime, endTime, eventType: 'practice', location,
   });
@@ -13628,7 +13745,7 @@ async function runExactEventApiCasesAudit() {
   const duplicateBarrier = await captureOperationRequests('evt-double', 'qa-coach-owner-a', () => runServerRequestBarrier('event_exact_duplicate', [
     { alias: 'first-create', execute: ({ signal, headers }) => create(owner.body.idToken, ids.duplicate, duplicatePayload, { signal, headers }) },
     { alias: 'second-create', execute: ({ signal, headers }) => create(owner.body.idToken, ids.duplicate, duplicatePayload, { signal, headers }) },
-  ]));
+  ], { signal }));
   const duplicateStatuses = duplicateBarrier.settled.map(result => result.status === 'fulfilled' ? result.value.status : 'rejected').sort().join(',');
   const duplicateDoc = await withEmulatorAuthAdmin(async (_authAdmin, firestoreAdmin) => firestoreAdmin.doc(`teams/${teamA.id}/events/${ids.duplicate}`).get());
   expectEqual(JSON.stringify({ statuses: duplicateStatuses, exists: duplicateDoc.exists }), JSON.stringify({ statuses: '200,409', exists: true }), 'event exact duplicate barrier commits once');
@@ -13795,11 +13912,13 @@ function browserOwnerRecurringEventWorkflow(session, marker) {
   return JSON.parse(cli(session, ['run-code', code]));
 }
 
-async function runRecurringEventWorkflowAudit() {
+async function runRecurringEventWorkflowAudit(existingOwner, checkDeadline = () => {}) {
   const marker = `phase2-recurring-${process.pid}`;
-  const owner = await browserLogin('qa-coach-owner-a', '/dashboard', `events-series-owner-${process.pid}`);
-  browserSelectScheduleTeam(owner, TEAM_A_ID);
+  const owner = existingOwner || await browserLogin('qa-coach-owner-a', '/dashboard', `events-series-owner-${process.pid}`);
+  checkDeadline();
+  if (!existingOwner) browserSelectScheduleTeam(owner, TEAM_A_ID);
   const result = browserOwnerRecurringEventWorkflow(owner, marker);
+  checkDeadline();
   expectEqual(result.createdCount, 4, 'weekly recurrence creates the exact requested occurrence count');
   if (!result.createdCalendarDate) {
     throw new Error(`weekly recurrence preserves the selected local calendar date: expected September 20, 2026 in event details; received ${JSON.stringify(result.createdDetailsText)}`);

@@ -23,7 +23,7 @@ export function SectionNav() {
   const pathname = usePathname();
 
   return (
-    <nav className="sticky top-16 md:top-20 z-30 bg-background/95 backdrop-blur-md border-b" aria-label="Sports Hub sections">
+    <nav className="sticky top-28 md:top-20 z-30 bg-background/95 backdrop-blur-md border-b" aria-label="Sports Hub sections">
       <div className="max-w-7xl mx-auto px-4 md:px-8">
         <div className="flex flex-wrap items-center justify-center gap-1 py-2">
           {sections.map((section) => {

@@ -17,8 +17,26 @@ export function operationScenarioTimeoutMs(runBrowser, scenarioId) {
   if (scenarioId === 'practice-film-upload-coach-marks-watch' ||
       scenarioId === 'files-library-crud-download' ||
       scenarioId === 'files-avatar-branding-player-media-paths') return 120_000;
-  if (scenarioId === 'chat-channel-message-unread') return 90_000;
+  // Event combines owner/member CRUD, recurrence, and exact API cases. The
+  // recorded successful work exceeded one minute before API reconciliation.
+  if (scenarioId === 'chat-channel-message-unread' || scenarioId === 'events-event-crud-recurrence') return 90_000;
   return 60_000;
+}
+
+export async function runOperationStage(stage, { signal, checkDeadline = () => signal.throwIfAborted(), execute, onStage }) {
+  checkDeadline();
+  const startedAt = new Date().toISOString();
+  const started = performance.now();
+  onStage({ stage, state: 'started', startedAt });
+  try {
+    const result = await execute();
+    checkDeadline();
+    onStage({ stage, state: 'completed', startedAt, completedAt: new Date().toISOString(), elapsedMs: Math.round(performance.now() - started) });
+    return result;
+  } catch (error) {
+    onStage({ stage, state: 'failed', startedAt, completedAt: new Date().toISOString(), elapsedMs: Math.round(performance.now() - started) });
+    throw error;
+  }
 }
 
 export async function runOperationScenarioSequence(ids, { execute, finalize, onError, failFast, timeoutMs = 60_000 }) {
@@ -28,26 +46,36 @@ export async function runOperationScenarioSequence(ids, { execute, finalize, onE
     let failure;
     let timeout;
     const controller = new AbortController();
-    const execution = Promise.resolve().then(() => execute(id, { signal: controller.signal }));
+    const deadlineAt = Date.now() + scenarioTimeoutMs;
+    const timeoutError = () => new Error(`Operation scenario ${id} timed out after ${scenarioTimeoutMs}ms.`);
+    // The browser CLI uses synchronous child commands. Check the actual clock
+    // between commands even when the event loop has not dispatched its timer.
+    const checkDeadline = () => {
+      if (!controller.signal.aborted && Date.now() >= deadlineAt) controller.abort(timeoutError());
+      controller.signal.throwIfAborted();
+    };
+    const execution = Promise.resolve().then(() => execute(id, { signal: controller.signal, checkDeadline }));
     try {
       await Promise.race([
         execution,
         new Promise((_, reject) => { timeout = setTimeout(() => {
-          reject(new Error(`Operation scenario ${id} timed out after ${scenarioTimeoutMs}ms.`));
-          controller.abort(new Error(`Operation scenario ${id} timed out.`));
+          const error = timeoutError();
+          reject(error);
+          controller.abort(error);
         }, scenarioTimeoutMs); }),
       ]);
     } catch (error) {
       failure = error;
       if (controller.signal.aborted) {
+        let abortTimeout;
         try {
           await Promise.race([
             execution,
-            new Promise((_, reject) => setTimeout(() => reject(new Error(`Operation scenario ${id} did not terminate after abort.`)), Math.min(2_000, Math.max(100, scenarioTimeoutMs * 4)))),
+            new Promise((_, reject) => { abortTimeout = setTimeout(() => reject(new Error(`Operation scenario ${id} did not terminate after abort.`)), Math.min(2_000, Math.max(100, scenarioTimeoutMs * 4))); }),
           ]);
         } catch (abortError) {
           if (!String(abortError?.message || '').includes('timed out')) failure = new AggregateError([failure, abortError], 'Operation timeout and abort termination failed.');
-        }
+        } finally { clearTimeout(abortTimeout); }
       }
     }
     finally { clearTimeout(timeout); }
