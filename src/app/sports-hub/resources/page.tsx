@@ -10,6 +10,7 @@ import { RESOURCES, RESOURCES_BY_TYPE, FEATURED_RESOURCES, Resource } from '@/li
 import { cn } from '@/lib/utils';
 
 const TYPE_LABELS: Record<string, string> = {
+  'score-sheet': 'Score Sheets',
   'practice-plan': 'Practice Plans',
   'drill': 'Drills',
   'season-planner': 'Season Planners',
@@ -27,6 +28,7 @@ const TYPE_LABELS: Record<string, string> = {
 };
 
 const BROWSE_CATEGORIES = [
+  { type: 'score-sheet', label: 'Branded Score Sheets', icon: FileText, color: 'text-red-600', bg: 'bg-red-50 dark:bg-red-950/30', border: 'border-red-100 dark:border-red-900/30' },
   {
     type: 'practice-plan',
     label: 'Practice Plans',

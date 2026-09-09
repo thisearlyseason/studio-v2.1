@@ -26,6 +26,7 @@ const TYPE_OPTIONS = [
   { value: 'volunteer-guide', label: 'Volunteer Guides', icon: Users },
   { value: 'coach-meeting-agenda', label: 'Coach Meeting Agendas', icon: FileText },
   { value: 'lineup-template', label: 'Lineup Templates', icon: List },
+  { value: 'score-sheet', label: 'Score Sheets', icon: List },
   { value: 'fundraising-ideas', label: 'Fundraising Guides', icon: DollarSign },
   { value: 'equipment-list', label: 'Equipment Lists', icon: Package },
   { value: 'travel-checklist', label: 'Travel Checklists', icon: Plane },
@@ -56,6 +57,7 @@ const TYPE_LABELS: Record<string, string> = {
   'volunteer-guide': 'Volunteer Guide',
   'coach-meeting-agenda': 'Coach Meeting Agenda',
   'lineup-template': 'Lineup Template',
+  'score-sheet': 'Score Sheet',
   'fundraising-ideas': 'Fundraising Guide',
   'equipment-list': 'Equipment List',
   'travel-checklist': 'Travel Checklist',
@@ -223,7 +225,7 @@ function PlaybookContent() {
           <div>
             <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground mb-3">Sport</p>
             <div className="flex flex-wrap gap-2">
-              {['all', 'General', 'Soccer', 'Basketball', 'Baseball', 'Volleyball', 'Football', 'Track & Field'].map(sport => (
+              {['all', ...Array.from(new Set(RESOURCES.map(resource => resource.sport))).sort()].map(sport => (
                 <button
                   key={sport}
                   onClick={() => setSportFilter(sport)}

@@ -24,6 +24,7 @@ const difficultyColors: Record<string, string> = {
 };
 
 const TYPE_LABELS: Record<string, string> = {
+  'score-sheet': 'Score Sheet',
   'practice-plan': 'Practice Plan',
   'drill': 'Drill',
   'season-planner': 'Season Planner',
@@ -299,7 +300,15 @@ export default async function ResourceViewerPage({ params }: Params) {
       </header>
 
       {/* ── PDF Download Banner ────────────────────────────────────────────── */}
-      {!resource.isVideo && (
+      {resource.downloadUrl && (
+        <div className="mb-10 rounded-2xl border-2 border-primary/20 bg-primary/5 p-6">
+          <h2 className="text-xl font-bold mb-2">Print-ready score sheet</h2>
+          <p className="mb-4 text-sm text-muted-foreground">Landscape PDF with scoring tables and a scorer guide. Letter size; fits A4.</p>
+          <Button asChild><a href={resource.downloadUrl} download>Download score sheet PDF</a></Button>
+          <a href={resource.downloadUrl} target="_blank" rel="noopener noreferrer" className="ml-4 inline-block py-3 text-sm underline">Preview PDF</a>
+        </div>
+      )}
+      {!resource.isVideo && !resource.downloadUrl && (
         <ResourcePDFSection
           resourceId={resource.id}
           title={resource.title}
