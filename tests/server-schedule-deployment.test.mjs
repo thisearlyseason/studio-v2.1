@@ -27,6 +27,37 @@ const scheduleFixture = {
 const replacement = { action: 'replace', leagueId: 'league-a', requestId: 'deploy-request-0001', expectedVersion: 1, games: [{ id: 'game-a', team1Id: 'alpha', team2Id: 'beta', date: '2026-09-01', time: '09:00', resourceId: 'field-a', location: 'field-a' }] };
 const scheduleRequest = body => new Request('http://localhost/api/leagues/schedule', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
 
+test('schedule deployment queries are supported by the shipped Firestore indexes', async t => {
+  const config = JSON.parse(await readFile(new URL('../firestore.indexes.json', import.meta.url), 'utf8'));
+  const { db, records } = communicationDb(scheduleFixture);
+  const runTransaction = db.runTransaction.bind(db);
+  const missingIndexes = new Set();
+  // The in-memory SDK does not enforce Firestore's group-scope index requirement.
+  // Enforce it at the SDK boundary while the actual schedule route runs unchanged.
+  db.runTransaction = work => runTransaction(transaction => work({ ...transaction, async get(ref) {
+    if (ref.group) for (const [field, operator] of ref.filters) {
+      assert.equal(operator, '==');
+      const supported = config.fieldOverrides.some(entry => entry.collectionGroup === ref.path
+        && entry.fieldPath === field && entry.indexes.some(index => index.queryScope === 'COLLECTION_GROUP'
+          && ['ASCENDING', 'DESCENDING'].includes(index.order)));
+      if (!supported) {
+        missingIndexes.add(`${ref.path}.${field}`);
+        throw Object.assign(new Error(`Missing collection-group index: ${ref.path}.${field}`), { code: 9 });
+      }
+    }
+    return transaction.get(ref);
+  } }));
+  t.mock.method(console, 'error', () => {});
+  const app = await loadCommunicationRoute('../../src/app/api/leagues/schedule/route.ts', db, { uid: 'owner' });
+  try {
+    const response = await app.route.POST(scheduleRequest(replacement));
+    assert.equal(response.status, 200, `Missing shipped indexes: ${[...missingIndexes].join(', ')}`);
+    assert.equal(records.get('leagues/league-a').schedule.length, 1);
+    assert.equal([...records.keys()].filter(path => path.startsWith('scheduleBookings/')).length, 1);
+    assert.equal([...records.keys()].filter(path => path.includes('/events/')).length, 2);
+  } finally { app.dispose(); }
+});
+
 test('schedule request versions must be numeric bounded integers without coercion', async () => {
   for (const expectedVersion of ['1', null, true, -1, Number.MAX_SAFE_INTEGER + 1]) {
     const { db, records } = communicationDb(scheduleFixture);

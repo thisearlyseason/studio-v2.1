@@ -2,6 +2,7 @@ import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import { getTeamAuthority } from '@/lib/server-team-access';
+import { calendarEventDate } from '@/lib/calendar-event-date';
 import {
   enforceUserRateLimit,
   readJsonBodyWithLimit,
@@ -25,12 +26,12 @@ export async function POST(req: NextRequest) {
     const eventId = typeof body.eventId === 'string' && ID_PATTERN.test(body.eventId) ? body.eventId : null;
     const location = typeof body.location === 'string' ? body.location.trim().slice(0, 240) : '';
     const notes = typeof body.notes === 'string' ? body.notes.trim().slice(0, 2_000) : '';
-    const parsedDate = new Date(date);
+    const parsedDate = calendarEventDate(date);
 
     if (
       !teamId ||
       opponent.length < 1 ||
-      Number.isNaN(parsedDate.getTime()) ||
+      !parsedDate ||
       !Number.isInteger(myScore) ||
       !Number.isInteger(opponentScore) ||
       myScore < 0 ||
@@ -58,7 +59,8 @@ export async function POST(req: NextRequest) {
         .slice(0, 40);
     const payload = {
       opponent,
-      date: parsedDate.toISOString(),
+      // A match day is not a UTC instant. Keep legacy timestamp inputs intact.
+      date: /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : parsedDate.toISOString(),
       myScore,
       opponentScore,
       result,

@@ -181,10 +181,9 @@ export default function GamesPage() {
       return;
     }
     let result: 'Win' | 'Loss' | 'Tie' = 'Tie'; if (myS > oppS) result = 'Win'; if (myS < oppS) result = 'Loss';
-    const matchDate = new Date(`${date}T12:00:00`);
     const payload: any = { 
       opponent, 
-      date: matchDate.toISOString(),
+      date,
       myScore: myS, 
       opponentScore: oppS, 
       result, 

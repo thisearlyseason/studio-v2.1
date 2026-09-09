@@ -36,6 +36,27 @@ function renderTimeline(event) {
 }
 
 for (const zone of ['America/Edmonton', 'Pacific/Auckland']) {
+  test(`score form submits the selected calendar day without creating an instant in ${zone}`, async () => {
+    const declaration = find(tree, node => ts.isVariableDeclaration(node) && node.name.getText(tree) === 'handleRecordGame').parent.parent.getText(tree);
+    const code = (await transform(`${declaration}\nreturn handleRecordGame;`, {loader:'ts'})).code;
+    const requests = [];
+    const notices = [];
+    const inputs = {
+      opponent:'Tigers', date:'2026-10-01', myScore:'3', opponentScore:'1', location:'Main', notes:'', isPro:false,
+      selectedEventId:'manual', activeTeam:{id:'squad'}, auth:{}, isSavingScore:false, editingGame:null,
+      scoreSubmissionKey:{current:'qa-score'}, setIsSavingScore:()=>{}, setIsRecordOpen:()=>{}, resetForm:()=>{},
+      toast:value=>notices.push(value), getAuthToken:async()=>'qa-token', authHeader:()=>({}),
+      fetch:async(url, options)=>{requests.push({url,body:JSON.parse(options.body)});return Response.json({ok:true});},
+    };
+    const prior = process.env.TZ; process.env.TZ = zone;
+    try {
+      await new Function(...Object.keys(inputs), code)(...Object.values(inputs))();
+      assert.equal(requests.length, 1);
+      assert.equal(requests[0].url, '/api/teams/games');
+      assert.equal(requests[0].body.date, '2026-10-01');
+      assert.equal(notices.some(value=>value.variant==='destructive'), false);
+    } finally { if (prior === undefined) delete process.env.TZ; else process.env.TZ = prior; }
+  });
   test(`score history/chart and public tournament dates retain calendar days in ${zone}`, () => {
     const prior = process.env.TZ;
     process.env.TZ = zone;
