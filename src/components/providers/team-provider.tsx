@@ -10,6 +10,7 @@ import { isBillableSquadSeat } from '@/lib/team-seat-policy';
 import { calculateHouseholdPayments, type HouseholdPayment } from '@/lib/household-payments';
 import { hasStaffRole } from '@/lib/staff-position';
 import { registerPushDevice } from '@/lib/client-push-registration';
+import { listenForPushForegroundRefresh } from '@/lib/push-foreground-refresh';
 import { normalizeTeamEvent } from '@/lib/team-event-normalization';
 import { dispatchTeamNotification, shouldDispatchTeamOutbound } from '@/lib/client-team-notification';
 import { isStarterExperience } from '@/lib/plan-catalog';
@@ -1079,6 +1080,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const [userRole, setUserRole] = useState<string | null>(null);
   const [claimedSchoolAdminForUid, setClaimedSchoolAdminForUid] = useState<string | null>(null);
   const pushRegistrationAttemptedForUid = useRef<string | null>(null);
+  const pushRegistrationInFlightForUid = useRef<string | null>(null);
 
   useEffect(() => {
     if (!firebaseUser) {
@@ -1212,26 +1214,38 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [firebaseUser, db, isAuthGatePath, userRole]);
 
   useEffect(() => {
-    if (
-      !userProfile?.id ||
-      !userProfile.notificationsEnabled ||
-      typeof window === 'undefined' ||
-      !('Notification' in window) ||
-      Notification.permission !== 'granted' ||
-      pushRegistrationAttemptedForUid.current === userProfile.id
-    ) {
-      return;
-    }
+    if (!userProfile?.id || !userProfile.notificationsEnabled || typeof window === 'undefined') return;
+    const userId = userProfile.id;
+    const attemptRegistration = (force = false) => {
+      if (
+        !('Notification' in window) ||
+        Notification.permission !== 'granted' ||
+        pushRegistrationInFlightForUid.current === userId ||
+        (!force && pushRegistrationAttemptedForUid.current === userId)
+      ) return;
 
-    pushRegistrationAttemptedForUid.current = userProfile.id;
-    void registerPushDevice(userProfile.id).then(transport => {
-      if (!transport) pushRegistrationAttemptedForUid.current = null;
-    }).catch(error => {
-      pushRegistrationAttemptedForUid.current = null;
-      console.warn(
-        '[Web Push] Automatic device registration failed:',
-        error instanceof Error ? error.message : 'unknown error'
-      );
+      pushRegistrationAttemptedForUid.current = userId;
+      pushRegistrationInFlightForUid.current = userId;
+      void registerPushDevice(userId).then(transport => {
+        if (!transport) pushRegistrationAttemptedForUid.current = null;
+      }).catch(error => {
+        pushRegistrationAttemptedForUid.current = null;
+        console.warn(
+          '[Web Push] Automatic device registration failed:',
+          error instanceof Error ? error.message : 'unknown error'
+        );
+      }).finally(() => {
+        if (pushRegistrationInFlightForUid.current === userId) {
+          pushRegistrationInFlightForUid.current = null;
+        }
+      });
+    };
+
+    attemptRegistration();
+    return listenForPushForegroundRefresh({
+      page: window,
+      documentSurface: document,
+      onForeground: () => attemptRegistration(true),
     });
   }, [userProfile?.id, userProfile?.notificationsEnabled]);
 

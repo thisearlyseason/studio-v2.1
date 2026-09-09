@@ -4,7 +4,7 @@ import test from 'node:test';
 import vm from 'node:vm';
 
 const source = await readFile(new URL('../public/sw.js', import.meta.url), 'utf8');
-function harness({ supported = true, rejects = false, locks = true, lockRejects = false, showRejects = false } = {}) {
+function harness({ supported = true, rejects = false, locks = true, lockRejects = false, showRejects = false, windowClient = null } = {}) {
   const handlers = new Map(), notifications = new Map(), badges = [], navigations = [];
   const lockQueues = new Map();
   let beforeRead, showAttempts = 0;
@@ -35,7 +35,7 @@ function harness({ supported = true, rejects = false, locks = true, lockRejects 
     },
   };
   navigator.serviceWorker = { getRegistration: async () => registration };
-  const clients = { matchAll: async () => [], openWindow: async url => navigations.push(url) };
+  const clients = { matchAll: async () => windowClient ? [windowClient] : [], openWindow: async url => navigations.push(url) };
   vm.runInNewContext(source, { URL, clients, console, self: {
     navigator, clients, skipWaiting() {},
     registration,
@@ -120,6 +120,27 @@ test('tapping a notification clears its app badge and still opens the exact chat
   await h.dispatch('notificationclick', { notification: [...h.notifications.values()][0] });
   assert.equal(h.badges.at(-1), 0);
   assert.deepEqual(h.navigations, ['/chats/qa?teamId=team-a']);
+});
+
+test('tapping an existing app window awaits exact-route navigation before the worker event settles', async () => {
+  let releaseNavigation, settled = false;
+  const order = [];
+  const h = harness({ windowClient: {
+    async navigate(url) {
+      order.push(`navigate:${url}`);
+      await new Promise(resolve => { releaseNavigation = resolve; });
+      return this;
+    },
+    async focus() { order.push('focus'); },
+  } });
+  await h.push();
+  const click = h.dispatch('notificationclick', { notification: [...h.notifications.values()][0] })
+    .then(() => { settled = true; });
+  await new Promise(resolve => setImmediate(resolve));
+  assert.equal(settled, false);
+  releaseNavigation();
+  await click;
+  assert.deepEqual(order, ['navigate:/chats/qa?teamId=team-a', 'focus']);
 });
 
 test('dismissing the final notification clears the launcher badge', async () => {

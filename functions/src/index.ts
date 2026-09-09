@@ -16,6 +16,7 @@ import {
   canClaimReminderDelivery,
   type WebPushSubscription,
 } from "./reminder-delivery";
+import { buildReminderDeepLink } from "./reminder-deep-link";
 import { buildCalendarFeed, CalendarFeedEvent, CalendarFeedTeam } from "./calendar-feed";
 import { publicCalendarFeedFailure, redactCalendarFeedPublicResponse } from "./calendar-feed-public-boundary";
 import { runUpcomingEventReminderCore } from "./event-reminder-runner";
@@ -40,6 +41,7 @@ async function sendReminderWebPush(
   subscriptions: WebPushSubscription[],
   title: string,
   body: string,
+  reminderUrl: string,
 ): Promise<{ successCount: number; failureCount: number }> {
   if (!subscriptions.length) return { successCount: 0, failureCount: 0 };
   if (process.env.AUDIT_OUTBOUND_PROVIDER_MODE === "block") {
@@ -48,7 +50,7 @@ async function sendReminderWebPush(
   const configuration = reminderWebPushConfiguration();
   if (!configuration) return { successCount: 0, failureCount: subscriptions.length };
   webpush.setVapidDetails(configuration.subject, configuration.publicKey, configuration.privateKey);
-  const payload = JSON.stringify({ webPush: { title, body, url: "/calendar" } });
+  const payload = JSON.stringify({ webPush: { title, body, url: reminderUrl } });
   const results = await Promise.allSettled(subscriptions.map(subscription =>
     webpush.sendNotification(subscription, payload, { TTL: 3_600, urgency: "high" })
   ));
@@ -767,13 +769,14 @@ export const sendUpcomingEventReminders = onSchedule({
         updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       }, { merge: true });
     },
-    deliver: async ({ targets, title, body }) => {
+    deliver: async ({ entry, targets, title, body }) => {
+      const reminderUrl = buildReminderDeepLink(entry);
       const [fcm, webPush] = await Promise.all([
         targets.fcmTokens.length ? admin.messaging().sendEachForMulticast({
           tokens: targets.fcmTokens, notification: { title, body },
-          webpush: { notification: { icon: "/favicon-192.png", badge: "/favicon-192.png" }, fcmOptions: { link: "/calendar" } },
+          webpush: { notification: { icon: "/favicon-192.png", badge: "/favicon-192.png" }, fcmOptions: { link: reminderUrl } },
         }) : Promise.resolve({ successCount: 0, failureCount: 0 }),
-        sendReminderWebPush(targets.webPushSubscriptions, title, body),
+        sendReminderWebPush(targets.webPushSubscriptions, title, body, reminderUrl),
       ]);
       return { successCount: fcm.successCount + webPush.successCount, failureCount: fcm.failureCount + webPush.failureCount };
     },
