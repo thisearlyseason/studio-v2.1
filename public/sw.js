@@ -5,6 +5,7 @@ const SHELL_URLS = [
   SCHEDULE_SHELL_URL,
   '/offline.html',
   '/manifest.json',
+  '/schedule-manifest.json',
   '/app-icon-192-v5.png',
   '/app-icon-512-v5.png',
   '/app-icon-maskable-192-v5.png',
