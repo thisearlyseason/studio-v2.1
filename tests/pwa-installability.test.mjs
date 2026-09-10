@@ -94,13 +94,21 @@ test('root application registers The Squad service worker without orphaning lega
   const registration = await source('../src/components/pwa/AppServiceWorkerRegistration.tsx');
   const registrationHelper = await source('../src/lib/service-worker-registration.ts');
   const manifest = JSON.parse(await source('../public/manifest.json'));
+  const scheduleManifest = JSON.parse(await source('../public/schedule-manifest.json'));
   assert.match(layout, /AppServiceWorkerRegistration/);
   assert.match(registration, /registerPrimaryServiceWorker/);
   assert.match(registrationHelper, /navigator\.serviceWorker\.register\('\/sw\.js', \{[\s\S]*scope: '\/'/);
   assert.equal(manifest.name, 'The Squad');
   assert.equal(manifest.start_url, '/dashboard');
-  assert.equal(manifest.id, '/schedule-app');
+  assert.equal(manifest.id, '/');
   assert.equal(manifest.scope, '/');
+  assert.equal(scheduleManifest.name, 'The Squad Scheduler');
+  assert.equal(scheduleManifest.short_name, 'Scheduler');
+  assert.equal(scheduleManifest.id, '/schedule-app');
+  assert.equal(scheduleManifest.start_url, '/schedule-app');
+  assert.equal(scheduleManifest.scope, '/schedule-app');
+  assert.notEqual(scheduleManifest.id, manifest.id);
+  assert.match(scheduleLayout, /manifest: '\/schedule-manifest\.json'/);
   assert.match(scheduleLayout, /appleWebApp:\s*\{[\s\S]*?title: 'The Squad'/);
 });
 

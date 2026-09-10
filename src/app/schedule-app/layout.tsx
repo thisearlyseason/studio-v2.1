@@ -1,10 +1,10 @@
 import type { Metadata, Viewport } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Squad Schedule App',
+  title: 'The Squad Scheduler',
   description: 'Your team schedule and personal to-do list — works offline.',
   robots: { index: false, follow: false },
-  manifest: '/manifest.json',
+  manifest: '/schedule-manifest.json',
   appleWebApp: {
     capable: true,
     statusBarStyle: 'black-translucent',

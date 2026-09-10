@@ -1,13 +1,13 @@
 {
-  "name": "The Squad",
-  "short_name": "The Squad",
-  "description": "Unite your team and coordinate like pros with The Squad.",
-  "id": "/",
-  "start_url": "/dashboard",
-  "scope": "/",
+  "name": "The Squad Scheduler",
+  "short_name": "Scheduler",
+  "description": "A focused schedule and task companion for The Squad.",
+  "id": "/schedule-app",
+  "start_url": "/schedule-app",
+  "scope": "/schedule-app",
   "display": "standalone",
   "background_color": "#09090b",
-  "theme_color": "#dc2626",
+  "theme_color": "#c41230",
   "orientation": "portrait-primary",
   "icons": [
     {
