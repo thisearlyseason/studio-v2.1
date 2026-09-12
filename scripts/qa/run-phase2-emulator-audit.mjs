@@ -4479,7 +4479,11 @@ async function runCertificationBrowserScenario(scenarioId) {
     }
   }
   if (scenarioId === 'dashboard-shell-role-landing-and-route-policy') {
-    for (const alias of FIXTURES.activeAliases) {
+    const roleFailures = [];
+    const selectedRoles = process.env.AUDIT_DASHBOARD_ROLES?.split(',').filter(Boolean);
+    if (selectedRoles?.some(alias => !FIXTURES.activeAliases.includes(alias))) throw new Error('Unknown focused dashboard role.');
+    if (selectedRoles) console.log(`Focused dashboard role repair run: ${selectedRoles.join(', ')}. Not a standalone full-role certification.`);
+    for (const alias of selectedRoles || FIXTURES.activeAliases) {
       const fixture = identityByAlias.get(alias);
       let session;
       try {
@@ -4516,20 +4520,38 @@ async function runCertificationBrowserScenario(scenarioId) {
         expectEqual(visibleNavigation.unexpectedResponses.length, 0, `dashboard visible navigation unexpected responses ${alias}`);
         expectEqual(visibleNavigation.observations.every(item => item.fits), true, `dashboard visible navigation agreement ${alias}`);
         expectEqual(visibleNavigation.observations.every(item => item.fits), true, `dashboard visible navigation two viewport containment ${alias}`);
+        if (alias === 'qa-fresh-league-creator') {
+          const locked = JSON.parse(cli(session, ['run-code', `async page => {
+            await page.goto(${JSON.stringify(`${BASE_URL}/club`)});
+            await page.getByRole('heading', { name: 'Club Hub Locked', exact: true }).waitFor();
+            return { locked: true, privateTabs: await page.getByRole('tab', { name: 'Safety', exact: true }).count() };
+          }`]));
+          expectEqual(locked.locked && locked.privateTabs === 0, true, 'fresh league organization route renders locked without private data');
+        }
+      } catch (error) {
+        roleFailures.push(new Error(`${alias}: ${error instanceof Error ? error.message : String(error)}`, { cause: error }));
+        console.error(`Dashboard role verification failed for ${alias}: ${roleFailures.at(-1).message}; continuing independent roles.`);
       } finally {
-        if (session) await closeBrowserSessionNow(session);
+        if (session) {
+          try { await closeBrowserSessionNow(session); }
+          catch (error) { roleFailures.push(new Error(`${alias} cleanup failed`, { cause: error })); }
+        }
       }
     }
-    for (const blockedIdentity of BLOCKED_AUDIT_PLAN.browser) {
-      browserLoginFailureAudit(
+    for (const blockedIdentity of selectedRoles ? [] : BLOCKED_AUDIT_PLAN.browser) {
+      try { browserLoginFailureAudit(
         blockedIdentity.alias,
         password,
         blockedIdentity.browserPath,
         blockedIdentity.browserTitle,
         `dashboard blocked-state protected data denial ${blockedIdentity.alias}`,
-      );
+      ); } catch (error) { roleFailures.push(new Error(`${blockedIdentity.alias} blocked-state check failed`, { cause: error })); }
     }
-    await runSurfaceSmokeAudit({ remainderOnly: true });
+    if (!selectedRoles) {
+      try { await runSurfaceSmokeAudit({ remainderOnly: true }); }
+      catch (error) { roleFailures.push(new Error('Remaining surface smoke failed', { cause: error })); }
+    }
+    if (roleFailures.length) throw new AggregateError(roleFailures, `Dashboard role verification failed: ${roleFailures.map(error => error.message).join('; ')}`);
     return;
   }
   if (scenarioId === 'administration-access-and-user-directory') {
@@ -6770,6 +6792,32 @@ async function runTenantBrowserScenario(scenarioId) {
     };
     const definition = definitions[scenarioId];
     if (!definition) throw new Error(`No browser consumer is installed for ${scenarioId}.`);
+    if (scenarioId === 'organization-club-school-overview') {
+      const delegateSession = await browserLogin('qa-school-delegate', '/club', `tenant-school-delegate-${process.pid}`);
+      try {
+        browserLandingPersistenceAudit(delegateSession, '/club', 'school delegate repaired');
+        const tabs = JSON.parse(cli(delegateSession, ['run-code', `async page => {
+          const errors = [];
+          page.on('pageerror', error => errors.push(error.message));
+          page.on('console', message => { if (message.type() === 'error') errors.push(message.text()); });
+          const views = [];
+          for (const width of [1440, 390]) {
+            await page.setViewportSize({ width, height: 900 });
+            for (const name of ['Squads', 'Coaches', 'Admins', 'Waivers', 'Finance', 'Safety']) {
+              await page.getByRole('tab', { name, exact: true }).click();
+              await page.getByRole('tabpanel').waitFor({ state: 'visible' });
+              views.push({ width, name, fits: await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth) });
+            }
+          }
+          return { errors, views };
+        }`]));
+        expectEqual(tabs.errors.length, 0, 'school delegate repaired tabs console errors');
+        expectEqual(tabs.views.length, 12, 'school delegate repaired desktop mobile tabs');
+        expectEqual(tabs.views.every(view => view.fits), true, 'school delegate repaired tabs containment');
+      } finally {
+        await closeBrowserSessionNow(delegateSession);
+      }
+    }
     const [actorAlias, landingPath, pathname] = definition;
     const session = await browserLogin(actorAlias, landingPath, `tenant-${scenarioId}-${process.pid}`);
     let expectedTexts = [];

@@ -109,7 +109,7 @@ test('root application registers The Squad service worker without orphaning lega
   assert.equal(scheduleManifest.scope, '/schedule-app');
   assert.notEqual(scheduleManifest.id, manifest.id);
   assert.match(scheduleLayout, /manifest: '\/schedule-manifest\.json'/);
-  assert.match(scheduleLayout, /appleWebApp:\s*\{[\s\S]*?title: 'The Squad'/);
+  assert.match(scheduleLayout, /appleWebApp:\s*\{[\s\S]*?title: 'The Squad Scheduler'/);
 });
 
 test('worker never caches authenticated dashboard HTML', async () => {

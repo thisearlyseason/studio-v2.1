@@ -84,6 +84,8 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { IncidentDetailDialog } from '@/app/(dashboard)/coaches-corner/incident-detail-dialog';
 import { format, parseISO } from 'date-fns';
 import { isBillableSquadSeat } from '@/lib/team-seat-policy';
+import { privateOrganizationSquads } from '@/lib/organization-private-scope';
+import { isEntitledSubscriptionStatus } from '@/lib/subscription-seat-policy';
 import {
   calculateGlobalWaiverCompletion,
   groupGlobalWaiverDeployments,
@@ -240,23 +242,31 @@ function AuthorizedClubManagementPage() {
   }), [organizationSquadCandidates, allocatedMembershipIds, isSchoolMode, schoolHub?.id]);
   const schoolSquads = clubTeams;
   const organizationTeamIds = useMemo(() => organizationSquadCandidates.map(t => t.id), [organizationSquadCandidates]);
+  const privateSquads = useMemo(() => privateOrganizationSquads(
+    organizationSquadCandidates, resolvedTeams, user?.id, isSuperAdmin
+  ), [organizationSquadCandidates, resolvedTeams, user?.id, isSuperAdmin]);
+  const privateSquadIds = useMemo(() => privateSquads.map(team => team.id), [privateSquads]);
   const availableStarterSquads = useMemo(
     () => organizationSquadCandidates.filter(team => !clubTeams.some(active => active.id === team.id)),
     [organizationSquadCandidates, clubTeams]
   );
   const clubTeamIds = useMemo(() => clubTeams.map(t => t.id), [clubTeams]);
+  const privateClubTeamIds = useMemo(() => clubTeamIds.filter(id => privateSquadIds.includes(id)), [clubTeamIds, privateSquadIds]);
   const organizationSeatLimit = organizationCapacity?.limit ?? proQuotaStatus.limit;
   const allocatedSquadCount = clubTeams.length;
   const remainingSquadSeats = Math.max(0, organizationSeatLimit - allocatedSquadCount);
 
   useEffect(() => {
     if (!firebaseAuth || !organizationOwnerId) return;
+    const hasSchoolHub = schoolHub?.type === 'school' || schoolHub?.type === 'school_hub';
+    const ownsOrganizationPlan = ['school', 'elite', 'league'].includes(user?.plan_type || '') && isEntitledSubscriptionStatus(user?.subscription_status);
+    if (!hasSchoolHub && !ownsOrganizationPlan && !isSuperAdmin) return;
     let cancelled = false;
     const loadCapacity = async () => {
       try {
         const token = await getAuthToken(firebaseAuth);
         if (!token) return;
-        const hubParam = isSchoolMode && schoolHub?.type && ['school', 'school_hub'].includes(schoolHub.type)
+        const hubParam = hasSchoolHub && schoolHub
           ? `?hubTeamId=${encodeURIComponent(schoolHub.id)}`
           : '';
         const response = await fetch(`/api/organizations/squads${hubParam}`, {
@@ -280,20 +290,20 @@ function AuthorizedClubManagementPage() {
     };
     loadCapacity();
     return () => { cancelled = true; };
-  }, [firebaseAuth, organizationOwnerId, isSchoolMode, schoolHub?.id, schoolHub?.type, clubTeams.length]);
+  }, [firebaseAuth, organizationOwnerId, schoolHub, clubTeams.length, user?.plan_type, user?.subscription_status, isSuperAdmin]);
 
-  // Fetch members from ALL squad sub-collections independently so we don't
+  // Fetch members from authorized squad sub-collections independently so we don't
   // rely on a collectionGroup+in composite index (which causes partial results).
   const [allRawMembers, setAllRawMembers] = useState<Member[]>([]);
 
   const fetchAllSquadMembers = useCallback(async () => {
-    if (!db || organizationSquadCandidates.length === 0) {
+    if (!db || privateSquads.length === 0) {
       setAllRawMembers([]);
       return;
     }
     try {
       const results: Member[] = [];
-      for (const team of organizationSquadCandidates) {
+      for (const team of privateSquads) {
         const snap = await getDocs(collection(db, 'teams', team.id, 'members'));
         snap.forEach(d => results.push({ id: d.id, ...d.data() } as Member));
       }
@@ -301,7 +311,7 @@ function AuthorizedClubManagementPage() {
     } catch (e) {
       console.warn('Failed to fetch squad members:', e);
     }
-  }, [db, organizationSquadCandidates]);
+  }, [db, privateSquads]);
 
   // Hub Broadcast Channel state
   const [hubChannel, setHubChannel] = useState<{ id: string; name: string; memberIds: string[] } | null>(null);
@@ -454,14 +464,14 @@ function AuthorizedClubManagementPage() {
   useEffect(() => {
     let cancelled = false;
     const loadWaiverSignatures = async () => {
-      if (!db || clubTeamIds.length === 0) {
+      if (!db || privateClubTeamIds.length === 0) {
         if (!cancelled) {
           setParticipantWaiverSignatures([]);
           setCoachWaiverSignatures([]);
         }
         return;
       }
-      const results = await Promise.all(clubTeamIds.map(async teamId => {
+      const results = await Promise.all(privateClubTeamIds.map(async teamId => {
         const [participantSnapshot, coachSnapshot] = await Promise.all([
           getDocs(collection(db, 'teams', teamId, 'protocol_signatures')),
           getDocs(collection(db, 'teams', teamId, 'coachWaiverSignatures')),
@@ -478,21 +488,21 @@ function AuthorizedClubManagementPage() {
     };
     void loadWaiverSignatures();
     return () => { cancelled = true; };
-  }, [db, clubTeamIds]);
+  }, [db, privateClubTeamIds]);
 
   const globalWaiverCompletion = useMemo(() => {
     const completion = new Map<string, GlobalWaiverCompletion>();
     globalWaiverDeployments.forEach(deployment => {
       completion.set(deployment.deploymentId, calculateGlobalWaiverCompletion({
         deployment,
-        teamIds: clubTeamIds,
+        teamIds: privateClubTeamIds,
         members: allRawMembers,
         participantSignatures: participantWaiverSignatures,
         coachSignatures: coachWaiverSignatures,
       }));
     });
     return completion;
-  }, [globalWaiverDeployments, clubTeamIds, allRawMembers, participantWaiverSignatures, coachWaiverSignatures]);
+  }, [globalWaiverDeployments, privateClubTeamIds, allRawMembers, participantWaiverSignatures, coachWaiverSignatures]);
 
   // School Logic: Universal Coach & Staff Roster
   const allCoaches = useMemo(() => {
@@ -523,14 +533,14 @@ function AuthorizedClubManagementPage() {
   useEffect(() => {
     let cancelled = false;
     const fetchClubIncidents = async () => {
-      if (!firebaseAuth?.currentUser || organizationTeamIds.length === 0) {
+      if (!firebaseAuth?.currentUser || privateSquadIds.length === 0) {
         if (!cancelled) setClubIncidents([]);
         return;
       }
       try {
         const token = await getAuthToken(firebaseAuth);
         const snapshots = await Promise.allSettled(
-          organizationTeamIds.map(async teamId => {
+          privateSquadIds.map(async teamId => {
             const response = await fetch('/api/teams/incidents?teamId='+encodeURIComponent(teamId),{headers:authHeader(token),signal:AbortSignal.timeout(20000)});
             if (!response.ok) throw new Error('Incident ledger unavailable.');
             return (await response.json()).incidents as TeamIncident[];
@@ -538,11 +548,11 @@ function AuthorizedClubManagementPage() {
         );
         const incidents = snapshots.flatMap((result, index) => {
           if (result.status !== 'fulfilled') {
-            console.warn(`Failed to load incidents for squad ${organizationTeamIds[index]}:`, result.reason);
+            console.warn(`Failed to load incidents for squad ${privateSquadIds[index]}:`, result.reason);
             return [];
           }
           const snapshot = result.value;
-          const teamId = organizationTeamIds[index];
+          const teamId = privateSquadIds[index];
           const teamName = organizationSquadCandidates.find(team => team.id === teamId)?.name || 'Unknown Squad';
 
           return snapshot.filter(incident => incident.teamId === teamId).map(incident => {
@@ -564,7 +574,7 @@ function AuthorizedClubManagementPage() {
     };
     fetchClubIncidents();
     return () => { cancelled = true; };
-  }, [firebaseAuth, firebaseAuth?.currentUser?.uid, organizationTeamIds, organizationSquadCandidates]);
+  }, [firebaseAuth, firebaseAuth?.currentUser?.uid, privateSquadIds, organizationSquadCandidates]);
 
   const stats = useMemo(() => {
     let owed = 0, total = 0, cleared = 0;
@@ -582,7 +592,11 @@ function AuthorizedClubManagementPage() {
   const [isFiscalLoading, setIsFiscalLoading] = useState(false);
 
   const fetchFiscalData = useCallback(async () => {
-    if (!db || clubTeamIds.length === 0) return;
+    if (!db || privateClubTeamIds.length === 0) {
+      setEnrollmentEntries([]);
+      setFundraiserData([]);
+      return;
+    }
     setIsFiscalLoading(true);
     try {
       const entries: any[] = [];
@@ -597,8 +611,8 @@ function AuthorizedClubManagementPage() {
       } catch { /* field may not exist on older documents */ }
 
       const chunkSize = 10;
-      for (let i = 0; i < clubTeamIds.length; i += chunkSize) {
-        const chunk = clubTeamIds.slice(i, i + chunkSize);
+      for (let i = 0; i < privateClubTeamIds.length; i += chunkSize) {
+        const chunk = privateClubTeamIds.slice(i, i + chunkSize);
         try {
           const memberSnap = await getDocs(query(collection(db, 'leagues'), where('memberTeamIds', 'array-contains-any', chunk)));
           memberSnap.docs.forEach(d => seenLeagueIds.add(d.id));
@@ -632,7 +646,7 @@ function AuthorizedClubManagementPage() {
       setEnrollmentEntries(entries);
 
       const campaigns: any[] = [];
-      for (const tid of clubTeamIds) {
+      for (const tid of privateClubTeamIds) {
         const teamSnap = clubTeams.find(t => t.id === tid);
         const fundSnap = await getDocs(collection(db, 'teams', tid, 'fundraising'));
         for (const fundDoc of fundSnap.docs) {
@@ -654,7 +668,7 @@ function AuthorizedClubManagementPage() {
     } finally {
       setIsFiscalLoading(false);
     }
-  }, [db, clubTeamIds, user?.id, clubTeams]);
+  }, [db, privateClubTeamIds, user?.id, clubTeams]);
 
   useEffect(() => { fetchFiscalData(); }, [fetchFiscalData]);
 
@@ -917,6 +931,13 @@ function AuthorizedClubManagementPage() {
           </div>
         </div>
       </Card>
+
+      {privateSquads.length < organizationSquadCandidates.length && (
+        <p className="rounded-xl border p-3 text-sm text-muted-foreground">
+          Private roster, safety, waiver and finance records below cover only squads where you have staff access.
+          Organization squad and seat totals still include every squad.
+        </p>
+      )}
 
       {/* ── School Hub Onboarding Note ── */}
       {isSchoolMode && !hubNoteDismissed && (

@@ -133,9 +133,9 @@ export function buildFixtureCatalog(runSuffix) {
     ['qa-public-submitter', 'public-only', 'visitor', 'accountless', [], 'free', null],
     ['qa-demo-a', 'anonymous-session', 'demo', 'anonymous', [], 'free', '/dashboard'],
     ['qa-demo-b', 'anonymous-session', 'demo', 'anonymous', [], 'free', '/dashboard'],
-    ['qa-fresh-coach', 'registered', 'coach', 'active', [], 'free', '/teams/new'],
-    ['qa-fresh-admin', 'registered', 'admin', 'active', [], 'free', '/teams/new'],
-    ['qa-fresh-league-creator', 'registered', 'league_creator', 'active', [], 'league', '/teams/new'],
+    ['qa-fresh-coach', 'registered', 'coach', 'active', [], 'free', '/dashboard'],
+    ['qa-fresh-admin', 'registered', 'admin', 'active', [], 'free', '/dashboard'],
+    ['qa-fresh-league-creator', 'registered', 'league_creator', 'active', [], 'league', '/competition'],
   ];
 
   const identities = identityDefinitions.map(([
