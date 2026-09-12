@@ -16,7 +16,7 @@ import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { useFirestore, useCollection, useMemoFirebase, useAuth } from '@/firebase';
 import {getAuthToken,authHeader} from '@/lib/client-auth';
-import {LIBRARY_FILE_LIMIT} from '@/lib/library-policy';
+import {isLibraryLinkAllowed,LIBRARY_FILE_LIMIT} from '@/lib/library-policy';
 import { collection, query, orderBy, where } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
@@ -196,9 +196,17 @@ export default function FilesPage() {
 
   const handleAddLink = async () => {
     if (!linkUrl.trim() || !linkTitle.trim()) return;
+    const url = linkUrl.startsWith('http') ? linkUrl : `https://${linkUrl}`;
+    if (!isLibraryLinkAllowed(url)) {
+      toast({
+        title: 'Link unavailable in app',
+        description: 'Use a reviewed team resource or a local app destination.',
+        variant: 'destructive',
+      });
+      return;
+    }
     setIsSavingLink(true);
     try {
-      const url = linkUrl.startsWith('http') ? linkUrl : `https://${linkUrl}`;
       await addFile(linkTitle, 'link', 0, url, 'Link / URL', linkDesc);
       setIsAddLinkOpen(false); setLinkUrl(''); setLinkTitle(''); setLinkDesc('');
       toast({ title: 'Link Added', description: 'Resource link archived.' });
@@ -500,6 +508,8 @@ export default function FilesPage() {
                 })}
                 {tabFiles.map(file => {
                   const isLink = (file.category || '').toLowerCase().includes('link') || (file.category || '').toLowerCase().includes('url');
+                  const isLibraryDownload = !isLink && Boolean(file.storagePath || file.url?.startsWith('data:'));
+                  const canOpen = isLibraryDownload || isLibraryLinkAllowed(file.url || '');
                   return (
                     <Card key={file.id} className="group border-none shadow-sm hover:shadow-xl transition-all duration-300 rounded-[1.75rem] overflow-hidden ring-1 ring-black/5 flex flex-col bg-white">
                       <div className="p-3 pb-0">
@@ -518,12 +528,18 @@ export default function FilesPage() {
                         </CardContent>
                       )}
                       <CardFooter className="p-4 pt-3 mt-auto flex gap-2">
-                        <Button
-                          className="flex-1 h-9 rounded-xl font-black text-[9px] uppercase tracking-widest shadow-sm transition-all active:scale-95"
-                          onClick={() => !isLink&&(file.storagePath||file.url?.startsWith('data:'))?downloadLibrary(file):window.open(file.url, '_blank','noopener,noreferrer')}
-                        >
-                          {isLink ? <><ExternalLink className="h-3 w-3 mr-1" />Open Link</> : <><Download className="h-3 w-3 mr-1" />Download</>}
-                        </Button>
+                        {canOpen ? (
+                          <Button
+                            className="flex-1 h-9 rounded-xl font-black text-[9px] uppercase tracking-widest shadow-sm transition-all active:scale-95"
+                            onClick={() => isLibraryDownload ? downloadLibrary(file) : window.open(file.url, '_blank','noopener,noreferrer')}
+                          >
+                            {isLink ? <><ExternalLink className="h-3 w-3 mr-1" />Open Link</> : <><Download className="h-3 w-3 mr-1" />Download</>}
+                          </Button>
+                        ) : (
+                          <div className="flex-1 h-9 rounded-xl bg-muted px-3 flex items-center justify-center text-[9px] font-black uppercase tracking-widest text-muted-foreground">
+                            Link unavailable in app
+                          </div>
+                        )}
                         {isStaff && (
                           <Tooltip>
                             <TooltipTrigger asChild>

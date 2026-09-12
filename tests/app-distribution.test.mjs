@@ -57,7 +57,10 @@ test('external purchase classifier blocks payment destinations without blocking 
     'https://cash.app/$teamfund',
     'https://pay.example.org/checkout',
     'https://example.org/coaching/payment-strategy',
+    'https://www.thesquad.pro/',
+    'https://www.thesquad.pro/signup',
     'https://www.thesquad.pro/#pricing',
+    '/\\buy.stripe.com/test',
     'not a url',
   ]) {
     assert.equal(isExternalPurchaseUrl(href), true, href);
@@ -68,10 +71,29 @@ test('external purchase classifier blocks payment destinations without blocking 
     'https://pay.stripe.com/receipts/example',
     'https://www.youtube.com/watch?v=example',
     'https://storage.googleapis.com/team-files/guide.pdf',
-    'https://www.thesquad.pro/sports-hub/resources/guide',
     'mailto:team@thesquad.pro',
   ]) {
     assert.equal(isExternalPurchaseUrl(href), false, href);
+  }
+
+  const priorAppUrl = process.env.NEXT_PUBLIC_APP_URL;
+  process.env.NEXT_PUBLIC_APP_URL = 'https://store.thesquad-app.test';
+  try {
+    assert.equal(
+      isExternalPurchaseUrl('https://store.thesquad-app.test/downloads/score-sheet.pdf'),
+      false,
+    );
+    assert.equal(
+      isExternalPurchaseUrl('http://store.thesquad-app.test/downloads/score-sheet.pdf'),
+      true,
+    );
+    assert.equal(
+      isExternalPurchaseUrl('https://store.thesquad-app.test:444/downloads/score-sheet.pdf'),
+      true,
+    );
+  } finally {
+    if (priorAppUrl === undefined) delete process.env.NEXT_PUBLIC_APP_URL;
+    else process.env.NEXT_PUBLIC_APP_URL = priorAppUrl;
   }
 });
 

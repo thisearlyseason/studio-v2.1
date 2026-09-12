@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {readLibraryBytes,validateLibraryBytes,sanitizeLibraryFilename} from '../src/lib/library-policy.ts';
+import {isLibraryLinkAllowed,readLibraryBytes,validateLibraryBytes,sanitizeLibraryFilename} from '../src/lib/library-policy.ts';
 const pdf=Buffer.from('%PDF-1.4\nSynthetic\n%%EOF\n');
 test('Library rejects spoofed active content but accepts supported PDF signature',()=>{
   assert.doesNotThrow(()=>validateLibraryBytes(pdf,'application/pdf'));
@@ -14,4 +14,12 @@ test('Library reads exact 10MiB and rejects streamed boundary plus one without t
 });
 test('Library attachment filename strips path and control characters',()=>{
   assert.equal(sanitizeLibraryFilename('../../ Squad\r\n"file.pdf'),'Squad__file.pdf');
+});
+test('Library Store links fail closed while web and legitimate local downloads remain available',()=>{
+  for(const href of ['https://pay.example.org/checkout','https://www.thesquad.pro/signup','/\\buy.stripe.com/test']){
+    assert.equal(isLibraryLinkAllowed(href,'store'),false,href);
+    assert.equal(isLibraryLinkAllowed(href,'web'),true,href);
+  }
+  assert.equal(isLibraryLinkAllowed('/downloads/score-sheet.pdf','store'),true);
+  assert.equal(isLibraryLinkAllowed('https://storage.googleapis.com/team-files/guide.pdf','store'),true);
 });

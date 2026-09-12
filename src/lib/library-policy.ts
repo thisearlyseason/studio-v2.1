@@ -1,6 +1,19 @@
+import {
+  APP_DISTRIBUTION,
+  isExternalPurchaseUrl,
+  type AppDistribution,
+} from '@/lib/app-distribution';
+
 export const LIBRARY_FILE_LIMIT=10*1024*1024;
 export const LIBRARY_STARTER_LIMIT=500*1024*1024;
 export class LibraryInputError extends Error {constructor(message:string,readonly status=400){super(message);}}
+
+export function isLibraryLinkAllowed(
+  href: string,
+  distribution: AppDistribution = APP_DISTRIBUTION,
+) {
+  return distribution === 'web' || !isExternalPurchaseUrl(href);
+}
 
 export function sanitizeLibraryFilename(value:string) {
   return value.split(/[\\/]/).at(-1)!.trim().replace(/[\r\n]+/g,'_').replace(/[^A-Za-z0-9 ._()-]/g,'_').slice(0,160)||'download';
