@@ -67,7 +67,7 @@ Do not throw for untrusted input. The public configuration entry returns nil/nul
 
 **Produces:** the interfaces above and one focused test command: `node --test native/tests/destination-policy.test.mjs`.
 
-- [ ] **Step 1: Write literal fixtures and executable test drivers before policy implementations.**
+- [x] **Step 1: Write literal fixtures and executable test drivers before policy implementations.**
 
 Use the reserved test origin `https://store.example.test`; never contact it. The first cases are:
 
@@ -138,11 +138,11 @@ for (const [platform, probe] of probes) {
 }
 ```
 
-- [ ] **Step 2: Establish a real red failure.**
+- [x] **Step 2: Establish a real red failure.**
 
 First run the command and record missing implementation as setup evidence. Create minimal compilable policy shells that return nil/null/false, rerun, and require the valid-origin/navigation/bootstrap assertions to fail. Compilation failure alone is not TDD proof. Keep the test adapters out of production classes.
 
-- [ ] **Step 3: Implement minimal real URL validation.**
+- [x] **Step 3: Implement minimal real URL validation.**
 
 Use native parsers, not string-prefix matching. Before parsing, reject ASCII whitespace/control characters, backslashes and malformed percent escape sequences. Validate authority has no userinfo or percent escapes. Validate DNS labels as ASCII letters/digits with interior hyphens, no empty labels, no leading/trailing hyphen, no trailing dot, and no IP/localhost destination. Configuration permits only empty/root pathname and no query/fragment. Normalize scheme/host case and default port.
 
@@ -168,11 +168,11 @@ public boolean acceptsBootstrap(int status, String finalURL,
 
 Navigation validates the same parsed authority but permits valid path/query/fragment. Reject invalid configurations before constructing either immutable object. Add literal fixtures for any additional boundary exposed by the native parser, without computing expectations using the implementation.
 
-- [ ] **Step 4: Run the complete policy suite and focused mutation checks.**
+- [x] **Step 4: Run the complete policy suite and focused mutation checks.**
 
 Run `node --test native/tests/destination-policy.test.mjs`. Require all fixtures to pass on both implementations. In a temporary copy only, remove the exact-host comparison, then independently permit `web` bootstrap; each mutant must make the corresponding tests fail. Never modify the user's active implementation merely to run mutation checks.
 
-- [ ] **Step 5: Review and commit only package files.**
+- [x] **Step 5: Review and commit only package files.**
 
 Request a scoped spec/code review including parser parity, rejection cases and test evidence. Resolve important findings. Stage `native/policy`, `native/ios/Policy`, `native/android/policy` and `native/tests` explicitly and commit `feat: add native store destination guards`. Preserve pre-existing UI cleanup and audit files.
 
@@ -184,15 +184,15 @@ Request a scoped spec/code review including parser parity, rejection cases and t
 
 **Produces:** a reproducible package command and an honest remaining-work checklist, without native release claims.
 
-- [ ] **Step 1: Write the short package guide.**
+- [x] **Step 1: Write the short package guide.**
 
 Include these exact interfaces by linking the two policy source files. Record the test command, supported installed toolchains, fixture-only domain and the fact that no network is used. State: “These tests verify destination policy only. They do not verify a WebView, network bootstrap, native authentication, notification delivery, signing or store acceptance.”
 
-- [ ] **Step 2: Verify no ordinary web changes were introduced by this package.**
+- [x] **Step 2: Verify no ordinary web changes were introduced by this package.**
 
 Compare package commit paths against the recorded base. Run `git diff --check`. Do not rerun the full web audit or web production builds for native-only policy files; the preceding store-settings cleanup already has separate evidence.
 
-- [ ] **Step 3: Record next integration requirements.**
+- [x] **Step 3: Record next integration requirements.**
 
 List actual maintained Xcode/Android projects, bounded nonredirecting bootstrap client, native loading/error/retry UI, WebView navigation consumers, offline/foreground handling and simulator/hosted acceptance as remaining. List the real store origin, application IDs and signing/provider configuration as unconfigured rather than selecting them silently. These entries are scope boundaries, not permission to mark shell integration complete.
 
