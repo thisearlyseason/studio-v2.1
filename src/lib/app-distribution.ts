@@ -58,7 +58,14 @@ export function isStoreBlockedPath(pathname: string): boolean {
 
 export function isExternalPurchaseUrl(href: string): boolean {
   if (href.startsWith('/') && !href.startsWith('//')) {
-    const parsed = new URL(href, 'https://app.local');
+    if (/[\u0000-\u001f\u007f\\]/.test(href)) return true;
+    let parsed: URL;
+    try {
+      parsed = new URL(href, 'https://app.local');
+    } catch {
+      return true;
+    }
+    if (parsed.origin !== 'https://app.local') return true;
     return isStoreBlockedPath(parsed.pathname) ||
       (parsed.pathname === '/' && parsed.hash.toLowerCase() === '#pricing');
   }
@@ -74,16 +81,17 @@ export function isExternalPurchaseUrl(href: string): boolean {
   if (url.protocol !== 'https:' && url.protocol !== 'http:') return true;
 
   const hostname = url.hostname.toLowerCase().replace(/^www\./, '');
-  const configuredHostname = (() => {
+  const configuredOrigin = (() => {
     try {
       return process.env.NEXT_PUBLIC_APP_URL
-        ? new URL(process.env.NEXT_PUBLIC_APP_URL).hostname.toLowerCase().replace(/^www\./, '')
+        ? new URL(process.env.NEXT_PUBLIC_APP_URL).origin.toLowerCase()
         : null;
     } catch {
       return null;
     }
   })();
-  if (hostname === 'thesquad.pro' || hostname === configuredHostname) {
+  if (hostname === 'thesquad.pro') return true;
+  if (url.origin.toLowerCase() === configuredOrigin) {
     return isStoreBlockedPath(url.pathname) ||
       (url.pathname === '/' && url.hash.toLowerCase() === '#pricing');
   }
