@@ -1,6 +1,7 @@
 export const SPORT_SLUGS = [
   'soccer', 'basketball', 'baseball', 'rugby', 'football', 'cornhole', 'gymnastics',
   'pickleball', 'tennis', 'golf', 'swimming', 'esports', 'ultimate-frisbee', 'disc-golf',
+  'hockey', 'slo-pitch', 'softball', 'volleyball', 'field-lacrosse', 'box-lacrosse',
 ] as const;
 
 export type SportSlug = typeof SPORT_SLUGS[number];
@@ -108,6 +109,12 @@ const CORE_SPORT_LANDINGS: Record<'soccer' | 'basketball', SportLanding> = {
 type AdditionalSportConfig = { name: string; focus: string; heroImage: string; heroAlt: string };
 
 const ADDITIONAL_SPORTS: Record<Exclude<SportSlug, 'soccer' | 'basketball'>, AdditionalSportConfig> = {
+  hockey: { name: 'Hockey', focus: 'ice-time coordination, team rosters, bench communication, and tournament weekends', heroImage: '/images/sports/hockey.svg', heroAlt: 'Original illustration of an ice hockey rink' },
+  'slo-pitch': { name: 'Slo-Pitch', focus: 'diamond schedules, batting-order preparation, league nights, and weekend tournaments', heroImage: '/images/sports/slo-pitch.svg', heroAlt: 'Original illustration of a slo-pitch diamond' },
+  softball: { name: 'Softball', focus: 'diamond coordination, team availability, player registration, and tournament logistics', heroImage: '/images/sports/softball.svg', heroAlt: 'Original illustration of a softball diamond and ball' },
+  volleyball: { name: 'Volleyball', focus: 'court assignments, match schedules, team communication, and tournament operations', heroImage: '/images/sports/volleyball.svg', heroAlt: 'Original illustration of an indoor volleyball court' },
+  'field-lacrosse': { name: 'Field Lacrosse', focus: 'field allocations, squad availability, competition registration, and match-day coordination', heroImage: '/images/sports/field-lacrosse.svg', heroAlt: 'Original illustration of a field lacrosse playing surface' },
+  'box-lacrosse': { name: 'Box Lacrosse', focus: 'arena schedules, bench preparation, team rosters, and competition weekends', heroImage: '/images/sports/box-lacrosse.svg', heroAlt: 'Original illustration of a box lacrosse arena' },
   baseball: { name: 'Baseball', focus: 'diamond scheduling, player development, scorekeeping, and tournament operations', heroImage: '/images/sports/baseball.webp', heroAlt: 'Baseball diamond viewed from above' },
   rugby: { name: 'Rugby', focus: 'club registration, pitch scheduling, rosters, safeguarding, and match-day communication', heroImage: '/images/sports/rugby.webp', heroAlt: 'Rugby players engaged in a scrum' },
   football: { name: 'Football', focus: 'team registration, practice facilities, roster permissions, game-day roles, and league scheduling', heroImage: '/images/sports/football.webp', heroAlt: 'American football on a marked field' },
@@ -148,11 +155,27 @@ function buildAdditionalLanding(slug: Exclude<SportSlug, 'soccer' | 'basketball'
   };
 }
 
-export const SPORT_LANDINGS: Record<SportSlug, SportLanding> = {
+const BASE_SPORT_LANDINGS: Record<SportSlug, SportLanding> = {
   ...CORE_SPORT_LANDINGS,
   ...Object.fromEntries(Object.entries(ADDITIONAL_SPORTS).map(([slug, config]) => [slug, buildAdditionalLanding(slug as Exclude<SportSlug, 'soccer' | 'basketball'>, config)])),
 } as Record<SportSlug, SportLanding>;
 
+export const SPORT_LANDINGS = Object.fromEntries(SPORT_SLUGS.map(slug => {
+  const base = BASE_SPORT_LANDINGS[slug];
+  const editorial = SPORT_EDITORIAL[slug];
+  return [slug, {
+    ...base,
+    headline: editorial.headline,
+    description: editorial.intro,
+    registration: editorial.registration,
+    scheduling: editorial.scheduling,
+    tournaments: editorial.tournaments,
+    operationalDetails: [...editorial.details, 'Role-appropriate roster access', 'Attendance and availability', 'Shared team updates'],
+    faq: [{ question: editorial.question, answer: editorial.answer }, ...base.faq.slice(0, 3)],
+  }];
+})) as Record<SportSlug, SportLanding>;
+
 export function isSportSlug(value: string): value is SportSlug {
   return SPORT_SLUGS.includes(value as SportSlug);
 }
+import { SPORT_EDITORIAL } from './sport-landing-editorial';

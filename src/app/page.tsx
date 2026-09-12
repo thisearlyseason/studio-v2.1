@@ -74,6 +74,7 @@ import {
 } from '@/components/ui/dialog';
 import {
   Sheet,
+  SheetClose,
   SheetContent,
   SheetHeader,
   SheetTitle,
@@ -506,17 +507,20 @@ export default function LandingPage() {
             />
           </Link>
 
-          <div className="hidden md:flex items-center gap-8 text-sm font-bold uppercase tracking-widest">
+          <div className="hidden xl:flex items-center gap-5 text-sm font-bold uppercase tracking-widest">
             <a href="#features" className={cn("hover:text-primary transition-colors", isScrolled ? "text-muted-foreground" : "text-white/80")}>Features</a>
             <a href="#roles" className={cn("hover:text-primary transition-colors", isScrolled ? "text-muted-foreground" : "text-white/80")}>Roles</a>
             <a href="#comparison" className={cn("hover:text-primary transition-colors", isScrolled ? "text-muted-foreground" : "text-white/80")}>Compare</a>
             <a href="#pricing" className={cn("hover:text-primary transition-colors", isScrolled ? "text-muted-foreground" : "text-white/80")}>Pricing</a>
+            <Link href="/sports" className={cn("hover:text-primary transition-colors", isScrolled ? "text-muted-foreground" : "text-white/80")}>
+              Explore Sports
+            </Link>
             <Link href="/sports-hub" className={cn("hover:text-primary transition-colors flex items-center gap-1", isScrolled ? "text-muted-foreground" : "text-white/80")}>
               Sports Hub
             </Link>
           </div>
 
-          <div className="hidden md:flex items-center gap-4">
+          <div className="hidden xl:flex items-center gap-4">
             <LandingPwaInstallButton placement="navigation" isScrolled={isScrolled} />
             <Link href={accountHref}>
               <Button variant="ghost" className={cn("font-bold", isScrolled ? "text-foreground" : "text-white hover:bg-white/10")}>
@@ -535,7 +539,7 @@ export default function LandingPage() {
             )}
           </div>
 
-          <div className="md:hidden flex items-center gap-2">
+          <div className="xl:hidden flex items-center gap-2">
             {!isScrolled && (
               <Link href={accountHref}>
                 <Button variant="ghost" size="sm" className="font-bold text-white text-[10px] uppercase tracking-widest px-2 h-8">
@@ -549,21 +553,22 @@ export default function LandingPage() {
                   <Menu className="h-6 w-6" />
                 </Button>
               </SheetTrigger>
-              <SheetContent side="right" className="w-[300px] sm:w-[400px] border-none p-0 bg-white">
+              <SheetContent side="right" className="w-[min(100vw,400px)] overflow-y-auto border-none p-0 pb-8 bg-white">
                 <SheetHeader className="p-8 pb-4 text-left">
                   <div className="h-1 bg-primary w-12 rounded-full mb-6" />
                   <SheetTitle className="text-3xl font-black uppercase tracking-tighter">Menu</SheetTitle>
                   <SheetDescription className="text-primary font-black uppercase text-[10px] tracking-widest pt-1">
-                    Squad Control Protocols
+                    Explore The Squad
                   </SheetDescription>
                 </SheetHeader>
-                <div className="px-8 flex flex-col gap-6 pt-10">
-                  <a href="#features" className="text-xl font-black uppercase tracking-tight hover:text-primary transition-colors py-2 border-b border-muted">Features</a>
-                  <a href="#roles" className="text-xl font-black uppercase tracking-tight hover:text-primary transition-colors py-2 border-b border-muted">Roles</a>
-                  <a href="#comparison" className="text-xl font-black uppercase tracking-tight hover:text-primary transition-colors py-2 border-b border-muted">Market Intel</a>
-                  <a href="#pricing" className="text-xl font-black uppercase tracking-tight hover:text-primary transition-colors py-2 border-b border-muted">Pricing</a>
-                  <Link href="/sports-hub" className="text-xl font-black uppercase tracking-tight text-primary py-2 border-b border-muted flex items-center gap-2">Sports Hub</Link>
-                  <div className="flex flex-col gap-4 mt-12 pt-6">
+                <div className="px-8 flex flex-col gap-3 pt-4">
+                  <SheetClose asChild><a href="#features" className="text-xl font-black uppercase tracking-tight hover:text-primary transition-colors py-2 border-b border-muted">Features</a></SheetClose>
+                  <SheetClose asChild><a href="#roles" className="text-xl font-black uppercase tracking-tight hover:text-primary transition-colors py-2 border-b border-muted">Roles</a></SheetClose>
+                  <SheetClose asChild><a href="#comparison" className="text-xl font-black uppercase tracking-tight hover:text-primary transition-colors py-2 border-b border-muted">Compare</a></SheetClose>
+                  <SheetClose asChild><a href="#pricing" className="text-xl font-black uppercase tracking-tight hover:text-primary transition-colors py-2 border-b border-muted">Pricing</a></SheetClose>
+                  <SheetClose asChild><Link href="/sports" className="text-xl font-black uppercase tracking-tight text-primary py-2 border-b border-muted">Explore Sports</Link></SheetClose>
+                  <SheetClose asChild><Link href="/sports-hub" className="text-xl font-black uppercase tracking-tight text-primary py-2 border-b border-muted flex items-center gap-2">Sports Hub</Link></SheetClose>
+                  <div className="flex flex-col gap-4 mt-4 pt-4">
                     <LandingPwaInstallButton placement="menu" />
                     {BETA_MODE ? (
                       <div className="w-full h-14 rounded-2xl bg-primary/10 border-2 border-primary/20 flex items-center justify-center gap-2 text-primary font-black uppercase tracking-widest text-[10px]">

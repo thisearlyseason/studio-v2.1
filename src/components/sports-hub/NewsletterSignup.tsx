@@ -39,16 +39,16 @@ export function NewsletterSignup({ className }: { className?: string }) {
       <div className="relative z-10 max-w-2xl mx-auto text-center">
         <div className="inline-flex items-center gap-2 bg-white/20 text-white px-4 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest mb-4">
           <Mail className="h-3 w-3" />
-          Sports Hub Newsletter
+          The Squad Newsletter
         </div>
         <h2 className="text-3xl md:text-4xl font-black tracking-tighter text-white mb-3">
           Stay Ahead of the Game
         </h2>
         <p className="text-white/70 font-medium text-sm md:text-base mb-8 leading-relaxed">
-          Coaching tips, drills, resources, and product updates — delivered to your inbox weekly.
+          Coaching tips, drills, resources, and product updates — delivered to your inbox.
         </p>
         {success ? (
-          <div className="flex flex-col items-center gap-3">
+          <div role="status" className="flex flex-col items-center gap-3">
             <CheckCircle2 className="h-12 w-12 text-white" />
             <p className="text-white font-black uppercase tracking-widest text-sm">You&apos;re in! Welcome to The Squad.</p>
           </div>
@@ -76,7 +76,8 @@ export function NewsletterSignup({ className }: { className?: string }) {
             </Button>
           </form>
         )}
-        {error && <p className="text-red-200 text-xs font-bold mt-3">{error}</p>}
+        <p className="mt-4 text-xs leading-5 text-white/80">By subscribing, you agree to receive The Squad newsletter. Unsubscribe from any email. <a href="/privacy" className="underline underline-offset-4">Privacy policy</a>.</p>
+        {error && <p role="alert" className="text-red-200 text-xs font-bold mt-3">{error}</p>}
       </div>
     </section>
   );
