@@ -10,6 +10,8 @@ The Squad remains the primary app. Scheduler remains a secondary PWA, not a seco
 
 ## Delivery approach
 
+Update: the user subsequently approved separate platform-native shells. `2026-09-12-native-shell-design.md` supersedes the Capacitor shell choice below; the store/web foundation and all remaining acceptance requirements in this document still apply.
+
 Use the existing Next.js/Firebase application in a separate store-specific web deployment, followed by a Capacitor native shell. A separate build/deployment boundary keeps the public website's purchasing experience unchanged and accommodates existing server-rendered routes. A static export of this Next.js application is not assumed to work.
 
 The alternatives are a bare wrapper, which leaves purchasing, embedded authentication, and platform UX problems unresolved, or a native rewrite with store billing, which expands cost and replaces working behavior. The selected companion approach preserves the existing backend and adds native integration deliberately.
