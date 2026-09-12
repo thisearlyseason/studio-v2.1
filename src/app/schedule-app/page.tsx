@@ -135,7 +135,7 @@ export default function ScheduleApp() {
   const done = todos.filter(t => t.completed);
 
   const addTodo = () => {
-    if (!newText.trim()) return;
+    if (!storageUserId || !todosHydrated || !newText.trim()) return;
     setTodos(p => [...p, { id: genId(), text: newText.trim(), dueDate: newDue || todayStr(), completed: false, createdAt: new Date().toISOString() }]);
     setNewText(''); setNewDue(todayStr()); setAddOpen(false);
   };
@@ -279,12 +279,18 @@ export default function ScheduleApp() {
         {/* TODOS TAB */}
         {tab === 'todos' && (
           <div>
-            {!addOpen && (
+            {!storageUserId && (
+              <div style={{ ...S.card, marginBottom: 16 }}>
+                <p style={{ color: text }}>Sign in to keep a private task list on this device.</p>
+                <a href="/login?returnTo=%2Fschedule-app" style={{ color: dark ? '#c4b5fd' : '#6d28d9', fontWeight: 800 }}>Sign in to manage tasks</a>
+              </div>
+            )}
+            {storageUserId && todosHydrated && !addOpen && (
               <button onClick={() => { setAddOpen(true); setTimeout(() => textRef.current?.focus(), 100); }} style={{ width: '100%', padding: '14px', background: '#7c3aed', border: 'none', borderRadius: 14, color: '#fff', fontSize: 13, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 16 }}>
                 <span style={{ fontSize: 18 }}>＋</span> Add Task
               </button>
             )}
-            {addOpen && (
+            {storageUserId && todosHydrated && addOpen && (
               <div style={{ ...S.card, marginBottom: 16 }}>
                 <p style={{ fontSize: 10, fontWeight: 800, textTransform: 'uppercase', letterSpacing: '0.1em', color: muted, margin: '0 0 8px' }}>New Task</p>
                 <input ref={textRef} value={newText} onChange={e => setNewText(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') addTodo(); if (e.key === 'Escape') setAddOpen(false); }} placeholder="What needs to get done?" style={{ ...S.input, marginBottom: 10 }} />
