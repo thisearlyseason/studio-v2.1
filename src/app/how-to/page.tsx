@@ -72,6 +72,10 @@ import BrandLogo from '@/components/BrandLogo';
 import { useRouter } from 'next/navigation';
 import { useUser } from '@/firebase';
 import { cn } from '@/lib/utils';
+import {
+  isDistributionContentAvailable,
+  type DistributionAvailability,
+} from '@/lib/app-distribution';
 
 type AccountType = 'starter' | 'pro' | 'elite' | 'school' | 'player' | 'parent';
 
@@ -79,6 +83,7 @@ interface ManualSection {
   title: string;
   icon: any;
   badge?: string;
+  distribution?: DistributionAvailability;
   steps: Array<{ step: string; detail: React.ReactNode }>;
 }
 
@@ -243,6 +248,7 @@ export default function HowToGuidePage() {
   const BLOCK_PRO_ACTIVATION = {
     title: "13. Activating Elite Status",
     icon: Zap,
+    distribution: 'web' as const,
     steps: [
       { step: "Upgrade Your Plan", detail: <>Visit <strong>Settings → Subscription Intelligence</strong> and tap <strong>Manage Elite Seat</strong> to view billing options. Select Squad Pro, Elite, or League plans depending on your organizational needs.</> },
       { step: "Provision a Seat", detail: <>After upgrading, visit <strong>Team Profile</strong> and use <strong>Override Tier</strong> to attach the Pro seat to your primary squad. The squad badge updates immediately to reflect the new tier.</> },
@@ -315,6 +321,7 @@ export default function HowToGuidePage() {
     title: "Online Payments & Stripe Connect",
     icon: CreditCard,
     badge: "Pro Feature",
+    distribution: 'web' as const,
     steps: [
       { step: "Connect Your Stripe Account", detail: <>From <strong>Coaches Corner → Finance tab</strong>, find the black <em>"Connect Stripe to Accept Payments"</em> card. Click <strong>"Connect Stripe."</strong> You'll be redirected to Stripe to create or link a free Stripe Express account. Once complete, you're redirected back to The Squad automatically.</> },
       { step: "Create a Payment Item", detail: <>Once connected, use the <strong>"+ New Payment Item"</strong> button to create a named payable line item: e.g., <em>"Spring Tournament Registration Fee — $45."</em> Give it a name, amount, and optional description.</> },
@@ -327,6 +334,7 @@ export default function HowToGuidePage() {
   const BLOCK_ANNUAL_SUBSCRIPTION = {
     title: "Annual Subscription & Billing",
     icon: DollarSign,
+    distribution: 'web' as const,
     steps: [
       { step: "Switch to Annual Billing", detail: <>On the pricing page or in <strong>Settings → Subscription Intelligence</strong>, toggle from <strong>Monthly</strong> to <strong>Annual</strong> billing. Annual plans are billed once per year at a discounted rate.</> },
       { step: "Annual Savings", detail: <>Switching to annual saves <strong>15–20%</strong> compared to monthly billing. The discounted rate displays as a <em>'per month' equivalent</em> so you can compare easily.</> },
@@ -792,7 +800,9 @@ export default function HowToGuidePage() {
             </section>
 
             <div className="grid grid-cols-1 gap-10">
-              {MANUAL_CONTENT[selectedType].sections.map((section, idx) => (
+              {MANUAL_CONTENT[selectedType].sections
+                .filter(section => isDistributionContentAvailable(section.distribution))
+                .map((section, idx) => (
                 <Card key={idx} className="rounded-[3rem] border-none shadow-2xl overflow-hidden bg-white ring-1 ring-black/5">
                   <CardHeader className="bg-muted/30 p-8 lg:p-10 border-b flex flex-row items-center justify-between gap-6">
                     <div className="flex items-center gap-5">

@@ -12,6 +12,7 @@ import { BookmarkButton } from '@/components/sports-hub/BookmarkButton';
 import { NewsletterSignup } from '@/components/sports-hub/NewsletterSignup';
 import { ResourcePDFSection } from '@/components/sports-hub/ResourcePDFSection';
 import { cn } from '@/lib/utils';
+import { isExternalPurchaseUrl, isStoreDistribution } from '@/lib/app-distribution';
 
 interface Params {
   params: Promise<{ id: string }>;
@@ -77,7 +78,10 @@ function renderMarkdown(content: string): React.ReactNode[] {
   /** Inline formatting: bold, italic, code, and [text](url) links */
   const fmt = (t: string) =>
     t
-      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" class="text-primary font-bold underline underline-offset-2 hover:opacity-80" target="_blank" rel="noopener noreferrer">$1</a>')
+      .replace(/\[([^\]]+)\]\(([^)]+)\)/g, (_match, label: string, href: string) =>
+        isStoreDistribution && isExternalPurchaseUrl(href)
+          ? label
+          : `<a href="${href}" class="text-primary font-bold underline underline-offset-2 hover:opacity-80" target="_blank" rel="noopener noreferrer">${label}</a>`)
       .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
       .replace(/\*(.+?)\*/g, '<em>$1</em>')
       .replace(/`(.+?)`/g, '<code class="bg-muted px-1 py-0.5 rounded text-xs font-mono">$1</code>');
@@ -300,7 +304,7 @@ export default async function ResourceViewerPage({ params }: Params) {
       </header>
 
       {/* ── PDF Download Banner ────────────────────────────────────────────── */}
-      {resource.downloadUrl && (
+      {resource.downloadUrl && (!isStoreDistribution || !isExternalPurchaseUrl(resource.downloadUrl)) && (
         <div className="mb-10 rounded-2xl border-2 border-primary/20 bg-primary/5 p-6">
           <h2 className="text-xl font-bold mb-2">Print-ready score sheet</h2>
           <p className="mb-4 text-sm text-muted-foreground">Choose your page orientation. Both PDFs include scoring tables and a scorer guide. Letter size; fits A4.</p>
@@ -309,7 +313,7 @@ export default async function ResourceViewerPage({ params }: Params) {
               <Button asChild><a href={resource.downloadUrl} download>Download landscape PDF</a></Button>
               <a href={resource.downloadUrl} target="_blank" rel="noopener noreferrer" className="py-3 text-sm underline">Preview landscape PDF</a>
             </div>
-            {resource.portraitDownloadUrl && (
+            {resource.portraitDownloadUrl && (!isStoreDistribution || !isExternalPurchaseUrl(resource.portraitDownloadUrl)) && (
               <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
                 <Button asChild><a href={resource.portraitDownloadUrl} download>Download portrait PDF</a></Button>
                 <a href={resource.portraitDownloadUrl} target="_blank" rel="noopener noreferrer" className="py-3 text-sm underline">Preview portrait PDF</a>

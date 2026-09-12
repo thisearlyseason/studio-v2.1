@@ -3,6 +3,7 @@ import { ExternalLink, Clock, Globe } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
+import { isExternalPurchaseUrl, isStoreDistribution } from '@/lib/app-distribution';
 
 interface RSSCardData {
   id: string;
@@ -76,7 +77,7 @@ export function RSSCard({ article, className }: RSSCardProps) {
             <Clock className="h-3 w-3" />
             <span>{timeAgo}</span>
           </div>
-          <a href={article.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
+          {(!isStoreDistribution || !isExternalPurchaseUrl(article.url)) && <a href={article.url} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()}>
             <Button
               size="sm"
               variant="outline"
@@ -85,7 +86,7 @@ export function RSSCard({ article, className }: RSSCardProps) {
               <ExternalLink className="h-3 w-3" />
               Read Original
             </Button>
-          </a>
+          </a>}
         </div>
       </div>
     </div>

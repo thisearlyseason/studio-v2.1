@@ -21,6 +21,7 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { getAuthToken, authHeader } from '@/lib/client-auth';
 import { useAuth, useFirestore, useDoc } from '@/firebase';
+import { isStoreDistribution } from '@/lib/app-distribution';
 
 // ─── Types ─────────────────────────────────────────────────────────────────
 
@@ -248,14 +249,14 @@ function HubConnectCard({ userId, hubTeamId }: HubConnectCardProps) {
             <AlertCircle className="h-5 w-5 text-red-500 shrink-0" />
             <p className="text-xs font-black uppercase text-red-700">{fetchError}</p>
           </div>
-          <Button
+          {!isStoreDistribution && <Button
             size="sm"
             variant="ghost"
             onClick={() => { setIsLoading(true); fetchStatus(); }}
             className="h-8 rounded-xl font-black text-[9px] uppercase tracking-widest text-red-600 hover:bg-red-100"
           >
             <RefreshCw className="h-3 w-3 mr-1.5" /> Retry
-          </Button>
+          </Button>}
         </div>
       </Card>
     );
@@ -319,7 +320,7 @@ function HubConnectCard({ userId, hubTeamId }: HubConnectCardProps) {
               </p>
             </div>
           </div>
-          <Button
+          {!isStoreDistribution && <Button
             size="sm"
             onClick={handleConnect}
             disabled={isConnecting}
@@ -331,7 +332,7 @@ function HubConnectCard({ userId, hubTeamId }: HubConnectCardProps) {
               <ExternalLink className="h-3.5 w-3.5 mr-1.5" />
             )}
             Complete Setup
-          </Button>
+          </Button>}
         </CardContent>
       </Card>
     );
@@ -362,7 +363,7 @@ function HubConnectCard({ userId, hubTeamId }: HubConnectCardProps) {
               </p>
             </div>
           </div>
-          <div className="flex flex-col gap-2 shrink-0">
+          {!isStoreDistribution && <div className="flex flex-col gap-2 shrink-0">
             <Button
               onClick={handleConnect}
               disabled={isConnecting}
@@ -385,7 +386,7 @@ function HubConnectCard({ userId, hubTeamId }: HubConnectCardProps) {
             <p className="text-[8px] font-bold text-white/25 uppercase tracking-widest text-center">
               Free to connect · Powered by Stripe
             </p>
-          </div>
+          </div>}
         </div>
       </CardContent>
     </Card>
@@ -515,7 +516,7 @@ export function HubStripeSettings({
                 <Switch
                   checked={isPerSquad}
                   onCheckedChange={handleModeToggle}
-                  disabled={isSavingMode || isHubLoading}
+                  disabled={isStoreDistribution || isSavingMode || isHubLoading}
                 />
               )}
             </div>

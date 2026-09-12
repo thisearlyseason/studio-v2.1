@@ -20,6 +20,13 @@ import BrandLogo from '@/components/BrandLogo';
 import { cn } from '@/lib/utils';
 import { PRICING_CONFIG } from '@/lib/pricing';
 import { sendBrandedVerificationEmail } from '@/lib/client-auth';
+import { APP_DISTRIBUTION, isStoreDistribution, safeReturnPath } from '@/lib/app-distribution';
+import {
+  signupBackStep,
+  signupNextState,
+  signupPostVerificationPath,
+  signupSteps,
+} from '@/lib/store-signup-policy';
 
 type RegTarget = 'self' | 'child' | 'coach' | 'league_creator' | 'school_ad' | null;
 type PlanChoice = 'starter' | 'pro_team' | 'elite_teams' | 'elite_league' | 'school' | null;
@@ -144,7 +151,10 @@ export default function SignupPage() {
   const router = useRouter();
 
   React.useEffect(() => {
-    const returnPath = sessionStorage.getItem('squad_return_path');
+    const storedReturnPath = sessionStorage.getItem('squad_return_path');
+    const returnPath = storedReturnPath
+      ? safeReturnPath(storedReturnPath, APP_DISTRIBUTION)
+      : null;
     if (!returnPath?.startsWith('/teams/join?')) return;
     const queryIndex = returnPath.indexOf('?');
     const linkedCode = new URLSearchParams(returnPath.slice(queryIndex + 1))
@@ -155,18 +165,13 @@ export default function SignupPage() {
   }, []);
 
   const selectedOption = SIGNUP_OPTIONS.find(o => o.id === regTarget);
-  const rolePlans = regTarget ? ROLE_PLANS[regTarget as string] ?? [] : [];
-  const isPlanRequired = rolePlans.length > 0;
+  const rolePlans = !isStoreDistribution && regTarget ? ROLE_PLANS[regTarget as string] ?? [] : [];
 
   const handleTargetContinue = () => {
     if (!regTarget) return;
-    if (regTarget === 'self' || regTarget === 'child') {
-      setStep('join_team');
-    } else {
-      // Auto-select single-option plans (school_ad)
-      if (rolePlans.length === 1) setPlanChoice(rolePlans[0]);
-      setStep('plan');
-    }
+    const next = signupNextState(regTarget, APP_DISTRIBUTION);
+    setPlanChoice(next.planChoice);
+    setStep(next.step);
   };
 
   const handlePlanContinue = () => {
@@ -215,23 +220,11 @@ export default function SignupPage() {
       const role = roleMap[regTarget as string] || 'adult_player';
 
       const normalizedJoinCode = joinCode.trim().toUpperCase();
-      const teamJoinPath = normalizedJoinCode
-        ? `/teams/join?code=${encodeURIComponent(normalizedJoinCode)}`
-        : '';
-      const postVerificationPath =
-        planChoice && planChoice !== 'starter'
-          ? '/pricing'
-          : role === 'parent' && teamJoinPath
-            ? `/family?addChild=1&returnTo=${encodeURIComponent(teamJoinPath)}`
-          : teamJoinPath
-            ? teamJoinPath
-            : role === 'parent'
-              ? '/family'
-              : role === 'league_creator'
-                ? '/competition'
-                : role === 'coach' || role === 'admin'
-                  ? '/teams/new'
-                  : '/teams/join';
+      const postVerificationPath = signupPostVerificationPath({
+        target: regTarget,
+        joinCode: normalizedJoinCode,
+        planChoice,
+      }, APP_DISTRIBUTION);
       sessionStorage.setItem('squad_post_verify_path', postVerificationPath);
       await sendBrandedVerificationEmail(user);
 
@@ -297,20 +290,16 @@ export default function SignupPage() {
     account: 'Account',
   };
 
-  const activeSteps: SignupStep[] = (() => {
-    if (regTarget === 'self' || regTarget === 'child') return ['target', 'join_team', 'account'];
-    if (isPlanRequired) return ['target', 'plan', 'account'];
-    return ['target', 'account'];
-  })();
+  const activeSteps: SignupStep[] = signupSteps(regTarget, APP_DISTRIBUTION);
 
   return (
     <div className="min-h-screen bg-black flex flex-col items-center justify-start lg:justify-center p-4 sm:p-6 relative overflow-y-auto overflow-x-hidden">
 
       {/* Back Button */}
       <div className="relative z-30 w-full max-w-md flex items-start mb-4">
-        <Link href="/">
+        <Link href={isStoreDistribution ? '/login' : '/'}>
           <Button variant="ghost" className="text-white hover:bg-white/10 font-black uppercase text-[10px] tracking-widest h-10 px-4 rounded-full border border-white/10 backdrop-blur-sm">
-            <ChevronLeft className="mr-2 h-4 w-4" /> Back to Home
+            <ChevronLeft className="mr-2 h-4 w-4" /> {isStoreDistribution ? 'Back to Login' : 'Back to Home'}
           </Button>
         </Link>
       </div>
@@ -653,13 +642,18 @@ export default function SignupPage() {
             <form onSubmit={handleSignup} className="p-8 space-y-5 animate-in slide-in-from-right-4 duration-500">
               <div className="text-center space-y-2">
                 <CardTitle className="text-2xl font-black uppercase tracking-tight">Create Account</CardTitle>
+                {isStoreDistribution && (
+                  <CardDescription className="text-[11px] font-semibold text-muted-foreground">
+                    Free account · no payment details required
+                  </CardDescription>
+                )}
                 {selectedOption && (
                   <span className="inline-block text-[10px] font-black uppercase text-primary tracking-widest bg-primary/8 py-1 px-3 rounded-full border border-primary/15">
                     {selectedOption.badge}
                   </span>
                 )}
                 {/* Chosen plan summary pill */}
-                {planChoice && planChoice !== 'starter' && (
+                {!isStoreDistribution && planChoice && planChoice !== 'starter' && (
                   <div className="flex items-center justify-center gap-2 mt-2 flex-wrap">
                     <div className="flex items-center gap-1.5 bg-black text-white rounded-full py-1.5 px-3">
                       <Zap className="h-3 w-3 text-primary" />
@@ -754,7 +748,11 @@ export default function SignupPage() {
               <div className="bg-muted/40 p-3.5 rounded-xl flex items-start gap-2.5">
                 <ShieldCheck className="h-4 w-4 text-primary shrink-0 mt-0.5" />
                 <p className="text-[10px] font-medium leading-relaxed text-muted-foreground">
-                  {planChoice && planChoice !== 'starter'
+                  {isStoreDistribution
+                    ? regTarget === 'school_ad' || regTarget === 'league_creator'
+                      ? 'This creates a free account only. Organization access comes from an existing team or administrator invitation; choosing this role does not grant paid organization privileges.'
+                      : 'This creates a free account with no trial, card, or payment details. You can join an existing team after verifying your email.'
+                    : planChoice && planChoice !== 'starter'
                     ? "Verify your email first. After verification, you can continue to Stripe's secure checkout for the selected 5-day trial."
                     : "By creating an account you confirm you are 18+ and authorized to manage registration data for your organization."
                   }
@@ -769,7 +767,7 @@ export default function SignupPage() {
                 >
                   {isLoading
                     ? "Creating Account..."
-                    : planChoice && planChoice !== 'starter'
+                    : !isStoreDistribution && planChoice && planChoice !== 'starter'
                       ? "Create Account & Verify Email"
                       : "Create Account"
                   }
@@ -777,15 +775,15 @@ export default function SignupPage() {
                 <button
                   type="button"
                   onClick={() => {
-                    if (regTarget === 'self' || regTarget === 'child') {
-                      setStep('join_team');
-                    } else {
-                      setStep('plan');
-                    }
+                    setStep(signupBackStep(regTarget, APP_DISTRIBUTION));
                   }}
                   className="text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-primary transition-colors"
                 >
-                  ← {regTarget === 'self' || regTarget === 'child' ? 'Back to Join Team' : 'Change Plan'}
+                  ← {regTarget === 'self' || regTarget === 'child'
+                    ? 'Back to Join Team'
+                    : isStoreDistribution
+                      ? 'Change Account Type'
+                      : 'Change Plan'}
                 </button>
               </CardFooter>
             </form>

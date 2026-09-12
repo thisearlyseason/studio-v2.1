@@ -10,6 +10,7 @@ import { toast } from '@/hooks/use-toast';
 import { getAuthToken, authHeader } from '@/lib/client-auth';
 import { useUser, useAuth } from '@/firebase';
 import Link from 'next/link';
+import { isStoreDistribution } from '@/lib/app-distribution';
 
 interface ConnectStatus {
   connected: boolean;
@@ -154,7 +155,7 @@ export function StripeConnectSetup({ userId, teamId, onConnected }: StripeConnec
               </p>
             </div>
           </div>
-          <div className="flex flex-col sm:flex-row gap-2">
+          {!isStoreDistribution && <div className="flex flex-col sm:flex-row gap-2">
             <Button
               asChild
               className="h-9 rounded-xl font-black text-[9px] uppercase tracking-widest bg-[#635bff] hover:bg-[#5a52e8] text-white border-none shadow-md"
@@ -172,10 +173,10 @@ export function StripeConnectSetup({ userId, teamId, onConnected }: StripeConnec
             >
               Try Again
             </Button>
-          </div>
-          <p className="text-[9px] text-muted-foreground font-bold">
+          </div>}
+          {!isStoreDistribution && <p className="text-[9px] text-muted-foreground font-bold">
             After completing on Stripe: 1) Return here  2) Click "Try Again"
-          </p>
+          </p>}
         </CardContent>
       </Card>
     );
@@ -202,14 +203,14 @@ export function StripeConnectSetup({ userId, teamId, onConnected }: StripeConnec
             <AlertCircle className="h-5 w-5 text-red-500 shrink-0" />
             <p className="text-xs font-black uppercase text-red-700">{fetchError}</p>
           </div>
-          <Button
+          {!isStoreDistribution && <Button
             size="sm"
             variant="ghost"
             onClick={() => { setIsLoading(true); fetchStatus(); }}
             className="h-8 rounded-xl font-black text-[9px] uppercase tracking-widest text-red-600 hover:bg-red-100"
           >
             <RefreshCw className="h-3 w-3 mr-1.5" /> Retry
-          </Button>
+          </Button>}
         </div>
       </Card>
     );
@@ -270,7 +271,7 @@ export function StripeConnectSetup({ userId, teamId, onConnected }: StripeConnec
               </p>
             </div>
           </div>
-          <Button
+          {!isStoreDistribution && <Button
             size="sm"
             onClick={handleConnect}
             disabled={isConnecting}
@@ -278,7 +279,7 @@ export function StripeConnectSetup({ userId, teamId, onConnected }: StripeConnec
           >
             {isConnecting ? <Loader2 className="h-4 w-4 animate-spin mr-1.5" /> : <ExternalLink className="h-3.5 w-3.5 mr-1.5" />}
             Complete Setup
-          </Button>
+          </Button>}
         </CardContent>
       </Card>
     );
@@ -312,7 +313,7 @@ export function StripeConnectSetup({ userId, teamId, onConnected }: StripeConnec
             </div>
           </div>
 
-          <div className="flex flex-col gap-2 shrink-0">
+          {!isStoreDistribution && <div className="flex flex-col gap-2 shrink-0">
             <Button
               onClick={handleConnect}
               disabled={isConnecting}
@@ -331,7 +332,7 @@ export function StripeConnectSetup({ userId, teamId, onConnected }: StripeConnec
             <p className="text-[8px] font-bold text-white/25 uppercase tracking-widest text-center">
               Free to connect · Powered by Stripe
             </p>
-          </div>
+          </div>}
         </div>
       </CardContent>
     </Card>

@@ -27,8 +27,11 @@ import {
   buildStripeCustomerIdempotencyKey,
   resolvePortalCustomerId,
 } from '@/lib/stripe-portal-customer';
+import { storePurchaseResponse } from '@/lib/store-request-guard';
 
 export async function POST(req: NextRequest) {
+  const blocked = storePurchaseResponse();
+  if (blocked) return blocked;
   const auth = await verifyFirebaseToken(req);
   if (auth instanceof NextResponse) return auth;
   const anonymousCheck = assertNonAnonymous(auth);

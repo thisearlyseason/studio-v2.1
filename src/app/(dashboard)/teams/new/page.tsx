@@ -20,6 +20,7 @@ import { ChevronLeft, Trophy, Users, ShieldCheck, Zap, Check, ArrowRight, Loader
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
+import { isStoreDistribution } from '@/lib/app-distribution';
 
 function NewTeamForm() {
   const router = useRouter();
@@ -32,7 +33,9 @@ function NewTeamForm() {
   const [type, setType] = useState<"adult" | "youth" | "school" | "school_squad">('adult');
   const [organizerPosition, setOrganizerPosition] = useState('Coach');
   // Pre-select plan based on URL param
-  const [selectedPlan, setSelectedPlan] = useState<'free' | 'team'>(tierParam === 'pro' ? 'team' : 'free');
+  const [selectedPlan, setSelectedPlan] = useState<'free' | 'team'>(
+    !isStoreDistribution && tierParam === 'pro' ? 'team' : 'free',
+  );
   const [isProcessing, setIsProcessing] = useState(false);
   const [customWaiverTitle, setCustomWaiverTitle] = useState('');
   const [customWaiverContent, setCustomWaiverContent] = useState('');
@@ -61,7 +64,7 @@ function NewTeamForm() {
       }
       
       const teamId = await createNewTeam(teamName, targetType, organizerPosition, description, 'free', customWaiverTitle, customWaiverContent, targetSchoolId);
-      if (selectedPlan === 'team' && proQuotaStatus.remaining <= 0) {
+      if (!isStoreDistribution && selectedPlan === 'team' && proQuotaStatus.remaining <= 0) {
         setActiveTeam({ id: teamId } as any);
         router.push('/dashboard/billing');
       } else {
@@ -164,13 +167,14 @@ function NewTeamForm() {
               <p className="text-xl font-black mt-1">$0</p>
               <p className="text-[10px] text-muted-foreground font-bold mt-1">Basic features, 1 team</p>
             </div>
-            <div 
-              className={cn("p-6 rounded-3xl border-2 cursor-pointer transition-all relative overflow-hidden", selectedPlan === 'team' ? "border-primary bg-black text-white shadow-xl" : "border-transparent bg-muted/30")}
-              onClick={() => setSelectedPlan('team')}
-            >
-              <Zap className="absolute -right-2 -bottom-2 h-16 w-16 opacity-10 -rotate-12" />
-              <p className="font-black text-sm uppercase">Elite Pro</p>
-              {proQuotaStatus.remaining > 0 ? (
+            {(!isStoreDistribution || proQuotaStatus.remaining > 0) && (
+              <div
+                className={cn("p-6 rounded-3xl border-2 cursor-pointer transition-all relative overflow-hidden", selectedPlan === 'team' ? "border-primary bg-black text-white shadow-xl" : "border-transparent bg-muted/30")}
+                onClick={() => setSelectedPlan('team')}
+              >
+                <Zap className="absolute -right-2 -bottom-2 h-16 w-16 opacity-10 -rotate-12" />
+                <p className="font-black text-sm uppercase">Elite Pro</p>
+                {proQuotaStatus.remaining > 0 ? (
                 <>
                   <p className="text-xl font-black mt-1 text-primary">Included in Plan</p>
                   <p className="text-[10px] font-bold mt-1 opacity-60">{proQuotaStatus.remaining} slot(s) remaining</p>
@@ -180,9 +184,10 @@ function NewTeamForm() {
                   <p className="text-xl font-black mt-1 text-primary">$19.99/mo</p>
                   <p className="text-[10px] font-bold mt-1 opacity-60">Stripe payment required to activate</p>
                 </>
-              )}
-            </div>
-            {selectedPlan === 'team' && proQuotaStatus.remaining <= 0 && (
+                )}
+              </div>
+            )}
+            {!isStoreDistribution && selectedPlan === 'team' && proQuotaStatus.remaining <= 0 && (
               <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200">
                 <Zap className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
                 <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wider leading-relaxed">
@@ -194,7 +199,7 @@ function NewTeamForm() {
 
           <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleCreate} disabled={isProcessing || !teamName.trim()}>
             {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : (
-              selectedPlan === 'team' && proQuotaStatus.remaining <= 0
+              !isStoreDistribution && selectedPlan === 'team' && proQuotaStatus.remaining <= 0
                 ? 'Create Then Upgrade →'
                 : 'Deploy Squad Hub'
             )}

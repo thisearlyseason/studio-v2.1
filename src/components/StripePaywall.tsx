@@ -25,12 +25,31 @@ import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/firebase';
 import { getAuthToken, authHeader } from '@/lib/client-auth';
+import { isStoreDistribution } from '@/lib/app-distribution';
 
 export function StripePaywall() {
   const { isPaywallOpen, setIsPaywallOpen, user, activeTeam, isPro } = useTeam();
   const auth = useAuth();
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
   const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
+
+  if (isStoreDistribution) {
+    return (
+      <Dialog open={isPaywallOpen} onOpenChange={setIsPaywallOpen}>
+        <DialogContent className="sm:max-w-md rounded-[2rem] bg-white">
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black uppercase tracking-tight">Feature unavailable</DialogTitle>
+            <DialogDescription>
+              This account does not currently include this feature. Existing team access remains available, and your organization administrator can help with access questions.
+            </DialogDescription>
+          </DialogHeader>
+          <Button onClick={() => setIsPaywallOpen(false)} className="h-12 rounded-2xl font-black uppercase">
+            Return to team
+          </Button>
+        </DialogContent>
+      </Dialog>
+    );
+  }
 
   const handleSelectPlan = async (plan: Plan) => {
     if (!user?.id) {
