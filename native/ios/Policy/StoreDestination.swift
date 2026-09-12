@@ -84,7 +84,7 @@ struct StoreDestination {
             let scalar = scalars[index]
             if scalar.properties.isWhitespace
                 || scalar.properties.generalCategory == .control
-                || scalar.value == 0x5C {
+                || isForbiddenRawURLScalar(scalar) {
                 return false
             }
             if scalar.value == 0x25 {
@@ -113,7 +113,8 @@ struct StoreDestination {
     }
 
     private static func isValidDNSHostname(_ hostname: String) -> Bool {
-        guard hostname != "localhost",
+        guard hostname.utf8.count <= 253,
+              hostname != "localhost",
               !hostname.hasSuffix(".localhost"),
               !isNumericIPAddress(hostname) else {
             return false
@@ -125,7 +126,8 @@ struct StoreDestination {
         }
 
         return labels.allSatisfy { label in
-            guard let first = label.unicodeScalars.first,
+            guard label.utf8.count <= 63,
+                  let first = label.unicodeScalars.first,
                   let last = label.unicodeScalars.last,
                   isASCIIAlphanumeric(first),
                   isASCIIAlphanumeric(last) else {
@@ -148,6 +150,15 @@ struct StoreDestination {
                 && scalars[0].value == 0x30
                 && (scalars[1].value == 0x78 || scalars[1].value == 0x58)
                 && scalars.dropFirst(2).allSatisfy(isASCIIHexDigit)
+        }
+    }
+
+    private static func isForbiddenRawURLScalar(_ scalar: Unicode.Scalar) -> Bool {
+        switch scalar.value {
+        case 0x22, 0x3C, 0x3E, 0x5B, 0x5C, 0x5D, 0x5E, 0x60, 0x7B, 0x7C, 0x7D:
+            return true
+        default:
+            return false
         }
     }
 

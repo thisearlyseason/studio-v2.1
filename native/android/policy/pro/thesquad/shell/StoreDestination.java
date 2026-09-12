@@ -104,7 +104,7 @@ public final class StoreDestination {
             if (Character.isWhitespace(codePoint)
                     || Character.isSpaceChar(codePoint)
                     || Character.getType(codePoint) == Character.CONTROL
-                    || codePoint == '\\') {
+                    || isForbiddenRawURLCodePoint(codePoint)) {
                 return false;
             }
             if (codePoint == '%') {
@@ -131,7 +131,8 @@ public final class StoreDestination {
     }
 
     private static boolean isValidDNSHostname(String hostname) {
-        if (hostname.equals("localhost")
+        if (hostname.length() > 253
+                || hostname.equals("localhost")
                 || hostname.endsWith(".localhost")
                 || isNumericIPAddress(hostname)) {
             return false;
@@ -143,6 +144,7 @@ public final class StoreDestination {
         }
         for (String label : labels) {
             if (label.isEmpty()
+                    || label.length() > 63
                     || !isASCIIAlphanumeric(label.charAt(0))
                     || !isASCIIAlphanumeric(label.charAt(label.length() - 1))) {
                 return false;
@@ -155,6 +157,25 @@ public final class StoreDestination {
             }
         }
         return true;
+    }
+
+    private static boolean isForbiddenRawURLCodePoint(int codePoint) {
+        switch (codePoint) {
+            case 0x22:
+            case 0x3C:
+            case 0x3E:
+            case 0x5B:
+            case 0x5C:
+            case 0x5D:
+            case 0x5E:
+            case 0x60:
+            case 0x7B:
+            case 0x7C:
+            case 0x7D:
+                return true;
+            default:
+                return false;
+        }
     }
 
     private static boolean isNumericIPAddress(String hostname) {
