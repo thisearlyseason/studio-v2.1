@@ -9,6 +9,7 @@ import {
   readJsonBodyWithLimit,
   RequestBodyError,
 } from '@/lib/server-request-guards';
+import { storePurchaseResponse } from '@/lib/store-request-guard';
 
 const SAFE_ID = /^[A-Za-z0-9_-]{1,200}$/;
 const SAFE_OPERATION_ID = /^[A-Za-z0-9_-]{16,100}$/;
@@ -29,6 +30,8 @@ const SAFE_OPERATION_ID = /^[A-Za-z0-9_-]{16,100}$/;
  */
 
 export async function POST(req: NextRequest) {
+  const blocked = storePurchaseResponse();
+  if (blocked) return blocked;
   const auth = await verifyFirebaseToken(req);
   if (auth instanceof NextResponse) return auth;
 

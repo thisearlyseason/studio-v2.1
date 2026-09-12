@@ -5,6 +5,7 @@ import { ShieldAlert, Zap, Lock, ArrowLeft, ArrowRight } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { useRouter } from 'next/navigation';
+import { isStoreDistribution } from '@/lib/app-distribution';
 
 export function AccessRestricted({ 
   type = 'role', 
@@ -33,16 +34,22 @@ export function AccessRestricted({
             </div>
 
             <div className="space-y-4">
-              <h1 className="text-4xl font-black uppercase tracking-tighter leading-none">Elite Upgrade Required</h1>
+              <h1 className="text-4xl font-black uppercase tracking-tighter leading-none">
+                {isStoreDistribution ? 'Feature Unavailable' : 'Elite Upgrade Required'}
+              </h1>
               <p className="text-white/60 font-medium leading-relaxed italic border-x-2 border-primary/20 px-8">
-                Advanced features like Facilities, Equipment Vault, and Institutional Auditing are reserved for **Elite Pro** organizations.
+                {isStoreDistribution
+                  ? 'This account does not currently include this feature. Existing team access is managed by your organization.'
+                  : 'Advanced features like Facilities, Equipment Vault, and Institutional Auditing are reserved for Elite Pro organizations.'}
               </p>
             </div>
 
             <div className="flex flex-col gap-4">
-              <Button size="lg" className="h-16 rounded-[2rem] bg-white text-black hover:bg-primary hover:text-white font-black text-xl transition-all border-none shadow-xl active:scale-95 group/btn" onClick={() => router.push('/pricing')}>
-                Upgrade Fleet Status <ArrowRight className="ml-2 h-5 w-5 group-hover/btn:translate-x-1 transition-transform" />
-              </Button>
+              {!isStoreDistribution && (
+                <Button size="lg" className="h-16 rounded-[2rem] bg-white text-black hover:bg-primary hover:text-white font-black text-xl transition-all border-none shadow-xl active:scale-95 group/btn" onClick={() => router.push('/pricing')}>
+                  Upgrade Fleet Status <ArrowRight className="ml-2 h-5 w-5 group-hover/btn:translate-x-1 transition-transform" />
+                </Button>
+              )}
               <Button variant="ghost" className="text-white/40 hover:text-white font-black uppercase text-[10px] tracking-[0.3em] hover:bg-white/5 h-12 rounded-xl transition-all" onClick={() => router.push('/dashboard')}>
                 <ArrowLeft className="h-4 w-4 mr-2" /> Return to Operations
               </Button>

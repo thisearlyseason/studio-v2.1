@@ -5,6 +5,9 @@ import { notFound } from 'next/navigation';
 import { ArrowRight, CalendarDays, ChevronLeft, ClipboardCheck, MessageCircle, ShieldCheck, Trophy, Users } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { isSportSlug, SPORT_LANDINGS, SPORT_SLUGS } from '@/lib/sport-landing';
+import { SquadFooter } from '@/components/marketing/squad-footer';
+import { SportResources } from '@/components/marketing/sport-resources';
+import { isStoreDistribution } from '@/lib/app-distribution';
 
 type PageProps = { params: Promise<{ sport: string }> };
 
@@ -16,6 +19,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   const { sport } = await params;
   if (!isSportSlug(sport)) return {};
   const landing = SPORT_LANDINGS[sport];
+  const socialImage = landing.heroImage.endsWith('.svg') ? '/images/campaigns/leagues-hero.webp' : landing.heroImage;
   const url = `https://www.thesquad.pro/sports/${sport}`;
   return {
     title: landing.seoTitle,
@@ -34,9 +38,9 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
       title: landing.seoTitle,
       description: landing.seoDescription,
       siteName: 'The Squad',
-      images: [{ url: landing.heroImage, alt: landing.heroAlt }],
+      images: [{ url: socialImage, alt: landing.heroImage.endsWith('.svg') ? 'A multi-sport community facility' : landing.heroAlt }],
     },
-    twitter: { card: 'summary_large_image', title: landing.seoTitle, description: landing.seoDescription, images: [landing.heroImage] },
+    twitter: { card: 'summary_large_image', title: landing.seoTitle, description: landing.seoDescription, images: [socialImage] },
   };
 }
 
@@ -85,7 +89,7 @@ export default async function SportLandingPage({ params }: PageProps) {
   ];
 
   return (
-    <main className="min-h-screen bg-white text-zinc-950">
+    <><main className="min-h-screen bg-white text-zinc-950">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} />
       <header className="absolute inset-x-0 top-0 z-20 border-b border-white/20 bg-black/25">
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 sm:px-8">
@@ -106,7 +110,7 @@ export default async function SportLandingPage({ params }: PageProps) {
           <p className="mt-6 max-w-3xl text-base font-medium leading-8 text-white/80 sm:text-xl">{landing.description}</p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Link href="/signup" className="inline-flex min-h-12 items-center justify-center rounded-lg bg-primary px-7 text-xs font-black uppercase text-white">Start your {landing.name.toLowerCase()} squad<ArrowRight className="ml-3 h-4 w-4" /></Link>
-            <Link href="/#pricing" className="inline-flex min-h-12 items-center justify-center rounded-lg border border-white/40 bg-black/25 px-7 text-xs font-black uppercase text-white">Review plans</Link>
+            <Link href="#scoresheets" className="inline-flex min-h-12 items-center justify-center rounded-lg border border-white/40 bg-black/25 px-7 text-xs font-black uppercase text-white">Explore scoresheets</Link>
           </div>
         </div>
       </section>
@@ -170,9 +174,13 @@ export default async function SportLandingPage({ params }: PageProps) {
             <h2 className="text-3xl font-black uppercase tracking-normal">Bring your {landing.name.toLowerCase()} season together</h2>
             <p className="mt-3 max-w-2xl text-base font-medium leading-7 text-white/65">Create a free squad and add the organization tools your program needs.</p>
           </div>
-          <Link href="/signup" className="inline-flex min-h-12 items-center rounded-lg bg-primary px-7 text-xs font-black uppercase text-white">Create a squad<ArrowRight className="ml-3 h-4 w-4" /></Link>
+          <div className="flex flex-wrap items-center gap-5">
+            <Link href="/signup" className="inline-flex min-h-12 items-center rounded-lg bg-primary px-7 text-xs font-black uppercase text-white">Create a squad<ArrowRight className="ml-3 h-4 w-4" /></Link>
+            {!isStoreDistribution && <Link href="/#pricing" className="text-sm font-semibold underline underline-offset-4">Review plans</Link>}
+          </div>
         </div>
       </section>
-    </main>
+      <SportResources sport={sport} />
+    </main><SquadFooter /></>
   );
 }

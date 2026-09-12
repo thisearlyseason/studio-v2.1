@@ -25,8 +25,11 @@ import {
   releaseSubscriptionMutation,
   SubscriptionMutationInProgressError,
 } from '@/lib/server-subscription-mutation-lock';
+import { storePurchaseResponse } from '@/lib/store-request-guard';
 
 export async function POST(req: NextRequest) {
+  const blocked = storePurchaseResponse();
+  if (blocked) return blocked;
   // Authenticate caller
   const auth = await verifyFirebaseToken(req);
   if (auth instanceof NextResponse) return auth;

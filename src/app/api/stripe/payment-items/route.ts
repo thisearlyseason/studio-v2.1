@@ -9,6 +9,7 @@ import {
   readJsonBodyWithLimit,
   RequestBodyError,
 } from '@/lib/server-request-guards';
+import { storePurchaseResponse } from '@/lib/store-request-guard';
 
 /**
  * Payment Items API — manages payable items that coaches/organizers create for
@@ -42,6 +43,8 @@ const SAFE_OPERATION_ID = /^[A-Za-z0-9_-]{16,100}$/;
  */
 // ── POST — create a payment item ──────────────────────────────────────────────
 export async function POST(req: NextRequest) {
+  const blocked = storePurchaseResponse();
+  if (blocked) return blocked;
   const auth = await verifyFirebaseToken(req);
   if (auth instanceof NextResponse) return auth;
 

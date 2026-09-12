@@ -397,7 +397,7 @@ export default function ChatsPage() {
                   onClick={handleCreateChat}
                   disabled={!newChatName.trim() || selectedMembers.length === 0 || !selectedContextId || isCreatingChat}
                 >
-                  {isCreatingChat ? 'Authorizing…' : 'Authorize Channel'}
+                {isCreatingChat ? 'Creating…' : 'Create Chat'}
                 </Button>
               </DialogFooter>
             </div>

@@ -28,6 +28,7 @@ import {
 } from "@/components/ui/tooltip";
 import { DatePicker } from "@/components/ui/date-picker";
 import { getAuthToken, authHeader } from '@/lib/client-auth';
+import { isStoreDistribution } from '@/lib/app-distribution';
 
 export function FundraisingManager() {
   const { activeTeam, db, user, addFundraisingOpportunity, updateFundraisingOpportunity, deleteFundraisingOpportunity } = useTeam();
@@ -263,7 +264,7 @@ export function FundraisingManager() {
               </div>
 
               {/* ── Stripe Donation Link section ── */}
-              <div className="pt-2 border-t border-dashed space-y-3">
+              {!isStoreDistribution && <div className="pt-2 border-t border-dashed space-y-3">
                 {hasStripeLink ? (
                   <>
                     <div className="flex items-center justify-between">
@@ -328,7 +329,7 @@ export function FundraisingManager() {
                     )}
                   </Button>
                 )}
-              </div>
+              </div>}
             </Card>
           );
         })}
@@ -403,7 +404,7 @@ export function FundraisingManager() {
                 />
               </div>
 
-              <div className="space-y-4">
+              {!isStoreDistribution && <div className="space-y-4">
                 <div className="flex items-center gap-2">
                   <LinkIcon className="h-4 w-4 text-primary" />
                   <Label className="text-[10px] font-black uppercase tracking-widest">External Links & Details</Label>
@@ -426,7 +427,7 @@ export function FundraisingManager() {
                     className="h-12 border-2 rounded-xl text-[10px] font-bold"
                   />
                 </div>
-              </div>
+              </div>}
             </div>
 
             <DialogFooter>

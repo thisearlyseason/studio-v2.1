@@ -11,6 +11,8 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import BrandLogo from '@/components/BrandLogo';
 import { toast } from '@/hooks/use-toast';
+import { APP_DISTRIBUTION, isStoreDistribution } from '@/lib/app-distribution';
+import { onboardingDestinationForRole } from '@/lib/store-signup-policy';
 
 const ROLES = [
   { value: 'adult_player', label: 'Player', destination: '/teams/join' },
@@ -74,7 +76,7 @@ export default function OnboardingPage() {
         });
       }
       await batch.commit();
-      const destination = ROLES.find(option => option.value === role)?.destination || '/dashboard';
+      const destination = onboardingDestinationForRole(role, APP_DISTRIBUTION);
       router.replace(destination);
     } catch {
       toast({ title: 'Profile setup failed', description: 'Your profile could not be created. Please try again.', variant: 'destructive' });
@@ -92,7 +94,11 @@ export default function OnboardingPage() {
         <BrandLogo variant="light-background" className="h-12 w-40" priority />
         <div>
           <h1 className="text-3xl font-black uppercase">Complete your profile</h1>
-          <p className="text-sm text-muted-foreground mt-2">Choose the role that determines your starting workspace and permissions.</p>
+          <p className="text-sm text-muted-foreground mt-2">
+            {isStoreDistribution
+              ? 'Create a free profile. Roles organize your starting view; team and organization permissions still require existing access or an invitation.'
+              : 'Choose the role that determines your starting workspace and permissions.'}
+          </p>
         </div>
         <div className="space-y-2">
           <Label htmlFor="onboarding-name">Full name</Label>

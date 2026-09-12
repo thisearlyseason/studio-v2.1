@@ -4,6 +4,8 @@ import Link from 'next/link';
 import { ArrowRight, CalendarDays, ClipboardCheck, MessageCircle, Trophy } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import { SPORT_LANDINGS, SPORT_SLUGS } from '@/lib/sport-landing';
+import { SquadFooter } from '@/components/marketing/squad-footer';
+import { SportResources } from '@/components/marketing/sport-resources';
 
 export const metadata: Metadata = {
   title: 'Sports Team and League Management Software by Sport',
@@ -40,7 +42,7 @@ export default function SportsIndexPage() {
   };
 
   return (
-    <main className="min-h-screen bg-white text-zinc-950">
+    <><main className="min-h-screen bg-white text-zinc-950">
       <script type="application/ld+json" dangerouslySetInnerHTML={{ __html: JSON.stringify(structuredData) }} />
       <header className="absolute inset-x-0 top-0 z-20 border-b border-white/20 bg-black/25">
         <div className="mx-auto flex h-20 max-w-7xl items-center justify-between px-5 sm:px-8">
@@ -88,7 +90,7 @@ export default function SportsIndexPage() {
                     <h2 className="absolute bottom-5 left-5 text-3xl font-black uppercase tracking-normal text-white sm:text-4xl">{sport.name}</h2>
                   </div>
                   <div className="flex items-center justify-between gap-4 p-6">
-                    <p className="max-w-xl text-sm font-medium leading-6 text-zinc-600">Registration, scheduling, team app, league, and tournament workflows for {sport.name.toLowerCase()} programs.</p>
+                    <p className="max-w-xl text-sm font-medium leading-6 text-zinc-600">{sport.description}</p>
                     <ArrowRight className="h-5 w-5 shrink-0 text-primary transition group-hover:translate-x-1" />
                   </div>
                 </Link>
@@ -107,6 +109,7 @@ export default function SportsIndexPage() {
           <Link href="/signup" className="inline-flex min-h-12 items-center rounded-lg bg-primary px-7 text-xs font-black uppercase text-white">Create a squad<ArrowRight className="ml-3 h-4 w-4" /></Link>
         </div>
       </section>
-    </main>
+      <SportResources />
+    </main><SquadFooter /></>
   );
 }

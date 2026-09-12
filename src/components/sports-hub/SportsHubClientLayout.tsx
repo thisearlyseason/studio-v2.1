@@ -7,6 +7,7 @@ import BrandLogo from '@/components/BrandLogo';
 import { SectionNav } from '@/components/sports-hub/SectionNav';
 import { SearchBar } from '@/components/sports-hub/SearchBar';
 import { Button } from '@/components/ui/button';
+import { isStoreDistribution } from '@/lib/app-distribution';
 
 const HUB_SECTIONS = [
   ['The Hub', '/sports-hub'],
@@ -54,7 +55,7 @@ export function SportsHubClientLayout({ children }: { children: React.ReactNode 
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-10 mb-12">
             <div className="lg:col-span-2"><div className="flex items-center gap-2 mb-4"><div className="h-8 w-8 rounded-xl bg-primary flex items-center justify-center"><BookOpen className="h-4 w-4 text-white" /></div><span className="font-black uppercase tracking-tighter">The Squad Sports Hub</span></div><p className="text-background/50 text-sm font-medium leading-relaxed max-w-sm">The premium content platform for coaches, organizers, athletes, and parents. Built into The Squad.</p></div>
             <div><p className="text-[9px] font-black uppercase tracking-[0.3em] text-background/40 mb-4">Sections</p><div className="space-y-2">{HUB_SECTIONS.map(([section, href]) => <Link key={section} href={href} className="block text-xs font-bold text-background/60 hover:text-background transition-colors uppercase tracking-wider">{section}</Link>)}</div></div>
-            <div><p className="text-[9px] font-black uppercase tracking-[0.3em] text-background/40 mb-4">The Squad</p><div className="space-y-2">{[['Home', '/'], ['Dashboard', '/dashboard'], ['Pricing', '/#pricing'], ['Tournaments', '/tournaments'], ['Leagues', '/leagues']].map(([label, href]) => <Link key={label} href={href} className="block text-xs font-bold text-background/60 hover:text-background transition-colors uppercase tracking-wider">{label}</Link>)}</div></div>
+            <div><p className="text-[9px] font-black uppercase tracking-[0.3em] text-background/40 mb-4">The Squad</p><div className="space-y-2">{(isStoreDistribution ? [['Dashboard', '/dashboard'], ['Tournaments', '/tournaments'], ['Leagues', '/leagues']] : [['Home', '/'], ['Dashboard', '/dashboard'], ['Pricing', '/#pricing'], ['Tournaments', '/tournaments'], ['Leagues', '/leagues']]).map(([label, href]) => <Link key={label} href={href} className="block text-xs font-bold text-background/60 hover:text-background transition-colors uppercase tracking-wider">{label}</Link>)}</div></div>
           </div>
           <div className="border-t border-background/10 pt-8 flex flex-col md:flex-row items-center justify-between gap-4"><p className="text-xs font-bold text-background/30 uppercase tracking-widest">© {new Date().getFullYear()} The Squad · All rights reserved</p><div className="flex gap-6"><Link href="/privacy" className="text-xs font-bold text-background/30 hover:text-background/60 uppercase tracking-widest transition-colors">Privacy</Link><Link href="/terms" className="text-xs font-bold text-background/30 hover:text-background/60 uppercase tracking-widest transition-colors">Terms</Link></div></div>
         </div>

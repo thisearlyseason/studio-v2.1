@@ -25,6 +25,7 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { getAuthToken, authHeader } from '@/lib/client-auth';
 import { useAuth } from '@/firebase';
+import { isStoreDistribution } from '@/lib/app-distribution';
 
 type PaymentCategory = 'league' | 'tournament' | 'equipment' | 'other';
 
@@ -195,19 +196,21 @@ export function PaymentItemsManager({ userId, teamId, stripeChargesEnabled }: Pa
           </div>
           <h3 className="text-2xl font-black uppercase tracking-tight">Payment Items</h3>
           <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-            Create shareable payment links for team fees and charges
+            {isStoreDistribution ? 'Review existing team fees and charges' : 'Create shareable payment links for team fees and charges'}
           </p>
         </div>
-        <Button
-          onClick={() => { resetForm(); setIsDialogOpen(true); }}
-          disabled={!stripeChargesEnabled}
-          className="h-11 px-5 rounded-2xl font-black text-[10px] uppercase tracking-widest bg-black text-white hover:bg-primary border-none shadow-xl active:scale-[0.98] transition-all"
-        >
-          <Plus className="h-4 w-4 mr-2" /> New Item
-        </Button>
+        {!isStoreDistribution && (
+          <Button
+            onClick={() => { resetForm(); setIsDialogOpen(true); }}
+            disabled={!stripeChargesEnabled}
+            className="h-11 px-5 rounded-2xl font-black text-[10px] uppercase tracking-widest bg-black text-white hover:bg-primary border-none shadow-xl active:scale-[0.98] transition-all"
+          >
+            <Plus className="h-4 w-4 mr-2" /> New Item
+          </Button>
+        )}
       </div>
 
-      {!stripeChargesEnabled && (
+      {!isStoreDistribution && !stripeChargesEnabled && (
         <p className="text-[10px] font-bold text-amber-600 uppercase tracking-widest bg-amber-50 rounded-2xl px-4 py-3 border border-amber-100">
           ⚠ Connect your Stripe account above to create payment links.
         </p>
@@ -251,23 +254,23 @@ export function PaymentItemsManager({ userId, teamId, stripeChargesEnabled }: Pa
                   </div>
 
                   {/* Payment link URL (truncated) */}
-                  <div className="bg-muted/30 rounded-xl px-3 py-2 flex items-center gap-2">
+                  {!isStoreDistribution && <div className="bg-muted/30 rounded-xl px-3 py-2 flex items-center gap-2">
                     <Link2 className="h-3 w-3 text-muted-foreground shrink-0" />
                     <span className="text-[8px] font-mono text-muted-foreground truncate flex-1">
                       {item.stripePaymentLinkUrl}
                     </span>
-                  </div>
+                  </div>}
 
                   {/* Actions */}
                   <div className="flex gap-2 pt-1">
-                    <Button
+                    {!isStoreDistribution && <Button
                       size="sm"
                       onClick={() => copyLink(item.stripePaymentLinkUrl, item.name)}
                       className="flex-1 h-9 rounded-xl font-black text-[9px] uppercase tracking-widest bg-primary/10 text-primary hover:bg-primary hover:text-white border-none transition-all"
                     >
                       <Copy className="h-3.5 w-3.5 mr-1.5" /> Copy Link
-                    </Button>
-                    <Button
+                    </Button>}
+                    {!isStoreDistribution && <Button
                       size="sm"
                       variant="outline"
                       onClick={() => window.open(item.stripePaymentLinkUrl, '_blank')}
@@ -275,7 +278,7 @@ export function PaymentItemsManager({ userId, teamId, stripeChargesEnabled }: Pa
                       title="Open payment link"
                     >
                       <ExternalLink className="h-3.5 w-3.5" />
-                    </Button>
+                    </Button>}
                     <Button
                       size="sm"
                       variant="outline"
@@ -294,7 +297,7 @@ export function PaymentItemsManager({ userId, teamId, stripeChargesEnabled }: Pa
       )}
 
       {/* Create Dialog */}
-      <Dialog open={isDialogOpen} onOpenChange={o => { if (!isSubmitting) { setIsDialogOpen(o); if (!o) resetForm(); } }}>
+      {!isStoreDistribution && <Dialog open={isDialogOpen} onOpenChange={o => { if (!isSubmitting) { setIsDialogOpen(o); if (!o) resetForm(); } }}>
         <DialogContent className="rounded-[3rem] sm:max-w-lg p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
           <div className="h-2 bg-primary w-full" />
           <div className="p-8 space-y-6">
@@ -393,7 +396,7 @@ export function PaymentItemsManager({ userId, teamId, stripeChargesEnabled }: Pa
             </DialogFooter>
           </div>
         </DialogContent>
-      </Dialog>
+      </Dialog>}
 
       {/* Deactivate Confirmation */}
       <AlertDialog open={!!itemToDelete} onOpenChange={o => { if (!isDeleting && !o) setItemToDelete(null); }}>
