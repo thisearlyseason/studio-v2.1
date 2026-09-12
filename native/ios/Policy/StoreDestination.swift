@@ -82,7 +82,9 @@ struct StoreDestination {
         var index = 0
         while index < scalars.count {
             let scalar = scalars[index]
-            if scalar.value <= 0x20 || scalar.value == 0x7F || scalar.value == 0x5C {
+            if scalar.properties.isWhitespace
+                || scalar.properties.generalCategory == .control
+                || scalar.value == 0x5C {
                 return false
             }
             if scalar.value == 0x25 {
@@ -111,7 +113,9 @@ struct StoreDestination {
     }
 
     private static func isValidDNSHostname(_ hostname: String) -> Bool {
-        guard hostname != "localhost", !isNumericIPAddress(hostname) else {
+        guard hostname != "localhost",
+              !hostname.hasSuffix(".localhost"),
+              !isNumericIPAddress(hostname) else {
             return false
         }
 

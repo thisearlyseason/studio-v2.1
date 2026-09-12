@@ -10,6 +10,7 @@
     {"input":"https://store.example.test?next=/login","want":null},
     {"input":"https://store.example.test#fragment","want":null},
     {"input":"https://localhost","want":null},
+    {"input":"https://app.localhost","want":null},
     {"input":"https://127.0.0.1","want":null},
     {"input":"https://127.1","want":null},
     {"input":"https://2130706433","want":null},
@@ -18,6 +19,9 @@
     {"input":"https://[::1]","want":null},
     {"input":"https://store.example.test.","want":null},
     {"input":"https://%73tore.example.test","want":null},
+    {"input":"https://store.example.test/\u00a0","want":null},
+    {"input":"https://store.example.test/\u0085","want":null},
+    {"input":"https://store.example.test/\u2003","want":null},
     {"input":" https://store.example.test","want":null}
   ],
   "navigation": [
@@ -37,6 +41,11 @@
     {"input":"intent://dashboard","want":false},
     {"input":"https://store.example.test/%ZZ","want":false},
     {"input":"https://store.example.test/a b","want":false},
+    {"input":"https://store.example.test/\u00a0dashboard","want":false},
+    {"input":"https://store.example.test/\u0085dashboard","want":false},
+    {"input":"https://store.example.test/\u2003dashboard","want":false},
+    {"input":"https://store.example.test/%C2%A0dashboard","want":true},
+    {"input":"https://store.example.test/%E2%80%83dashboard","want":true},
     {"input":"https://store.example.test\\@evil.test/","want":false},
     {"input":"https://store.example.test/\nlogin","want":false}
   ],

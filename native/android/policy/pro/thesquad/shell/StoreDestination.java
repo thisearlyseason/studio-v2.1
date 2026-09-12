@@ -98,19 +98,25 @@ public final class StoreDestination {
         if (value == null || value.isEmpty()) {
             return false;
         }
-        for (int index = 0; index < value.length(); index++) {
-            char character = value.charAt(index);
-            if (character <= 0x20 || character == 0x7F || character == '\\') {
+        int index = 0;
+        while (index < value.length()) {
+            int codePoint = value.codePointAt(index);
+            if (Character.isWhitespace(codePoint)
+                    || Character.isSpaceChar(codePoint)
+                    || Character.getType(codePoint) == Character.CONTROL
+                    || codePoint == '\\') {
                 return false;
             }
-            if (character == '%') {
+            if (codePoint == '%') {
                 if (index + 2 >= value.length()
                         || !isASCIIHexDigit(value.charAt(index + 1))
                         || !isASCIIHexDigit(value.charAt(index + 2))) {
                     return false;
                 }
-                index += 2;
+                index += 3;
+                continue;
             }
+            index += Character.charCount(codePoint);
         }
         return true;
     }
@@ -125,7 +131,9 @@ public final class StoreDestination {
     }
 
     private static boolean isValidDNSHostname(String hostname) {
-        if (hostname.equals("localhost") || isNumericIPAddress(hostname)) {
+        if (hostname.equals("localhost")
+                || hostname.endsWith(".localhost")
+                || isNumericIPAddress(hostname)) {
             return false;
         }
 
