@@ -196,6 +196,15 @@ Compare package commit paths against the recorded base. Run `git diff --check`. 
 
 List actual maintained Xcode/Android projects, bounded nonredirecting bootstrap client, native loading/error/retry UI, WebView navigation consumers, offline/foreground handling and simulator/hosted acceptance as remaining. List the real store origin, application IDs and signing/provider configuration as unconfigured rather than selecting them silently. These entries are scope boundaries, not permission to mark shell integration complete.
 
-- [ ] **Step 4: Commit guide, obtain whole-package review and finish without deployment.**
+- [x] **Step 4: Commit guide, obtain whole-package review and finish without deployment.**
 
 Commit only `native/README.md` and this plan's evidence-backed checkbox updates. Report policy completion separately from pending shell integration. Use the development-branch finishing skill; no push, merge, DNS/provider update or deployment is part of this package.
+
+## Completion evidence — 2026-09-12
+
+- Package implementation/fixes: `727edb5a`, `eabf7818`, `c7b07ed7`; guide: `96338153`.
+- Controller's fresh final `node --test native/tests/destination-policy.test.mjs` run on `c7b07ed7`: exit 0, 134 tests passed, zero failed/skipped.
+- Independent task review and final package review completed. Four discovered boundary issues were reproduced and corrected: localhost descendants, raw Unicode whitespace/control parity, raw malformed path syntax parity, and DNS label/hostname limits. Scoped re-reviews found no remaining actionable findings.
+- Both exact-host and web-bootstrap mutation tests failed as intended. iPhone Simulator 26.5 and Android API 36 policy-library compilation passed; these were not app builds or device-runtime tests.
+- Existing web source/dependency diffs and previously changed UI/test file hashes matched the start-of-package snapshot. No website/provider changes or deployments were made. Commits and worktree remain local.
+- Detailed local logs/reports remain in `.superpowers/sdd/2026-09-12-native-destination-policy/`, including `controller-final-verification.log` and task reports. The maintained `native/README.md` defines the package's limits and remaining app integration work.
