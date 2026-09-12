@@ -11370,7 +11370,7 @@ function browserCreateChatChannel(session, { teamId, memberName, channelName }) 
       await dialog.getByLabel('Channel Name').fill(${JSON.stringify(channelName)});
       await dialog.getByText(${JSON.stringify(memberName)},{exact:true}).click();
       const pending=page.waitForResponse(response=>response.url()===${JSON.stringify(`${BASE_URL}/api/teams/chat`)}&&response.request().method()==='POST',{timeout:15000});
-      await dialog.getByRole('button',{name:'Authorize Channel',exact:true}).click();
+      await dialog.getByRole('button',{name:'Create Chat',exact:true}).click();
       const response=await pending,body=await response.json();
       if(response.status()!==200)throw Error('Chat create returned '+response.status()+' '+JSON.stringify(body));
       await page.waitForFunction(id=>location.pathname==='/chats/'+id,body.chatId,{timeout:15000});

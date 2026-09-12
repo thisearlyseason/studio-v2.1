@@ -78,6 +78,7 @@ import Link from 'next/link';
 import { cn } from '@/lib/utils';
 import { Textarea } from '@/components/ui/textarea';
 import { PRICING_CONFIG } from '@/lib/pricing';
+import { isStoreDistribution } from '@/lib/app-distribution';
 import { pwaInstallPromptBroker, type PwaInstallPrompt } from '@/lib/pwa-install-prompt';
 import { deletePushDevice, registerPushDevice } from '@/lib/client-push-registration';
 import { cancelDemoExitPending, clearBrowserSession, clearDemoExitPending, markDemoExitPending, requireDemoExitRetry } from '@/lib/client-auth';
@@ -735,9 +736,11 @@ export default function SettingsPage() {
                 Includes {user.extra_teams} Extra Add-on Seats
               </p>
             ) : null}
-            <Button asChild variant="outline" className="w-full rounded-2xl border-2 font-black uppercase text-[10px] h-12 hover:bg-black hover:text-white transition-all">
-              <Link href="/dashboard/billing">Manage Infrastructure <ChevronRight className="ml-1 h-4 w-4" /></Link>
-            </Button>
+            {!isStoreDistribution && (
+              <Button asChild variant="outline" className="w-full rounded-2xl border-2 font-black uppercase text-[10px] h-12 hover:bg-black hover:text-white transition-all">
+                <Link href="/dashboard/billing">Manage Subscription <ChevronRight className="ml-1 h-4 w-4" /></Link>
+              </Button>
+            )}
           </CardContent>
         </Card>
         )}
@@ -818,7 +821,7 @@ export default function SettingsPage() {
           <ExternalLink className="h-5 w-5 text-muted-foreground opacity-30 group-hover:opacity-100 group-hover:translate-x-1 transition-all" />
         </Link>
         
-        {isPro && !isDemo && (isStaff || isPrimaryClubAuthority) && (
+        {!isStoreDistribution && isPro && !isDemo && (isStaff || isPrimaryClubAuthority) && (
           <button onClick={() => router.push('/dashboard/billing')} className="w-full p-6 bg-white rounded-3xl flex items-center justify-between border-2 border-transparent hover:border-primary/20 shadow-sm transition-all group">
             <div className="flex items-center gap-4">
               <div className="bg-amber-100 p-3 rounded-2xl text-amber-600 group-hover:bg-primary group-hover:text-white transition-colors"><CreditCard className="h-6 w-6" /></div>

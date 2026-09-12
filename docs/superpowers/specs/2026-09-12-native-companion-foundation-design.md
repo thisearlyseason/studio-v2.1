@@ -1,6 +1,6 @@
 # The Squad native companion — foundation design
 
-Status: product direction approved; written design awaiting review. This document does not mean native code, signing, or store submission is complete.
+Status: written design approved by the user's “proceed”; foundation implementation in progress. This document does not mean native packaging, signing, or store submission is complete.
 
 ## Approved product direction
 

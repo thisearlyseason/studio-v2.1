@@ -78,7 +78,10 @@ export default function PrivacyPolicyPage() {
           <section className="space-y-4">
             <h2 className="text-xl font-bold text-foreground uppercase tracking-wider">5. Your Rights</h2>
             <p>
-              You can update your profile information at any time in the settings menu. If you wish to delete your account or team data, please contact us at <strong>team@thesquad.pro</strong>.
+              You can update your profile information in Settings. To request account deletion, sign in, open your account menu, and choose <strong>Delete Account</strong>. Transfer or delete any teams and leagues you own first, and cancel or resolve any active subscription. You may be asked to sign in again for security. Confirming the request signs you out and schedules your account for permanent removal after seven days. Removing an athlete from a team does not delete their account.
+            </p>
+            <p>
+              If you cannot access your account or need help with account or team data deletion, contact <a href="mailto:team@thesquad.pro" className="font-bold underline underline-offset-4">team@thesquad.pro</a>. We may need to verify account ownership before processing your request.
             </p>
           </section>
         </div>

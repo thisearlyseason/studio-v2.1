@@ -966,16 +966,16 @@ export default function RosterPage() {
                         {activeTeam?.role === 'Admin' && (
                           <Dialog>
                             <DialogTrigger asChild>
-                              <Button variant="outline" className="w-full h-11 rounded-xl border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white font-black uppercase text-[10px] transition-all">Decommission Athlete</Button>
+                              <Button variant="outline" className="w-full h-11 rounded-xl border-red-500/30 text-red-500 hover:bg-red-500 hover:text-white font-black uppercase text-[10px] transition-all">Remove Athlete</Button>
                             </DialogTrigger>
                             <DialogContent className="left-[50%] top-[50%] -translate-x-1/2 -translate-y-1/2 h-auto w-[calc(100vw-1rem)] max-w-md max-h-[calc(100dvh-1rem)] overflow-hidden rounded-3xl sm:rounded-[2.5rem] p-0 border-none bg-white text-foreground">
                               <DialogHeader className="px-5 pt-6 sm:px-8 sm:pt-8">
-                                <DialogTitle className="text-xl sm:text-2xl font-black uppercase tracking-tight pr-8">Personnel Decommission</DialogTitle>
-                                <DialogDescription className="font-bold text-muted-foreground uppercase text-[10px] tracking-widest">Permanent Archive Request for {selectedMember.name}</DialogDescription>
+                                <DialogTitle className="text-xl sm:text-2xl font-black uppercase tracking-tight pr-8">Remove Athlete</DialogTitle>
+                                <DialogDescription className="font-bold text-muted-foreground text-sm">Remove {selectedMember.name} from this team.</DialogDescription>
                               </DialogHeader>
                               <div className="space-y-4 px-5 py-5 sm:px-8 sm:py-6 overflow-y-auto">
                                 <div className="space-y-3">
-                                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Archive Reason <span className="opacity-40 normal-case">(Required for Audit)</span></Label>
+                                  <Label htmlFor="removal-reason-main" className="text-[10px] font-black uppercase tracking-widest ml-1">Reason for removal <span className="opacity-40 normal-case">(Required for audit)</span></Label>
                                   <Textarea 
                                     id="removal-reason-main"
                                     placeholder="e.g. Seasonal turnover, voluntary withdrawal..." 
@@ -984,7 +984,7 @@ export default function RosterPage() {
                                 </div>
                                 <div className="p-4 bg-red-50 rounded-2xl border border-red-100 space-y-2">
                                   <p className="text-[10px] font-black text-red-700 uppercase">Warning</p>
-                                  <p className="text-[10px] font-medium text-red-600 leading-relaxed italic">Decommissioned personnel are immediately removed from active rosters and communications. Their profile remains in the administrative archives for 7 years.</p>
+                                  <p className="text-sm font-medium text-red-600 leading-relaxed">This athlete will immediately lose access to this team’s roster and communications. Their team record will be archived. This does not delete their account.</p>
                                 </div>
                               </div>
                               <DialogFooter className="px-5 pb-5 sm:px-8 sm:pb-8">
@@ -993,14 +993,14 @@ export default function RosterPage() {
                                   onClick={async () => {
                                     const reason = (document.getElementById('removal-reason-main') as HTMLTextAreaElement)?.value;
                                     if (!reason) {
-                                      toast({ title: "Reason Required", description: "Please provide an audit reason for decommissioning.", variant: "destructive" });
+                                      toast({ title: "Reason Required", description: "Please provide a reason for removing this athlete.", variant: "destructive" });
                                       return;
                                     }
                                     await removeMember(selectedMember.id, reason);
                                     setSelectedMemberId(null);
                                   }}
                                 >
-                                  Authorize Full Decommission
+                                  Remove from Team
                                 </Button>
                               </DialogFooter>
                             </DialogContent>

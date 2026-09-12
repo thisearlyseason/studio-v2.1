@@ -19,6 +19,7 @@ import {
 } from 'lucide-react';
 import BrandLogo from '@/components/BrandLogo';
 import type { AudienceLanding } from '@/lib/audience-landing';
+import { isStoreBlockedPath, isStoreDistribution } from '@/lib/app-distribution';
 
 const ICONS = {
   calendar: CalendarDays,
@@ -74,9 +75,11 @@ export function AudienceLandingPage({ landing }: { landing: AudienceLanding }) {
               <Link href={landing.primaryHref} className="group inline-flex min-h-14 items-center justify-center rounded-full bg-primary px-8 text-xs font-black uppercase tracking-[0.16em] text-white shadow-2xl shadow-primary/25 transition hover:-translate-y-1">
                 {landing.primaryCta}<ArrowRight className="ml-3 h-4 w-4 transition group-hover:translate-x-1" />
               </Link>
-              <Link href={landing.secondaryHref} className="inline-flex min-h-14 items-center justify-center rounded-full border border-white/25 bg-white/5 px-8 text-xs font-black uppercase tracking-[0.16em] text-white transition hover:bg-white hover:text-black">
-                {landing.secondaryCta}
-              </Link>
+              {(!isStoreDistribution || !isStoreBlockedPath(landing.secondaryHref)) && (
+                <Link href={landing.secondaryHref} className="inline-flex min-h-14 items-center justify-center rounded-full border border-white/25 bg-white/5 px-8 text-xs font-black uppercase tracking-[0.16em] text-white transition hover:bg-white hover:text-black">
+                  {landing.secondaryCta}
+                </Link>
+              )}
             </div>
             <p className="mt-6 flex items-center gap-2 text-[10px] font-black uppercase tracking-[0.18em] text-white/40">
               <ShieldCheck className="h-4 w-4 text-primary" /> Canadian-built sports operations platform
@@ -238,8 +241,8 @@ export function AudienceLandingPage({ landing }: { landing: AudienceLanding }) {
             <Link href="/privacy" className="hover:text-primary">Privacy</Link>
             <Link href="/terms" className="hover:text-primary">Terms</Link>
             <Link href="/sports-hub" className="hover:text-primary">Sports Hub</Link>
-            <Link href="/sports" className="hover:text-primary">Sports</Link>
-            <Link href="/pricing" className="hover:text-primary">Pricing</Link>
+            <Link href="/sports" className="hover:text-primary">Explore Sports</Link>
+            {!isStoreDistribution && <Link href="/pricing" className="hover:text-primary">Pricing</Link>}
           </div>
           <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Built in Canada</p>
         </div>
