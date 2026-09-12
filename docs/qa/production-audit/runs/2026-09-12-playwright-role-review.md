@@ -1,5 +1,19 @@
 # September 12 Playwright role review
 
+## Hosted delegated-account acceptance — completed September 12
+
+- **COMPLETED:** The remaining non-physical acceptance for the changed school-hub/role-policy rows passed on production revision `6dd40e8f93ae374cf11be0c4615a79328938fa9d`. A registered delegated-school QA account signed in through the actual Login form; this was not an owner demo or an impersonated browser session.
+- **FIXED AND VERIFIED:** Owner and delegate both received all three allocated squads and correct 3/15/12 capacity totals. The delegate could read only its assigned squad's incident, participant signatures, coach signatures and fundraising records. Both unassigned sibling squads denied those reads; the unrelated owner was denied throughout. The authorized school owner retained access to all three squads. No permission rules or application code were changed for these checks.
+- **COMPLETED:** Browser refresh, Back and new-tab behavior retained the correct delegated view. All six hub tabs passed at 1440px and 390px. The limited-scope explanation was visible, one authorized private incident rendered, sibling incidents were absent, and no sibling incident requests were issued. The instrumented run recorded zero console/page errors and zero failed application API responses. Registered logout removed the session cookie and subsequent Club navigation redirected to Login.
+- **REMAINING / BLOCKED:** Only the existing physical-device portions of Push, Game-Day Reminders and PWA/offline certification. Browser emulation and provider acceptance cannot prove native installation, launcher badges, OS presentation or actual closed-phone reminder receipt. Unaffected previous targeting/privacy passes remain retained.
+- **DEFER UNTIL AFTER LAUNCH:** Existing lint warnings and previously identified minor cosmetic copy.
+
+Evidence: `output/playwright/sep12-hosted-delegate/results.json`, `run.mjs` and `delegate-mobile.png`. All 49 focused assertions passed, including the 12 browser tab/viewport observations. QA run `final-cert-live-mtypi4ib-e2b9` used three synthetic registered identities and five isolated teams. Notification preferences were disabled, push subscriptions empty and outbound providers disabled. No customer accounts, payment configuration, real notifications or existing teams were changed. Exact cleanup removed the disposable QA records and three Auth identities. A separate recheck at 18:20:57 UTC confirmed all nine owned roots/subcollections absent, all three identities absent, the private credential file removed and zero retained owned records. The owned browser was closed; unrelated sessions were preserved.
+
+One retained harness attempt reported `URL is not defined` after Login had already reached Club: the CLI evaluation scope lacks the browser's global URL constructor. Reading the pathname inside `page.evaluate` corrected the evidence capture; the authenticated session was reused rather than repeating sign-in. This was not an application failure or a product repair.
+
+**Matrix after this acceptance: 84 PASS, three BLOCKED, one NOT APPLICABLE.** No full physical-device or zero-error production certificate is claimed. The already deployed build and release gates remain applicable: only evidence/documentation changed during this continuation.
+
 ## Production release and focused smoke — September 12
 
 - **COMPLETED:** Approved release merged through [PR77](https://github.com/thisearlyseason/studio-v2.1/pull/77) as `6dd40e8f93ae374cf11be0c4615a79328938fa9d`. Vercel deployment `dpl_2zYoHoeAzqgXrU7MjQU5oVBVcyJA` is Ready and serves both production domains. Fresh uncached health on both matched the exact revision. The merged tracked tree equals the tested candidate.

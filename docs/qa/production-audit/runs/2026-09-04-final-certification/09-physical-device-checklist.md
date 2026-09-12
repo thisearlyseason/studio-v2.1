@@ -1,5 +1,44 @@
 # Physical-device acceptance checklist
 
+## Current remaining checks — September 12, 2026
+
+Production revision: `6dd40e8f93ae374cf11be0c4615a79328938fa9d`.
+The remaining hosted delegated-account checks have passed. Only the three
+physical matrix rows remain open. Older sections below are historical evidence,
+not instructions to restart all device testing. Keep every already documented
+PASS unless a later relevant change affected it.
+
+For each still-unverified subcheck, record Android/iPhone model, OS, browser,
+installed app, PASS/FAIL and a screenshot. Open the installed app online first
+so it can receive the deployed update. Do not uninstall or clear data just to
+repeat an already verified installation.
+
+1. **Installation, identity and update:** Confirm the primary installed app is
+   named **The Squad**, uses the full-frame icon and opens its dashboard.
+   If installing the optional Scheduler, confirm it is a separate secondary app
+   opening `/schedule-app`; it must not replace or rename the primary app.
+   For unverified update/offline cases, confirm the updated installation opens
+   safely offline and never reveals the previous account's private content.
+2. **Closed-app notifications and badges:** From another eligible team account,
+   send one uniquely labelled message while the receiving installed app is
+   closed normally (not Android's OS “Force stop”). Record card receipt,
+   Android heads-up/dot or iPhone red badge, and correct chat tap-through as
+   separate results. Confirm reading the chat clears/updates unread indicators.
+   Preserve the prior opt-out, sender, wrong-team and account-switch passes.
+3. **Game-Day Reminder:** As an athlete/parent recipient, enable both Tactical
+   Alerts and Game-Day Reminders. Create a unique event for today in the team
+   timezone, starting at least 30 minutes ahead and after 06:00 local time.
+   Close the recipient app and allow a full 15-minute scheduler interval.
+   Record the scheduled reminder (not the immediate event-created alert),
+   correct event/team and tap destination. Then turn only Game-Day Reminders
+   off and create a second eligible event. Confirm no scheduled reminder after
+   a full interval; an immediate Tactical Alert is a different notification.
+
+For any remaining multi-device, reinstall, or service-worker update subcheck
+below without platform-specific evidence, record it separately. A generic
+“worked” does not establish every item. No browser or server test can observe
+the phone's launcher, OS notification presentation or physical receipt remotely.
+
 Date prepared: 2026-09-08
 
 This checklist contains only observations that Playwright, desktop browser
