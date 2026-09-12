@@ -3,6 +3,7 @@ import type { NextRequest } from 'next/server'
 import * as admin from 'firebase-admin'
 import { ensureAdminInit } from '@/lib/firebase-admin'
 import { isValidFirestoreDocumentId } from '@/lib/firestore-document-id'
+import { isStoreBlockedPath, isStoreDistribution } from '@/lib/app-distribution'
  
 const PROTECTED_ROOTS = new Set([
   'admin', 'calendar', 'chats', 'club', 'coaches-corner', 'competition',
@@ -176,6 +177,26 @@ function shouldNoIndex(pathname: string) {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
+
+  if (isStoreDistribution && pathname === '/') {
+    const loginUrl = request.nextUrl.clone();
+    loginUrl.pathname = '/login';
+    const response = NextResponse.rewrite(loginUrl);
+    response.headers.set('Cache-Control', 'no-store');
+    response.headers.set('X-Robots-Tag', 'noindex, nofollow');
+    return response;
+  }
+
+  if (isStoreDistribution && isStoreBlockedPath(pathname)) {
+    const unavailableUrl = request.nextUrl.clone();
+    unavailableUrl.pathname = '/app-unavailable';
+    unavailableUrl.search = '';
+    const response = NextResponse.rewrite(unavailableUrl, { status: 403 });
+    response.headers.set('Cache-Control', 'no-store');
+    response.headers.set('X-Robots-Tag', 'noindex, nofollow');
+    return response;
+  }
+
   const requestHeaders = new Headers(request.headers)
   requestHeaders.set('x-squad-pathname', pathname)
   

@@ -55,6 +55,7 @@ import { Lock as LockIcon } from 'lucide-react';
 import { DatePicker } from "@/components/ui/date-picker";
 import { StripeConnectSetup } from '@/components/finance/StripeConnectSetup';
 import { authHeader, getAuthToken } from '@/lib/client-auth';
+import { isStoreDistribution } from '@/lib/app-distribution';
 
 // ── View All Donations Modal ─────────────────────────────────────────────────
 function ViewAllDonationsModal({ fund, isOpen, onOpenChange }: { 
@@ -455,16 +456,18 @@ function AuthorizedFundraisingPage() {
                 <CardDescription className="font-bold uppercase tracking-widest text-[10px] text-muted-foreground/60">Institutional Capital Mobilization Hub</CardDescription>
               </div>
               <p className="text-xs font-medium text-muted-foreground leading-relaxed">
-                Unlock the <span className="text-primary font-black uppercase tracking-tighter">Elite Pro</span> fundraising suite. Manage multi-channel campaigns, automated audit ledgers, and institutional donor portals.
+                {isStoreDistribution
+                  ? 'This account does not currently include fundraising. Existing access is managed by your organization.'
+                  : <>Unlock the <span className="text-primary font-black uppercase tracking-tighter">Elite Pro</span> fundraising suite. Manage multi-channel campaigns, automated audit ledgers, and institutional donor portals.</>}
               </p>
             </CardHeader>
             <CardFooter className="p-10 lg:p-12 pt-0">
-              <Button 
+              {!isStoreDistribution && <Button
                 onClick={purchasePro}
                 className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all bg-primary"
               >
                 Unlock Pro Capital Hub
-              </Button>
+              </Button>}
             </CardFooter>
           </Card>
         </div>
@@ -477,7 +480,7 @@ function AuthorizedFundraisingPage() {
           <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none text-foreground">Fundraising</h1>
           <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Institutional Capital Mobilization</p>
         </div>
-        {isStaff && (
+        {!isStoreDistribution && isStaff && (
           <Button 
             onClick={() => isLimitReached ? null : setIsAddOpen(true)} 
             className={cn("h-14 px-8 rounded-2xl text-lg font-black shadow-xl transition-all", isLimitReached ? "bg-muted text-muted-foreground cursor-not-allowed" : "shadow-primary/20 active:scale-95")}
@@ -547,7 +550,7 @@ function AuthorizedFundraisingPage() {
                     <PiggyBank className="h-10 w-10" />
                   </div>
                   <div className="flex gap-1">
-                    {fund.isShareable && (
+                    {!isStoreDistribution && fund.isShareable && (
                       <Button variant="ghost" size="icon" className="h-8 w-8 text-primary hover:bg-primary/5 rounded-lg" onClick={() => handleCopyLink(fund.id)}>
                         <Share2 className="h-4 w-4" />
                       </Button>
@@ -599,7 +602,7 @@ function AuthorizedFundraisingPage() {
                       <ExternalLink className="h-4 w-4 mr-2" /> View All Donations
                     </Button>
                   </div>
-                ) : (
+                ) : !isStoreDistribution ? (
                   <div className="pt-4">
                     <Button 
                       className="w-full h-12 rounded-xl font-black uppercase text-xs shadow-lg shadow-primary/20 hover:scale-[1.02] transition-all bg-primary"
@@ -608,7 +611,7 @@ function AuthorizedFundraisingPage() {
                       <DollarSign className="h-4 w-4 mr-2" /> Contribute to Goal
                     </Button>
                   </div>
-                )}
+                ) : null}
               </CardContent>
             </Card>
           );
@@ -757,7 +760,7 @@ function AuthorizedFundraisingPage() {
                   </div>
                 </div>
                 
-                {editingFund.externalLink && (
+                {!isStoreDistribution && editingFund.externalLink && (
                   <div className="space-y-2 animate-in slide-in-from-top-2">
                     <Label className="text-[10px] font-black uppercase ml-1 text-foreground">Managed Payment Link</Label>
                     <Input readOnly value={editingFund.externalLink} className="h-12 rounded-xl border-2 bg-muted/30 font-bold text-muted-foreground" />
@@ -765,18 +768,18 @@ function AuthorizedFundraisingPage() {
                   </div>
                 )}
 
-                <div className="space-y-2 animate-in slide-in-from-top-2">
+                {!isStoreDistribution && <div className="space-y-2 animate-in slide-in-from-top-2">
                   <Label className="text-[10px] font-black uppercase ml-1 text-foreground">E-Transfer Protocol</Label>
                   <Textarea placeholder="Recipient email and security instructions..." value={editingFund.eTransferDetails} onChange={e => setEditingFund({...editingFund, eTransferDetails: e.target.value})} className="min-h-[80px] rounded-2xl border-2 font-medium bg-muted/10 resize-none p-4 text-foreground" />
-                </div>
+                </div>}
 
-                <div className="flex items-center justify-between p-5 bg-primary/5 rounded-[2rem] border-2 border-dashed border-primary/20 mt-4">
+                {!isStoreDistribution && <div className="flex items-center justify-between p-5 bg-primary/5 rounded-[2rem] border-2 border-dashed border-primary/20 mt-4">
                   <div>
                     <p className="text-xs font-black uppercase leading-tight text-foreground">Public Enrollment</p>
                     <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-tighter mt-1">Enable unauthenticated portal links</p>
                   </div>
                   <Switch checked={editingFund.isShareable} onCheckedChange={v => setEditingFund({...editingFund, isShareable: v})} />
-                </div>
+                </div>}
               </div>
             )}
             <DialogFooter>

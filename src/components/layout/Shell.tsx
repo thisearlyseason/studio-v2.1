@@ -119,6 +119,7 @@ import { cancelDemoExitPending, clearBrowserSession, clearDemoExitPending, markD
 import { deletePushDevice } from '@/lib/client-push-registration';
 import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
 import { isTeamModuleRouteDisabled } from '@/lib/team-module-visibility';
+import { isStoreDistribution } from '@/lib/app-distribution';
 const coordinationTabs = [
   { name: 'Feed', href: '/feed', icon: Radio, pro: true },
   { name: 'Schedule', href: '/events', icon: CalendarDays, pro: false },
@@ -887,7 +888,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             <SidebarFooter className="p-4 border-t bg-white space-y-3">
 
               {/* ── Pro Upgrade Banner ── show for all non-Pro users */}
-              {trialCountdown.active && (
+              {!isStoreDistribution && trialCountdown.active && (
                 <Link
                   href="/dashboard/billing"
                   className="block w-full text-left rounded-xl border border-primary/30 bg-primary/5 hover:bg-primary/10 transition-all"
@@ -904,7 +905,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   </div>
                 </Link>
               )}
-              {!isPro && !trialCountdown.active && (
+              {!isStoreDistribution && !isPro && !trialCountdown.active && (
                 <button
                   onClick={purchasePro}
                   className="w-full text-left group relative overflow-hidden rounded-xl border border-black/10 bg-black hover:bg-black/90 transition-all active:scale-[0.98] shadow-md"

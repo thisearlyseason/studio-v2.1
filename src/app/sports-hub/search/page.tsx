@@ -9,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { SearchBar } from '@/components/sports-hub/SearchBar';
 import { cn } from '@/lib/utils';
+import { isExternalPurchaseUrl, isStoreDistribution } from '@/lib/app-distribution';
 
 const ALL_CONTENT = [
   { id: '1', type: 'article', title: 'Building Championship Culture: Leadership Strategies That Actually Work', excerpt: 'Discover the proven leadership frameworks that elite coaches use.', category: 'Coaching', href: '/sports-hub/articles/building-championship-culture' },
@@ -125,6 +126,7 @@ function SearchContent() {
             {results.map((item, i) => {
               const Icon = TYPE_ICONS[item.type] || FileText;
               const isExternal = (item as any).isExternal;
+              if (isExternal && isStoreDistribution && isExternalPurchaseUrl(item.href)) return null;
               return (
                 <motion.div key={item.id} initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} transition={{ delay: i * 0.04 }}>
                   {isExternal ? (

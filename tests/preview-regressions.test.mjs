@@ -4,6 +4,7 @@ import test from 'node:test';
 
 import { dispatchTeamNotification } from '../src/lib/client-team-notification.ts';
 import { communicationDb, loadCommunicationRoute } from './helpers/communication-route-harness.mjs';
+import { signupPostVerificationPath } from '../src/lib/store-signup-policy.ts';
 
 const readSource = path => readFile(new URL(path, import.meta.url), 'utf8');
 
@@ -108,12 +109,17 @@ test('tournament enrollment accepts a code, event ID, or registration link', asy
 });
 
 test('parent recruitment requires a child and preserves the invitation through family setup', async () => {
-  const signup = await readSource('../src/app/signup/page.tsx');
   const join = await readSource('../src/app/(dashboard)/teams/join/page.tsx');
   const family = await readSource('../src/app/(dashboard)/family/page.tsx');
 
-  assert.match(signup, /role === 'parent' && teamJoinPath/);
-  assert.match(signup, /family\?addChild=1&returnTo=/);
+  assert.equal(
+    signupPostVerificationPath({ target: 'child', joinCode: 'DEMO_C', planChoice: 'starter' }, 'web'),
+    '/family?addChild=1&returnTo=%2Fteams%2Fjoin%3Fcode%3DDEMO_C',
+  );
+  assert.equal(
+    signupPostVerificationPath({ target: 'child', joinCode: 'DEMO_C', planChoice: 'starter' }, 'store'),
+    '/family?addChild=1&returnTo=%2Fteams%2Fjoin%3Fcode%3DDEMO_C',
+  );
   assert.match(join, /!isParent && <button/);
   assert.match(join, /disabled=\{isJoining \|\| !effectivePlayerId\}/);
   assert.match(family, /destination\.searchParams\.set\('playerId', cid\)/);

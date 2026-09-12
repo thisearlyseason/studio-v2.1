@@ -4,6 +4,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { PlaybookResource, PLAYBOOK_RESOURCE_TYPES } from '@/lib/sports-hub-types';
+import { isExternalPurchaseUrl, isStoreDistribution } from '@/lib/app-distribution';
 
 interface PlaybookCardProps {
   resource: PlaybookResource;
@@ -68,13 +69,13 @@ export function PlaybookCard({ resource, className }: PlaybookCardProps) {
           <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider flex items-center gap-1">
             <Download className="h-3 w-3" />{resource.downloadCount} downloads
           </span>
-          {resource.fileUrl ? (
+          {resource.fileUrl && (!isStoreDistribution || !isExternalPurchaseUrl(resource.fileUrl)) ? (
             <a href={resource.fileUrl} target="_blank" rel="noopener noreferrer" download>
               <Button size="sm" className="h-8 text-[9px] font-black uppercase tracking-widest gap-1.5">
                 <Download className="h-3 w-3" />Download
               </Button>
             </a>
-          ) : resource.videoUrl ? (
+          ) : resource.videoUrl && (!isStoreDistribution || !isExternalPurchaseUrl(resource.videoUrl)) ? (
             <a href={resource.videoUrl} target="_blank" rel="noopener noreferrer">
               <Button size="sm" variant="outline" className="h-8 text-[9px] font-black uppercase tracking-widest gap-1.5">
                 <ExternalLink className="h-3 w-3" />Watch

@@ -11,6 +11,7 @@ import { useAuth, useUser } from '@/firebase';
 import { toast } from '@/hooks/use-toast';
 import { clearBrowserSession, establishBrowserSession, sendBrandedVerificationEmail } from '@/lib/client-auth';
 import { completePendingSignupEnrollment } from '@/lib/pending-signup-enrollment';
+import { safeReturnPath } from '@/lib/app-distribution';
 
 const RESEND_COOLDOWN_MS = 60_000;
 
@@ -32,7 +33,7 @@ export default function VerifyEmailPage() {
         ? '/dashboard'
         : sessionStorage.getItem('squad_post_verify_path') || '/dashboard';
       sessionStorage.removeItem('squad_post_verify_path');
-      window.location.replace(next.startsWith('/') && !next.startsWith('//') ? next : '/dashboard');
+      window.location.replace(safeReturnPath(next));
     } catch (error) {
       completingRef.current = false;
       toast({

@@ -1,5 +1,11 @@
 import type {NextConfig} from 'next';
 
+const configuredDistribution = process.env.NEXT_PUBLIC_APP_DISTRIBUTION;
+if (configuredDistribution && configuredDistribution !== 'web' && configuredDistribution !== 'store') {
+  throw new Error('NEXT_PUBLIC_APP_DISTRIBUTION must be either "web" or "store".');
+}
+const appDistribution = configuredDistribution || 'web';
+
 const localEmulatorConnectSources =
   process.env.NODE_ENV !== 'production' &&
   process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS === 'true'
@@ -64,6 +70,7 @@ const nextConfig: NextConfig = {
   // that public web-SDK configuration to the browser bundle so each backend
   // connects to its own Firebase project instead of the local fallback.
   env: {
+    NEXT_PUBLIC_APP_DISTRIBUTION: appDistribution,
     NEXT_PUBLIC_FIREBASE_WEBAPP_CONFIG:
       process.env.VERCEL_ENV === 'production'
         ? ''

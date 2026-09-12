@@ -19,6 +19,7 @@ import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { DEMO_EXIT_PENDING_KEY, DEMO_START_KEY, getAuthToken, authHeader, clearBrowserSession, markDemoExitPending } from '@/lib/client-auth';
 import { isTeamModuleRouteDisabled } from '@/lib/team-module-visibility';
+import { isStoreDistribution, safeReturnPath } from '@/lib/app-distribution';
 import { shouldRedirectParentFromDashboard } from '@/lib/demo-plan-config';
 
 
@@ -309,9 +310,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     if (!user && !pathname.includes('seed_demo')) {
       const query = searchParams.toString();
       const returnPath = `${pathname}${query ? `?${query}` : ''}`;
-      if (returnPath.startsWith('/') && !returnPath.startsWith('//')) {
-        sessionStorage.setItem('squad_return_path', returnPath);
-      }
+      sessionStorage.setItem('squad_return_path', safeReturnPath(returnPath));
       router.push('/login');
     }
 
@@ -325,7 +324,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       // Hub mode: elite club organizer with no squad selected
       const isEliteHubMode = isEliteClubMode && !activeTeam;
 
-      if (isSchoolInstitutionMode || isEliteHubMode) {
+      if (!isStoreDistribution && (isSchoolInstitutionMode || isEliteHubMode)) {
         // No squad selected — send AD to their institutional hub
         router.replace('/club');
       } else if (shouldRedirectParentFromDashboard({
@@ -334,7 +333,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         seedLock: localStorage.getItem('squad_seeding_lock'),
       })) {
         router.push('/family');
-      } else if (userProfile?.role === 'league_creator') {
+      } else if (!isStoreDistribution && userProfile?.role === 'league_creator') {
         router.push('/competition');
       }
     }

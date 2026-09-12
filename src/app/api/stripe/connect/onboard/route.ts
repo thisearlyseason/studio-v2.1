@@ -8,6 +8,7 @@ import {
   readJsonBodyWithLimit,
   RequestBodyError,
 } from '@/lib/server-request-guards';
+import { storePurchaseResponse } from '@/lib/store-request-guard';
 
 /**
  * POST /api/stripe/connect/onboard
@@ -26,6 +27,8 @@ import {
  */
 
 export async function POST(req: NextRequest) {
+  const blocked = storePurchaseResponse();
+  if (blocked) return blocked;
   const auth = await verifyFirebaseToken(req);
   if (auth instanceof NextResponse) return auth;
 
