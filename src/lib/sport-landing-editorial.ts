@@ -6,7 +6,7 @@ type Editorial = {
 };
 
 // Handwritten sport-specific workflows. Describe coordination tools, not specialized scoring engines.
-export const SPORT_EDITORIAL: Record<SportSlug, Editorial> = {
+export const SPORT_EDITORIAL: Partial<Record<SportSlug, Editorial>> = {
   soccer: {
     headline: 'Less chasing replies. More time on the pitch.',
     intro: 'Bring field changes, match availability, and family updates into the same workspace—from the first training session to the last whistle.',

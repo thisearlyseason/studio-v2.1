@@ -1,7 +1,10 @@
+import { NEW_SPORT_LANDINGS, NEW_SPORT_SLUGS, type NewSportSlug } from './sport-expansion';
+
 export const SPORT_SLUGS = [
   'soccer', 'basketball', 'baseball', 'rugby', 'football', 'cornhole', 'gymnastics',
   'pickleball', 'tennis', 'golf', 'swimming', 'esports', 'ultimate-frisbee', 'disc-golf',
-  'hockey', 'slo-pitch', 'softball', 'volleyball', 'field-lacrosse', 'box-lacrosse',
+  'hockey', 'slo-pitch', 'field-lacrosse', 'box-lacrosse',
+  ...NEW_SPORT_SLUGS,
 ] as const;
 
 export type SportSlug = typeof SPORT_SLUGS[number];
@@ -13,6 +16,7 @@ export type SportLanding = {
   seoDescription: string;
   heroImage: string;
   heroAlt: string;
+  scoresheetSlug: string;
   headline: string;
   description: string;
   registration: string;
@@ -26,10 +30,11 @@ export type SportLanding = {
 const CORE_SPORT_LANDINGS: Record<'soccer' | 'basketball', SportLanding> = {
   soccer: {
     slug: 'soccer',
+    scoresheetSlug: 'soccer-scoresheet',
     name: 'Soccer',
     seoTitle: 'Soccer Team and League Management Software',
     seoDescription: 'Manage soccer registration, rosters, field schedules, attendance, communication, tournaments, scores, and family access with The Squad.',
-    heroImage: '/images/sports/soccer.webp',
+    heroImage: '/images/sports/photography/soccer.webp',
     heroAlt: 'Soccer ball resting on a grass pitch',
     headline: 'Soccer team and league management software',
     description: 'Connect registration, rosters, field schedules, attendance, team communication, tournament operations, and public match information in one soccer workspace.',
@@ -66,11 +71,12 @@ const CORE_SPORT_LANDINGS: Record<'soccer' | 'basketball', SportLanding> = {
   },
   basketball: {
     slug: 'basketball',
+    scoresheetSlug: 'basketball-scoresheet',
     name: 'Basketball',
     seoTitle: 'Basketball Team and League Management Software',
     seoDescription: 'Manage basketball registration, rosters, court schedules, attendance, communication, tournaments, scorekeeping, and family access with The Squad.',
-    heroImage: '/images/sports/basketball.webp',
-    heroAlt: 'Basketball and hoop on an indoor court',
+    heroImage: '/images/sports/photography/basketball.webp',
+    heroAlt: 'Basketball on a wooden indoor court with a hoop in the background',
     headline: 'Basketball team and league management software',
     description: 'Keep player registration, rosters, court schedules, attendance, team communication, tournament brackets, and live game operations connected throughout the season.',
     registration: 'Collect player or team information, age group, division, coach contacts, waivers, signatures, and payment status in configurable basketball registration forms.',
@@ -108,31 +114,30 @@ const CORE_SPORT_LANDINGS: Record<'soccer' | 'basketball', SportLanding> = {
 
 type AdditionalSportConfig = { name: string; focus: string; heroImage: string; heroAlt: string };
 
-const ADDITIONAL_SPORTS: Record<Exclude<SportSlug, 'soccer' | 'basketball'>, AdditionalSportConfig> = {
-  hockey: { name: 'Hockey', focus: 'ice-time coordination, team rosters, bench communication, and tournament weekends', heroImage: '/images/sports/hockey.svg', heroAlt: 'Original illustration of an ice hockey rink' },
-  'slo-pitch': { name: 'Slo-Pitch', focus: 'diamond schedules, batting-order preparation, league nights, and weekend tournaments', heroImage: '/images/sports/slo-pitch.svg', heroAlt: 'Original illustration of a slo-pitch diamond' },
-  softball: { name: 'Softball', focus: 'diamond coordination, team availability, player registration, and tournament logistics', heroImage: '/images/sports/softball.svg', heroAlt: 'Original illustration of a softball diamond and ball' },
-  volleyball: { name: 'Volleyball', focus: 'court assignments, match schedules, team communication, and tournament operations', heroImage: '/images/sports/volleyball.svg', heroAlt: 'Original illustration of an indoor volleyball court' },
-  'field-lacrosse': { name: 'Field Lacrosse', focus: 'field allocations, squad availability, competition registration, and match-day coordination', heroImage: '/images/sports/field-lacrosse.svg', heroAlt: 'Original illustration of a field lacrosse playing surface' },
-  'box-lacrosse': { name: 'Box Lacrosse', focus: 'arena schedules, bench preparation, team rosters, and competition weekends', heroImage: '/images/sports/box-lacrosse.svg', heroAlt: 'Original illustration of a box lacrosse arena' },
-  baseball: { name: 'Baseball', focus: 'diamond scheduling, player development, scorekeeping, and tournament operations', heroImage: '/images/sports/baseball.webp', heroAlt: 'Baseball diamond viewed from above' },
-  rugby: { name: 'Rugby', focus: 'club registration, pitch scheduling, rosters, safeguarding, and match-day communication', heroImage: '/images/sports/rugby.webp', heroAlt: 'Rugby players engaged in a scrum' },
-  football: { name: 'Football', focus: 'team registration, practice facilities, roster permissions, game-day roles, and league scheduling', heroImage: '/images/sports/football.webp', heroAlt: 'American football on a marked field' },
-  cornhole: { name: 'Cornhole', focus: 'league registration, bracket scheduling, venue setup, scorekeeping, and player communication', heroImage: '/images/sports/cornhole.webp', heroAlt: 'Players competing with cornhole boards' },
-  gymnastics: { name: 'Gymnastics', focus: 'class enrollment, coach assignments, attendance, skill progress, family updates, and showcases', heroImage: '/images/sports/gymnastics.webp', heroAlt: 'Gymnast performing on a balance beam' },
-  pickleball: { name: 'Pickleball', focus: 'court bookings, ladders, leagues, player registration, match schedules, and event communication', heroImage: '/images/sports/pickleball.webp', heroAlt: 'Pickleball court with net and line markings' },
-  tennis: { name: 'Tennis', focus: 'court scheduling, lesson rosters, ladders, clinics, tournaments, and player communication', heroImage: '/images/sports/tennis.webp', heroAlt: 'Tennis player serving on a clay court' },
-  golf: { name: 'Golf', focus: 'club events, tee-time registration, divisions, volunteer coordination, and tournament results', heroImage: '/images/sports/golf.webp', heroAlt: 'Golfer driving on a fairway' },
-  swimming: { name: 'Swimming', focus: 'lane scheduling, meet registration, athlete rosters, attendance, results, and family communication', heroImage: '/images/sports/swimming.webp', heroAlt: 'Swimmer racing in a marked pool lane' },
-  esports: { name: 'Esports', focus: 'player enrollment, team rosters, match scheduling, permissions, broadcasts, and competition operations', heroImage: '/images/sports/esports.webp', heroAlt: 'Esports player competing at a gaming setup' },
-  'ultimate-frisbee': { name: 'Ultimate Frisbee', focus: 'club registration, field scheduling, spirit standards, rosters, tournaments, and team communication', heroImage: '/images/sports/ultimate-frisbee.webp', heroAlt: 'Ultimate Frisbee player throwing a flying disc' },
-  'disc-golf': { name: 'Disc Golf', focus: 'league registration, course scheduling, divisions, scorekeeping, events, and player updates', heroImage: '/images/sports/disc-golf.webp', heroAlt: 'Disc golf basket on a wooded course' },
+const ADDITIONAL_SPORTS: Record<Exclude<SportSlug, 'soccer' | 'basketball' | NewSportSlug>, AdditionalSportConfig> = {
+  'box-lacrosse': { name: 'Box Lacrosse', focus: 'arena schedules, bench preparation, team rosters, and competition weekends', heroImage: '/images/sports/photography/box-lacrosse.webp', heroAlt: 'Lacrosse stick and ball with a goal in the background' },
+  'field-lacrosse': { name: 'Field Lacrosse', focus: 'field allocations, squad availability, competition registration, and match-day coordination', heroImage: '/images/sports/photography/field-lacrosse.webp', heroAlt: 'Lacrosse stick and ball on a grass playing field' },
+  'slo-pitch': { name: 'Slo-Pitch', focus: 'diamond schedules, batting-order preparation, league nights, and weekend tournaments', heroImage: '/images/sports/photography/slo-pitch.webp', heroAlt: 'Softball and glove beside a ball diamond' },
+  hockey: { name: 'Hockey', focus: 'ice-time coordination, team rosters, bench communication, and tournament weekends', heroImage: '/images/sports/photography/hockey.webp', heroAlt: 'Ice hockey puck and stick on rink ice' },
+  baseball: { name: 'Baseball', focus: 'diamond scheduling, player development, scorekeeping, and tournament operations', heroImage: '/images/sports/photography/baseball.webp', heroAlt: 'Baseball and leather glove on the dirt beside a baseball field' },
+  rugby: { name: 'Rugby', focus: 'club registration, pitch scheduling, rosters, safeguarding, and match-day communication', heroImage: '/images/sports/photography/rugby.webp', heroAlt: 'Rugby ball on a grass pitch with rugby posts in the background' },
+  football: { name: 'Football', focus: 'team registration, practice facilities, roster permissions, game-day roles, and league scheduling', heroImage: '/images/sports/photography/football.webp', heroAlt: 'American football on a marked field' },
+  cornhole: { name: 'Cornhole', focus: 'league registration, bracket scheduling, venue setup, scorekeeping, and player communication', heroImage: '/images/sports/photography/cornhole.webp', heroAlt: 'Fabric bean bags on a wooden cornhole board in a grass recreation area' },
+  gymnastics: { name: 'Gymnastics', focus: 'class enrollment, coach assignments, attendance, skill progress, family updates, and showcases', heroImage: '/images/sports/photography/gymnastics.webp', heroAlt: 'Suede gymnastics balance beam and leather grips in a training gym' },
+  pickleball: { name: 'Pickleball', focus: 'court bookings, ladders, leagues, player registration, match schedules, and event communication', heroImage: '/images/sports/photography/pickleball.webp', heroAlt: 'Pickleball paddle and yellow perforated ball on a blue court' },
+  tennis: { name: 'Tennis', focus: 'court scheduling, lesson rosters, ladders, clinics, tournaments, and player communication', heroImage: '/images/sports/photography/tennis.webp', heroAlt: 'Tennis racket and yellow ball on a clay court with a net behind' },
+  golf: { name: 'Golf', focus: 'club events, tee-time registration, divisions, volunteer coordination, and tournament results', heroImage: '/images/sports/photography/golf.webp', heroAlt: 'Golf ball on a tee beside a driver with a fairway in the background' },
+  swimming: { name: 'Swimming', focus: 'lane scheduling, meet registration, athlete rosters, attendance, results, and family communication', heroImage: '/images/sports/photography/swimming.webp', heroAlt: 'Swimming goggles and cap on a wet pool deck beside racing lanes' },
+  esports: { name: 'Esports', focus: 'player enrollment, team rosters, match scheduling, permissions, broadcasts, and competition operations', heroImage: '/images/sports/photography/esports.webp', heroAlt: 'Gaming headset, keyboard, and mouse at an esports desk' },
+  'ultimate-frisbee': { name: 'Ultimate Frisbee', focus: 'club registration, field scheduling, spirit standards, rosters, tournaments, and team communication', heroImage: '/images/sports/photography/ultimate-frisbee.webp', heroAlt: 'White flying disc on a grass ultimate field with orange cones behind' },
+  'disc-golf': { name: 'Disc Golf', focus: 'league registration, course scheduling, divisions, scorekeeping, events, and player updates', heroImage: '/images/sports/photography/disc-golf.webp', heroAlt: 'Disc golf discs on grass with a chain basket on a wooded course' },
 };
 
-function buildAdditionalLanding(slug: Exclude<SportSlug, 'soccer' | 'basketball'>, config: AdditionalSportConfig): SportLanding {
+function buildAdditionalLanding(slug: Exclude<SportSlug, 'soccer' | 'basketball' | NewSportSlug>, config: AdditionalSportConfig): SportLanding {
   const lower = config.name.toLowerCase();
   return {
     slug, name: config.name,
+    scoresheetSlug: `${slug}-scoresheet`,
     seoTitle: `${config.name} Team and League Management Software`,
     seoDescription: `Manage ${lower} registration, rosters, schedules, communication, events, and family access with The Squad.`,
     heroImage: config.heroImage, heroAlt: config.heroAlt,
@@ -157,12 +162,14 @@ function buildAdditionalLanding(slug: Exclude<SportSlug, 'soccer' | 'basketball'
 
 const BASE_SPORT_LANDINGS: Record<SportSlug, SportLanding> = {
   ...CORE_SPORT_LANDINGS,
-  ...Object.fromEntries(Object.entries(ADDITIONAL_SPORTS).map(([slug, config]) => [slug, buildAdditionalLanding(slug as Exclude<SportSlug, 'soccer' | 'basketball'>, config)])),
+  ...NEW_SPORT_LANDINGS,
+  ...Object.fromEntries(Object.entries(ADDITIONAL_SPORTS).map(([slug, config]) => [slug, buildAdditionalLanding(slug as Exclude<SportSlug, 'soccer' | 'basketball' | NewSportSlug>, config)])),
 } as Record<SportSlug, SportLanding>;
 
 export const SPORT_LANDINGS = Object.fromEntries(SPORT_SLUGS.map(slug => {
   const base = BASE_SPORT_LANDINGS[slug];
   const editorial = SPORT_EDITORIAL[slug];
+  if (!editorial || NEW_SPORT_SLUGS.includes(slug as NewSportSlug)) return [slug, base];
   return [slug, {
     ...base,
     headline: editorial.headline,
