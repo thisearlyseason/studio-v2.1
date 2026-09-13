@@ -27,13 +27,21 @@ xcodebuild -quiet \
   -sdk iphonesimulator \
   -destination "platform=iOS Simulator,id=$SQUAD_IOS_SIMULATOR" \
   -derivedDataPath native/ios/.build/task1-derived-data \
-  CODE_SIGNING_ALLOWED=NO test
+  CODE_SIGNING_ALLOWED=NO build-for-testing
 xcrun simctl install "$SQUAD_IOS_SIMULATOR" \
   native/ios/.build/task1-derived-data/Build/Products/Debug-iphonesimulator/SquadShell.app
+xcodebuild -quiet \
+  -project native/ios/SquadShell.xcodeproj \
+  -scheme SquadShell \
+  -configuration Debug \
+  -sdk iphonesimulator \
+  -destination "platform=iOS Simulator,id=$SQUAD_IOS_SIMULATOR" \
+  -derivedDataPath native/ios/.build/task1-derived-data \
+  CODE_SIGNING_ALLOWED=NO test-without-building
 xcrun simctl launch "$SQUAD_IOS_SIMULATOR" pro.thesquad.shell.dev
 ```
 
-The accepted result was 17 XCTest passes. A first cold managed-test attempt crashed before tests connected because the simulator referenced a stale temporary container and could not find `SquadShell.debug.dylib`; explicit boot status plus reinstalling the matching app resolved it without a code change. The actual app showed the safe no-origin setup and retry UI in portrait and landscape with no web content exposed.
+The accepted result was 24 XCTest passes. A first cold managed-test attempt crashed before tests connected because the simulator referenced a stale temporary container and could not find `SquadShell.debug.dylib`; explicit boot status plus building for testing, reinstalling the matching app, and testing without rebuilding resolves that runner state without a code change. The actual app showed the safe no-origin setup and retry UI in portrait and landscape with no web content exposed. Controller regressions use real `WKNavigation` identities from `WKWebView`, while directly driving delegate outcomes; they are not hosted-navigation proof.
 
 For Android, use the pinned toolchain and the explicitly owned emulator:
 
@@ -46,7 +54,7 @@ native/android/gradlew -p native/android \
   --rerun-tasks
 ```
 
-The accepted result was a successful Debug build, lint with 0 errors and 1 deliberate pinned-Gradle 9.3.1 newer-version advisory, and 45/45 instrumentation tests with 0 failures, errors or skips. Compilation also emits a transparent deprecated-API note; the former Gradle assignment deprecation warnings were fixed. Instrumentation includes a real attached hidden WebView reaching a controlled same-origin HTTPS commit callback; it is not hosted or authenticated proof.
+The accepted result was a successful Debug build, lint with 0 errors and 1 deliberate pinned-Gradle 9.3.1 newer-version advisory, and 47/47 instrumentation tests with 0 failures, errors or skips. Compilation also emits a transparent deprecated-API note; the former Gradle assignment deprecation warnings were fixed. Instrumentation includes a real attached hidden WebView reaching a controlled same-origin HTTPS commit callback; it is not hosted or authenticated proof.
 
 Install and inspect the matching APK with:
 

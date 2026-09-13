@@ -62,13 +62,8 @@ final class ShellViewControllerTests: XCTestCase {
 
   func testBackgroundHidesContentUntilForegroundRecheck() {
     let bootstrap = ControlledBootstrap()
-    let controller = ShellViewController(destination: destination, bootstrap: bootstrap)
-    controller.loadViewIfNeeded()
-    controller.viewDidAppear(false)
-    bootstrap.checks[0].completion(true)
-    let webView = findSubview(WKWebView.self, in: controller.view)!
-    controller.webView(webView, didFinish: nil)
-    XCTAssertFalse(webView.isHidden)
+    let (controller, webView, _) = makeControllerWithSuccessfulPage(bootstrap: bootstrap)
+    defer { withExtendedLifetime(controller) {} }
 
     NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
     XCTAssertTrue(webView.isHidden)
@@ -86,12 +81,16 @@ final class ShellViewControllerTests: XCTestCase {
     controller.viewDidAppear(false)
     bootstrap.checks[0].completion(true)
     let webView = findSubview(WKWebView.self, in: controller.view)!
+    let navigation = startNavigation(
+      in: controller, webView: webView, url: "https://store.example.com/dashboard")
 
     NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
     NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
-    controller.webView(webView, didFinish: nil)
+    controller.webView(webView, didFinish: navigation)
 
     XCTAssertTrue(webView.isHidden)
+    bootstrap.checks[1].completion(true)
+    XCTAssertFalse(webView.isHidden)
   }
 
   func testNavigationPolicyAllowsOnlyConfiguredOrigin() {
@@ -117,12 +116,7 @@ final class ShellViewControllerTests: XCTestCase {
 
   func testCancelledBlockedNavigationDoesNotHideTrustedPage() {
     let bootstrap = ControlledBootstrap()
-    let controller = ShellViewController(destination: destination, bootstrap: bootstrap)
-    controller.loadViewIfNeeded()
-    controller.viewDidAppear(false)
-    bootstrap.checks[0].completion(true)
-    let webView = findSubview(WKWebView.self, in: controller.view)!
-    controller.webView(webView, didFinish: nil)
+    let (controller, webView, _) = makeControllerWithSuccessfulPage(bootstrap: bootstrap)
 
     controller.webView(
       webView,
@@ -131,6 +125,163 @@ final class ShellViewControllerTests: XCTestCase {
     )
 
     XCTAssertFalse(webView.isHidden)
+  }
+
+  func testWebProcessFailureDuringForegroundVerificationRejectsLateBootstrapSuccess() {
+    let bootstrap = ControlledBootstrap()
+    let (controller, webView, _) = makeControllerWithSuccessfulPage(bootstrap: bootstrap)
+
+    NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+    NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+    XCTAssertEqual(bootstrap.checks.count, 2)
+
+    controller.webViewWebContentProcessDidTerminate(webView)
+    XCTAssertTrue(bootstrap.checks[1].cancellation.isCancelled)
+    bootstrap.checks[1].completion(true)
+
+    XCTAssertEqual(labelText("shell-title", in: controller), "Unable to open The Squad")
+    XCTAssertTrue(webView.isHidden)
+  }
+
+  func testObsoleteCompletionAfterRetryCannotRevealNewPage() {
+    let bootstrap = ControlledBootstrap()
+    let (controller, webView, _) = makeControllerWithSuccessfulPage(bootstrap: bootstrap)
+    let failedNavigation = startNavigation(
+      in: controller, webView: webView, url: "https://store.example.com/teams")
+    controller.webView(
+      webView,
+      didFailProvisionalNavigation: failedNavigation,
+      withError: URLError(.cannotConnectToHost)
+    )
+
+    tapRetry(in: controller)
+    bootstrap.checks[1].completion(true)
+    controller.webView(webView, didFinish: failedNavigation)
+
+    XCTAssertTrue(webView.isHidden)
+    XCTAssertEqual(labelText("shell-title", in: controller), "Checking app…")
+  }
+
+  func testObsoleteStartAndCompletionAfterRetryCannotReplaceCurrentNavigation() {
+    let bootstrap = ControlledBootstrap()
+    let (controller, webView, _) = makeControllerWithSuccessfulPage(bootstrap: bootstrap)
+    let failedNavigation = startNavigation(
+      in: controller, webView: webView, url: "https://store.example.com/teams")
+    controller.webView(
+      webView,
+      didFailProvisionalNavigation: failedNavigation,
+      withError: URLError(.cannotConnectToHost)
+    )
+
+    tapRetry(in: controller)
+    bootstrap.checks[1].completion(true)
+    let delegate: WKNavigationDelegate = controller
+    delegate.webView?(webView, didStartProvisionalNavigation: failedNavigation)
+    controller.webView(webView, didFinish: failedNavigation)
+
+    XCTAssertTrue(webView.isHidden)
+    XCTAssertEqual(labelText("shell-title", in: controller), "Checking app…")
+  }
+
+  func testObsoleteFailureAfterRetryCannotHideNewSuccessfulPage() {
+    let bootstrap = ControlledBootstrap()
+    let (controller, webView, _) = makeControllerWithSuccessfulPage(bootstrap: bootstrap)
+    let failedNavigation = startNavigation(
+      in: controller, webView: webView, url: "https://store.example.com/teams")
+    controller.webView(
+      webView,
+      didFailProvisionalNavigation: failedNavigation,
+      withError: URLError(.cannotConnectToHost)
+    )
+
+    tapRetry(in: controller)
+    bootstrap.checks[1].completion(true)
+    let replacementNavigation = startNavigation(
+      in: controller, webView: webView, url: "https://store.example.com/dashboard")
+    controller.webView(webView, didFinish: replacementNavigation)
+    controller.webView(
+      webView,
+      didFail: failedNavigation,
+      withError: URLError(.networkConnectionLost)
+    )
+
+    XCTAssertFalse(webView.isHidden)
+  }
+
+  func testNonCancellationMainFrameFailureShowsRetry() {
+    let bootstrap = ControlledBootstrap()
+    let (controller, webView, _) = makeControllerWithSuccessfulPage(bootstrap: bootstrap)
+    let navigation = startNavigation(
+      in: controller, webView: webView, url: "https://store.example.com/teams")
+
+    controller.webView(
+      webView,
+      didFailProvisionalNavigation: navigation,
+      withError: URLError(.cannotConnectToHost)
+    )
+
+    XCTAssertEqual(labelText("shell-title", in: controller), "Unable to open The Squad")
+    XCTAssertTrue(webView.isHidden)
+  }
+
+  func testNewMainFrameNavigationHidesCompletedPageUntilItFinishes() {
+    let bootstrap = ControlledBootstrap()
+    let (controller, webView, _) = makeControllerWithSuccessfulPage(bootstrap: bootstrap)
+
+    let navigation = startNavigation(
+      in: controller, webView: webView, url: "https://store.example.com/teams")
+
+    XCTAssertTrue(webView.isHidden)
+    XCTAssertEqual(labelText("shell-title", in: controller), "Checking app…")
+
+    controller.webView(webView, didFinish: navigation)
+    XCTAssertFalse(webView.isHidden)
+  }
+
+  func testUnfinishedPageStaysHiddenAcrossForegroundRecheck() {
+    let bootstrap = ControlledBootstrap()
+    let (controller, webView, _) = makeControllerWithSuccessfulPage(bootstrap: bootstrap)
+    let unfinishedNavigation = startNavigation(
+      in: controller, webView: webView, url: "https://store.example.com/teams")
+
+    NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+    NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+    bootstrap.checks[1].completion(true)
+    XCTAssertTrue(webView.isHidden)
+    controller.webView(webView, didFinish: unfinishedNavigation)
+
+    XCTAssertFalse(webView.isHidden)
+  }
+
+  private func makeControllerWithSuccessfulPage(
+    bootstrap: ControlledBootstrap
+  ) -> (ShellViewController, WKWebView, WKNavigation) {
+    let controller = ShellViewController(destination: destination, bootstrap: bootstrap)
+    controller.loadViewIfNeeded()
+    controller.viewDidAppear(false)
+    bootstrap.checks[0].completion(true)
+    let webView = findSubview(WKWebView.self, in: controller.view)!
+    let navigation = startNavigation(
+      in: controller, webView: webView, url: "https://store.example.com/dashboard")
+    controller.webView(webView, didFinish: navigation)
+    XCTAssertFalse(webView.isHidden)
+    return (controller, webView, navigation)
+  }
+
+  private func startNavigation(
+    in controller: ShellViewController,
+    webView: WKWebView,
+    url: String
+  ) -> WKNavigation {
+    let navigation = webView.load(URLRequest(url: URL(string: url)!))!
+    let delegate: WKNavigationDelegate = controller
+    delegate.webView?(webView, didStartProvisionalNavigation: navigation)
+    return navigation
+  }
+
+  private func tapRetry(in controller: ShellViewController) {
+    (viewWithAccessibilityID("shell-retry", in: controller.view) as! UIButton).sendActions(
+      for: .touchUpInside)
   }
 
   private func labelText(_ identifier: String, in controller: UIViewController) -> String? {

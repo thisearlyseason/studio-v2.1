@@ -99,6 +99,63 @@ public final class ShellLifecycleControllerInstrumentedTest {
     }
 
     @Test
+    public void newMainFrameNavigationHidesCompletedPageUntilCommitAndFinish() {
+        ControlledBootstrap bootstrap = new ControlledBootstrap();
+        RecordingRenderer renderer = new RecordingRenderer();
+        ShellLifecycleController controller =
+                new ShellLifecycleController(DESTINATION, bootstrap, renderer);
+
+        controller.foreground();
+        bootstrap.checks.get(0).completion.accept(true);
+        long firstGeneration =
+                controller.navigationStarted("https://store.example.com/dashboard");
+        controller.pageCommitted(firstGeneration, "https://store.example.com/dashboard");
+        controller.pageFinished(firstGeneration, "https://store.example.com/dashboard");
+        assertTrue(renderer.contentVisible);
+
+        long secondGeneration =
+                controller.navigationStarted("https://store.example.com/teams");
+
+        assertEquals(ShellLifecycleController.NativeState.CHECKING, renderer.state);
+        assertFalse(renderer.contentVisible);
+        controller.pageCommitted(secondGeneration, "https://store.example.com/teams");
+        assertFalse(renderer.contentVisible);
+        controller.pageFinished(secondGeneration, "https://store.example.com/teams");
+        assertTrue(renderer.contentVisible);
+    }
+
+    @Test
+    public void unfinishedPageStaysHiddenAcrossForegroundRecheck() {
+        ControlledBootstrap bootstrap = new ControlledBootstrap();
+        RecordingRenderer renderer = new RecordingRenderer();
+        ShellLifecycleController controller =
+                new ShellLifecycleController(DESTINATION, bootstrap, renderer);
+
+        controller.foreground();
+        bootstrap.checks.get(0).completion.accept(true);
+        long firstGeneration =
+                controller.navigationStarted("https://store.example.com/dashboard");
+        controller.pageCommitted(firstGeneration, "https://store.example.com/dashboard");
+        controller.pageFinished(firstGeneration, "https://store.example.com/dashboard");
+        long unfinishedGeneration =
+                controller.navigationStarted("https://store.example.com/teams");
+
+        controller.background();
+        controller.foreground();
+        bootstrap.checks.get(1).completion.accept(true);
+
+        assertEquals(ShellLifecycleController.NativeState.CHECKING, renderer.state);
+        assertFalse(renderer.contentVisible);
+        assertEquals(1, renderer.loadedUrls.size());
+        controller.pageCommitted(unfinishedGeneration, "https://store.example.com/teams");
+        assertFalse(renderer.contentVisible);
+        controller.pageFinished(unfinishedGeneration, "https://store.example.com/teams");
+
+        assertEquals(ShellLifecycleController.NativeState.CONTENT, renderer.state);
+        assertTrue(renderer.contentVisible);
+    }
+
+    @Test
     public void pageFailureRequiresReloadAfterSuccessfulRetry() {
         ControlledBootstrap bootstrap = new ControlledBootstrap();
         RecordingRenderer renderer = new RecordingRenderer();

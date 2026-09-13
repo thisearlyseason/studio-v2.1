@@ -114,6 +114,9 @@ final class ShellLifecycleController {
         pageReady = false;
         pageCommitted = false;
         pageFinished = false;
+        if (active) {
+            renderer.showNative(NativeState.CHECKING);
+        }
         long startedGeneration = navigationGeneration;
         long startedDeadlineToken = ++deadlineToken;
         navigationDeadline = deadlineScheduler.schedule(
@@ -211,7 +214,7 @@ final class ShellLifecycleController {
         verified = true;
         if (pageReady) {
             renderer.showContent();
-        } else {
+        } else if (navigationDeadline == null) {
             renderer.loadDashboard(destination.origin() + "/dashboard");
         }
     }

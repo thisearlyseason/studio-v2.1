@@ -19,6 +19,8 @@ final class ShellViewController: UIViewController, WKNavigationDelegate, WKUIDel
   private var wasBackgrounded = false
   private var hasSuccessfulPage = false
   private var bootstrapAccepted = false
+  private var currentNavigation: WKNavigation?
+  private let retiredNavigations = NSHashTable<WKNavigation>.weakObjects()
 
   init(destination: StoreDestination?, bootstrap: StoreBootstrapChecking) {
     self.destination = destination
@@ -201,20 +203,30 @@ final class ShellViewController: UIViewController, WKNavigationDelegate, WKUIDel
     return nil
   }
 
+  func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+    guard let navigation else { return }
+    beginPageNavigation(navigation)
+  }
+
   func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) {
-    guard bootstrapAccepted, !wasBackgrounded,
-      navigationPolicy(for: webView.url) == .allow
-    else {
+    guard isCurrentNavigation(navigation) else { return }
+    guard navigationPolicy(for: webView.url) == .allow else {
+      showPageFailure()
+      return
+    }
+
+    retireCurrentNavigation(stopping: false)
+    hasSuccessfulPage = true
+    guard bootstrapAccepted, !wasBackgrounded else {
       webView.isHidden = true
       return
     }
-    hasSuccessfulPage = true
     stateStack.isHidden = true
     webView.isHidden = false
   }
 
   func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
-    handleNavigationFailure(error)
+    handleNavigationFailure(navigation, error: error)
   }
 
   func webView(
@@ -222,7 +234,7 @@ final class ShellViewController: UIViewController, WKNavigationDelegate, WKUIDel
     didFailProvisionalNavigation navigation: WKNavigation!,
     withError error: Error
   ) {
-    handleNavigationFailure(error)
+    handleNavigationFailure(navigation, error: error)
   }
 
   func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
@@ -230,7 +242,7 @@ final class ShellViewController: UIViewController, WKNavigationDelegate, WKUIDel
   }
 
   @objc private func retryTapped() {
-    beginVerification()
+    beginVerification(retiringCurrentPage: true)
   }
 
   @objc private func didEnterBackground() {
@@ -250,6 +262,10 @@ final class ShellViewController: UIViewController, WKNavigationDelegate, WKUIDel
   }
 
   private func beginVerification() {
+    beginVerification(retiringCurrentPage: false)
+  }
+
+  private func beginVerification(retiringCurrentPage: Bool) {
     generation += 1
     let currentGeneration = generation
     bootstrapAccepted = false
@@ -257,6 +273,10 @@ final class ShellViewController: UIViewController, WKNavigationDelegate, WKUIDel
     verification = nil
     blockedLinkLabel.isHidden = true
     webView.isHidden = true
+    if retiringCurrentPage {
+      retireCurrentNavigation(stopping: true)
+      hasSuccessfulPage = false
+    }
 
     guard let destination else {
       showSetupRequired()
@@ -292,6 +312,11 @@ final class ShellViewController: UIViewController, WKNavigationDelegate, WKUIDel
       return
     }
 
+    if currentNavigation != nil {
+      showChecking()
+      return
+    }
+
     guard let destination,
       let dashboardURL = URL(string: destination.origin + "/dashboard"),
       navigationPolicy(for: dashboardURL) == .allow
@@ -300,7 +325,11 @@ final class ShellViewController: UIViewController, WKNavigationDelegate, WKUIDel
       return
     }
     showChecking()
-    webView.load(URLRequest(url: dashboardURL))
+    guard let navigation = webView.load(URLRequest(url: dashboardURL)) else {
+      showPageFailure()
+      return
+    }
+    beginPageNavigation(navigation)
   }
 
   private func showChecking() {
@@ -330,16 +359,49 @@ final class ShellViewController: UIViewController, WKNavigationDelegate, WKUIDel
   }
 
   private func showPageFailure() {
+    generation += 1
+    verification?.cancel()
+    verification = nil
+    bootstrapAccepted = false
     hasSuccessfulPage = false
+    retireCurrentNavigation(stopping: true)
     showUnableToOpen()
   }
 
-  private func handleNavigationFailure(_ error: Error) {
+  private func handleNavigationFailure(_ navigation: WKNavigation?, error: Error) {
     let error = error as NSError
     guard !(error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled) else {
       return
     }
+    guard isCurrentNavigation(navigation) else { return }
     showPageFailure()
+  }
+
+  private func beginPageNavigation(_ navigation: WKNavigation) {
+    guard !retiredNavigations.contains(navigation) else { return }
+    if let currentNavigation {
+      guard currentNavigation !== navigation else { return }
+      retiredNavigations.add(currentNavigation)
+    }
+    currentNavigation = navigation
+    hasSuccessfulPage = false
+    webView.isHidden = true
+    showChecking()
+  }
+
+  private func isCurrentNavigation(_ navigation: WKNavigation?) -> Bool {
+    guard let navigation, let currentNavigation else { return false }
+    return navigation === currentNavigation
+  }
+
+  private func retireCurrentNavigation(stopping: Bool) {
+    if let currentNavigation {
+      retiredNavigations.add(currentNavigation)
+      self.currentNavigation = nil
+    }
+    if stopping {
+      webView.stopLoading()
+    }
   }
 
   private func showBlockedLink() {

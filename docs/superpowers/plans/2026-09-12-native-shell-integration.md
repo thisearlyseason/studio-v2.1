@@ -211,7 +211,7 @@ If the user approves the separate QA deployment, first establish an actual isola
 
 - [ ] **Step 4: Final review and local handoff.**
 
-Local handoff evidence is recorded. Final whole-package review, including the named iOS navigation-callback risk, and test-device cleanup remain pending for the controller.
+Local handoff evidence is recorded. The combined final-fix wave now correlates iOS page callbacks to real `WKNavigation` identities, invalidates pending verification on current page/process failure, hides later full-page navigation on both platforms, and preserves a viable pending or completed document across a foreground recheck. Fresh local gates are 24/24 XCTest and Android Debug/lint plus 47/47 instrumentation. Final scoped re-review and test-device cleanup remain pending for the controller; the owned iPhone 17 Pro simulator and only `emulator-5554` were intentionally left running for that review.
 
 Record passed/failed/blocked distinctions, known warnings and native-provider/release work remaining. Obtain final review and fresh focused verification after fixes. Keep commits local; production deployment and app-store publishing are excluded. Shut down only test services/devices started by this work.
 
