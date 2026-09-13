@@ -27,6 +27,8 @@ interface NavigationEvents {
 
     long navigationStarted(String url);
 
+    void pageCommitted(long navigationGeneration, String url);
+
     void pageFinished(long navigationGeneration, String url);
 
     void pageFailed(long navigationGeneration);
@@ -112,6 +114,13 @@ final class GuardedWebViewClient extends WebViewClient {
         } else {
             rememberBlocked(url);
             notifyBlocked(view);
+        }
+    }
+
+    @Override
+    public void onPageCommitVisible(WebView view, String url) {
+        if (destination.allows(url)) {
+            events.pageCommitted(generationFor(url), url);
         }
     }
 

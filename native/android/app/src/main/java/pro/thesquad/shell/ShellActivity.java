@@ -133,6 +133,11 @@ public final class ShellActivity extends Activity
     }
 
     @Override
+    public void pageCommitted(long navigationGeneration, String url) {
+        controller.pageCommitted(navigationGeneration, url);
+    }
+
+    @Override
     public void pageFinished(long navigationGeneration, String url) {
         controller.pageFinished(navigationGeneration, url);
     }

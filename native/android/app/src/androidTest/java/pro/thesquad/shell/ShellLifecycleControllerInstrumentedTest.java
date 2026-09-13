@@ -83,6 +83,7 @@ public final class ShellLifecycleControllerInstrumentedTest {
                 renderer.loadedUrls.get(0));
         long pageGeneration =
                 controller.navigationStarted("https://store.example.com/dashboard");
+        controller.pageCommitted(pageGeneration, "https://store.example.com/dashboard");
         controller.pageFinished(pageGeneration, "https://store.example.com/dashboard");
         assertTrue(renderer.contentVisible);
 
@@ -101,8 +102,9 @@ public final class ShellLifecycleControllerInstrumentedTest {
     public void pageFailureRequiresReloadAfterSuccessfulRetry() {
         ControlledBootstrap bootstrap = new ControlledBootstrap();
         RecordingRenderer renderer = new RecordingRenderer();
-        ShellLifecycleController controller =
-                new ShellLifecycleController(DESTINATION, bootstrap, renderer);
+        ControlledDeadlines deadlines = new ControlledDeadlines();
+        ShellLifecycleController controller = new ShellLifecycleController(
+                DESTINATION, bootstrap, renderer, deadlines);
 
         controller.foreground();
         bootstrap.checks.get(0).completion.accept(true);
@@ -115,6 +117,88 @@ public final class ShellLifecycleControllerInstrumentedTest {
         controller.retry();
         bootstrap.checks.get(1).completion.accept(true);
         assertEquals(2, renderer.loadedUrls.size());
+        assertFalse(renderer.contentVisible);
+    }
+
+    @Test
+    public void committedFinishedPageCancelsAndOutlivesItsDeadline() {
+        ControlledBootstrap bootstrap = new ControlledBootstrap();
+        RecordingRenderer renderer = new RecordingRenderer();
+        ControlledDeadlines deadlines = new ControlledDeadlines();
+        ShellLifecycleController controller = new ShellLifecycleController(
+                DESTINATION, bootstrap, renderer, deadlines);
+
+        controller.foreground();
+        bootstrap.checks.get(0).completion.accept(true);
+        long generation =
+                controller.navigationStarted("https://store.example.com/dashboard");
+        controller.pageCommitted(generation, "https://store.example.com/dashboard");
+        controller.pageFinished(generation, "https://store.example.com/dashboard");
+
+        assertTrue(renderer.contentVisible);
+        assertTrue(deadlines.scheduled.get(0).cancelled);
+        deadlines.scheduled.get(0).action.run();
+        assertTrue(renderer.contentVisible);
+        assertEquals(ShellLifecycleController.NativeState.CONTENT, renderer.state);
+    }
+
+    @Test
+    public void staleDeadlineCannotFailNewerNavigation() {
+        ControlledBootstrap bootstrap = new ControlledBootstrap();
+        RecordingRenderer renderer = new RecordingRenderer();
+        ControlledDeadlines deadlines = new ControlledDeadlines();
+        ShellLifecycleController controller = new ShellLifecycleController(
+                DESTINATION, bootstrap, renderer, deadlines);
+
+        controller.foreground();
+        bootstrap.checks.get(0).completion.accept(true);
+        controller.navigationStarted("https://store.example.com/first");
+        long newerGeneration =
+                controller.navigationStarted("https://store.example.com/second");
+
+        assertTrue(deadlines.scheduled.get(0).cancelled);
+        deadlines.scheduled.get(0).action.run();
+        controller.pageCommitted(newerGeneration, "https://store.example.com/second");
+        controller.pageFinished(newerGeneration, "https://store.example.com/second");
+
+        assertTrue(renderer.contentVisible);
+        assertEquals(ShellLifecycleController.NativeState.CONTENT, renderer.state);
+    }
+
+    @Test
+    public void pageFinishWithoutCommitCannotRevealContent() {
+        ControlledBootstrap bootstrap = new ControlledBootstrap();
+        RecordingRenderer renderer = new RecordingRenderer();
+        ControlledDeadlines deadlines = new ControlledDeadlines();
+        ShellLifecycleController controller = new ShellLifecycleController(
+                DESTINATION, bootstrap, renderer, deadlines);
+
+        controller.foreground();
+        bootstrap.checks.get(0).completion.accept(true);
+        long generation =
+                controller.navigationStarted("https://store.example.com/dashboard");
+
+        controller.pageFinished(generation, "https://store.example.com/dashboard");
+
+        assertFalse(renderer.contentVisible);
+    }
+
+    @Test
+    public void navigationWithoutTrustedCompletionSchedulesThirtySecondFailure() {
+        ControlledBootstrap bootstrap = new ControlledBootstrap();
+        RecordingRenderer renderer = new RecordingRenderer();
+        ControlledDeadlines deadlines = new ControlledDeadlines();
+        ShellLifecycleController controller = new ShellLifecycleController(
+                DESTINATION, bootstrap, renderer, deadlines);
+
+        controller.foreground();
+        bootstrap.checks.get(0).completion.accept(true);
+        controller.navigationStarted("https://store.example.com/dashboard");
+
+        assertEquals(1, deadlines.scheduled.size());
+        assertEquals(30_000, deadlines.scheduled.get(0).delayMillis);
+        deadlines.scheduled.get(0).action.run();
+        assertEquals(ShellLifecycleController.NativeState.FAILED, renderer.state);
         assertFalse(renderer.contentVisible);
     }
 
@@ -156,6 +240,8 @@ public final class ShellLifecycleControllerInstrumentedTest {
         bootstrap.checks.get(1).completion.accept(true);
         long successfulGeneration =
                 controller.navigationStarted("https://store.example.com/dashboard");
+        controller.pageCommitted(
+                successfulGeneration, "https://store.example.com/dashboard");
         controller.pageFinished(successfulGeneration, "https://store.example.com/dashboard");
         controller.pageFailed(failedGeneration);
 
@@ -214,6 +300,28 @@ public final class ShellLifecycleControllerInstrumentedTest {
         @Override
         public void cancel() {
             cancelled = true;
+        }
+    }
+
+    private static final class ControlledDeadlines implements NavigationDeadlineScheduling {
+        private final List<Deadline> scheduled = new ArrayList<>();
+
+        @Override
+        public NavigationDeadlineCancellation schedule(long delayMillis, Runnable action) {
+            Deadline deadline = new Deadline(delayMillis, action);
+            scheduled.add(deadline);
+            return () -> deadline.cancelled = true;
+        }
+    }
+
+    private static final class Deadline {
+        private final long delayMillis;
+        private final Runnable action;
+        private boolean cancelled;
+
+        private Deadline(long delayMillis, Runnable action) {
+            this.delayMillis = delayMillis;
+            this.action = action;
         }
     }
 

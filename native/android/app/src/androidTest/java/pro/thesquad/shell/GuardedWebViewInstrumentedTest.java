@@ -14,13 +14,16 @@ import android.net.http.SslError;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.view.View;
 import android.webkit.SslErrorHandler;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
 import android.webkit.WebViewClient;
+import android.widget.FrameLayout;
 
+import androidx.test.core.app.ActivityScenario;
 import androidx.test.ext.junit.runners.AndroidJUnit4;
 import androidx.test.platform.app.InstrumentationRegistry;
 
@@ -138,6 +141,7 @@ public final class GuardedWebViewInstrumentedTest {
             webView.setWebViewClient(client);
 
             client.onPageStarted(webView, "https://store.example.com/dashboard", null);
+            client.onPageCommitVisible(webView, "https://store.example.com/dashboard");
             client.onPageFinished(webView, "https://store.example.com/dashboard");
             client.shouldOverrideUrlLoading(
                     webView,
@@ -152,6 +156,56 @@ public final class GuardedWebViewInstrumentedTest {
                 Collections.singletonList("https://store.example.com/dashboard"),
                 navigation.finished);
         assertEquals(0, navigation.failures);
+    }
+
+    @Test
+    public void hiddenAttachedHttpsFixtureCommitsAndFinishesCurrentGeneration()
+            throws Exception {
+        RecordingNavigation navigation = new RecordingNavigation();
+        AtomicReference<WebView> fixtureView = new AtomicReference<>();
+        try (ActivityScenario<ShellActivity> scenario =
+                     ActivityScenario.launch(ShellActivity.class)) {
+            scenario.onActivity(activity -> {
+                FrameLayout root = activity.findViewById(R.id.shell_root);
+                WebView webView = new WebView(activity);
+                fixtureView.set(webView);
+                webViews.add(webView);
+                webView.setVisibility(View.INVISIBLE);
+                ShellWebView.configure(webView);
+                GuardedWebViewClient guarded =
+                        new GuardedWebViewClient(DESTINATION, navigation);
+                webView.setWebViewClient(new GuardedHttpsFixtureClient(guarded));
+                root.addView(webView, new FrameLayout.LayoutParams(
+                        FrameLayout.LayoutParams.MATCH_PARENT,
+                        FrameLayout.LayoutParams.MATCH_PARENT));
+                webView.loadUrl("https://store.example.com/dashboard");
+            });
+
+            assertTrue(
+                    "trusted attached WebView callbacks timed out",
+                    navigation.trustedCallbacks.await(5, TimeUnit.SECONDS));
+            assertEquals(
+                    Collections.singletonList("https://store.example.com/dashboard"),
+                    navigation.committed);
+            assertEquals(
+                    Collections.singletonList("https://store.example.com/dashboard"),
+                    navigation.finished);
+            assertEquals(
+                    Collections.singletonList(1L),
+                    navigation.committedGenerations);
+            assertEquals(
+                    Collections.singletonList(1L),
+                    navigation.finishedGenerations);
+
+            scenario.onActivity(activity -> {
+                WebView webView = fixtureView.get();
+                assertEquals(View.INVISIBLE, webView.getVisibility());
+                ((FrameLayout) webView.getParent()).removeView(webView);
+                webView.stopLoading();
+                webView.destroy();
+                webViews.remove(webView);
+            });
+        }
     }
 
     @Test
@@ -220,6 +274,57 @@ public final class GuardedWebViewInstrumentedTest {
         });
 
         assertEquals(0, navigation.failures);
+    }
+
+    @Test
+    public void tlsCancellationWithoutFrameAwareFollowOnReachesDeadlineRetry() {
+        ControllerHarness harness = new ControllerHarness();
+        onMain(() -> {
+            harness.foregroundAndAcceptBootstrap();
+            WebView webView = createWebView();
+            GuardedWebViewClient client = new GuardedWebViewClient(DESTINATION, harness);
+            client.onPageStarted(webView, "https://store.example.com/dashboard", null);
+            client.onReceivedSslError(
+                    webView,
+                    newSslErrorHandler(),
+                    new SslError(
+                            SslError.SSL_UNTRUSTED,
+                            (SslCertificate) null,
+                            "https://store.example.com/dashboard"));
+        });
+
+        assertEquals(1, harness.deadlines.scheduled.size());
+        assertEquals(30_000, harness.deadlines.scheduled.get(0).delayMillis);
+        onMain(() -> harness.deadlines.scheduled.get(0).action.run());
+        assertEquals(ShellLifecycleController.NativeState.FAILED, harness.state);
+        assertFalse(harness.contentVisible);
+    }
+
+    @Test
+    public void sameUrlTlsAfterTrustedCommitPreservesContentAndExpiredDeadline() {
+        ControllerHarness harness = new ControllerHarness();
+        onMain(() -> {
+            harness.foregroundAndAcceptBootstrap();
+            WebView webView = createWebView();
+            GuardedWebViewClient client = new GuardedWebViewClient(DESTINATION, harness);
+            client.onPageStarted(webView, "https://store.example.com/dashboard", null);
+            client.onPageCommitVisible(webView, "https://store.example.com/dashboard");
+            client.onPageFinished(webView, "https://store.example.com/dashboard");
+            assertTrue(harness.contentVisible);
+            client.onReceivedSslError(
+                    webView,
+                    newSslErrorHandler(),
+                    new SslError(
+                            SslError.SSL_UNTRUSTED,
+                            (SslCertificate) null,
+                            "https://store.example.com/dashboard"));
+        });
+
+        assertTrue(harness.contentVisible);
+        assertTrue(harness.deadlines.scheduled.get(0).cancelled);
+        onMain(() -> harness.deadlines.scheduled.get(0).action.run());
+        assertTrue(harness.contentVisible);
+        assertEquals(ShellLifecycleController.NativeState.CONTENT, harness.state);
     }
 
     @Test
@@ -411,9 +516,13 @@ public final class GuardedWebViewInstrumentedTest {
         private int failures;
         private long nextGeneration;
         private final List<String> finished = new ArrayList<>();
+        private final List<String> committed = new ArrayList<>();
         private final List<String> opened = new ArrayList<>();
         private final List<Long> failedGenerations = new ArrayList<>();
         private final List<WebView> failedWebViews = new ArrayList<>();
+        private final List<Long> committedGenerations = new ArrayList<>();
+        private final List<Long> finishedGenerations = new ArrayList<>();
+        private final CountDownLatch trustedCallbacks = new CountDownLatch(2);
 
         @Override
         public void blocked() {
@@ -427,8 +536,17 @@ public final class GuardedWebViewInstrumentedTest {
         }
 
         @Override
+        public void pageCommitted(long navigationGeneration, String url) {
+            committed.add(url);
+            committedGenerations.add(navigationGeneration);
+            trustedCallbacks.countDown();
+        }
+
+        @Override
         public void pageFinished(long navigationGeneration, String url) {
             finished.add(url);
+            finishedGenerations.add(navigationGeneration);
+            trustedCallbacks.countDown();
         }
 
         @Override
@@ -440,6 +558,141 @@ public final class GuardedWebViewInstrumentedTest {
         @Override
         public void renderProcessGone(WebView sourceWebView) {
             failedWebViews.add(sourceWebView);
+        }
+    }
+
+    private static final class GuardedHttpsFixtureClient extends WebViewClient {
+        private final GuardedWebViewClient guarded;
+
+        private GuardedHttpsFixtureClient(GuardedWebViewClient guarded) {
+            this.guarded = guarded;
+        }
+
+        @Override
+        public WebResourceResponse shouldInterceptRequest(
+                WebView view,
+                WebResourceRequest request) {
+            WebResourceResponse blocked = guarded.shouldInterceptRequest(view, request);
+            if (blocked != null || !request.isForMainFrame()) {
+                return blocked;
+            }
+            return new WebResourceResponse(
+                    "text/html",
+                    "UTF-8",
+                    new ByteArrayInputStream(
+                            "<html><body>trusted fixture</body></html>"
+                                    .getBytes(StandardCharsets.UTF_8)));
+        }
+
+        @Override
+        public void onPageStarted(WebView view, String url, Bitmap favicon) {
+            guarded.onPageStarted(view, url, favicon);
+        }
+
+        @Override
+        public void onPageCommitVisible(WebView view, String url) {
+            guarded.onPageCommitVisible(view, url);
+        }
+
+        @Override
+        public void onPageFinished(WebView view, String url) {
+            guarded.onPageFinished(view, url);
+        }
+    }
+
+    private static final class ControllerHarness
+            implements NavigationEvents, ShellLifecycleController.Renderer {
+        private final HarnessBootstrap bootstrap = new HarnessBootstrap();
+        private final HarnessDeadlines deadlines = new HarnessDeadlines();
+        private final ShellLifecycleController controller = new ShellLifecycleController(
+                DESTINATION, bootstrap, this, deadlines);
+        private ShellLifecycleController.NativeState state;
+        private boolean contentVisible;
+
+        private void foregroundAndAcceptBootstrap() {
+            controller.foreground();
+            bootstrap.completion.accept(true);
+        }
+
+        @Override
+        public void blocked() {
+        }
+
+        @Override
+        public long navigationStarted(String url) {
+            return controller.navigationStarted(url);
+        }
+
+        @Override
+        public void pageCommitted(long navigationGeneration, String url) {
+            controller.pageCommitted(navigationGeneration, url);
+        }
+
+        @Override
+        public void pageFinished(long navigationGeneration, String url) {
+            controller.pageFinished(navigationGeneration, url);
+        }
+
+        @Override
+        public void pageFailed(long navigationGeneration) {
+            controller.pageFailed(navigationGeneration);
+        }
+
+        @Override
+        public void renderProcessGone(WebView sourceWebView) {
+            controller.webViewFailed();
+        }
+
+        @Override
+        public void showNative(ShellLifecycleController.NativeState state) {
+            this.state = state;
+            contentVisible = false;
+        }
+
+        @Override
+        public void showContent() {
+            state = ShellLifecycleController.NativeState.CONTENT;
+            contentVisible = true;
+        }
+
+        @Override
+        public void loadDashboard(String url) {
+            contentVisible = false;
+        }
+    }
+
+    private static final class HarnessBootstrap implements StoreBootstrapChecking {
+        private java.util.function.Consumer<Boolean> completion;
+
+        @Override
+        public BootstrapCancellation check(
+                StoreDestination destination,
+                java.util.function.Consumer<Boolean> completion) {
+            this.completion = completion;
+            return () -> {
+            };
+        }
+    }
+
+    private static final class HarnessDeadlines implements NavigationDeadlineScheduling {
+        private final List<HarnessDeadline> scheduled = new ArrayList<>();
+
+        @Override
+        public NavigationDeadlineCancellation schedule(long delayMillis, Runnable action) {
+            HarnessDeadline deadline = new HarnessDeadline(delayMillis, action);
+            scheduled.add(deadline);
+            return () -> deadline.cancelled = true;
+        }
+    }
+
+    private static final class HarnessDeadline {
+        private final long delayMillis;
+        private final Runnable action;
+        private boolean cancelled;
+
+        private HarnessDeadline(long delayMillis, Runnable action) {
+            this.delayMillis = delayMillis;
+            this.action = action;
         }
     }
 
