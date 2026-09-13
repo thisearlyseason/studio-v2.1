@@ -29,9 +29,12 @@ function page(label) {
   text(portrait ? 'Home / A: __________________________   Away / B: __________________________' : 'Home / A: ____________________________________   Away / B: ____________________________________', M, 51);
   text(portrait ? 'Rules / period length: ______________________   Scorer: ______________________' : 'Rules / format / period length: __________________________   Scorer: ______________________________', M, 60);
   pdf.setDrawColor('#BFC3C9'); pdf.setLineWidth(0.2);
-  pdf.line(M, H - 13, W - M, H - 13);
-  text('THE SQUAD  /  SPORTS HUB     •     thesquad.pro', M, H - 8, 8, true);
-  text(`Community score sheet | ${pages}`, W - 66, H - 8, 8);
+  pdf.setDrawColor(RED); pdf.setLineWidth(0.5);
+  pdf.line(M, H - 16, W - M, H - 16);
+  text('BRING YOUR SQUAD TOGETHER.', M, H - 10, 8, true);
+  text('Schedules | Rosters | Team communication', M, H - 6, 7);
+  text('thesquad.pro', W - 48, H - 10, 11, true);
+  text(`Free score sheet | ${pages}`, W - 48, H - 6, 7);
   y = 69;
 }
 function table(label, headers, widths, rows, height = 8, values = []) {

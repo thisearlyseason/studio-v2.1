@@ -2,6 +2,7 @@
 
 import Link from 'next/link';
 import { ChevronLeft, Printer } from 'lucide-react';
+import BrandLogo from '@/components/BrandLogo';
 import type { SportScoresheet as Scoresheet, ScoresheetTable } from '@/lib/sport-scoresheets';
 import './sport-scoresheet.css';
 
@@ -47,13 +48,17 @@ export default function SportScoresheet({ sheet }: { sheet: Scoresheet }) {
       {sheet.pages.map((page, index) => (
         <article key={page.title} className="sheet-page" aria-label={`${sheet.title} page ${index + 1}`}>
           <div className="sheet-page-heading">
-            <div><p>THE SQUAD · {sheet.title}</p><h2>{page.title}</h2></div>
+            <BrandLogo variant="light-background" className="sheet-brand-logo" priority />
+            <div className="sheet-heading-copy"><p>{sheet.title} · SPORTS HUB</p><h2>{page.title}</h2></div>
             <span>{index + 1} / {sheet.pages.length}</span>
           </div>
           {index === 0 ? <><p className="sheet-instructions">{sheet.instructions}</p><Fields labels={sheet.fields} /></> : <Fields labels={['Event / match / round reference', 'Date / participants']} />}
           {page.tables.map(table => <RecordTable key={table.title} table={table} />)}
           {page.fields && <Fields labels={page.fields} />}
-          <div className="sheet-page-footer"><span>thesquad.pro · Free printable scoresheet</span><span>{index + 1} / {sheet.pages.length}</span></div>
+          <div className="sheet-page-footer">
+            <div className="sheet-brand-message"><strong>Bring your squad together.</strong><span>Schedules · Rosters · Team communication</span></div>
+            <div className="sheet-brand-website"><strong>thesquad.pro</strong><span>Free scoresheet · {index + 1} / {sheet.pages.length}</span></div>
+          </div>
         </article>
       ))}
     </div>
