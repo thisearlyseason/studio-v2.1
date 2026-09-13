@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <item name="shell_root" type="id" />
+    <item name="shell_web_view" type="id" />
+    <item name="shell_status_panel" type="id" />
+    <item name="shell_progress" type="id" />
+    <item name="shell_title" type="id" />
+    <item name="shell_message" type="id" />
+    <item name="shell_retry" type="id" />
+    <item name="shell_link_error" type="id" />
+</resources>

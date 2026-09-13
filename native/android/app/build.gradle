@@ -1,0 +1,51 @@
+import groovy.json.JsonOutput
+
+plugins {
+    id 'com.android.application'
+}
+
+def storeOrigin = providers.gradleProperty('squadStoreOrigin').orElse('')
+
+android {
+    namespace 'pro.thesquad.shell'
+    compileSdk 36
+
+    defaultConfig {
+        applicationId 'pro.thesquad.shell.dev'
+        minSdk 26
+        targetSdk 36
+        versionCode 1
+        versionName '0.1-dev'
+        testInstrumentationRunner 'androidx.test.runner.AndroidJUnitRunner'
+        buildConfigField 'String', 'SQUAD_STORE_ORIGIN', JsonOutput.toJson(storeOrigin.get())
+    }
+
+    buildFeatures {
+        buildConfig true
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+
+    sourceSets {
+        main.java.srcDirs += ['../policy']
+    }
+
+    testOptions {
+        animationsDisabled true
+    }
+}
+
+androidComponents {
+    beforeVariants(selector().withBuildType('release')) { variantBuilder ->
+        variantBuilder.enable = false
+    }
+}
+
+dependencies {
+    implementation 'com.squareup.okhttp3:okhttp:5.3.0'
+    androidTestImplementation 'androidx.test:runner:1.6.2'
+    androidTestImplementation 'androidx.test.ext:junit:1.2.1'
+}

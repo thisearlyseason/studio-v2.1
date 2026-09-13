@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Squad Development</string>
+    <string name="checking_title">Checking app…</string>
+    <string name="setup_title">App setup required</string>
+    <string name="setup_message">A store-only app destination has not been configured.</string>
+    <string name="failure_title">Unable to open The Squad</string>
+    <string name="failure_message">Check your connection and try again.</string>
+    <string name="retry">Try again</string>
+    <string name="blocked_link">This link cannot be opened in the app.</string>
+</resources>
