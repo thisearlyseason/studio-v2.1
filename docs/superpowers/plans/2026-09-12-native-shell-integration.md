@@ -30,6 +30,8 @@ Before any initial WebView load, fetch the policy's exact bootstrap URL using GE
 
 On success load `origin + /dashboard`; normal app auth can redirect to same-origin login. A completed, permitted page replaces the loading screen. A main-frame load/TLS/process error returns to native retry UI. Subresource failures do not indiscriminately blank a successfully loaded page. JavaScript and DOM storage are needed by the web app; native bridges, file/content URL access, mixed content, popups and unsolicited new windows are not.
 
+Android applies a bounded 30-second deadline for the current main-frame navigation to reach both trusted commit and finish. A legitimate navigation that exceeds the bound requires native Retry. This recovery rule does not bypass TLS or alter normal website behavior.
+
 Every top-level navigation decision, new-window request and history action uses `StoreDestination.allows`. Reject untrusted destinations and display `This link cannot be opened in the app.` without sending the user to an external browser in this package. An allowed same-origin new-window request is loaded in the existing WebView. No launch/deep-link intent may choose a different origin.
 
 Backgrounding hides protected content. Foreground activation and retries invalidate the previous bootstrap attempt, create a new generation and keep content hidden until verified. Late callbacks from an earlier generation cannot reveal content or replace a newer error/success. Preserve an existing permitted page/session on a successful foreground recheck; reload only for initial load or explicit retry of a failed page. Cancel work when the owning screen is destroyed.
@@ -62,7 +64,7 @@ final class StoreBootstrapClient: StoreBootstrapChecking { /* URLSession delegat
 
 These constructor dependencies are used by the app and tests; do not add methods solely for tests to production classes. AppDelegate reads `SquadStoreOrigin` from Info.plist (empty by default) and constructs the real client/controller. Use native lifecycle notifications or the scene/app delegate, avoiding duplicate foreground work on initial appearance.
 
-- [ ] **Step 1: Establish project and failing tests.**
+- [x] **Step 1: Establish project and failing tests.**
 
 Use a normal buildable Xcode project with app and XCTest targets, no project-generator dependency. Set Debug bundle ID/display name above, Swift language mode 5, automatic signing disabled for simulator checks. `SquadStoreOrigin` comes from an explicit `SQUAD_STORE_ORIGIN` build setting, default empty. Add a Release build preflight that fails clearly rather than exporting this development app.
 
@@ -87,7 +89,7 @@ UI/controller tests instantiate the real controller with a controlled bootstrap 
 
 Compile minimal interface stubs only after tests are written. Run the XCTest target, confirm actual assertion RED (not solely a project/compiler setup failure), then implement.
 
-- [ ] **Step 2: Implement the smallest production client and controller.**
+- [x] **Step 2: Implement the smallest production client and controller.**
 
 Use `URLSessionConfiguration.ephemeral`, `httpShouldSetCookies = false`, nil cookie storage/credential storage/cache, request/resource timeout10 seconds, and `.reloadIgnoringLocalCacheData`. A session data delegate rejects redirects, validates headers, counts bytes before appending and cancels when over4096. Keep completion/cancellation exactly-once; invalidate sessions to break delegate ownership cycles. Marshal controller completion onto the main actor/queue.
 
@@ -108,11 +110,11 @@ finish(destination.acceptsBootstrap(status: response.statusCode,
 
 The controller owns WKWebView and native loading/error UI. Use persistent WKWebsiteDataStore for normal session persistence, no injected scripts or handlers. Set `isInspectable = false`. Apply the policy before loading requests, in WKNavigationDelegate, in WKUIDelegate new-window handling and history restoration. Use a generation counter and cancellation handle for foreground/retry races. Display only validated pages after their main-frame load succeeds. Link rejection must not change a trusted current page or open another app.
 
-- [ ] **Step 3: Run focused iOS tests and simulator checks.**
+- [x] **Step 3: Run focused iOS tests and simulator checks.**
 
 Run `xcodebuild -project native/ios/SquadShell.xcodeproj -scheme SquadShell -configuration Debug -sdk iphonesimulator -destination 'platform=iOS Simulator,id=75AA0D3B-56B4-4F1E-8CBF-0A7264DC58FF' CODE_SIGNING_ALLOWED=NO test`, using a task-specific derived-data path under ignored output. Correct the scheme's XCTest wiring rather than bypassing tests. Build and launch the actual debug app in the existing simulator with no configured destination; inspect the native setup/retry UI. Stop only the simulator processes started for this task. Record mocked-transport tests versus real simulator UI separately. No hosted login PASS without a real store target.
 
-- [ ] **Step 4: Self-review and commit iOS files only.**
+- [x] **Step 4: Self-review and commit iOS files only.**
 
 Record RED/GREEN commands/results, actual app build/launch proof, remaining hosted checks and exact touched files. No whole web audit. Commit `feat: add guarded iOS development shell`; controller performs independent review.
 
@@ -137,7 +139,7 @@ final class StoreBootstrapClient implements StoreBootstrapChecking { /* isolated
 
 Production uses a fresh private OkHttpClient with `CookieJar.NO_COOKIES`, `Authenticator.NONE` for server/proxy, null cache, followRedirects/followSslRedirects false, call timeout10 seconds and normal TLS. Test-only call factories may supply controlled responses; production never accepts a trust-bypass setting. Keep callback dispatch/cancellation explicit.
 
-- [ ] **Step 1: Establish reproducible Gradle project and assertion RED.**
+- [x] **Step 1: Establish reproducible Gradle project and assertion RED.**
 
 Use AGP9.1.1, Gradle9.3.1 (official wrapper and distribution checksum), Java17 source compatibility, minSdk26 and compile/targetSdk36. The installed Studio JDK25 can run Gradle9.3.1. Use repositories `google()` and `mavenCentral()`. Pin native dependencies:
 
@@ -164,7 +166,7 @@ Instrumentation tests run the actual Android JSONObject and native UI. Test help
 
 `checkFixture(int,String,String)` lives in androidTest and invokes the real client's validation through a controlled Call.Factory. No production method is added solely for tests. The real Activity's initial no-origin screen and accessible retry button are checked with instrumentation on the existing Pixel8 emulator. Lifecycle state tests verify stale success cannot override newer failure and no content is exposed during foreground verification. Capture only local fixture content.
 
-- [ ] **Step 2: Implement client and Activity without native bridges.**
+- [x] **Step 2: Implement client and Activity without native bridges.**
 
 Use bounded response streaming, close all bodies, enforce exactly-once completion and distinguish cancelled generations. Validate JSON with Android JSONObject and `object.opt("distribution") instanceof String`; do not use `optString` coercion. Delegate metadata acceptance to the existing policy.
 
@@ -177,11 +179,11 @@ boolean accepted = distribution instanceof String
 
 The Activity owns native state, hides the WebView while checking or backgrounded, preserves permitted sessions after success and ignores stale callbacks. Use WebViewClient for main-frame navigation/error handling, WebChromeClient for new windows, and `StoreDestination.allows` for every top-level load/history destination. JavaScript/DOM storage enabled; file/content access and mixed content disabled; no addJavascriptInterface or external intents. Support modern Android Back behavior, including permitted history inspection, and content insets on API36 without clipped native controls. Release remains disabled; this is not a store submission artifact.
 
-- [ ] **Step 3: Build and run the focused Android tests.**
+- [x] **Step 3: Build and run the focused Android tests.**
 
 Use explicit `JAVA_HOME` for the installed Studio JDK and `ANDROID_HOME=/Users/tylerans/Library/Android/sdk`, without changing global profiles. Run `native/android/gradlew -p native/android :app:assembleDebug :app:lintDebug`, then `:app:connectedDebugAndroidTest` against only `Squad_QA_Pixel_8_API_36`. Use the exact emulator serial, not arbitrary attached phones. Observe real setup/retry UI; do not claim hosted flow verification from controlled response tests.
 
-- [ ] **Step 4: Self-review and commit Android files only.**
+- [x] **Step 4: Self-review and commit Android files only.**
 
 Record actual RED/GREEN, compiler/lint/instrumentation results, dependency downloads and remaining hosted checks. Commit `feat: add guarded Android development shell`; controller performs independent review.
 
@@ -193,19 +195,23 @@ Record actual RED/GREEN, compiler/lint/instrumentation results, dependency downl
 
 **Produces:** accurate local completion status, hosted result or specific blocker, and reproducible native build/test commands.
 
-- [ ] **Step 1: Run the policy suite once as a shared-component regression.**
+- [x] **Step 1: Run the policy suite once as a shared-component regression.**
 
 Run `node --test native/tests/destination-policy.test.mjs`. Confirm policy source was referenced, not duplicated. Compare package diff and baseline web-file hashes; no web behavior/build reruns for native-only changes.
 
-- [ ] **Step 2: Inspect both actual simulator app screens.**
+- [x] **Step 2: Inspect both actual simulator app screens.**
 
 Verify native setup/error/retry presentation, no background content exposure in supported local tests, readable portrait/landscape sizing and expected startup with absent configuration. Preserve screenshots and separate mocked external response tests from real UI observation. Fix only package-caused failures and recheck their exact paths.
 
 - [ ] **Step 3: Perform hosted store checks only if separately authorized and available.**
 
+**BLOCKED:** no separately authorized/configured store-only QA target or approved QA session is available; the deployment-approval question received no answer. No host was guessed and no provider, authentication, signing, release or store claim is made.
+
 If the user approves the separate QA deployment, first establish an actual isolated target without changing the production alias or its settings. Verify its `/api/app-distribution` returns store before configuring either development app. Use existing approved QA fixtures/accounts, not real-user destructive changes. Check successful bootstrap, initial same-origin sign-in, permitted navigation, denied external/new-window navigation, app foreground recheck, and offline recovery. If no target/QA credentials are available, mark these BLOCKED with the exact missing prerequisite and do not present local substitute tests as hosted PASS.
 
 - [ ] **Step 4: Final review and local handoff.**
+
+Local handoff evidence is recorded. Final whole-package review, including the named iOS navigation-callback risk, and test-device cleanup remain pending for the controller.
 
 Record passed/failed/blocked distinctions, known warnings and native-provider/release work remaining. Obtain final review and fresh focused verification after fixes. Keep commits local; production deployment and app-store publishing are excluded. Shut down only test services/devices started by this work.
 
