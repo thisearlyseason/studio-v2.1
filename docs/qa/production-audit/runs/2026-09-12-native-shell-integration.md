@@ -4,6 +4,8 @@ Final-fix base: `85bb2b896f617c94ade614dd0643503d82fd5c61`. Scope was local nati
 
 ## Result
 
+**Local handoff remains incomplete; release is not approved.** Final scoped review closed the three original findings but identified one Important iOS cancellation-recovery defect at `ShellViewController.swift:373`. A cancelled current `WKNavigation` remains retained with Retry hidden; successful foreground verification continues waiting for that cancelled document. This is a code-path finding, not a newly reproduced simulator failure. Next repair must ignore obsolete cancellations while retiring terminal current cancellation into a recoverable state, with a regression covering subsequent foreground verification. Existing passing tests do not cover this case.
+
 | Boundary | Status | Evidence |
 | --- | --- | --- |
 | Shared policy | PASS | `node --test native/tests/destination-policy.test.mjs`: 134 passed, 0 failed/skipped. Existing Swift/Java policy sources are referenced, not copied. |
@@ -51,4 +53,8 @@ native/android/gradlew -p native/android \
 
 Artifacts: `/tmp/squad-native-policy-package2.log`, `native/ios/.build/package2-verification-retry.log`, `native/ios/.build/package2-landscape-setup.png`, `native/ios/.build/final-fix-full.xcresult`, `native/android/app/build/reports/lint-results-debug.html`, `native/android/app/build/outputs/androidTest-results/connected/debug/TEST-Squad_QA_Pixel_8_API_36(AVD) - 16-_app-.xml`, and the matching Debug APK.
 
-The package diff contains native work plus this plan/evidence handoff; recorded comparison of the three pre-existing dirty web-file hashes remained byte-for-byte equal to the pre-package baseline. Web and policy tests were not rerun in the final-fix wave because those surfaces did not change. Controlled transport/WebView fixtures are not hosted authentication, provider, signing, release, store-submission or physical-device proof. Final scoped re-review and controller-owned device cleanup remain pending.
+Controller independently rebuilt and retested `28282dd3`: iOS 24/24 passed with 0 failures/skips (`native/ios/.build/controller-final.xcresult`); Android build/lint and all 47 instrumentation tests passed with `--rerun-tasks --warning-mode all`, 74 tasks executed. The pinned-Gradle advisory and compiler deprecated-API note remain. These passing suites do not override the uncovered review defect.
+
+The web diff and three pre-existing dirty web-file hashes still match the pre-package baseline byte-for-byte. Web and policy tests were not rerun after native-only fixes. Controlled fixtures are not hosted authentication, provider, signing, release, store or physical-device proof. Final scoped review is complete with one Important finding open; owned test devices were shut down and confirmed stopped. Commits and worktree remain local; no deployment or production changes occurred.
+
+Review-cap ruling: retain the cancellation finding as a release-blocking follow-up after the single final fix/re-review wave. It is a real recovery defect; the cost is incomplete local acceptance until targeted repair and verification, not a risk accepted for release.
