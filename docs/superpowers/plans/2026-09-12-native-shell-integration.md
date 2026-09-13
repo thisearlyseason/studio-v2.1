@@ -205,13 +205,13 @@ Verify native setup/error/retry presentation, no background content exposure in 
 
 - [ ] **Step 3: Perform hosted store checks only if separately authorized and available.**
 
-**BLOCKED:** no separately authorized/configured store-only QA target or approved QA session is available; the deployment-approval question received no answer. No host was guessed and no provider, authentication, signing, release or store claim is made.
+**PARTIAL:** the user approved a separate QA preview. Hosted Playwright coach/athlete sign-in, session persistence, desktop/mobile navigation, settings/logout and purchase guards pass on `dpl_3Zx2i9UUeazEDRwvpD41amTY3jD9`. Native hosted acceptance remains BLOCKED because unauthenticated bootstrap receives Vercel's 302 protection redirect; do not inject the browser automation credential into the apps. See the acceptance record for the verified QA host, cleanup and exact boundaries.
 
 If the user approves the separate QA deployment, first establish an actual isolated target without changing the production alias or its settings. Verify its `/api/app-distribution` returns store before configuring either development app. Use existing approved QA fixtures/accounts, not real-user destructive changes. Check successful bootstrap, initial same-origin sign-in, permitted navigation, denied external/new-window navigation, app foreground recheck, and offline recovery. If no target/QA credentials are available, mark these BLOCKED with the exact missing prerequisite and do not present local substitute tests as hosted PASS.
 
-- [ ] **Step 4: Final review and local handoff.**
+- [x] **Step 4: Final review and local handoff.**
 
-Final scoped review closed the original three findings but identified an Important terminal-current-navigation cancellation defect on iOS. Controller fresh gates passed 24 iOS and 47 Android tests; the uncovered cancellation case prevents acceptance. Owned devices were shut down and confirmed stopped. Step 4 remains incomplete until targeted cancellation recovery is repaired and verified; hosted Step 3 remains separately blocked. Commits and the worktree are retained locally.
+The separately authorized cancellation follow-up is repaired in `35f211f1`: fresh RED reproduced both current-cancellation paths and full GREEN passed 27 XCTest tests; independent focused review approved the repair. Prior unchanged Android evidence remains 47 passes. Owned devices are stopped, browser QA fixtures removed, and local handoff is complete. Step 3 remains partial as described above; no native hosted/device/store certification is claimed. Commits and the worktree are retained locally.
 
 Record passed/failed/blocked distinctions, known warnings and native-provider/release work remaining. Obtain final review and fresh focused verification after fixes. Keep commits local; production deployment and app-store publishing are excluded. Shut down only test services/devices started by this work.
 

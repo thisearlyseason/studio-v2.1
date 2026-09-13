@@ -6,6 +6,31 @@ Final-fix base: `85bb2b896f617c94ade614dd0643503d82fd5c61`. Scope was local nati
 
 ### Authorized cancellation follow-up (latest)
 
+**Final follow-up result: cancellation repaired; hosted browser sign-in/navigation PASS. Native hosted/device acceptance remains separately blocked by deployment protection.**
+
+Final QA target: `https://thesquadv2-native-store-qa-tylers-projects-5b59182e.vercel.app` → `dpl_3Zx2i9UUeazEDRwvpD41amTY3jD9` (`thesquadv2-7boy3rye2-tylers-projects-5b59182e.vercel.app`). Vercel status Ready; Next production compilation, lint/type checking and build completed (existing warnings retained). Build log: `output/playwright/native-store-hosted-20260912/aligned-build.log`.
+
+The initial preview exposed a configuration mismatch, not an authentication-code regression: password authentication returned 200 for `the-squad-v2-staging`, while `/api/auth/session` returned 401 `auth/project-mismatch`; runtime logs identified the existing preview Admin credential's project as `the-squad-audit-preview`. The corrected deployment explicitly aligns public configuration/runtime project IDs with that existing QA backend and sets the stable QA app origin. No credential rotation, production setting change, token-validation bypass or new service-account key was needed.
+
+Fresh Playwright evidence on the corrected host:
+
+| Check | Result |
+| --- | --- |
+| Protected bootstrap with existing authorized automation credential | PASS: HTTP 200, `distribution: store`; credential used only for the QA host |
+| Coach and adult-athlete real email/password sign-in | PASS: both reach dashboard even with a stale pricing return URL |
+| Reload/session persistence | PASS: server session returns 200 and exact expected QA UID for each role |
+| Desktop Schedule/Roster/Chat navigation | PASS for both roles; no uncaught page errors or observed 5xx responses |
+| Mobile navigation at 390×844 | PASS: coach Schedule/Roster/Chat; athlete Calendar/Profile/Chat; no horizontal overflow; screenshots inspected |
+| More → Profile & Settings | PASS for both; purchase links absent |
+| Logout and signed-out dashboard | PASS: session becomes 401; dashboard redirects to login |
+| Public/legal/free-signup routes | PASS: privacy/signup 200 |
+| Purchase guards | PASS: pricing/checkout/billing 403; checkout POST 403 |
+| Native unauthenticated bootstrap | BLOCKED: Vercel returns 302; native guard correctly cannot accept this protected host |
+
+Artifacts under `output/playwright/native-store-hosted-20260912/`: role `*-navigation.json`, `*-mobile-logout.json`, `*-mobile.png`, `public-results.json`, cleanup records, and reproducible `runner.mjs`. The first athlete mobile harness assumed coach destinations; inspection showed intended athlete `/calendar` and Profile navigation, so only the harness was corrected. No app repair was needed. The Vercel feedback overlay script is blocked by the existing CSP; CSP was not relaxed. Passing application-navigation checks exclude that hosting-toolbar diagnostic and intentional 403/401 negative responses.
+
+Cleanup removed both initial staging test identities and their three owned root trees, then both audit-preview identities and their three root trees. No customer data was removed; these synthetic fixtures are regenerable. The browser and owned simulator were closed. Native and website hashes/diff boundaries were preserved; production deployment remains `dpl_9oA7gd96szxVA2PxYmjqCNoJ9Kja`, with unchanged protection settings.
+
 The user explicitly authorized the remaining repair and hosted QA deployment. Current provisional/committed cancellation now retires the failed navigation, invalidates pending verification and shows Retry; obsolete/nil cancellations remain harmless. Failure persists across foreground verification until explicit Retry.
 
 - RED: fresh derived-data build, `cancellation-fresh-red.xcresult`: 18 controller tests, 2 failed exactly on the new cancellation recovery assertions. An initial reused-derived-data attempt ran only the older 15 tests and is excluded from proof.

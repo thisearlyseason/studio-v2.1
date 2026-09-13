@@ -43,7 +43,7 @@ xcodebuild -quiet \
 xcrun simctl launch "$SQUAD_IOS_SIMULATOR" pro.thesquad.shell.dev
 ```
 
-The accepted result was 24 XCTest passes. A first cold managed-test attempt crashed before tests connected because the simulator referenced a stale temporary container and could not find `SquadShell.debug.dylib`; explicit boot status plus building for testing, reinstalling the matching app, and testing without rebuilding resolves that runner state without a code change. The actual app showed the safe no-origin setup and retry UI in portrait and landscape with no web content exposed. Controller regressions use real `WKNavigation` identities from `WKWebView`, while directly driving delegate outcomes; they are not hosted-navigation proof.
+The latest accepted result is 27 XCTest passes (`native/ios/.build/cancellation-green.xcresult`). A first cold managed-test attempt crashed before tests connected because the simulator referenced a stale temporary container and could not find `SquadShell.debug.dylib`; explicit boot status plus building for testing, reinstalling the matching app, and testing without rebuilding resolves that runner state without a code change. Use a fresh derived-data directory if the result omits newly added tests. The actual app showed the safe no-origin setup and retry UI in portrait and landscape with no web content exposed. Controller regressions use real `WKNavigation` identities from `WKWebView`, while directly driving delegate outcomes; they are not hosted-navigation proof.
 
 For Android, use the pinned toolchain and the explicitly owned emulator:
 
@@ -77,4 +77,6 @@ Android gives each current main-frame navigation 30 seconds to reach both truste
 
 The iOS Release preflight fails with the explicit non-releasable-app error, and Android has no `assembleRelease` task. These are verified safeguards, not release successes. Production signing, identities, origin and provider/store work remain unconfigured.
 
-Hosted bootstrap, sign-in, permitted and denied navigation, foreground recheck and offline recovery are **BLOCKED**. No separate store-only QA target or approved QA session was provided, and the deployment-approval question was unanswered. Do not guess a host, change an alias or settings, or treat controlled local fixtures as hosted PASS.
+Hosted **Playwright browser** acceptance now passes on the approved protected store QA preview: coach and athlete email/password sign-in, session reload, desktop/mobile navigation, settings, logout and purchase-route guards. The target is `https://thesquadv2-native-store-qa-tylers-projects-5b59182e.vercel.app`, deployment `dpl_3Zx2i9UUeazEDRwvpD41amTY3jD9`, using only `the-squad-audit-preview` Firebase data. Tests used an existing automation protection credential without changing project protection. Disposable accounts/data were removed.
+
+Hosted **native-shell** sign-in, foreground and offline acceptance remain BLOCKED: an unauthenticated bootstrap request receives Vercel's 302 authentication redirect. The native bootstrap intentionally sends no credential/cookie and rejects redirects. Do not embed the automation credential in either app or weaken that guard. A directly reachable, explicitly approved store host is required for native acceptance; browser proof is not native-device or store certification. Production website configuration is unchanged.
