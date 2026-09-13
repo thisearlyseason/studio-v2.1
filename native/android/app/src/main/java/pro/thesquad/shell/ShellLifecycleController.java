@@ -91,6 +91,18 @@ final class ShellLifecycleController {
         if (destroyed || callbackGeneration != navigationGeneration) {
             return false;
         }
+        failCurrentPage();
+        return true;
+    }
+
+    void webViewFailed() {
+        if (destroyed) {
+            return;
+        }
+        failCurrentPage();
+    }
+
+    private void failCurrentPage() {
         navigationGeneration += 1;
         verified = false;
         pageReady = false;
@@ -98,7 +110,6 @@ final class ShellLifecycleController {
         if (active) {
             renderer.showNative(NativeState.FAILED);
         }
-        return true;
     }
 
     void destroy() {

@@ -145,10 +145,12 @@ public final class ShellActivity extends Activity
     }
 
     @Override
-    public void renderProcessGone(long navigationGeneration) {
-        if (controller.pageFailed(navigationGeneration)) {
-            replaceWebView();
+    public void renderProcessGone(WebView sourceWebView) {
+        if (sourceWebView != webView) {
+            return;
         }
+        controller.webViewFailed();
+        replaceWebView();
     }
 
     private void configureWindow() {

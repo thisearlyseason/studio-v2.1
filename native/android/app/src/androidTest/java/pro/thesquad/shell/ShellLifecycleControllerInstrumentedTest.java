@@ -179,6 +179,22 @@ public final class ShellLifecycleControllerInstrumentedTest {
         assertTrue(renderer.loadedUrls.isEmpty());
     }
 
+    @Test
+    public void rendererDeathBeforeNavigationInvalidatesPendingCheck() {
+        ControlledBootstrap bootstrap = new ControlledBootstrap();
+        RecordingRenderer renderer = new RecordingRenderer();
+        ShellLifecycleController controller =
+                new ShellLifecycleController(DESTINATION, bootstrap, renderer);
+
+        controller.foreground();
+        controller.webViewFailed();
+        bootstrap.checks.get(0).completion.accept(true);
+
+        assertTrue(bootstrap.checks.get(0).cancellation.cancelled);
+        assertEquals(ShellLifecycleController.NativeState.FAILED, renderer.state);
+        assertTrue(renderer.loadedUrls.isEmpty());
+    }
+
     private static final class ControlledBootstrap implements StoreBootstrapChecking {
         private final List<Check> checks = new ArrayList<>();
 

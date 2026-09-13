@@ -155,7 +155,7 @@ public final class GuardedWebViewInstrumentedTest {
     }
 
     @Test
-    public void mainFrameTlsFailureFailsItsNavigation() {
+    public void mainFrameTlsCancellationWaitsForRequestAwareFailure() {
         RecordingNavigation navigation = new RecordingNavigation();
         onMain(() -> {
             WebView webView = createWebView();
@@ -169,6 +169,11 @@ public final class GuardedWebViewInstrumentedTest {
                             SslError.SSL_UNTRUSTED,
                             (SslCertificate) null,
                             "https://store.example.com/dashboard"));
+            assertEquals(0, navigation.failures);
+            client.onReceivedError(
+                    webView,
+                    new Request("https://store.example.com/dashboard", true, "GET"),
+                    null);
         });
 
         assertEquals(1, navigation.failures);
@@ -198,6 +203,26 @@ public final class GuardedWebViewInstrumentedTest {
     }
 
     @Test
+    public void sameUrlSubresourceTlsFailureDoesNotFailTheCurrentMainFrame() {
+        RecordingNavigation navigation = new RecordingNavigation();
+        onMain(() -> {
+            WebView webView = createWebView();
+            GuardedWebViewClient client = new GuardedWebViewClient(DESTINATION, navigation);
+            webView.setWebViewClient(client);
+            client.onPageStarted(webView, "https://store.example.com/dashboard", null);
+            client.onReceivedSslError(
+                    webView,
+                    newSslErrorHandler(),
+                    new SslError(
+                            SslError.SSL_UNTRUSTED,
+                            (SslCertificate) null,
+                            "https://store.example.com/dashboard"));
+        });
+
+        assertEquals(0, navigation.failures);
+    }
+
+    @Test
     public void staleMainFrameTlsFailureDoesNotFailNewerNavigation() {
         RecordingNavigation navigation = new RecordingNavigation();
         onMain(() -> {
@@ -215,6 +240,24 @@ public final class GuardedWebViewInstrumentedTest {
                             "https://store.example.com/first"));
         });
 
+        assertEquals(0, navigation.failures);
+    }
+
+    @Test
+    public void rendererDeathReportsItsSourceBeforeNavigationStarts() {
+        RecordingNavigation navigation = new RecordingNavigation();
+        AtomicReference<WebView> source = new AtomicReference<>();
+        onMain(() -> {
+            WebView webView = createWebView();
+            source.set(webView);
+            GuardedWebViewClient client = new GuardedWebViewClient(DESTINATION, navigation);
+
+            assertTrue(client.onRenderProcessGone(webView, null));
+        });
+
+        assertEquals(
+                Collections.singletonList(source.get()),
+                navigation.failedWebViews);
         assertEquals(0, navigation.failures);
     }
 
@@ -370,6 +413,7 @@ public final class GuardedWebViewInstrumentedTest {
         private final List<String> finished = new ArrayList<>();
         private final List<String> opened = new ArrayList<>();
         private final List<Long> failedGenerations = new ArrayList<>();
+        private final List<WebView> failedWebViews = new ArrayList<>();
 
         @Override
         public void blocked() {
@@ -391,6 +435,11 @@ public final class GuardedWebViewInstrumentedTest {
         public void pageFailed(long navigationGeneration) {
             failures += 1;
             failedGenerations.add(navigationGeneration);
+        }
+
+        @Override
+        public void renderProcessGone(WebView sourceWebView) {
+            failedWebViews.add(sourceWebView);
         }
     }
 

@@ -3,7 +3,9 @@ package pro.thesquad.shell;
 import static org.junit.Assert.assertEquals;
 import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertNotNull;
+import static org.junit.Assert.assertNotSame;
 import static org.junit.Assert.assertNull;
+import static org.junit.Assert.assertSame;
 import static org.junit.Assert.assertTrue;
 
 import android.content.pm.ApplicationInfo;
@@ -71,5 +73,27 @@ public final class ShellActivityInstrumentedTest {
         assertEquals("pro.thesquad.shell.dev", application.packageName);
         assertEquals("Squad Development", packages.getApplicationLabel(application).toString());
         assertFalse((application.flags & ApplicationInfo.FLAG_ALLOW_BACKUP) != 0);
+    }
+
+    @Test
+    public void rendererDeathBeforeNavigationShowsRetryAndReplacesWebView() {
+        try (ActivityScenario<ShellActivity> scenario =
+                     ActivityScenario.launch(ShellActivity.class)) {
+            scenario.onActivity(activity -> {
+                WebView failedWebView = activity.findViewById(R.id.shell_web_view);
+
+                activity.renderProcessGone(failedWebView);
+
+                WebView replacement = activity.findViewById(R.id.shell_web_view);
+                TextView title = activity.findViewById(R.id.shell_title);
+                Button retry = activity.findViewById(R.id.shell_retry);
+                assertNotSame(failedWebView, replacement);
+                assertEquals("Unable to open The Squad", title.getText().toString());
+                assertEquals(View.VISIBLE, retry.getVisibility());
+
+                activity.renderProcessGone(failedWebView);
+                assertSame(replacement, activity.findViewById(R.id.shell_web_view));
+            });
+        }
     }
 }

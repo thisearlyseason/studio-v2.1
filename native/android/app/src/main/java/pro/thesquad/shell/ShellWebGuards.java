@@ -31,9 +31,7 @@ interface NavigationEvents {
 
     void pageFailed(long navigationGeneration);
 
-    default void renderProcessGone(long navigationGeneration) {
-        pageFailed(navigationGeneration);
-    }
+    void renderProcessGone(WebView sourceWebView);
 }
 
 final class ShellWebView {
@@ -145,16 +143,11 @@ final class GuardedWebViewClient extends WebViewClient {
             SslErrorHandler handler,
             SslError error) {
         handler.cancel();
-        long generation = generationFor(error.getUrl());
-        if (generation != ShellLifecycleController.INVALID_NAVIGATION_GENERATION) {
-            post(view, () -> events.pageFailed(generation));
-        }
     }
 
     @Override
     public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
-        long generation = activeNavigationGeneration;
-        post(view, () -> events.renderProcessGone(generation));
+        post(view, () -> events.renderProcessGone(view));
         return true;
     }
 
