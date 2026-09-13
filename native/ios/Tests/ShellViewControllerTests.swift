@@ -4,6 +4,151 @@ import XCTest
 
 @testable import SquadShell
 
+/// Opt-in live acceptance: uses the app delegate's real controller and real QA backend.
+@MainActor
+final class HostedShellAcceptanceTests: XCTestCase {
+  private var web: WKWebView!
+
+  func testHostedExternalNavigationDenied() async throws {
+    let input = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("hosted-qa.private.json")
+    guard FileManager.default.fileExists(atPath: input.path) else { throw XCTSkip("Explicit hosted QA only") }
+    guard Bundle.main.object(forInfoDictionaryKey: "SquadStoreOrigin") as? String ==
+      "https://thesquadv2-native-store-qa-tylers-projects-5b59182e.vercel.app" else {
+      throw NSError(domain: "HostedQA.WrongOrigin", code: 1)
+    }
+    let controller = (UIApplication.shared.delegate as! AppDelegate).window!.rootViewController!
+    web = findSubview(WKWebView.self, in: controller.view)!
+    try await waitFor("Hosted login", "location.pathname==='/login' && !!document.querySelector('#password')")
+    try await visible()
+    let url = web.url
+    _ = try await js("(()=>{const a=document.createElement('a');a.href='https://example.com';document.body.append(a);a.click();return true})()")
+    let message = viewWithAccessibilityID("shell-link-error", in: controller.view)!
+    let end = Date().addingTimeInterval(5)
+    while message.isHidden && Date() < end { try await Task.sleep(for: .milliseconds(100)) }
+    XCTAssertFalse(message.isHidden, "External navigation must receive native denial")
+    XCTAssertEqual(web.url, url)
+    _ = try await js("(()=>{const a=document.createElement('a');a.href='https://example.com';a.target='_blank';document.body.append(a);a.click();return true})()")
+    // Allow the asynchronous new-window delegate decision to finish before checking the live view.
+    try await Task.sleep(for: .milliseconds(500))
+    XCTAssertEqual(web.url, url)
+    try await checkpoint("external-and-new-window-denied")
+  }
+
+  private func js(_ source: String) async throws -> Any? {
+    try await web.evaluateJavaScript(source)
+  }
+
+  private func waitFor(_ label: String, _ expression: String) async throws {
+    let end = Date().addingTimeInterval(40)
+    while Date() < end {
+      if (try? await js(expression)) as? Bool == true { return }
+      try await Task.sleep(for: .milliseconds(250))
+    }
+    let path = try? await js("location.pathname")
+    let text = try? await js("document.body.innerText.slice(0,1500)")
+    print("HostedShellQA timeout \(label) path=\(String(describing:path)) text=\(String(describing:text))")
+    XCTFail(label)
+    throw NSError(domain: "HostedQA", code: 1)
+  }
+
+  private func visible() async throws {
+    let end = Date().addingTimeInterval(35)
+    while web.isHidden && Date() < end { try await Task.sleep(for: .milliseconds(250)) }
+    XCTAssertFalse(web.isHidden, "Native shell must reveal verified hosted content")
+  }
+
+  private func quote(_ value: String) -> String {
+    String(data: try! JSONSerialization.data(withJSONObject: [value]), encoding: .utf8)!
+      .dropFirst().dropLast().description
+  }
+
+  private func click(_ text: String) async throws {
+    let query = "[...document.querySelectorAll('a,button')].find(e=>e.textContent.trim().startsWith(\(quote(text))))"
+    try await waitFor("Control: \(text)", "!!(\(query))")
+    _ = try await js("(()=>{const e=\(query);e.scrollIntoView();e.click();return true})()")
+  }
+
+  private func checkpoint(_ name: String) async throws {
+    try await visible()
+    let image = UIGraphicsImageRenderer(bounds: web.window!.bounds).image { _ in
+      web.window!.drawHierarchy(in: web.window!.bounds, afterScreenUpdates: true)
+    }
+    let attachment = XCTAttachment(image: image)
+    attachment.name = name
+    attachment.lifetime = .keepAlways
+    add(attachment)
+    print("HostedShellQA PASS \(name)")
+  }
+
+  func testHostedRolesSessionNavigationAndLogout() async throws {
+    let input = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+      .appendingPathComponent("hosted-qa.private.json")
+    guard FileManager.default.fileExists(atPath: input.path) else {
+      throw XCTSkip("Hosted QA requires explicitly provisioned disposable fixture credentials")
+    }
+    let origin = "https://thesquadv2-native-store-qa-tylers-projects-5b59182e.vercel.app"
+    guard Bundle.main.object(forInfoDictionaryKey: "SquadStoreOrigin") as? String == origin else {
+      throw NSError(domain: "HostedQA.WrongOrigin", code: 1)
+    }
+    let state = try JSONSerialization.jsonObject(with: Data(contentsOf: input)) as! [String: Any]
+    let controller = (UIApplication.shared.delegate as! AppDelegate).window!.rootViewController!
+    web = findSubview(WKWebView.self, in: controller.view)!
+    // The manual coach check may have left a session. Clear it through the real Sign Out UI.
+    try await waitFor("Initial hosted document", "document.readyState==='complete' && !!document.querySelector('main h1,h1')")
+    if web.url?.path != "/login" {
+      web.load(URLRequest(url: URL(string: origin + "/settings")!))
+      try await waitFor("Existing session settings", "location.pathname==='/settings' && /global settings/i.test(document.body.innerText)")
+      try await click("Sign Out")
+    }
+    for who in state["identities"] as! [[String: Any]] {
+      let role = who["role"] as! String
+      try await waitFor("Hosted login", "location.pathname==='/login' && !!document.querySelector('#password')")
+      _ = try await js("window.__qaOldLogin=true")
+      web.load(URLRequest(url: URL(string: origin + "/login?returnTo=%2Fdashboard")!))
+      try await waitFor("Explicit dashboard return", "!window.__qaOldLogin && document.readyState==='complete' && location.pathname==='/login' && !!document.querySelector('#password')")
+      try await visible()
+      let email = quote(who["email"] as! String), password = quote(state["password"] as! String)
+      _ = try await js("(()=>{const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;for(const [id,value] of [['email',\(email)],['password',\(password)]]){const e=document.getElementById(id);set.call(e,value);e.dispatchEvent(new Event('input',{bubbles:true}));}return true})()")
+      try await click("Sign In")
+      try await waitFor("Authenticated dashboard", "location.pathname==='/dashboard' && /next actions/i.test(document.body.innerText)")
+      try await checkpoint(role + "-dashboard")
+      _ = try await js("window.__qaBeforeReload=true")
+      web.reload()
+      try await waitFor("Reload dashboard", "!window.__qaBeforeReload && document.readyState==='complete' && location.pathname==='/dashboard' && /next actions/i.test(document.body.innerText)")
+      _ = try await js("void fetch('/api/auth/session').then(async r=>window.__qaSession={status:r.status,body:await r.json()})")
+      try await waitFor("Exact session identity", "window.__qaSession?.status===200 && window.__qaSession.body.uid===\(quote(who["uid"] as! String))")
+      let routes = role == "coach" ? [("Schedule", "/events"), ("Roster", "/roster"), ("Chat", "/chats")]
+        : [("Schedule", "/calendar"), ("Profile", "/roster"), ("Chat", "/chats")]
+      for (name, path) in routes {
+        try await click(name)
+        try await waitFor("Navigation \(path)", "location.pathname===\(quote(path)) && !!document.querySelector('main h1')")
+        let error = try await js("/Unable to load|permission.denied|Something went wrong|Failed to load/i.test(document.querySelector('main').innerText)") as? Bool
+        XCTAssertEqual(error, false)
+        try await checkpoint(role + path.replacingOccurrences(of: "/", with: "-"))
+      }
+      NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+      XCTAssertTrue(web.isHidden)
+      NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+      try await checkpoint(role + "-foreground-chat")
+      XCTAssertEqual(web.url?.path, "/chats")
+      try await click("More")
+      // Check scrollability geometrically; clicking an offscreen link alone cannot prove this.
+      let scroll = try await js("(()=>{const v=document.querySelector('[role=dialog] [data-radix-scroll-area-viewport]');if(!v)return null;return {client:v.clientHeight,total:v.scrollHeight,bottom:v.getBoundingClientRect().bottom,height:innerHeight}})()")
+      print("HostedShellQA scroll geometry \(String(describing: scroll))")
+      try await click("Profile & Settings")
+      try await waitFor("Settings", "location.pathname==='/settings' && /global settings/i.test(document.body.innerText)")
+      let paymentControls = try await js("[...document.querySelectorAll('a,button')].some(e=>/Manage Subscription|Upgrade|Checkout/i.test(e.textContent))") as? Bool
+      XCTAssertEqual(paymentControls, false)
+      try await click("Sign Out")
+      try await waitFor("Logout", "location.pathname==='/login' && !!document.querySelector('#password')")
+      _ = try await js("void fetch('/api/auth/session').then(r=>window.__qaLogoutStatus=r.status)")
+      try await waitFor("Server session cleared", "window.__qaLogoutStatus===401")
+      try await checkpoint(role + "-logout")
+    }
+  }
+}
+
 @MainActor
 final class ShellViewControllerTests: XCTestCase {
   private let destination = StoreDestination(origin: "https://store.example.com")!

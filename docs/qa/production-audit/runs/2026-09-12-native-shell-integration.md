@@ -4,7 +4,34 @@ Final-fix base: `85bb2b896f617c94ade614dd0643503d82fd5c61`. Scope was local nati
 
 ## Result
 
-### Authorized cancellation follow-up (latest)
+### Authorized native hosted acceptance (latest)
+
+The user explicitly approved a temporary protection exception for **only** `thesquadv2-native-store-qa-tylers-projects-5b59182e.vercel.app`. No automation credential was embedded in either native app. The direct bootstrap returned HTTP 200 and `{"distribution":"store"}` on the existing QA deployment. Both development builds used a command-line QA origin override; checked-in origins remain empty and Release remains blocked.
+
+| Remaining boundary | Fresh result |
+| --- | --- |
+| iOS real hosted bootstrap and coach/athlete email/password sign-in | PASS: actual app-delegate controller/WKWebView against the QA backend; manual coach startup also inspected |
+| Android real hosted bootstrap and coach/athlete email/password sign-in | PASS: installed development app and instrumented real WebView against the QA backend |
+| Both platforms: reload persistence | PASS: exact expected QA UID from the real server session after a new document loads |
+| Both platforms: role-correct Schedule/Calendar, Roster/Profile, Chat, More/settings, logout | PASS: real form and link handlers, no mocked API responses or authentication shortcuts; server session becomes 401 after logout |
+| Both platforms: foreground re-verification and retained chat | PASS: Android Activity lifecycle, iOS real hosted controller lifecycle notifications; manual iOS Home/reopen also preserved chat |
+| Both platforms: external and new-window links | PASS: external navigation denied, current trusted page retained |
+| Android offline → foreground → Retry → restored network | PASS: emulator Wi-Fi/data disabled, content hidden with Retry, connectivity restored and native Retry recovers hosted login |
+| iOS failed hosted bootstrap → native Retry → reachable host | PASS: restored QA protection produced the native connection/Retry UI; temporarily reopening the same approved QA host and pressing Retry recovered the actual login page; protection was then restored again |
+| iOS real transport loss/airplane mode | NOT VERIFIED: do on a physical iPhone; host-protection rejection is not an offline-radio test |
+| iOS finger-scrolling of More menu | NOT VERIFIED: desktop simulator gesture control was unreliable. Programmatic link navigation passed, but it is not touch-scroll certification |
+
+Evidence: `native/ios/.build/hosted-acceptance-3.xcresult` (1 hosted multi-role test passed), `native/ios/.build/hosted-external.xcresult` (1 guard test passed), `/tmp/squad-android-hosted-final.log` (1 multi-role instrumented test passed), and the separately passing Android external/offline instrumented test. These are focused scenario counts, not a claim to rerun the full feature audit. Screenshot/checkpoint artifacts are under `output/playwright/native-store-hosted-20260912/`, including `ios-attachments/` and `android-native-*.png`.
+
+Only test code was added. Early harness failures were corrected without production-code changes: native-ready/reload timing, CSS-transformed text matching, and iOS's legitimate return to Settings after a prior Settings login redirect. Android screenshots were recaptured after waiting for visible animation completion. iOS automatic screenshots can capture entrance transitions; the manual coach screenshot provides settled UI evidence. A menu-geometry reading during the sheet entrance animation does not establish a layout defect.
+
+Disposable fixture run `native-mtz9856a-c90fc9` used only `the-squad-audit-preview`; both Auth identities and all three owned Firestore root trees were removed. Native push/provider sign-in, signing, physical-device tests and store submission remain separate, unverified release work. No App Store/Play Store certification or production deployment is claimed.
+
+Final cleanup verified: QA protection exception absent, unauthenticated bootstrap HTTP 302 again, project protection still `all_except_custom_domains`, production target still `dpl_9oA7gd96szxVA2PxYmjqCNoJ9Kja`. Owned development-app/test APK installs and their private credential caches were removed; both owned simulators stopped. The three pre-existing dirty web-file hashes match the baseline exactly. Normal website source/configuration, production aliases and existing customer data were not changed. Protection proof: `output/playwright/native-store-hosted-20260912/protection-restored.json`.
+
+Physical follow-up once signed native builds are available: (1) on iPhone, open a signed-in page, disable Wi-Fi and cellular, background/reopen, confirm content hides and Retry appears, restore connectivity and confirm Retry recovers; (2) finger-scroll More to Profile & Settings and back on both phones. These checks do not certify unimplemented native push, provider sign-in or store release.
+
+### Authorized cancellation follow-up (previous)
 
 **Final follow-up result: cancellation repaired; hosted browser sign-in/navigation PASS. Native hosted/device acceptance remains separately blocked by deployment protection.**
 
