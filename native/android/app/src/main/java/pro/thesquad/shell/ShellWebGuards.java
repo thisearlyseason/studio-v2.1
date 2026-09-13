@@ -25,12 +25,14 @@ import java.util.function.Consumer;
 interface NavigationEvents {
     void blocked();
 
-    void pageFinished(String url);
+    long navigationStarted(String url);
 
-    void pageFailed();
+    void pageFinished(long navigationGeneration, String url);
 
-    default void renderProcessGone() {
-        pageFailed();
+    void pageFailed(long navigationGeneration);
+
+    default void renderProcessGone(long navigationGeneration) {
+        pageFailed(navigationGeneration);
     }
 }
 
@@ -59,6 +61,9 @@ final class GuardedWebViewClient extends WebViewClient {
     private final NavigationEvents events;
     private final Set<String> blockedMainFrames =
             Collections.synchronizedSet(new HashSet<>());
+    private String activeMainFrameUrl;
+    private long activeNavigationGeneration =
+            ShellLifecycleController.INVALID_NAVIGATION_GENERATION;
 
     GuardedWebViewClient(StoreDestination destination, NavigationEvents events) {
         this.destination = destination;
@@ -96,13 +101,16 @@ final class GuardedWebViewClient extends WebViewClient {
             rememberBlocked(url);
             view.stopLoading();
             notifyBlocked(view);
+            return;
         }
+        activeMainFrameUrl = url;
+        activeNavigationGeneration = events.navigationStarted(url);
     }
 
     @Override
     public void onPageFinished(WebView view, String url) {
         if (destination.allows(url)) {
-            events.pageFinished(url);
+            events.pageFinished(generationFor(url), url);
         } else {
             rememberBlocked(url);
             notifyBlocked(view);
@@ -116,7 +124,7 @@ final class GuardedWebViewClient extends WebViewClient {
             WebResourceError error) {
         if (request.isForMainFrame()
                 && !consumeBlocked(request.getUrl().toString())) {
-            events.pageFailed();
+            events.pageFailed(generationFor(request.getUrl().toString()));
         }
     }
 
@@ -127,7 +135,7 @@ final class GuardedWebViewClient extends WebViewClient {
             WebResourceResponse errorResponse) {
         if (request.isForMainFrame()
                 && !consumeBlocked(request.getUrl().toString())) {
-            events.pageFailed();
+            events.pageFailed(generationFor(request.getUrl().toString()));
         }
     }
 
@@ -137,13 +145,23 @@ final class GuardedWebViewClient extends WebViewClient {
             SslErrorHandler handler,
             SslError error) {
         handler.cancel();
-        post(view, events::pageFailed);
+        long generation = generationFor(error.getUrl());
+        if (generation != ShellLifecycleController.INVALID_NAVIGATION_GENERATION) {
+            post(view, () -> events.pageFailed(generation));
+        }
     }
 
     @Override
     public boolean onRenderProcessGone(WebView view, RenderProcessGoneDetail detail) {
-        post(view, events::renderProcessGone);
+        long generation = activeNavigationGeneration;
+        post(view, () -> events.renderProcessGone(generation));
         return true;
+    }
+
+    private long generationFor(String url) {
+        return url != null && url.equals(activeMainFrameUrl)
+                ? activeNavigationGeneration
+                : ShellLifecycleController.INVALID_NAVIGATION_GENERATION;
     }
 
     private boolean blockIfUntrusted(WebView view, String url) {

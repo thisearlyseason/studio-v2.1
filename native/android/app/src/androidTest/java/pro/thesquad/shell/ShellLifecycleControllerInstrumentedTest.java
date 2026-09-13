@@ -81,12 +81,14 @@ public final class ShellLifecycleControllerInstrumentedTest {
         assertEquals(
                 "https://store.example.com/dashboard",
                 renderer.loadedUrls.get(0));
-        controller.pageFinished("https://store.example.com/dashboard");
+        long pageGeneration =
+                controller.navigationStarted("https://store.example.com/dashboard");
+        controller.pageFinished(pageGeneration, "https://store.example.com/dashboard");
         assertTrue(renderer.contentVisible);
 
         controller.background();
         controller.foreground();
-        controller.pageFinished("https://store.example.com/dashboard");
+        controller.pageFinished(pageGeneration, "https://store.example.com/dashboard");
         assertFalse(renderer.contentVisible);
         assertEquals(ShellLifecycleController.NativeState.CHECKING, renderer.state);
 
@@ -104,7 +106,9 @@ public final class ShellLifecycleControllerInstrumentedTest {
 
         controller.foreground();
         bootstrap.checks.get(0).completion.accept(true);
-        controller.pageFailed();
+        long firstGeneration =
+                controller.navigationStarted("https://store.example.com/dashboard");
+        controller.pageFailed(firstGeneration);
         assertEquals(ShellLifecycleController.NativeState.FAILED, renderer.state);
         assertFalse(renderer.contentVisible);
 
@@ -112,6 +116,51 @@ public final class ShellLifecycleControllerInstrumentedTest {
         bootstrap.checks.get(1).completion.accept(true);
         assertEquals(2, renderer.loadedUrls.size());
         assertFalse(renderer.contentVisible);
+    }
+
+    @Test
+    public void latePageFinishAfterFailureCannotSatisfyRetry() {
+        ControlledBootstrap bootstrap = new ControlledBootstrap();
+        RecordingRenderer renderer = new RecordingRenderer();
+        ShellLifecycleController controller =
+                new ShellLifecycleController(DESTINATION, bootstrap, renderer);
+
+        controller.foreground();
+        bootstrap.checks.get(0).completion.accept(true);
+        long failedGeneration =
+                controller.navigationStarted("https://store.example.com/dashboard");
+        controller.pageFailed(failedGeneration);
+        controller.pageFinished(failedGeneration, "https://store.example.com/dashboard");
+
+        controller.retry();
+        bootstrap.checks.get(1).completion.accept(true);
+
+        assertEquals(2, renderer.loadedUrls.size());
+        assertFalse(renderer.contentVisible);
+    }
+
+    @Test
+    public void latePageFailureCannotOverrideNewerSuccessfulNavigation() {
+        ControlledBootstrap bootstrap = new ControlledBootstrap();
+        RecordingRenderer renderer = new RecordingRenderer();
+        ShellLifecycleController controller =
+                new ShellLifecycleController(DESTINATION, bootstrap, renderer);
+
+        controller.foreground();
+        bootstrap.checks.get(0).completion.accept(true);
+        long failedGeneration =
+                controller.navigationStarted("https://store.example.com/dashboard");
+        controller.pageFailed(failedGeneration);
+
+        controller.retry();
+        bootstrap.checks.get(1).completion.accept(true);
+        long successfulGeneration =
+                controller.navigationStarted("https://store.example.com/dashboard");
+        controller.pageFinished(successfulGeneration, "https://store.example.com/dashboard");
+        controller.pageFailed(failedGeneration);
+
+        assertTrue(renderer.contentVisible);
+        assertEquals(ShellLifecycleController.NativeState.CONTENT, renderer.state);
     }
 
     @Test

@@ -128,19 +128,27 @@ public final class ShellActivity extends Activity
     }
 
     @Override
-    public void pageFinished(String url) {
-        controller.pageFinished(url);
+    public long navigationStarted(String url) {
+        return controller.navigationStarted(url);
     }
 
     @Override
-    public void pageFailed() {
-        controller.pageFailed();
+    public void pageFinished(long navigationGeneration, String url) {
+        controller.pageFinished(navigationGeneration, url);
     }
 
     @Override
-    public void renderProcessGone() {
-        controller.pageFailed();
-        replaceWebView();
+    public void pageFailed(long navigationGeneration) {
+        if (controller.pageFailed(navigationGeneration)) {
+            replaceWebView();
+        }
+    }
+
+    @Override
+    public void renderProcessGone(long navigationGeneration) {
+        if (controller.pageFailed(navigationGeneration)) {
+            replaceWebView();
+        }
     }
 
     private void configureWindow() {

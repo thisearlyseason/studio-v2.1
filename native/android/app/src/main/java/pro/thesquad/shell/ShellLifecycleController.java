@@ -1,6 +1,8 @@
 package pro.thesquad.shell;
 
 final class ShellLifecycleController {
+    static final long INVALID_NAVIGATION_GENERATION = -1;
+
     enum NativeState {
         CHECKING,
         SETUP_REQUIRED,
@@ -22,6 +24,7 @@ final class ShellLifecycleController {
 
     private BootstrapCancellation cancellation;
     private long generation;
+    private long navigationGeneration;
     private boolean active;
     private boolean destroyed;
     private boolean verified;
@@ -62,8 +65,20 @@ final class ShellLifecycleController {
         beginCheck();
     }
 
-    void pageFinished(String url) {
+    long navigationStarted(String url) {
         if (destroyed || destination == null || !destination.allows(url)) {
+            return INVALID_NAVIGATION_GENERATION;
+        }
+        navigationGeneration += 1;
+        pageReady = false;
+        return navigationGeneration;
+    }
+
+    void pageFinished(long callbackGeneration, String url) {
+        if (destroyed
+                || callbackGeneration != navigationGeneration
+                || destination == null
+                || !destination.allows(url)) {
             return;
         }
         pageReady = true;
@@ -72,16 +87,18 @@ final class ShellLifecycleController {
         }
     }
 
-    void pageFailed() {
-        if (destroyed) {
-            return;
+    boolean pageFailed(long callbackGeneration) {
+        if (destroyed || callbackGeneration != navigationGeneration) {
+            return false;
         }
+        navigationGeneration += 1;
         verified = false;
         pageReady = false;
         invalidatePendingCheck();
         if (active) {
             renderer.showNative(NativeState.FAILED);
         }
+        return true;
     }
 
     void destroy() {
@@ -91,6 +108,7 @@ final class ShellLifecycleController {
         destroyed = true;
         active = false;
         verified = false;
+        navigationGeneration += 1;
         invalidatePendingCheck();
     }
 

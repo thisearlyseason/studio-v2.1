@@ -9,9 +9,12 @@ import static org.junit.Assert.assertTrue;
 
 import android.graphics.Bitmap;
 import android.net.Uri;
+import android.net.http.SslCertificate;
+import android.net.http.SslError;
 import android.os.Handler;
 import android.os.Looper;
 import android.os.Message;
+import android.webkit.SslErrorHandler;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebResourceResponse;
 import android.webkit.WebSettings;
@@ -27,6 +30,7 @@ import org.junit.runner.RunWith;
 
 import java.util.ArrayList;
 import java.io.ByteArrayInputStream;
+import java.lang.reflect.Constructor;
 import java.nio.charset.StandardCharsets;
 import java.util.Collections;
 import java.util.List;
@@ -133,6 +137,7 @@ public final class GuardedWebViewInstrumentedTest {
             GuardedWebViewClient client = new GuardedWebViewClient(DESTINATION, navigation);
             webView.setWebViewClient(client);
 
+            client.onPageStarted(webView, "https://store.example.com/dashboard", null);
             client.onPageFinished(webView, "https://store.example.com/dashboard");
             client.shouldOverrideUrlLoading(
                     webView,
@@ -146,6 +151,70 @@ public final class GuardedWebViewInstrumentedTest {
         assertEquals(
                 Collections.singletonList("https://store.example.com/dashboard"),
                 navigation.finished);
+        assertEquals(0, navigation.failures);
+    }
+
+    @Test
+    public void mainFrameTlsFailureFailsItsNavigation() {
+        RecordingNavigation navigation = new RecordingNavigation();
+        onMain(() -> {
+            WebView webView = createWebView();
+            GuardedWebViewClient client = new GuardedWebViewClient(DESTINATION, navigation);
+            webView.setWebViewClient(client);
+            client.onPageStarted(webView, "https://store.example.com/dashboard", null);
+            client.onReceivedSslError(
+                    webView,
+                    newSslErrorHandler(),
+                    new SslError(
+                            SslError.SSL_UNTRUSTED,
+                            (SslCertificate) null,
+                            "https://store.example.com/dashboard"));
+        });
+
+        assertEquals(1, navigation.failures);
+        assertEquals(
+                Collections.singletonList(1L),
+                navigation.failedGenerations);
+    }
+
+    @Test
+    public void subresourceTlsFailureDoesNotFailTheCurrentMainFrame() {
+        RecordingNavigation navigation = new RecordingNavigation();
+        onMain(() -> {
+            WebView webView = createWebView();
+            GuardedWebViewClient client = new GuardedWebViewClient(DESTINATION, navigation);
+            webView.setWebViewClient(client);
+            client.onPageStarted(webView, "https://store.example.com/dashboard", null);
+            client.onReceivedSslError(
+                    webView,
+                    newSslErrorHandler(),
+                    new SslError(
+                            SslError.SSL_UNTRUSTED,
+                            (SslCertificate) null,
+                            "https://cdn.example/image.png"));
+        });
+
+        assertEquals(0, navigation.failures);
+    }
+
+    @Test
+    public void staleMainFrameTlsFailureDoesNotFailNewerNavigation() {
+        RecordingNavigation navigation = new RecordingNavigation();
+        onMain(() -> {
+            WebView webView = createWebView();
+            GuardedWebViewClient client = new GuardedWebViewClient(DESTINATION, navigation);
+            webView.setWebViewClient(client);
+            client.onPageStarted(webView, "https://store.example.com/first", null);
+            client.onPageStarted(webView, "https://store.example.com/second", null);
+            client.onReceivedSslError(
+                    webView,
+                    newSslErrorHandler(),
+                    new SslError(
+                            SslError.SSL_UNTRUSTED,
+                            (SslCertificate) null,
+                            "https://store.example.com/first"));
+        });
+
         assertEquals(0, navigation.failures);
     }
 
@@ -279,6 +348,17 @@ public final class GuardedWebViewInstrumentedTest {
         return webView;
     }
 
+    private static SslErrorHandler newSslErrorHandler() {
+        try {
+            Constructor<SslErrorHandler> constructor =
+                    SslErrorHandler.class.getDeclaredConstructor();
+            constructor.setAccessible(true);
+            return constructor.newInstance();
+        } catch (ReflectiveOperationException exception) {
+            throw new AssertionError(exception);
+        }
+    }
+
     private void onMain(Runnable action) {
         InstrumentationRegistry.getInstrumentation().runOnMainSync(action);
     }
@@ -286,8 +366,10 @@ public final class GuardedWebViewInstrumentedTest {
     private static final class RecordingNavigation implements NavigationEvents {
         private int blocked;
         private int failures;
+        private long nextGeneration;
         private final List<String> finished = new ArrayList<>();
         private final List<String> opened = new ArrayList<>();
+        private final List<Long> failedGenerations = new ArrayList<>();
 
         @Override
         public void blocked() {
@@ -295,13 +377,20 @@ public final class GuardedWebViewInstrumentedTest {
         }
 
         @Override
-        public void pageFinished(String url) {
+        public long navigationStarted(String url) {
+            nextGeneration += 1;
+            return nextGeneration;
+        }
+
+        @Override
+        public void pageFinished(long navigationGeneration, String url) {
             finished.add(url);
         }
 
         @Override
-        public void pageFailed() {
+        public void pageFailed(long navigationGeneration) {
             failures += 1;
+            failedGenerations.add(navigationGeneration);
         }
     }
 

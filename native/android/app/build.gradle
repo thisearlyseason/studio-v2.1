@@ -7,7 +7,7 @@ plugins {
 def storeOrigin = providers.gradleProperty('squadStoreOrigin').orElse('')
 
 android {
-    namespace 'pro.thesquad.shell'
+    namespace = 'pro.thesquad.shell'
     compileSdk 36
 
     defaultConfig {
@@ -21,7 +21,7 @@ android {
     }
 
     buildFeatures {
-        buildConfig true
+        buildConfig = true
     }
 
     compileOptions {
@@ -34,7 +34,7 @@ android {
     }
 
     testOptions {
-        animationsDisabled true
+        animationsDisabled = true
     }
 }
 

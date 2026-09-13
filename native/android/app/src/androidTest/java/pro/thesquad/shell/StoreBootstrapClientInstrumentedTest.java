@@ -94,6 +94,21 @@ public final class StoreBootstrapClientInstrumentedTest {
     }
 
     @Test
+    public void rejectsLenientJSONObjectSyntax() throws Exception {
+        String[] malformedBodies = {
+                "{distribution:'store'}",
+                "{'distribution':'store'}",
+                "{distribution:\"store\"}",
+                "{\"distribution\"=\"store\"}",
+                "{\"distribution\":/*comment*/\"store\"}"
+        };
+
+        for (String body : malformedBodies) {
+            assertFalse(body, checkFixture(Fixture.response(200, "application/json", body)));
+        }
+    }
+
+    @Test
     public void rejectsMissingMediaTypeRedirectAndWrongFinalUrl() throws Exception {
         assertFalse(checkFixture(Fixture.response(
                 200, null, "{\"distribution\":\"store\"}")));

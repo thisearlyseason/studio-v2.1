@@ -2,12 +2,15 @@ package pro.thesquad.shell;
 
 import android.os.Handler;
 import android.os.Looper;
+import android.util.JsonReader;
+import android.util.JsonToken;
 
 import org.json.JSONException;
 import org.json.JSONObject;
 import org.json.JSONTokener;
 
 import java.io.IOException;
+import java.io.StringReader;
 import java.nio.charset.StandardCharsets;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.Executor;
@@ -93,18 +96,20 @@ final class StoreBootstrapClient implements StoreBootstrapChecking {
                             && contentType.subtype().equalsIgnoreCase("json")) {
                         byte[] bytes = readBounded(body.source());
                         if (bytes != null) {
-                            JSONTokener tokener = new JSONTokener(
-                                    new String(bytes, StandardCharsets.UTF_8));
-                            Object parsed = tokener.nextValue();
-                            if (parsed instanceof JSONObject && tokener.nextClean() == 0) {
-                                JSONObject object = (JSONObject) parsed;
-                                Object distribution = object.opt("distribution");
-                                accepted = distribution instanceof String
-                                        && destination.acceptsBootstrap(
-                                                response.code(),
-                                                response.request().url().toString(),
-                                                response.priorResponse() != null,
-                                                (String) distribution);
+                            String json = new String(bytes, StandardCharsets.UTF_8);
+                            if (isStrictCompleteObject(json)) {
+                                JSONTokener tokener = new JSONTokener(json);
+                                Object parsed = tokener.nextValue();
+                                if (parsed instanceof JSONObject && tokener.nextClean() == 0) {
+                                    JSONObject object = (JSONObject) parsed;
+                                    Object distribution = object.opt("distribution");
+                                    accepted = distribution instanceof String
+                                            && destination.acceptsBootstrap(
+                                                    response.code(),
+                                                    response.request().url().toString(),
+                                                    response.priorResponse() != null,
+                                                    (String) distribution);
+                                }
                             }
                         }
                     }
@@ -118,6 +123,17 @@ final class StoreBootstrapClient implements StoreBootstrapChecking {
             call.cancel();
             completionGate.complete(false);
         };
+    }
+
+    private static boolean isStrictCompleteObject(String json) throws IOException {
+        try (JsonReader reader = new JsonReader(new StringReader(json))) {
+            reader.setLenient(false);
+            if (reader.peek() != JsonToken.BEGIN_OBJECT) {
+                return false;
+            }
+            reader.skipValue();
+            return reader.peek() == JsonToken.END_DOCUMENT;
+        }
     }
 
     private static byte[] readBounded(BufferedSource source) throws IOException {
