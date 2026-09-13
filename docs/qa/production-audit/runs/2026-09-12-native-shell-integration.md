@@ -4,6 +4,18 @@ Final-fix base: `85bb2b896f617c94ade614dd0643503d82fd5c61`. Scope was local nati
 
 ## Result
 
+### Authorized cancellation follow-up (latest)
+
+The user explicitly authorized the remaining repair and hosted QA deployment. Current provisional/committed cancellation now retires the failed navigation, invalidates pending verification and shows Retry; obsolete/nil cancellations remain harmless. Failure persists across foreground verification until explicit Retry.
+
+- RED: fresh derived-data build, `cancellation-fresh-red.xcresult`: 18 controller tests, 2 failed exactly on the new cancellation recovery assertions. An initial reused-derived-data attempt ran only the older 15 tests and is excluded from proof.
+- GREEN: `cancellation-green.xcresult`: all 27 XCTest tests passed, zero failures/skips. Debug build and matching install passed. Added tests cover provisional/committed cancellation, stale finish, foreground persistence, explicit Retry and obsolete cancellation during a replacement navigation.
+- Independent focused review: GO, no actionable regressions; source/test diff only. Web diff and baseline hashes remain identical; Android/policy were unchanged and not rerun.
+- These are controller tests with real navigation identities and controlled delegate/bootstrap outcomes, not hosted/native-device sign-in proof.
+- Approved QA preview created: `dpl_vtQgnAWSVvJJg5Smv8RrxLUNaAkg`, `https://thesquadv2-l44ngkya4-tylers-projects-5b59182e.vercel.app`. Build-time/runtime distribution is explicitly store; public Firebase config and project IDs target `the-squad-v2-staging`. Existing preview-only Admin credentials remain inside Vercel; no production settings/alias changes. Hosted build and browser acceptance pending. Vercel browser sign-in requested without weakening deployment protection.
+
+The older open cancellation finding below is superseded by this repair; hosted/release limitations are not superseded.
+
 **Local handoff remains incomplete; release is not approved.** Final scoped review closed the three original findings but identified one Important iOS cancellation-recovery defect at `ShellViewController.swift:373`. A cancelled current `WKNavigation` remains retained with Retry hidden; successful foreground verification continues waiting for that cancelled document. This is a code-path finding, not a newly reproduced simulator failure. Next repair must ignore obsolete cancellations while retiring terminal current cancellation into a recoverable state, with a regression covering subsequent foreground verification. Existing passing tests do not cover this case.
 
 | Boundary | Status | Evidence |

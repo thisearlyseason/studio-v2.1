@@ -127,7 +127,59 @@ final class ShellViewControllerTests: XCTestCase {
     XCTAssertFalse(webView.isHidden)
   }
 
-  func testWebProcessFailureDuringForegroundVerificationRejectsLateBootstrapSuccess() {
+  func testProvisionalCurrentCancellationRemainsRecoverableAcrossForeground() {
+    assertCurrentCancellationRecovers(provisional: true)
+  }
+
+  func testCommittedCurrentCancellationRemainsRecoverableAcrossForeground() {
+    assertCurrentCancellationRecovers(provisional: false)
+  }
+
+  func testObsoleteCancellationDoesNotInterruptReplacementNavigation() {
+    let bootstrap = ControlledBootstrap()
+    let (controller, webView, _) = makeControllerWithSuccessfulPage(bootstrap: bootstrap)
+    let obsolete = startNavigation(
+      in: controller, webView: webView, url: "https://store.example.com/teams")
+    let replacement = startNavigation(
+      in: controller, webView: webView, url: "https://store.example.com/dashboard")
+    controller.webView(webView, didFailProvisionalNavigation: obsolete, withError: URLError(.cancelled))
+    controller.webView(webView, didFinish: replacement)
+    XCTAssertFalse(webView.isHidden)
+  }
+
+  private func assertCurrentCancellationRecovers(provisional: Bool) {
+    let bootstrap = ControlledBootstrap()
+    let (controller, webView, _) = makeControllerWithSuccessfulPage(bootstrap: bootstrap)
+    let cancelled = startNavigation(
+      in: controller, webView: webView, url: "https://store.example.com/teams")
+    NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+    NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+    if provisional {
+      controller.webView(webView, didFailProvisionalNavigation: cancelled, withError: URLError(.cancelled))
+    } else {
+      controller.webView(webView, didFail: cancelled, withError: URLError(.cancelled))
+    }
+    bootstrap.checks[1].completion(true)
+    controller.webView(webView, didFinish: cancelled)
+    XCTAssertEqual(labelText("shell-title", in: controller), "Unable to open The Squad")
+    XCTAssertFalse(viewWithAccessibilityID("shell-retry", in: controller.view)!.isHidden)
+    XCTAssertTrue(webView.isHidden)
+
+    NotificationCenter.default.post(name: UIApplication.didEnterBackgroundNotification, object: nil)
+    NotificationCenter.default.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+    bootstrap.checks[2].completion(true)
+    XCTAssertEqual(labelText("shell-title", in: controller), "Unable to open The Squad")
+    XCTAssertFalse(viewWithAccessibilityID("shell-retry", in: controller.view)!.isHidden)
+
+    tapRetry(in: controller)
+    bootstrap.checks[3].completion(true)
+    let replacement = startNavigation(
+      in: controller, webView: webView, url: "https://store.example.com/dashboard")
+    controller.webView(webView, didFinish: replacement)
+    XCTAssertFalse(webView.isHidden)
+  }
+
+  func testProcessFailureDuringForegroundVerificationRejectsLateBootstrapSuccess() {
     let bootstrap = ControlledBootstrap()
     let (controller, webView, _) = makeControllerWithSuccessfulPage(bootstrap: bootstrap)
 

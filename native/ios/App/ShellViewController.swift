@@ -18,6 +18,7 @@ final class ShellViewController: UIViewController, WKNavigationDelegate, WKUIDel
   private var hasAppeared = false
   private var wasBackgrounded = false
   private var hasSuccessfulPage = false
+  private var hasFailedPage = false
   private var bootstrapAccepted = false
   private var currentNavigation: WKNavigation?
   private let retiredNavigations = NSHashTable<WKNavigation>.weakObjects()
@@ -276,6 +277,7 @@ final class ShellViewController: UIViewController, WKNavigationDelegate, WKUIDel
     if retiringCurrentPage {
       retireCurrentNavigation(stopping: true)
       hasSuccessfulPage = false
+      hasFailedPage = false
     }
 
     guard let destination else {
@@ -303,6 +305,11 @@ final class ShellViewController: UIViewController, WKNavigationDelegate, WKUIDel
       return
     }
     bootstrapAccepted = true
+
+    if hasFailedPage {
+      showUnableToOpen()
+      return
+    }
 
     if hasSuccessfulPage,
       navigationPolicy(for: webView.url) == .allow
@@ -364,15 +371,14 @@ final class ShellViewController: UIViewController, WKNavigationDelegate, WKUIDel
     verification = nil
     bootstrapAccepted = false
     hasSuccessfulPage = false
+    hasFailedPage = true
     retireCurrentNavigation(stopping: true)
     showUnableToOpen()
   }
 
   private func handleNavigationFailure(_ navigation: WKNavigation?, error: Error) {
-    let error = error as NSError
-    guard !(error.domain == NSURLErrorDomain && error.code == NSURLErrorCancelled) else {
-      return
-    }
+    // Superseded/blocked navigations are harmless; a terminal failure of the
+    // current document (including cancellation) must expose a usable Retry.
     guard isCurrentNavigation(navigation) else { return }
     showPageFailure()
   }

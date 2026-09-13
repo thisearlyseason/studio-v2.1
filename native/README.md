@@ -6,7 +6,7 @@ The identifiers `pro.thesquad.shell.dev` and `Squad Development` are development
 
 ## Local verification
 
-Final review has one open Important iOS issue: cancellation of the current document can leave the app on Checking without Retry. The 24 iOS and 47 Android passing tests do not cover that case; native acceptance remains incomplete. See the [acceptance record](../docs/qa/production-audit/runs/2026-09-12-native-shell-integration.md) for the follow-up and hosted blockers.
+The iOS current-document cancellation follow-up is repaired and independently reviewed: terminal cancellation exposes Retry, obsolete cancellations are ignored, and foreground verification cannot revive a failed page. Fresh iOS verification passed 27/27 tests. Hosted acceptance remains separate; see the [acceptance record](../docs/qa/production-audit/runs/2026-09-12-native-shell-integration.md).
 
 Run the shared policy regression once from the repository root:
 
