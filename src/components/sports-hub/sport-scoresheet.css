@@ -4,7 +4,9 @@
 .sheet-intro h1 { font-size: clamp(26px, 4vw, 40px); font-weight: 900; line-height: 1.2; margin: 10px 0 16px; }
 .sheet-intro > p:not(:first-child) { max-width: 720px; font-size: 14px; line-height: 1.7; margin-bottom: 12px; }
 .sheet-page { color: #18181b; background: white; border: 1px solid #d4d4d8; border-radius: 8px; padding: 28px; margin-bottom: 28px; }
-.sheet-page-heading { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; padding-bottom: 12px; border-bottom: 2px solid #18181b; }
+.sheet-page-heading { display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 12px 0; border-top: 3px solid #c8102e; border-bottom: 1px solid #a1a1aa; }
+.sheet-brand-logo { width: 116px; height: 46px; flex: 0 0 116px; }
+.sheet-heading-copy { flex: 1; min-width: 0; border-left: 1px solid #d4d4d8; padding-left: 16px; }
 .sheet-page-heading p { font-size: 10px; font-weight: 800; text-transform: uppercase; letter-spacing: .06em; }
 .sheet-page-heading h2 { font-size: 23px; line-height: 1.2; font-weight: 800; margin-top: 5px; }
 .sheet-page-heading > span { font-size: 12px; white-space: nowrap; }
@@ -21,8 +23,16 @@
 .sheet-section th, .sheet-section td { border: 1px solid #a1a1aa; padding: 5px 6px; height: 27px; text-align: left; line-height: 1.2; }
 .sheet-section thead th { background: #f4f4f5; font-weight: 700; }
 .sheet-section tbody th { font-weight: 600; }
-.sheet-page-footer { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid #a1a1aa; padding-top: 8px; margin-top: 16px; font-size: 9px; }
+.sheet-page-footer { display: flex; justify-content: space-between; gap: 12px; align-items: center; border-top: 2px solid #c8102e; padding-top: 8px; margin-top: 16px; font-size: 9px; line-height: 1.4; }
+.sheet-brand-message, .sheet-brand-website { display: flex; flex-direction: column; gap: 2px; }
+.sheet-brand-message strong { font-size: 11px; }
+.sheet-brand-website { text-align: right; white-space: nowrap; }
+.sheet-brand-website strong { font-size: 14px; font-weight: 900; }
 @media (max-width: 600px) {
+  .sheet-page-heading { gap: 10px; flex-wrap: wrap; }
+  .sheet-brand-logo { width: 92px; height: 37px; flex-basis: 92px; }
+  .sheet-heading-copy { padding-left: 10px; }
+  .sheet-page-heading > span { margin-left: auto; }
   .sport-scoresheet { padding: 24px 16px; }
   .sheet-page { padding: 16px; }
   .sheet-page-heading h2 { font-size: 19px; }
@@ -39,14 +49,16 @@
   .sheet-page { border: 0; border-radius: 0; padding: 0; margin: 0; break-after: page; }
   .sheet-page:last-child { break-after: auto; }
   .sheet-page-heading h2 { font-size: 18px; }
-  .sheet-page-heading { padding-bottom: 8px; }
+  .sheet-page-heading { padding: 7px 0; flex-wrap: nowrap; gap: 14px; }
+  .sheet-brand-logo { width: 110px; height: 44px; flex-basis: 110px; }
+  .sheet-page, .sheet-page * { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
   .sheet-fields { grid-template-columns: 1fr 1fr; gap: 6px 20px; margin: 10px 0; }
   .sheet-field span { display: block; line-height: 1.3; }
   .sheet-field > div { height: 16px; }
   .sheet-section { margin: 10px 0; break-inside: avoid; }
   .sheet-table-scroll { overflow: visible; }
   .sheet-section table { min-width: 0; font-size: 9px; }
-  .sheet-section th, .sheet-section td { height: 20px; padding: 3px 5px; }
+  .sheet-section th, .sheet-section td { height: 19px; padding: 3px 5px; }
   .sheet-instructions, .sheet-note { font-size: 9px; margin: 7px 0; }
-  .sheet-page-footer { margin-top: 10px; }
+  .sheet-page-footer { margin-top: 10px; break-inside: avoid; }
 }
