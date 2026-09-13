@@ -10,6 +10,8 @@ import {
 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import SportScoresheet from '@/components/sports-hub/SportScoresheet';
+import { getSportScoresheet } from '@/lib/sport-scoresheets';
 import { cn } from '@/lib/utils';
 
 // ---------------------------------------------------------------------------
@@ -814,6 +816,9 @@ export default function TemplatePage({ params }: { params: Promise<{ slug: strin
   const [activeTab, setActiveTab] = useState(config?.tabs?.[0]?.id ?? '');
   const [copied, setCopied] = useState(false);
   const contentRef = useRef<HTMLDivElement>(null);
+
+  const scoresheet = getSportScoresheet(slug);
+  if (scoresheet) return <SportScoresheet sheet={scoresheet} />;
 
   if (!config) {
     return (

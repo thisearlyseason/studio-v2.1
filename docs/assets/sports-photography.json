@@ -1,0 +1,98 @@
+{
+  "generator": "Built-in image_gen tool",
+  "styleReference": "soccer.webp",
+  "basePrompt": "Use case: photorealistic-natural. Generate ONE new sports photograph. Input image is a STYLE REFERENCE ONLY: match its premium editorial real-camera look, low camera perspective, equipment at right-center, calm environmental space left for a white heading, restrained natural colors, cool shadows and soft warm highlights, realistic surfaces, shallow depth of field and crisp equipment textures. Adapt to the actual sport's venue and available indoor or outdoor lighting. Landscape 16:9, same dimensions as reference. No people, no text, no logos, no watermark, no illustrations, no vector art, no CGI. Sport-specific subject: ",
+  "subjects": [
+    {
+      "sport": "basketball",
+      "subject": "An orange basketball resting on a polished hardwood indoor basketball court, hoop softly blurred in the background."
+    },
+    {
+      "sport": "baseball",
+      "subject": "A scuffed white baseball with red stitching nestled beside a brown leather fielding glove on the dirt edge of a real baseball diamond, grass and fence softly blurred."
+    },
+    {
+      "sport": "rugby",
+      "subject": "An unbranded white rugby ball with subtle dark green panels on a grass rugby pitch, tall H-shaped rugby posts softly blurred behind."
+    },
+    {
+      "sport": "football",
+      "subject": "A brown pebbled American football with white laces on the turf of an American football field, yard line and yellow goalposts softly blurred behind."
+    },
+    {
+      "sport": "cornhole",
+      "subject": "Two fabric cornhole bean bags resting on the near end of a varnished wooden cornhole board with its single round hole clearly visible near the raised far end, outdoor grass recreation area softly blurred."
+    },
+    {
+      "sport": "gymnastics",
+      "subject": "A tan suede gymnastics balance beam running into depth with a small pair of leather hand grips resting on its near end, blue landing mats and empty training gym softly blurred."
+    },
+    {
+      "sport": "pickleball",
+      "subject": "A dark unbranded pickleball paddle and a yellow perforated plastic pickleball on a blue outdoor pickleball court with a low net softly blurred behind."
+    },
+    {
+      "sport": "tennis",
+      "subject": "An unbranded tennis racket and yellow felt tennis ball resting on a clay tennis court, tennis net softly blurred behind."
+    },
+    {
+      "sport": "golf",
+      "subject": "A white dimpled golf ball on a short wooden tee beside the head of a golf driver, real grass tee box with a fairway softly blurred behind."
+    },
+    {
+      "sport": "swimming",
+      "subject": "A pair of swimming goggles and a plain navy swim cap on a wet swimming pool deck near a blue racing lane, lane ropes softly blurred behind."
+    },
+    {
+      "sport": "esports",
+      "subject": "An unbranded black gaming headset resting beside a mechanical keyboard and mouse on a real esports desk, monitor and tournament venue softly blurred behind, warm practical venue light and cool shadows, no readable screen text."
+    },
+    {
+      "sport": "ultimate-frisbee",
+      "subject": "A single white unbranded flying disc lying on a grass ultimate field, small orange field cones softly blurred behind."
+    },
+    {
+      "sport": "disc-golf",
+      "subject": "Two unbranded colored disc golf discs resting on a grass tee area, a metal chain disc golf basket clearly recognizable but softly blurred behind in a wooded course."
+    },
+    {
+      "sport": "volleyball",
+      "subject": "A white and navy indoor volleyball resting on a polished wood volleyball court, taut volleyball net softly blurred behind."
+    },
+    {
+      "sport": "ice-hockey",
+      "subject": "A black hockey puck beside the curved taped blade of a hockey stick on scratched ice, a red hockey goal and white rink boards softly blurred behind."
+    },
+    {
+      "sport": "softball",
+      "subject": "A bright yellow softball with red stitching nestled beside a brown leather fielding glove on the dirt edge of a softball diamond, outfield grass softly blurred behind."
+    },
+    {
+      "sport": "lacrosse",
+      "subject": "A lacrosse stick head with realistic white mesh pocket and a white lacrosse ball resting beside it on a grass lacrosse field, lacrosse goal softly blurred behind."
+    },
+    {
+      "sport": "cricket",
+      "subject": "A red leather cricket ball beside an unbranded pale willow cricket bat lying on a real cricket pitch, three wooden stumps softly blurred behind."
+    },
+    {
+      "sport": "badminton",
+      "subject": "A white feather badminton shuttlecock and slim unbranded badminton racket resting on a green indoor badminton court, net softly blurred behind."
+    },
+    {
+      "sport": "table-tennis",
+      "subject": "A red rubber table tennis paddle with natural wood handle and a small white table tennis ball resting on a blue table tennis table, small net softly blurred behind."
+    },
+    {
+      "sport": "handball",
+      "subject": "A textured blue-and-white team handball resting on a polished indoor handball court, regulation rectangular striped handball goal softly blurred behind."
+    }
+  ],
+  "referencePrompt": "Use case: photorealistic-natural. Create one premium editorial sports photograph for a website card and full-width landing-page hero. Landscape 16:9, 1536x864 or higher. Subject: an unbranded black-and-white soccer ball resting on a real grass soccer pitch, recognizable goal softly blurred behind. Consistent series direction: realistic equipment and playing surface, equipment arranged near the right-center of the frame, wider environmental context and calm negative space on the left for white headline overlay; low eye-level camera, 50mm editorial photography, authentic material textures, restrained natural colors, subtly cool shadows and soft warm highlights, soft directional daylight or venue lighting, crisp subject and shallow depth of field. No people, no text, no logos, no watermarks, no illustration, no vector, no CGI. This will be the visual reference for 21 other sports photographed in the same style.",
+  "productionRouteAliases": {
+    "hockey": "ice-hockey",
+    "slo-pitch": "softball",
+    "field-lacrosse": "lacrosse",
+    "box-lacrosse": "lacrosse"
+  }
+}
