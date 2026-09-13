@@ -85,8 +85,8 @@ export default function SportsIndexPage() {
               return (
                 <Link key={slug} href={`/sports/${slug}`} className="group overflow-hidden rounded-lg border bg-white shadow-sm transition hover:-translate-y-1 hover:border-primary hover:shadow-xl">
                   <div className="relative aspect-[16/8] overflow-hidden bg-zinc-900">
-                    <Image src={sport.heroImage} alt={sport.heroAlt} fill className="object-cover transition duration-500 group-hover:scale-105" sizes="(max-width: 768px) 100vw, 50vw" />
-                    <div className="absolute inset-0 bg-black/35" />
+                    <Image src={sport.heroImage} alt={sport.heroAlt} fill className="object-cover object-[70%_center] transition duration-500 group-hover:scale-105" sizes="(max-width: 768px) 100vw, 50vw" />
+                    <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
                     <h2 className="absolute bottom-5 left-5 text-3xl font-black uppercase tracking-normal text-white sm:text-4xl">{sport.name}</h2>
                   </div>
                   <div className="flex items-center justify-between gap-4 p-6">
@@ -97,6 +97,14 @@ export default function SportsIndexPage() {
               );
             })}
           </div>
+        </div>
+      </section>
+
+      <section className="border-t py-12">
+        <div className="mx-auto max-w-7xl px-5 sm:px-8">
+          <h2 className="text-2xl font-black uppercase">Free sport-specific scoresheets</h2>
+          <p className="mt-3 max-w-2xl text-sm leading-7 text-zinc-600">Find a printable scoresheet for every sport, with match summaries, round results, and sport-specific scoring logs.</p>
+          <Link href="/sports-hub/templates" className="mt-5 inline-flex items-center font-bold text-primary">Explore the template library<ArrowRight className="ml-3 h-4 w-4" /></Link>
         </div>
       </section>
 

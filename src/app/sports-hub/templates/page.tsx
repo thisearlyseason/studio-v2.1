@@ -5,6 +5,7 @@ import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { Layout, ChevronRight, Star, Clock, Users, Trophy, ClipboardList, Calendar, FileText, AlertCircle } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
+import { SPORT_SCORESHEETS } from '@/lib/sport-scoresheets';
 import { cn } from '@/lib/utils';
 
 const fadeUp = {
@@ -16,9 +17,14 @@ const stagger = {
   visible: { transition: { staggerChildren: 0.07 } },
 };
 
-const CATEGORIES = ['All', 'Planning', 'Game Day', 'Communication', 'Admin', 'Tracking'];
+const CATEGORIES = ['All', 'Planning', 'Game Day', 'Communication', 'Admin', 'Tracking', 'Scoresheets'];
 
 const TEMPLATES = [
+  ...SPORT_SCORESHEETS.map(sheet => ({
+    id: sheet.slug, title: sheet.title, description: sheet.description,
+    category: 'Scoresheets', icon: Trophy, color: 'bg-emerald-100 text-emerald-700',
+    isFeatured: false, isNew: true, tags: ['scoresheet', sheet.sportSlug], useCount: '',
+  })),
   {
     id: 'season-planning-spreadsheet',
     title: 'Season Planning Spreadsheet',

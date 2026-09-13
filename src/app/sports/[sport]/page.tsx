@@ -102,15 +102,15 @@ export default async function SportLandingPage({ params }: PageProps) {
       </header>
 
       <section className="relative flex min-h-[78vh] items-end overflow-hidden bg-black text-white">
-        <Image src={landing.heroImage} alt={landing.heroAlt} fill priority className="object-cover" sizes="100vw" />
-        <div className="absolute inset-0 bg-black/65" />
+        <Image src={landing.heroImage} alt={landing.heroAlt} fill priority className="object-cover object-[70%_center]" sizes="100vw" />
+        <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/60 to-black/20" />
         <div className="relative mx-auto w-full max-w-7xl px-5 pb-16 pt-36 sm:px-8 sm:pb-20">
           <p className="text-xs font-black uppercase text-primary">The Squad for {landing.name}</p>
           <h1 className="mt-4 max-w-5xl text-4xl font-black uppercase leading-tight tracking-normal sm:text-6xl lg:text-7xl">{landing.headline}</h1>
           <p className="mt-6 max-w-3xl text-base font-medium leading-8 text-white/80 sm:text-xl">{landing.description}</p>
           <div className="mt-8 flex flex-col gap-3 sm:flex-row">
             <Link href="/signup" className="inline-flex min-h-12 items-center justify-center rounded-lg bg-primary px-7 text-xs font-black uppercase text-white">Start your {landing.name.toLowerCase()} squad<ArrowRight className="ml-3 h-4 w-4" /></Link>
-            <Link href="#scoresheets" className="inline-flex min-h-12 items-center justify-center rounded-lg border border-white/40 bg-black/25 px-7 text-xs font-black uppercase text-white">Explore scoresheets</Link>
+            <Link href={`/sports-hub/templates/${landing.scoresheetSlug}`} className="inline-flex min-h-12 items-center justify-center rounded-lg border border-white/40 bg-black/25 px-7 text-xs font-black uppercase text-white">Explore scoresheets</Link>
           </div>
         </div>
       </section>
@@ -122,6 +122,19 @@ export default async function SportLandingPage({ params }: PageProps) {
           <div className="flex items-center gap-3"><Trophy className="h-5 w-5 text-primary" /><span className="text-sm font-black uppercase">Season and tournament tools</span></div>
         </div>
       </section>
+
+      {landing.scoresheetSlug && (
+        <section className="border-b bg-zinc-100 py-12">
+          <div className="mx-auto flex max-w-7xl flex-col items-start justify-between gap-6 px-5 sm:px-8 lg:flex-row lg:items-center">
+            <div>
+              <p className="text-xs font-black uppercase text-primary">Free game-day resource</p>
+              <h2 className="mt-3 text-2xl font-black uppercase">Your {landing.name.toLowerCase()} scoresheet, ready to print</h2>
+              <p className="mt-3 max-w-2xl text-sm leading-7 text-zinc-600">Keep event details, sport-specific scoring, and game-day logs together. Print a blank copy or save it as a PDF.</p>
+            </div>
+            <Link href={`/sports-hub/templates/${landing.scoresheetSlug}`} className="inline-flex min-h-12 shrink-0 items-center rounded-lg bg-primary px-6 text-sm font-bold text-white">Open {landing.name.toLowerCase()} scoresheet<ArrowRight className="ml-3 h-4 w-4" /></Link>
+          </div>
+        </section>
+      )}
 
       <section className="py-16 sm:py-24">
         <div className="mx-auto max-w-7xl px-5 sm:px-8">

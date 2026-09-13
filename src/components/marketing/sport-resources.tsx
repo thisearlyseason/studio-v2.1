@@ -1,19 +1,21 @@
 import Link from 'next/link';
 import { Download, FileText } from 'lucide-react';
 import catalog from '@/lib/score-sheet-catalog.json';
+import { getSportScoresheet } from '@/lib/sport-scoresheets';
 import { NewsletterSignup } from '@/components/sports-hub/NewsletterSignup';
 
 export function SportResources({ sport }: { sport?: string }) {
   // Exact IDs only: do not advertise a different scoring format as a matching sheet.
   const sheet = catalog.find(item => item.id === sport);
+  const printable = sport ? getSportScoresheet(`${sport}-scoresheet`) : undefined;
   return (
     <>
       <section id="scoresheets" className="border-y border-red-100 bg-red-50/60 px-5 py-16 sm:px-8">
         <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[1fr_1fr] lg:items-center">
           <div>
             <p className="mb-3 text-xs font-bold uppercase tracking-widest text-red-700">A special feature from The Squad</p>
-            <h2 className="text-3xl font-black tracking-tight sm:text-4xl">{sheet ? `${sheet.name} scoresheets. Ready for game day.` : 'Branded scoresheets. Ready for game day.'}</h2>
-            <p className="mt-4 max-w-xl leading-7 text-zinc-700">Keep a paper record at the scorer’s table, on the bench, or beside the court. Our original printable packs include scoring grids and a scorer guide, with portrait and landscape options.</p>
+            <h2 className="text-3xl font-black tracking-tight sm:text-4xl">{sheet ? `${sheet.name} scoresheets. Ready for game day.` : printable ? `${printable.title}. Ready for game day.` : 'Branded scoresheets. Ready for game day.'}</h2>
+            <p className="mt-4 max-w-xl leading-7 text-zinc-700">Keep a paper record at the scorer’s table, on the bench, or beside the court. Choose a sport-specific printable record, or use one of our original packs with scoring grids, a scorer guide, and portrait and landscape options.</p>
             <p className="mt-3 text-sm leading-6 text-zinc-600">Free downloads. No account required. These are community worksheets, not official governing-body forms; check your competition’s requirements.</p>
           </div>
           <div className="rounded-2xl border border-red-100 bg-white p-6 shadow-sm sm:p-8">
@@ -27,10 +29,16 @@ export function SportResources({ sport }: { sport?: string }) {
                 </div>
                 <Link href={`/sports-hub/resources/score-sheet-${sheet.id}`} className="mt-5 block text-sm font-semibold underline underline-offset-4">Read the scoring guide</Link>
               </>
+            ) : printable ? (
+              <>
+                <h3 className="text-xl font-bold">{printable.title}</h3>
+                <p className="mt-3 text-sm leading-6 text-zinc-600">{printable.description}</p>
+                <Link href={`/sports-hub/templates/${printable.slug}`} className="mt-5 inline-flex min-h-12 items-center rounded-lg bg-red-700 px-5 text-sm font-bold text-white">Print / Save PDF</Link>
+              </>
             ) : (
               <>
                 <h3 className="text-xl font-bold">Choose a pack for your sport</h3>
-                <p className="mt-3 text-sm leading-6 text-zinc-600">Browse the available sports and scoring formats. A dedicated sheet is not available for every sport yet.</p>
+                <p className="mt-3 text-sm leading-6 text-zinc-600">Browse the available sports and scoring formats. Every sport landing page also includes a printable scoresheet.</p>
               </>
             )}
             <Link href="/sports-hub/playbook?type=score-sheet" className="mt-5 block text-sm font-bold text-red-700 underline underline-offset-4">Explore all branded scoresheets</Link>
