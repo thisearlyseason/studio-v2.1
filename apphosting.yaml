@@ -1,0 +1,131 @@
+
+# Staging App Hosting configuration. Production web traffic is served by the
+# Vercel project documented in docs/release-runbook.md.
+# Settings to manage and configure a Firebase App Hosting backend.
+# https://firebase.google.com/docs/app-hosting/configure
+
+runtime: nodejs24
+
+env:
+  - variable: NEXT_PUBLIC_APP_URL
+    value: https://studio--the-squad-v2-staging.us-east4.hosted.app
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FIREBASE_WEBAPP_CONFIG
+    value: '{"projectId":"the-squad-v2-staging","appId":"1:100620894746:web:5d5a2d05022ea6fc1d87a3","storageBucket":"the-squad-v2-staging.firebasestorage.app","apiKey":"AIzaSyBdH-iUTHwGketG0RQ1Lx1r3HImg3Rxp9M","authDomain":"the-squad-v2-staging.firebaseapp.com","messagingSenderId":"100620894746"}'
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: CALENDAR_FEED_BASE_URL
+    value: https://us-central1-the-squad-v2-staging.cloudfunctions.net/getCalendarFeed
+    availability:
+      - RUNTIME
+  - variable: NEXT_PUBLIC_FCM_VAPID_KEY
+    secret: NEXT_PUBLIC_FCM_VAPID_KEY
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY
+    secret: NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: WEB_PUSH_VAPID_PRIVATE_KEY
+    secret: WEB_PUSH_VAPID_PRIVATE_KEY
+    availability:
+      - RUNTIME
+  - variable: WEB_PUSH_VAPID_SUBJECT
+    secret: WEB_PUSH_VAPID_SUBJECT
+    availability:
+      - RUNTIME
+  - variable: NEXT_PUBLIC_STRIPE_PRICE_TEAM_MONTHLY
+    secret: NEXT_PUBLIC_STRIPE_PRICE_TEAM_MONTHLY
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_STRIPE_PRICE_TEAM_ANNUAL
+    secret: NEXT_PUBLIC_STRIPE_PRICE_TEAM_ANNUAL
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_STRIPE_PRICE_ELITE_TEAMS_MONTHLY
+    secret: NEXT_PUBLIC_STRIPE_PRICE_ELITE_TEAMS_MONTHLY
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_STRIPE_PRICE_ELITE_TEAMS_ANNUAL
+    secret: NEXT_PUBLIC_STRIPE_PRICE_ELITE_TEAMS_ANNUAL
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_STRIPE_PRICE_ELITE_LEAGUE_MONTHLY
+    secret: NEXT_PUBLIC_STRIPE_PRICE_ELITE_LEAGUE_MONTHLY
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_STRIPE_PRICE_ELITE_LEAGUE_ANNUAL
+    secret: NEXT_PUBLIC_STRIPE_PRICE_ELITE_LEAGUE_ANNUAL
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_STRIPE_PRICE_SCHOOLS_MONTHLY
+    secret: NEXT_PUBLIC_STRIPE_PRICE_SCHOOLS_MONTHLY
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: NEXT_PUBLIC_STRIPE_PRICE_SCHOOLS_ANNUAL
+    secret: NEXT_PUBLIC_STRIPE_PRICE_SCHOOLS_ANNUAL
+    availability:
+      - BUILD
+      - RUNTIME
+  - variable: STRIPE_PRICE_EXTRA_TEAM_MONTHLY
+    secret: STRIPE_PRICE_EXTRA_TEAM_MONTHLY
+    availability:
+      - RUNTIME
+  - variable: STRIPE_PRICE_EXTRA_TEAM_ANNUAL
+    secret: STRIPE_PRICE_EXTRA_TEAM_ANNUAL
+    availability:
+      - RUNTIME
+  - variable: STRIPE_SECRET_KEY
+    secret: STRIPE_SECRET_KEY
+    availability:
+      - RUNTIME
+  - variable: STRIPE_WEBHOOK_SECRET
+    secret: STRIPE_WEBHOOK_SECRET
+    availability:
+      - RUNTIME
+  - variable: STRIPE_CONNECT_WEBHOOK_SECRET
+    secret: STRIPE_CONNECT_WEBHOOK_SECRET
+    availability:
+      - RUNTIME
+  - variable: RESEND_API_KEY
+    secret: RESEND_API_KEY
+    availability:
+      - RUNTIME
+  - variable: RESEND_WEBHOOK_SECRET
+    secret: RESEND_WEBHOOK_SECRET
+    availability:
+      - RUNTIME
+  - variable: NEWSLETTER_UNSUBSCRIBE_SECRET
+    secret: NEWSLETTER_UNSUBSCRIBE_SECRET
+    availability:
+      - RUNTIME
+  - variable: INTERNAL_API_SECRET
+    secret: INTERNAL_API_SECRET
+    availability:
+      - RUNTIME
+  - variable: COMPETITION_CREDENTIAL_HMAC_SECRET
+    secret: COMPETITION_CREDENTIAL_HMAC_SECRET
+    availability:
+      - RUNTIME
+  - variable: OWNER_NOTIFICATION_EMAIL
+    secret: OWNER_NOTIFICATION_EMAIL
+    availability:
+      - RUNTIME
+
+runConfig:
+  # Increase this value if you'd like to automatically spin up
+  # more instances in response to increased traffic.
+  maxInstances: 10
+  memory: 512Mi

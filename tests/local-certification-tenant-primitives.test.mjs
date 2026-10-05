@@ -1,0 +1,295 @@
+import assert from 'node:assert/strict';
+import { EventEmitter } from 'node:events';
+import test from 'node:test';
+
+import { awaitEventually, runTwoParty, terminateOwnedProcess } from '../scripts/qa/certification/local/assertions.mjs';
+import { createFixtureMutations } from '../scripts/qa/certification/local/fixture-mutations.mjs';
+
+test('dynamic cleanup fails closed when recursive Firestore proof is unavailable', () => {
+  assert.throws(() => createFixtureMutations({
+    projectId: 'demo-tenant-certification', runId: 'final-cert-t4-unit',
+    firestore: { async read() { return null; }, async write() {}, async remove() {} },
+  }), /recursive descendant proof/);
+});
+
+test('dynamic Firestore writes require registration and exact overlays restore in reverse order', async () => {
+  const records = new Map([['teams/run-team', { name: 'before' }]]);
+  const operations = [];
+  const firestore = {
+    async read(path) { return records.has(path) ? structuredClone(records.get(path)) : null; },
+    async hasDescendants(path) { return [...records.keys()].some(candidate => candidate.startsWith(`${path}/`)); },
+    async write(path, value) { operations.push(['write', path, value]); records.set(path, structuredClone(value)); },
+    async remove(path) { operations.push(['remove', path]); records.delete(path); },
+  };
+  const mutations = createFixtureMutations({
+    projectId: 'demo-tenant-certification', runId: 'final-cert-t4-unit', firestore,
+    baselineRoots: ['teams/qa-team-a'],
+  });
+  await assert.rejects(() => mutations.writeDynamicDocument('teams/unregistered', {}), /registered before write/);
+  mutations.registerDynamicDocument('run-team', 'teams/run-team');
+  await mutations.withFirestoreOverlay(['teams/run-team'], async () => {
+    await mutations.writeDynamicDocument('teams/run-team', { name: 'during' });
+    assert.deepEqual(records.get('teams/run-team'), { name: 'during' });
+  });
+  assert.deepEqual(records.get('teams/run-team'), { name: 'before' });
+  const cleanup = await mutations.cleanup();
+  assert.equal(cleanup.state, 'OBSERVED');
+  assert.ok(cleanup.selectors.every(value => !value.includes('teams/run-team')));
+  assert.ok(operations.length >= 2);
+});
+
+test('dynamic cleanup refuses baseline destruction and retains failed resources', async () => {
+  const mutations = createFixtureMutations({
+    projectId: 'demo-tenant-certification', runId: 'final-cert-t4-unit',
+    firestore: { async read() { return {}; }, async hasDescendants() { return false; }, async write() {}, async remove() { throw new Error('transient'); } },
+    baselineRoots: ['teams/qa-team-a'], maxAttempts: 1,
+  });
+  assert.throws(() => mutations.registerDynamicDocument('bad', 'teams/qa-team-a'), /baseline root/);
+  mutations.registerDynamicDocument('created', 'teams/run-created');
+  const cleanup = await mutations.cleanup();
+  assert.equal(cleanup.state, 'FAIL');
+  assert.equal(cleanup.residuals.length, 1);
+});
+
+test('dynamic cleanup removes and verifies descendants even when the registered root document is absent', async () => {
+  const records = new Map([['teams/run-created/games/orphan', { id: 'orphan' }]]);
+  const firestore = {
+    async read(path) { return records.get(path) ?? null; },
+    async hasDescendants(path) { return [...records.keys()].some(candidate => candidate.startsWith(`${path}/`)); },
+    async write(path, value) { records.set(path, value); },
+    async remove(path) { for (const candidate of [...records.keys()]) if (candidate === path || candidate.startsWith(`${path}/`)) records.delete(candidate); },
+  };
+  const mutations = createFixtureMutations({ projectId: 'demo-tenant-certification', runId: 'final-cert-t4-unit', firestore });
+  mutations.registerDynamicDocument('run-created', 'teams/run-created');
+  const cleanup = await mutations.cleanup();
+  assert.equal(cleanup.state, 'OBSERVED');
+  assert.equal(records.size, 0);
+  assert.equal(cleanup.counts.deleted, 1);
+});
+
+test('overlay restoration attempts every path and final cleanup retries exact residuals', async () => {
+  const records = new Map([
+    ['teams/run-team/settings/a', { value: 'before-a' }],
+    ['teams/run-team/settings/b', { value: 'before-b' }],
+  ]);
+  let failedB = false;
+  const firestore = {
+    async read(path) { return records.has(path) ? structuredClone(records.get(path)) : null; },
+    async hasDescendants(path) { return [...records.keys()].some(candidate => candidate.startsWith(`${path}/`)); },
+    async write(path, value) {
+      if (path.endsWith('/b') && value.value === 'before-b' && !failedB) {
+        failedB = true;
+        throw new Error('transient restore');
+      }
+      records.set(path, structuredClone(value));
+    },
+    async remove(path) { records.delete(path); },
+  };
+  const mutations = createFixtureMutations({
+    projectId: 'demo-tenant-certification', runId: 'final-cert-t4-unit', firestore,
+    baselineRoots: ['teams/qa-team-a'], maxAttempts: 2,
+  });
+  await assert.rejects(
+    () => mutations.withFirestoreOverlay([...records.keys()], async () => {
+      for (const path of records.keys()) records.set(path, { value: 'during' });
+    }),
+    /transient restore/
+  );
+  assert.deepEqual(records.get('teams/run-team/settings/a'), { value: 'before-a' });
+  assert.deepEqual(records.get('teams/run-team/settings/b'), { value: 'during' });
+  const cleanup = await mutations.cleanup();
+  assert.equal(cleanup.state, 'OBSERVED');
+  assert.equal(cleanup.counts.restored, 2);
+  assert.deepEqual(records.get('teams/run-team/settings/b'), { value: 'before-b' });
+  assert.equal(cleanup.residuals.length, 0);
+});
+
+test('overlay reports both the original callback failure and restoration failure without replacing either', async () => {
+  const records = new Map([['teams/run-team', { value: 'before' }]]);
+  const mutations = createFixtureMutations({
+    projectId: 'demo-tenant-certification', runId: 'final-cert-t4-unit', maxAttempts: 1,
+    firestore: {
+      async read(path) { return records.get(path) ?? null; },
+      async hasDescendants(path) { return [...records.keys()].some(candidate => candidate.startsWith(`${path}/`)); },
+      async write() { throw new Error('restore failed'); },
+      async remove(path) { records.delete(path); },
+    },
+  });
+  await assert.rejects(
+    () => mutations.withFirestoreOverlay(['teams/run-team'], async () => {
+      records.set('teams/run-team', { value: 'during' });
+      throw new Error('operation failed');
+    }),
+    error => error instanceof AggregateError &&
+      error.errors.some(item => item.message === 'operation failed') &&
+      error.errors.some(item => item.message === 'restore failed')
+  );
+});
+
+test('overlay verification treats Firestore field reordering as the same before-image', async () => {
+  const records = new Map([['players/p-a', { nested: { z: 1, a: 2 }, joinedTeamIds: ['a', 'b'] }]]);
+  const firestore = {
+    async read(path) { return structuredClone(records.get(path) ?? null); },
+    async hasDescendants(path) { return [...records.keys()].some(candidate => candidate.startsWith(`${path}/`)); },
+    async write(path, value) {
+      records.set(path, { joinedTeamIds: structuredClone(value.joinedTeamIds), nested: { a: value.nested.a, z: value.nested.z } });
+    },
+    async remove(path) { records.delete(path); },
+  };
+  const mutations = createFixtureMutations({
+    projectId: 'demo-tenant-certification', runId: 'final-cert-t4-unit', firestore,
+    baselineRoots: ['players/p-a'], maxAttempts: 1,
+  });
+  await mutations.withFirestoreOverlay(['players/p-a'], async () => records.set('players/p-a', { changed: true }));
+  const cleanup = await mutations.cleanup();
+  assert.equal(cleanup.state, 'OBSERVED');
+  assert.equal(cleanup.residuals.length, 0);
+});
+
+test('two-party barrier releases both callbacks together and eventual probes are bounded', async () => {
+  const order = [];
+  const settled = await runTwoParty('capacity-race', [
+    async () => { order.push('a'); return 'A'; },
+    async () => { order.push('b'); return 'B'; },
+  ], { timeoutMs: 100, async terminate() {} });
+  assert.deepEqual(settled.map(item => item.status), ['fulfilled', 'fulfilled']);
+  assert.deepEqual(new Set(order), new Set(['a', 'b']));
+
+  let attempts = 0;
+  const value = await awaitEventually('projection', async () => ++attempts, current => current === 3, { timeoutMs: 100, intervalMs: 1, async terminate() {} });
+  assert.equal(value, 3);
+  await assert.rejects(() => awaitEventually('never', async () => false, Boolean, { timeoutMs: 5, intervalMs: 1, async terminate() {} }), /never/);
+});
+
+test('two-party work without an owned terminator is rejected before callbacks start', async () => {
+  let started = false;
+  await assert.rejects(() => runTwoParty('unowned-race', [
+    async () => { started = true; },
+    async () => { started = true; },
+  ], { timeoutMs: 2 }), /owned terminator/);
+  assert.equal(started, false);
+});
+
+test('two-party timeout aborts and settles both participants before returning', async () => {
+  let lateMutation = false;
+  let slowSettled = false;
+  await assert.rejects(
+    () => runTwoParty('late-race', [
+      async signal => {
+        await new Promise(resolve => setTimeout(resolve, 25));
+        if (!signal.aborted) lateMutation = true;
+        slowSettled = true;
+      },
+      async signal => { while (!signal.aborted) await new Promise(resolve => setTimeout(resolve, 1)); },
+    ], { timeoutMs: 2, async terminate() {} }),
+    /timed out/
+  );
+  assert.equal(slowSettled, true);
+  assert.equal(lateMutation, false);
+});
+
+test('two-party timeout terminates the owned server even when aborted clients reject promptly', async () => {
+  let serverCommit = 0;
+  let serverStopped = false;
+  let terminatorCalls = 0;
+  const serverJobs = [];
+  const callbacks = [1, 2].map(() => signal => new Promise((resolve, reject) => {
+    const serverJob = new Promise(jobDone => setTimeout(() => {
+      if (!serverStopped) serverCommit += 1;
+      jobDone();
+    }, 25));
+    serverJobs.push(serverJob);
+    signal.addEventListener('abort', () => reject(new Error('client aborted')), { once: true });
+  }));
+  await assert.rejects(() => runTwoParty('aborted-http-clients', callbacks, {
+    timeoutMs: 2,
+    settleTimeoutMs: 2,
+    async terminate() {
+      terminatorCalls += 1;
+      serverStopped = true;
+      await Promise.all(serverJobs);
+    },
+  }), /timed out/);
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(terminatorCalls, 1);
+  assert.equal(serverCommit, 0);
+});
+
+test('two-party timeout terminates a noncooperative participant within the owned bound', async () => {
+  let stopped = false;
+  let settled = false;
+  const startedAt = Date.now();
+  await assert.rejects(() => runTwoParty('stuck-http', [
+    async () => {
+      while (!stopped) await new Promise(resolve => setTimeout(resolve, 1));
+      settled = true;
+    },
+    async signal => { while (!signal.aborted) await new Promise(resolve => setTimeout(resolve, 1)); },
+  ], {
+    timeoutMs: 5,
+    settleTimeoutMs: 5,
+    async terminate() { stopped = true; },
+  }), /timed out/);
+  assert.equal(settled, true);
+  assert.ok(Date.now() - startedAt < 250);
+});
+
+test('two-party termination failure preserves the failure and prevents delayed mutation', async () => {
+  let mutation = false;
+  let stopped = false;
+  const startedAt = Date.now();
+  await assert.rejects(() => runTwoParty('failed-terminator', [
+    async () => { await new Promise(resolve => setTimeout(resolve, 25)); if (!stopped) mutation = true; },
+    async signal => { while (!signal.aborted) await new Promise(resolve => setTimeout(resolve, 1)); },
+  ], {
+    timeoutMs: 2,
+    settleTimeoutMs: 2,
+    async terminate() { stopped = true; throw new Error('worker termination proof failed'); },
+  }), error => error instanceof AggregateError && error.errors.some(item => item.message === 'worker termination proof failed'));
+  await new Promise(resolve => setTimeout(resolve, 30));
+  assert.equal(mutation, false);
+  assert.ok(Date.now() - startedAt < 100);
+});
+
+test('two-party termination failure is bounded instead of awaiting unowned client promises forever', async () => {
+  const never = new Promise(() => {});
+  const outcome = await Promise.race([
+    runTwoParty('failed-terminator-bounded', [async () => never, async () => never], {
+      timeoutMs: 2,
+      settleTimeoutMs: 2,
+      async terminate() { throw new Error('termination proof unavailable'); },
+    }).then(() => 'resolved', error => error),
+    new Promise(resolve => setTimeout(() => resolve('outer-timeout'), 100)),
+  ]);
+  assert.notEqual(outcome, 'outer-timeout');
+  assert.ok(outcome instanceof AggregateError);
+  assert.match(outcome.message, /termination failed/);
+});
+
+test('eventual assertion bounds a probe that never resolves', async () => {
+  let stopped = false;
+  const startedAt = Date.now();
+  await assert.rejects(
+    () => awaitEventually('stuck projection', () => new Promise(resolve => {
+      const interval = setInterval(() => { if (stopped) { clearInterval(interval); resolve(false); } }, 1);
+    }), Boolean, { timeoutMs: 10, async terminate() { stopped = true; } }),
+    /stuck projection/
+  );
+  assert.ok(Date.now() - startedAt < 250);
+});
+
+test('eventual assertion requires termination ownership before starting its probe', async () => {
+  let started = false;
+  await assert.rejects(() => awaitEventually('unowned projection', async () => { started = true; }, Boolean), /owned terminator/);
+  assert.equal(started, false);
+});
+
+test('owned process termination fails closed when neither TERM nor KILL produces exit proof', async () => {
+  const child = Object.assign(new EventEmitter(), { pid: 1234, exitCode: null, signalCode: null });
+  const signals = [];
+  await assert.rejects(() => terminateOwnedProcess(child, signal => signals.push(signal), {
+    gracefulTimeoutMs: 2,
+    killTimeoutMs: 2,
+  }), /exit was not observed/);
+  assert.deepEqual(signals, ['SIGTERM', 'SIGKILL']);
+});

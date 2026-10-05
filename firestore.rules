@@ -1,0 +1,1209 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ─── Helpers ────────────────────────────────────────────────────────────
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAnonymousSession() {
+      return isAuthenticated() &&
+        request.auth.token.get('firebase', {}).get('sign_in_provider', '') == 'anonymous';
+    }
+
+    function hasVerifiedIdentity() {
+      return isAnonymousSession() ||
+        request.auth.token.get('email_verified', false) == true ||
+        request.auth.token.get('role', '') == 'superadmin';
+    }
+
+    function hasActiveAccount() {
+      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      return isAnonymousSession() || (
+        exists(userPath) &&
+        get(userPath).data.get('accountStatus', 'active') != 'suspended' &&
+        get(userPath).data.get('accountStatus', 'active') != 'pending_deletion' &&
+        get(userPath).data.get('deletionStatus', '') != 'pending'
+      );
+    }
+
+    function isSignedIn() {
+      return isAuthenticated() && hasVerifiedIdentity() && hasActiveAccount();
+    }
+
+    function isActiveMember(memberData) {
+      return memberData.get('status', 'active') != 'removed' &&
+        memberData.get('isDeleted', false) != true;
+    }
+
+    function isOwner(uid) {
+      return request.auth.uid == uid;
+    }
+
+    function isSuperAdmin() {
+      return request.auth != null &&
+        request.auth.token.get('role', '') == 'superadmin';
+    }
+
+    function isTeamMember(teamId) {
+      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      let directMemberPath =
+        /databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid);
+      return isSignedIn() && (
+        (
+          exists(directMemberPath) &&
+          isActiveMember(get(directMemberPath).data)
+        ) ||
+        (exists(userPath) && hasAuthorizedLinkedPlayerMembership(teamId, get(userPath).data))
+      );
+    }
+
+    function isTeamChatEnabled(teamId) {
+      let teamPath = /databases/$(database)/documents/teams/$(teamId);
+      return exists(teamPath) &&
+        get(teamPath).data.get('features', {}).get('tacticalChat', true) != false;
+    }
+
+    function isOpenTeamChat(teamId, chatId) {
+      let chatPath = /databases/$(database)/documents/teams/$(teamId)/groupChats/$(chatId);
+      return isTeamChatEnabled(teamId) && exists(chatPath) &&
+        get(chatPath).data.get('isDeleted', false) != true;
+    }
+
+    function hasActiveChatAudience(chatData, hostTeamId) {
+      let authorities = chatData.get('memberAuthorities', {});
+      let hasAuthority = authorities.keys().hasAny([request.auth.uid]);
+      let authority = authorities.get(request.auth.uid, {});
+      let sourceTeamId = authority.get('teamId', hostTeamId);
+      let sourceMemberId = authority.get('memberId', '');
+      let sourceMemberPath =
+        /databases/$(database)/documents/teams/$(sourceTeamId)/members/$(sourceMemberId);
+      let userPath = /databases/$(database)/documents/users/$(request.auth.uid);
+      return chatData.get('memberIds', []).hasAny([request.auth.uid]) &&
+        (
+          (
+            sourceMemberId != '' && exists(sourceMemberPath) &&
+            isActiveMember(get(sourceMemberPath).data) &&
+            (
+              get(sourceMemberPath).data.get('userId', '') == request.auth.uid ||
+              (
+                sourceMemberId == request.auth.uid &&
+                get(sourceMemberPath).data.get('userId', '') == ''
+              ) ||
+              (
+                exists(userPath) &&
+                get(userPath).data.get('linkedPlayerId', '') == sourceMemberId &&
+                hasAuthorizedLinkedPlayerMembership(sourceTeamId, get(userPath).data)
+              )
+            )
+          ) ||
+          (!hasAuthority && isTeamMember(hostTeamId))
+        );
+    }
+
+    function hasAuthorizedLinkedPlayerMembership(teamId, userData) {
+      let linkedPlayerId = userData.get('linkedPlayerId', '');
+      let parentId = userData.get('parentId', '');
+      let playerPath = /databases/$(database)/documents/players/$(linkedPlayerId);
+      let linkedMemberPath =
+        /databases/$(database)/documents/teams/$(teamId)/members/$(linkedPlayerId);
+      return linkedPlayerId != '' && parentId != '' &&
+        exists(playerPath) && exists(linkedMemberPath) &&
+        get(playerPath).data.get('userId', '') == request.auth.uid &&
+        get(playerPath).data.get('parentId', '') == parentId &&
+        get(linkedMemberPath).data.get('playerId', '') == linkedPlayerId &&
+        get(linkedMemberPath).data.get('parentId', '') == parentId &&
+        get(linkedMemberPath).data.get('teamId', teamId) == teamId &&
+        isActiveMember(get(linkedMemberPath).data);
+    }
+
+    function isTeamOwner(teamId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/teams/$(teamId)) &&
+        (
+          get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId == request.auth.uid ||
+          (
+            request.auth.token.get('firebase', {}).get('sign_in_provider', '') == 'anonymous' &&
+            get(/databases/$(database)/documents/teams/$(teamId)).data.get('isDemo', false) == true &&
+            get(/databases/$(database)/documents/teams/$(teamId)).data.get('demoSessionOwnerId', '') == request.auth.uid
+          )
+        );
+    }
+
+    function directTeamMemberData(teamId) {
+      let directMemberPath =
+        /databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid);
+      return get(directMemberPath).data;
+    }
+
+    function isTeamStaff(teamId) {
+      let directMemberPath =
+        /databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid);
+      return isTeamOwner(teamId) ||
+        (
+          isSignedIn() && exists(directMemberPath) &&
+          isActiveMember(directTeamMemberData(teamId)) &&
+          hasStaffAuthority(directTeamMemberData(teamId))
+        );
+    }
+
+    function canReadMemberWaiver(teamId, memberId) {
+      let memberPath = /databases/$(database)/documents/teams/$(teamId)/members/$(memberId);
+      return isTeamStaff(teamId) || (
+        isSignedIn() && exists(memberPath) && isActiveMember(get(memberPath).data) && (
+          memberId == request.auth.uid ||
+          get(memberPath).data.get('userId', '') == request.auth.uid ||
+          get(memberPath).data.get('parentId', '') == request.auth.uid ||
+          get(memberPath).data.get('guardianIds', []).hasAny([request.auth.uid])
+        )
+      );
+    }
+
+    function hasStaffAuthority(member) {
+      return member.get('role', '') == 'Admin' ||
+        member.get('position', '') in [
+          'Coach', 'Head Coach', 'Assistant Coach', 'Team Representative',
+          'Athletic Director', 'Director of Athletics', 'Staff', 'Manager', 'Squad Leader',
+          'Coach Guest', 'Team Lead', 'Platform Admin'
+        ];
+    }
+
+    // Incident originals and transitions are authored by the validated service.
+
+    function isTeamParent(teamId) {
+      let directMemberPath =
+        /databases/$(database)/documents/teams/$(teamId)/members/$(request.auth.uid);
+      return isSignedIn() && exists(directMemberPath) &&
+        isActiveMember(directTeamMemberData(teamId)) &&
+        directTeamMemberData(teamId).get('position', '') in ['Parent', 'Guardian'];
+    }
+
+    function isTeamCoachOfPlayer(playerId) {
+      let playerData = get(/databases/$(database)/documents/players/$(playerId)).data;
+      // Support both 'teamId' (legacy single) and 'primaryTeamId' (current scalar field)
+      let tId = playerData.get('primaryTeamId', playerData.get('teamId', ''));
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/players/$(playerId)) &&
+        tId != '' &&
+        exists(/databases/$(database)/documents/teams/$(tId)) &&
+        isTeamOwner(tId);
+    }
+
+    function isLeagueMember(leagueId) {
+      return isSignedIn() &&
+        exists(/databases/$(database)/documents/leagues/$(leagueId)) && (
+          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid ||
+          get(/databases/$(database)/documents/leagues/$(leagueId)).data.get('memberUserIds', []).hasAny([request.auth.uid])
+        );
+    }
+
+    function isLeagueOrganizerData(league) {
+      let tenantId = league.get('tenantId', '');
+      return isSignedIn() && (
+        league.get('creatorId', '') == request.auth.uid ||
+        (tenantId != '' && exists(/databases/$(database)/documents/teams/$(tenantId)) && isTeamStaff(tenantId))
+      );
+    }
+
+    function isLeagueOrganizer(leagueId) {
+      let leaguePath = /databases/$(database)/documents/leagues/$(leagueId);
+      return exists(leaguePath) && isLeagueOrganizerData(get(leaguePath).data);
+    }
+
+    // Subscription state is server-managed. Every browser-created team starts
+    // free; a trusted server flow activates Pro only after a paid upgrade.
+    function requestsPaidTeam() {
+      return request.resource.data.get('isPro', false) == true ||
+        request.resource.data.get('planId', 'free') in
+          ['team', 'elite', 'league', 'school', 'squad_pro', 'squad_pro_demo'];
+    }
+
+    function canReadPlayer(playerId) {
+      return isSignedIn() && exists(/databases/$(database)/documents/players/$(playerId)) && (
+        get(/databases/$(database)/documents/players/$(playerId)).data.get('demoOwnerUserId', '') == request.auth.uid ||
+        get(/databases/$(database)/documents/players/$(playerId)).data.get('userId', '') == request.auth.uid ||
+        get(/databases/$(database)/documents/players/$(playerId)).data.get('parentId', '') == request.auth.uid ||
+        request.auth.uid in get(/databases/$(database)/documents/players/$(playerId)).data.get('guardianIds', []) ||
+        isTeamCoachOfPlayer(playerId)
+      );
+    }
+
+    // ─── Users ──────────────────────────────────────────────────────────────
+    match /userSafety/{userId}/blocks/{blockedId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow write: if false;
+    }
+    match /moderationReports/{reportId} {
+      allow read, write: if false;
+    }
+
+    match /users/{userId} {
+      allow read: if isSuperAdmin() || (isSignedIn() && isOwner(userId));
+      // Profile fields are user-editable; authorization, billing, and organization
+      // authority remain server-owned and are never accepted from the browser.
+      allow create: if isSuperAdmin() || (isAuthenticated() && isOwner(userId) &&
+        request.resource.data.role in ['parent', 'adult_player', 'youth_player', 'coach', 'admin', 'league_creator'] &&
+        !request.resource.data.keys().hasAny(['native_subscription', 'native_subscription_synced_at', 'stripe_seat_grant', 'billing_provider', 'plan_type', 'team_limit', 'extra_teams', 'subscription_status', 'subscriptionStatus', 'stripe_subscription_status', 'stripe_customer_id', 'stripe_subscription_id', 'stripeSubscriptionId', 'isPrimaryClubAuthority', 'isStaff', 'isBetaTester', 'activePlanId', 'proTeamLimit', 'planSource', 'linkedPlayerId', 'parentId', 'guardianIds', 'pendingCheckout', 'subscriptionMutation', 'deletionStatus', 'deletionRequestedAt', 'deletionPurgeAt', 'accountStatus'])
+      );
+      allow update: if isSuperAdmin() || (isSignedIn() && isOwner(userId) &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'name', 'fullName', 'email', 'phone', 'avatar', 'avatarUrl',
+          'notificationsEnabled', 'upcomingEventNotificationsEnabled',
+          'seenAlertIds', 'clubName', 'clubDescription',
+          'schoolName', 'institutionTitle'
+        ])
+      );
+      allow delete: if false;
+
+      match /tokens/{tokenId} {
+        allow read, write: if false;
+      }
+
+      match /teamMemberships/{teamId} {
+        allow read: if isSignedIn() && isOwner(userId);
+        // Registered-account membership projections are server-owned. This
+        // prevents a removed member from restoring their own team access or
+        // copied paid-plan state. Anonymous demo setup remains client-seeded.
+        allow write: if isAnonymousSession() && isOwner(userId);
+      }
+
+      match /clubDocuments/{docId} {
+        allow read: if isSuperAdmin() || (isSignedIn() && isOwner(userId));
+        allow write: if isSuperAdmin() || (isSignedIn() && isOwner(userId));
+      }
+
+      match /{subCollection}/{docId} {
+        // Explicitly excluded because overlapping matches are ORed by Firestore.
+        // OAuth credentials are server-only even for the account owner.
+        allow read: if subCollection != 'tokens' &&
+          (isSuperAdmin() || (isSignedIn() && isOwner(userId)));
+        allow write: if subCollection != 'tokens' &&
+          subCollection != 'teamMemberships' &&
+          (isSuperAdmin() || (isSignedIn() && isOwner(userId)));
+      }
+    }
+
+    // ─── Teams ──────────────────────────────────────────────────────────────
+    match /teams/{teamId} {
+      allow read: if isSuperAdmin() || (isSignedIn() && (
+        resource == null ||
+        isTeamOwner(teamId) ||
+        isTeamMember(teamId)
+      ));
+      // Creation is server-mediated so subscription capacity and organization
+      // delegation are evaluated atomically.
+      allow create: if isSuperAdmin();
+      // Only team owner can update or delete the team document itself. Client
+      // updates cannot transfer ownership or alter paid plan state.
+      allow update: if isSuperAdmin() || (isSignedIn() && (
+        resource != null &&
+        (
+          isTeamOwner(teamId) ||
+          (
+            isTeamStaff(teamId) &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'name', 'teamName', 'description', 'sport', 'teamLogoUrl',
+              'heroImageUrl', 'parentChatEnabled', 'parentCommentsEnabled',
+              'parentFeedEnabled', 'parentPostingEnabled', 'contactEmail',
+              'contactPhone', 'division', 'features', 'code', 'teamCode',
+              'inviteCode', 'lastCodeEditedAt'
+            ])
+          )
+        ) &&
+        request.resource.data.ownerUserId == resource.data.ownerUserId &&
+        request.resource.data.get('isPro', false) == resource.data.get('isPro', false) &&
+        request.resource.data.get('planId', 'free') == resource.data.get('planId', 'free') &&
+        request.resource.data.get('plan', 'free') == resource.data.get('plan', 'free') &&
+        request.resource.data.get('isDemo', false) == resource.data.get('isDemo', false) &&
+        request.resource.data.get('demoSessionOwnerId', '') == resource.data.get('demoSessionOwnerId', '')
+      ));
+      allow delete: if isSuperAdmin() || (isSignedIn() && resource != null && isTeamOwner(teamId));
+
+      match /members/{memberId} {
+        allow read: if isSuperAdmin() || (isSignedIn() && (
+          resource == null ||
+          resource.data.ownerUserId == request.auth.uid ||
+          isTeamOwner(teamId) ||
+          isTeamMember(teamId)
+        ));
+        // Staff can maintain ordinary roster records but cannot grant staff
+        // authority or alter the primary owner's membership. Those authority
+        // changes remain owner-only.
+        allow create: if isSuperAdmin() || (isSignedIn() && (
+          isTeamOwner(teamId) ||
+          (isTeamStaff(teamId) && !hasStaffAuthority(request.resource.data))
+        ));
+        allow update: if isSuperAdmin() || (isSignedIn() && (
+          isTeamOwner(teamId) ||
+          (
+            isTeamStaff(teamId) &&
+            memberId != get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId &&
+            !hasStaffAuthority(resource.data) &&
+            !hasStaffAuthority(request.resource.data) &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+              'name', 'email', 'phone', 'avatar', 'jersey', 'position',
+              'isMinor', 'birthdate', 'dateOfBirth', 'isAdult', 'notes',
+              'amountOwed', 'feesPaid', 'totalFees', 'parentEmail', 'parentId',
+              'medicalClearance', 'gradYear', 'gpa', 'school', 'skills',
+              'achievements', 'signatures', 'volunteerPoints', 'status',
+              'removalReason', 'removedAt', 'division'
+            ])
+          )
+        ));
+        allow delete: if isSuperAdmin() || (isSignedIn() && (
+          isTeamOwner(teamId) ||
+          (
+            isTeamStaff(teamId) &&
+            memberId != get(/databases/$(database)/documents/teams/$(teamId)).data.ownerUserId &&
+            !hasStaffAuthority(resource.data)
+          )
+        ));
+
+        match /signatures/{sigId} {
+          allow read: if isSuperAdmin() || canReadMemberWaiver(teamId, memberId);
+          // Signature receipts are created by the validated server ceremony.
+          // Clients may never forge, edit, or delete them, including for self.
+          allow write: if false;
+        }
+
+        // Catch-all for member subcollections (staffEvaluation, notes, etc.)
+        // The explicit match /members/{memberId} block takes priority over the outer team
+        // catch-all, so any member sub-subcollections need their own catch-all here.
+        match /{subCollection}/{docId} {
+          allow read: if subCollection != 'signatures' && (isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId))));
+          allow write: if subCollection != 'signatures' && (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId)));
+        }
+      }
+
+      match /events/{eventId} {
+        function tournamentLifecycleUnchanged() {
+          return (
+            resource.data.get('isTournament', false) != true && resource.data.get('eventType', '') != 'tournament' &&
+            request.resource.data.get('isTournament', false) != true && request.resource.data.get('eventType', '') != 'tournament'
+          );
+        }
+        allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
+        // Timed calendar events are server-mediated so schedule reservations and
+        // the event document are committed under the same scheduling lock.
+        allow create: if !request.resource.data.keys().hasAny(['competition']) && request.resource.data.get('isTournament', false) != true && request.resource.data.get('eventType', '') != 'tournament' && (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) && (
+          get(/databases/$(database)/documents/teams/$(teamId)).data.get('isDemo', false) == true ||
+          (
+            request.resource.data.get('startTime', '') == '' &&
+            request.resource.data.get('time', '') == ''
+          )
+        )));
+        allow delete: if !resource.data.keys().hasAny(['competition']) && resource.data.get('isTournament', false) != true && resource.data.get('eventType', '') != 'tournament' && (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) &&
+          resource.data.get('startTime', '') == '' &&
+          resource.data.get('time', '') == '' &&
+          resource.data.get('sourceType', '') == ''
+        ));
+        // Published tournament brackets, progression, scores, and assignments
+        // are written only by authenticated server actions.
+        allow update: if !resource.data.keys().hasAny(['competition']) && !request.resource.data.keys().hasAny(['competition']) && tournamentLifecycleUnchanged() && (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) &&
+          resource.data.get('sourceType', '') == '' &&
+          (
+            (
+              resource.data.get('isTournament', false) == true &&
+              request.resource.data.get('startTime', '') == '' &&
+              request.resource.data.get('time', '') == ''
+            ) ||
+            (
+              request.resource.data.get('date', '') == resource.data.get('date', '') &&
+              request.resource.data.get('endDate', '') == resource.data.get('endDate', '') &&
+              request.resource.data.get('startTime', '') == resource.data.get('startTime', '') &&
+              request.resource.data.get('time', '') == resource.data.get('time', '') &&
+              request.resource.data.get('endTime', '') == resource.data.get('endTime', '') &&
+              request.resource.data.get('location', '') == resource.data.get('location', '') &&
+              request.resource.data.get('resourceId', '') == resource.data.get('resourceId', '') &&
+              request.resource.data.get('durationMinutes', 0) == resource.data.get('durationMinutes', 0)
+            )
+          ) &&
+          request.resource.data.get('registrationCount', 0) == resource.data.get('registrationCount', 0) &&
+          request.resource.data.get('registrationEntryCount', 0) == resource.data.get('registrationEntryCount', 0) &&
+          request.resource.data.get('tournamentGames', []) == resource.data.get('tournamentGames', []) &&
+          (resource.data.get('tournamentGames', []).size() == 0 || (
+            request.resource.data.get('date', '') == resource.data.get('date', '') &&
+            request.resource.data.get('endDate', '') == resource.data.get('endDate', '') &&
+            request.resource.data.get('tournamentType', '') == resource.data.get('tournamentType', '') &&
+            request.resource.data.get('tournamentTeams', []) == resource.data.get('tournamentTeams', []) &&
+            request.resource.data.get('tournamentTeamsData', []) == resource.data.get('tournamentTeamsData', []) &&
+            request.resource.data.get('selectedFields', []) == resource.data.get('selectedFields', []) &&
+            request.resource.data.get('manualVenue', '') == resource.data.get('manualVenue', '') &&
+            request.resource.data.get('gameLength', 0) == resource.data.get('gameLength', 0) &&
+            request.resource.data.get('breakLength', 0) == resource.data.get('breakLength', 0) &&
+            request.resource.data.get('gamesPerTeam', 0) == resource.data.get('gamesPerTeam', 0) &&
+            request.resource.data.get('maxDailyGamesPerTeam', 0) == resource.data.get('maxDailyGamesPerTeam', 0) &&
+            request.resource.data.get('poolCount', 0) == resource.data.get('poolCount', 0) &&
+            request.resource.data.get('advancePerPool', 0) == resource.data.get('advancePerPool', 0) &&
+            request.resource.data.get('dailyWindows', []) == resource.data.get('dailyWindows', [])
+          ))
+        ));
+
+        // Registration forms and responses contain applicant contact details,
+        // so only the squad owner and staff may access them from the client.
+        match /registration/{configId} {
+          allow read: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+          allow write: if false;
+        }
+
+        match /registrationEntries/{entryId} {
+          allow read: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+          allow write: if false;
+        }
+
+        match /archived_waivers/{waiverId} {
+          allow read: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+          allow write: if false;
+        }
+
+        // Public event submissions are created by the Admin SDK. The client may
+        // display them to staff but may not forge or modify attendee responses.
+        match /registrations/{registrationId} {
+          allow read: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+          allow write: if false;
+        }
+
+        match /brackets/{bracketId} {
+          allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
+          allow write: if false;
+        }
+      }
+
+      match /incidents/{incidentId} {
+        // Injury and safety reports contain private health information. They
+        // are intentionally staff-only, unlike ordinary team activity data.
+        // A report's original facts are immutable after it is recorded.
+        allow read: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+allow create, update: if false; // Authenticated incident service only.
+        allow delete: if false;
+      }
+
+      match /games/{gameId} {
+        allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
+        allow write: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+      }
+
+      match /fundraising/{fundId} {
+        allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
+        allow create, delete: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+        allow update: if isSuperAdmin() || (isSignedIn() && (
+          isTeamStaff(teamId) ||
+          (
+            isTeamMember(teamId) &&
+            request.resource.data.diff(resource.data).affectedKeys().hasOnly(['finances']) &&
+            request.resource.data.finances.diff(resource.data.get('finances', {}))
+              .affectedKeys().hasOnly([request.auth.uid])
+          )
+        ));
+
+        match /donations/{donationId} {
+          allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
+          // Public donation intents are validated and created by the server.
+          // Only the primary squad owner may manually verify or correct them.
+          allow create, update, delete: if isSuperAdmin() || (
+            isSignedIn() && isTeamOwner(teamId)
+          );
+        }
+      }
+
+      match /alerts/{alertId} {
+        // The browser may fetch an individual alert only when its audience and
+        // target match. Collection history is resolved by the authenticated
+        // server route because Firestore rules are not row-level query filters.
+        allow get: if isSuperAdmin() || (isSignedIn() && (
+          isTeamOwner(teamId) ||
+          (
+            isTeamMember(teamId) &&
+            (
+              resource.data.get('targetUserId', null) == null ||
+              resource.data.get('targetUserId', '') == request.auth.uid
+            ) &&
+            (
+              resource.data.get('audience', 'everyone') == 'everyone' ||
+              (resource.data.get('audience', '') == 'coaches' && isTeamStaff(teamId)) ||
+              (resource.data.get('audience', '') == 'parents' && isTeamParent(teamId)) ||
+              (
+                resource.data.get('audience', '') == 'players' &&
+                !isTeamStaff(teamId) &&
+                !isTeamParent(teamId)
+              )
+            )
+          )
+        ));
+        allow list: if isSuperAdmin();
+        allow create, update, delete: if isSuperAdmin() ||
+          (isSignedIn() && isTeamStaff(teamId));
+      }
+
+      // ─── Online Payment Items (coaches create payable line items) ──────────
+      match /paymentItems/{itemId} {
+        allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
+        allow write: if false;
+      }
+
+      // ─── Payments (online + offline payment records) ────────────────────────
+      // Server-side (webhook, Admin SDK) writes bypass these rules.
+      match /payments/{paymentId} {
+        allow read: if isSuperAdmin() || (isSignedIn() && (
+          isTeamOwner(teamId) ||
+          isTeamStaff(teamId) ||
+          (
+            isTeamMember(teamId) &&
+            request.auth.token.get('email', '') != '' &&
+            resource.data.get('payer_email', '') == request.auth.token.get('email', '')
+          )
+        ));
+        allow write: if false;
+      }
+
+      // ─── Team Chat ────────────────────────────────────────────────────────
+      // Members may send messages only under their own identity. Channel
+      // membership and moderation remain owner-controlled.
+      match /groupChats/{chatId} {
+        allow read: if isSuperAdmin() || (isTeamChatEnabled(teamId) &&
+          resource.data.get('isDeleted', false) != true && isSignedIn() && (
+          isTeamOwner(teamId) ||
+          hasActiveChatAudience(resource.data, teamId)
+        ));
+        // Channel lifecycle is validated by the authenticated server route.
+        allow create, update, delete: if false;
+
+        match /messages/{messageId} {
+          allow read: if isSuperAdmin() || (isOpenTeamChat(teamId, chatId) && isSignedIn() && (
+            isTeamOwner(teamId) ||
+            hasActiveChatAudience(
+              get(/databases/$(database)/documents/teams/$(teamId)/groupChats/$(chatId)).data,
+              teamId
+            )
+          ));
+          // New messages are validated by the authenticated server route so
+          // removed members and cross-team recipients are checked authoritatively.
+          allow create: if false;
+          allow update: if false;
+          allow delete: if isSuperAdmin() || (isOpenTeamChat(teamId, chatId) && isSignedIn() && (
+            isTeamOwner(teamId) ||
+            (
+              isTeamMember(teamId) &&
+              get(/databases/$(database)/documents/teams/$(teamId)/groupChats/$(chatId))
+                .data.get('memberIds', []).hasAny([request.auth.uid]) &&
+              resource.data.authorId == request.auth.uid
+            )
+          ));
+        }
+      }
+
+      // ─── Coach Waiver Signatures (hub-deployed global waivers for staff) ────
+      // Only active staff may attest for a team. Guardian/participant signatures
+      // are created by the validated waiver signing API under the member path.
+      match /coachWaiverSignatures/{waiverDocId} {
+        allow read: if isSuperAdmin() || (isSignedIn() && (isTeamStaff(teamId) || resource.data.get('signedBy', '') == request.auth.uid));
+        allow write: if false;
+      }
+
+      // Compatibility path for tournament responses created before entries
+      // moved beneath their event. Keep applicant data staff-only.
+      match /registrationEntries/{entryId} {
+        allow read: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+        allow write: if false;
+      }
+
+      match /archived_waivers/{waiverId} {
+        allow read: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+        allow write: if false;
+      }
+
+      match /files/{fileId} {
+        allow read: if isSuperAdmin() || (
+          resource.data.get('category', '') == 'Signed Certificate'
+            ? canReadMemberWaiver(teamId, resource.data.get('memberId', ''))
+            : (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)))
+        );
+        // Library service owns object-backed mutations; preserve Film/link and
+        // legacy document reads without migrating those unrelated records.
+        allow create: if (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId))) &&
+          !request.resource.data.keys().hasAny(['storagePath']) &&
+          (request.resource.data.get('category', '') in ['Game Tape', 'Practice Session', 'Highlights'] ||
+            (request.resource.data.get('category', '') == 'Link / URL' && request.resource.data.get('url', '').matches('https?://.*')));
+        allow update: if (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId))) &&
+          !resource.data.keys().hasAny(['storagePath']) && !request.resource.data.keys().hasAny(['storagePath']);
+        allow delete: if (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId))) && !resource.data.keys().hasAny(['storagePath']);
+      }
+
+      match /{subCollection}/{docId} {
+        // Do not let this compatibility fallback broaden any explicitly
+        // authorized subcollection above. Firestore ORs overlapping matches.
+        allow read: if !(subCollection in [
+          'files', 'feedPosts', 'feedOperations', 'feedAudit',
+          'members', 'events', 'incidents', 'games', 'fundraising',
+          'paymentItems', 'payments', 'alerts', 'groupChats',
+          'coachWaiverSignatures', 'registrationEntries', 'archived_waivers'
+        ]) && (
+          isSuperAdmin() ||
+          (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)))
+        );
+        allow write: if !(subCollection in [
+          'files', 'feedPosts', 'feedOperations', 'feedAudit',
+          'members', 'events', 'incidents', 'games', 'fundraising',
+          'paymentItems', 'payments', 'alerts', 'groupChats',
+          'coachWaiverSignatures', 'registrationEntries', 'archived_waivers'
+        ]) && (
+          isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId))
+        );
+
+        match /{subSubCollection}/{subDocId} {
+          allow read: if !(subCollection in [
+            'files', 'feedPosts', 'feedOperations', 'feedAudit',
+            'members', 'events', 'incidents', 'games', 'fundraising',
+            'paymentItems', 'payments', 'alerts', 'groupChats',
+            'coachWaiverSignatures'
+          ]) && (
+            isSuperAdmin() ||
+            (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)))
+          );
+          allow write: if !(subCollection in [
+            'files', 'feedPosts', 'feedOperations', 'feedAudit',
+            'members', 'events', 'incidents', 'games', 'fundraising',
+            'paymentItems', 'payments', 'alerts', 'groupChats',
+            'coachWaiverSignatures'
+          ]) && (
+            isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId))
+          );
+        }
+      }
+    }
+
+    // ─── Players ────────────────────────────────────────────────────────────
+    match /players/{playerId} {
+      // Player documents hold family, invite, and operational data. Public
+      // recruiting views are served from a field-whitelisted server projection,
+      // never from this private record.
+      allow read: if isSuperAdmin() || (isSignedIn() && (
+          resource.data.get('userId', '') == request.auth.uid ||
+          resource.data.get('parentId', '') == request.auth.uid ||
+          isTeamCoachOfPlayer(playerId)
+        ));
+
+      allow create: if isAuthenticated() && (
+        (
+          playerId == 'p_' + request.auth.uid &&
+          request.resource.data.get('userId', '') == request.auth.uid &&
+          request.resource.data.get('parentId', '') == ''
+        ) ||
+        (
+          isSignedIn() && (
+            request.resource.data.get('userId', '') == request.auth.uid ||
+            (
+              request.resource.data.get('parentId', '') == request.auth.uid &&
+              request.resource.data.get('userId', '') == ''
+            ) ||
+            (request.resource.data.get('updatedByTeamId', '') != '' &&
+             isTeamOwner(request.resource.data.updatedByTeamId) &&
+             request.resource.data.get('userId', '') == '')
+          )
+        )
+      );
+
+      // Recruiting visibility changes require server-side legacy token revocation.
+      allow update: if (isSuperAdmin() || (isSignedIn() && (
+        resource.data.get('userId', '') == request.auth.uid ||
+        resource.data.get('parentId', '') == request.auth.uid ||
+        playerId == request.auth.uid ||
+        isTeamCoachOfPlayer(playerId)
+      ) &&
+        request.resource.data.get('userId', '') == resource.data.get('userId', '') &&
+        request.resource.data.get('parentId', '') == resource.data.get('parentId', '') &&
+        request.resource.data.get('guardianIds', []) == resource.data.get('guardianIds', [])
+      )) && request.resource.data.get('recruitingProfileEnabled', false) == resource.data.get('recruitingProfileEnabled', false);
+
+      allow delete: if isSuperAdmin() || (isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.get('parentId', '') == request.auth.uid ||
+        playerId == request.auth.uid
+      ));
+
+      match /videos/{videoId} {
+        allow read: if isSuperAdmin() || (isSignedIn() && (
+          get(/databases/$(database)/documents/players/$(playerId)).data.get('userId', '') == request.auth.uid ||
+          get(/databases/$(database)/documents/players/$(playerId)).data.get('parentId', '') == request.auth.uid ||
+          isTeamCoachOfPlayer(playerId)
+        ));
+        // Film metadata and coach marks are staff-authored. Players record only
+        // their own progress in the nested, user-keyed ledger below.
+        allow create, update, delete: if isSuperAdmin() || (isSignedIn() && isTeamCoachOfPlayer(playerId));
+
+        match /watchProgress/{userId} {
+          allow read: if isSuperAdmin() || (isSignedIn() && (
+            userId == request.auth.uid || isTeamCoachOfPlayer(playerId)
+          ));
+          allow create, update: if isSignedIn() && userId == request.auth.uid &&
+            request.resource.data.userId == request.auth.uid &&
+            request.resource.data.keys().hasOnly(['userId', 'percentage', 'watchedAt']) &&
+            request.resource.data.percentage is number &&
+            request.resource.data.percentage >= 0 && request.resource.data.percentage <= 100;
+          allow delete: if isSuperAdmin() || (isSignedIn() && (userId == request.auth.uid || isTeamCoachOfPlayer(playerId)));
+        }
+      }
+
+      match /{subCollection}/{docId} {
+        // Do not expose arbitrary future player subcollections when a public
+        // recruiting profile is enabled. The public API whitelists its payload.
+        allow read: if subCollection != 'videos' && (isSuperAdmin() || (isSignedIn() && (
+            get(/databases/$(database)/documents/players/$(playerId)).data.get('userId', '') == request.auth.uid ||
+            get(/databases/$(database)/documents/players/$(playerId)).data.get('parentId', '') == request.auth.uid ||
+            isTeamCoachOfPlayer(playerId)
+          )));
+
+        // ── CREATE / UPDATE ──────────────────────────────────────────────────
+        // request.resource.data is available for create and update.
+        // Coaches include updatedByTeamId in written data; rule verifies ownership.
+        allow create, update: if subCollection != 'videos' && (isSuperAdmin() || (isSignedIn() && (
+          get(/databases/$(database)/documents/players/$(playerId)).data.get('userId', '') == request.auth.uid ||
+          get(/databases/$(database)/documents/players/$(playerId)).data.get('parentId', '') == request.auth.uid ||
+          isTeamCoachOfPlayer(playerId) ||
+          playerId == request.auth.uid
+        )));
+
+        // ── DELETE ───────────────────────────────────────────────────────────
+        // request.resource is NULL for deletes — use resource.data (the existing doc).
+        // If updatedByTeamId was set when the doc was last written, use it.
+        // Otherwise fall back to player-self or coach checks.
+        allow delete: if subCollection != 'videos' && (isSuperAdmin() || (isSignedIn() && (
+          get(/databases/$(database)/documents/players/$(playerId)).data.get('userId', '') == request.auth.uid ||
+          get(/databases/$(database)/documents/players/$(playerId)).data.get('parentId', '') == request.auth.uid ||
+          isTeamCoachOfPlayer(playerId) ||
+          playerId == request.auth.uid ||
+          (resource.data.get('updatedByTeamId', '') != '' &&
+           exists(/databases/$(database)/documents/teams/$(resource.data.updatedByTeamId)) &&
+           isTeamOwner(resource.data.updatedByTeamId))
+        )));
+      }
+    }
+
+    // ─── Leagues ────────────────────────────────────────────────────────────
+    match /leagues/{leagueId} {
+      // Use the document being evaluated so creator-scoped collection queries
+      // can be proven by Firestore without a separate get() returning null.
+      allow read: if isSuperAdmin() || isLeagueOrganizerData(resource.data);
+      // Creation is server-mediated so the account's current plan limit cannot
+      // be bypassed with a direct Firestore write.
+      allow create: if false;
+      // Lifecycle, metadata, authority, and sensitive changes are server-owned.
+      // Existing operational writes remain compatible until their dedicated
+      // schedule/assignment/scoring boundaries migrate them.
+      allow update: if (
+        isSignedIn() &&
+        resource.data.creatorId == request.auth.uid &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+          'id', 'name', 'divisionTitle', 'creatorId', 'billingOwnerUserId', 'tenantId', 'hostTeamId',
+          'ownerTeamId', 'teamId', 'lifecycleVersion', 'gameVersionFloor', 'sport', 'description',
+          'startDate', 'endDate', 'ages', 'contactEmail', 'contactPhone',
+          'registrationCost', 'paymentInstructions', 'socialLinks', 'slug',
+          'requiredSquads', 'blackoutDaysOfWeek', 'divisions', 'is_active',
+          'isArchived', 'scorekeeperPin', 'scorekeeperPinHash', 'memberUserIds',
+          'isDemo', 'demoSessionOwnerId', 'demoSeeded', 'registrationEntryCount',
+          'teams', 'individualRecruits', 'sensitiveFieldsMigrated'
+        ]) &&
+        (
+          request.resource.data.get('schedule', []) == resource.data.get('schedule', []) &&
+          request.resource.data.get('schedulerConfig', null) == resource.data.get('schedulerConfig', null)
+        )
+      );
+      allow delete: if false;
+
+      match /private/{privateId} {
+        allow read: if isSuperAdmin() || isLeagueOrganizer(leagueId);
+        allow write: if false;
+      }
+
+      match /registrationEntries/{entryId} {
+        allow read: if isSuperAdmin() || isLeagueOrganizer(leagueId);
+        allow write: if false;
+      }
+
+      match /archived_waivers/{waiverId} {
+        allow read: if isSuperAdmin() || isLeagueOrganizer(leagueId);
+        allow write: if false;
+      }
+
+      match /registration/{configId} {
+        allow read: if isSuperAdmin() || isLeagueOrganizer(leagueId);
+        allow write: if false;
+      }
+
+      match /scores/{scoreId} {
+        allow read: if isSuperAdmin() || isLeagueOrganizer(leagueId);
+        allow write: if false;
+      }
+
+      match /scoreAudit/{auditId} {
+        allow read: if isSuperAdmin() || isLeagueOrganizer(leagueId);
+        allow write: if false;
+      }
+
+      match /invites/{inviteId} {
+        allow read: if isSuperAdmin() || isLeagueOrganizer(leagueId);
+        allow write: if isSuperAdmin() || isLeagueOrganizer(leagueId);
+      }
+
+      match /divisions/{divisionId} {
+        allow read: if isSuperAdmin() || isLeagueMember(leagueId);
+        allow write: if isSuperAdmin() || (isSignedIn() &&
+          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
+
+        match /{subCollection}/{docId} {
+          allow read: if isSuperAdmin() || isLeagueMember(leagueId);
+          allow write: if isSuperAdmin() || (isSignedIn() &&
+            get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
+
+          match /{deepCollection}/{deepDocId} {
+            allow read: if isSuperAdmin() || isLeagueMember(leagueId);
+            allow write: if isSuperAdmin() || (isSignedIn() &&
+              get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
+          }
+        }
+      }
+
+      match /accessRedemptions/{redemptionId} {
+        allow read: if isSuperAdmin() || (isSignedIn() &&
+          get(/databases/$(database)/documents/leagues/$(leagueId)).data.creatorId == request.auth.uid);
+        allow write: if false;
+      }
+    }
+
+    // Spectators use the current lifecycle/entitlement-checked API DTO. Raw
+    // worker projections remain private, including stale or unmigrated copies.
+    match /publicLeagueViews/{leagueId} {
+      allow get: if false;
+      allow list: if false;
+      allow write: if false;
+    }
+
+    // Schedule reservations and deployment locks are maintained exclusively by
+    // trusted server routes. Clients must not be able to inspect other clubs'
+    // resource usage or forge reservations that block legitimate schedules.
+    match /scheduleBookings/{bookingId} {
+      allow read, write: if false;
+    }
+
+    match /scheduleBookingLocks/{lockId} {
+      allow read, write: if false;
+    }
+
+    match /tournamentRefereeAssignments/{assignmentId} {
+      allow read, write: if false;
+    }
+
+    match /tournamentReferees/{refereeId} {
+      allow read, write: if false;
+    }
+
+    match /leagueLifecycleAudits/{auditId} {
+      allow read, write: if false;
+    }
+
+    match /leagueLifecycleNames/{reservationId} {
+      allow read, write: if false;
+    }
+
+    match /leagueLifecycleTombstones/{leagueId} {
+      allow read, write: if false;
+    }
+
+    // ─── Leagues global invites ───────────────────────────────────────────────
+    // Legacy location retained as an admin-only migration surface. It contains
+    // recipient email addresses and must never be enumerable by other accounts.
+    match /leagues/global/invites/{inviteId} {
+      allow read, write: if isSuperAdmin();
+    }
+
+    // ─── Legacy Tournament Hubs ──────────────────────────────────────────────
+    // The supported tournament product is stored as team-scoped event data and
+    // inherits the team's staff and subscription controls. This legacy root
+    // collection is retained read-only for migrations and cannot be used to
+    // bypass those controls by creating an independent tournament tenant.
+    match /tournaments/{hubId} {
+      function isTournamentMember() {
+        return isSignedIn() && (
+          get(/databases/$(database)/documents/tournaments/$(hubId)).data.creatorId == request.auth.uid ||
+          get(/databases/$(database)/documents/tournaments/$(hubId))
+            .data.get('memberUserIds', []).hasAny([request.auth.uid])
+        );
+      }
+
+      allow read: if isSuperAdmin() || isTournamentMember();
+      allow create, update, delete: if isSuperAdmin();
+
+      match /divisions/{divisionId} {
+        allow read: if isSuperAdmin() || isTournamentMember();
+        allow write: if isSuperAdmin() || (isSignedIn() &&
+          get(/databases/$(database)/documents/tournaments/$(hubId)).data.creatorId == request.auth.uid);
+
+        match /{subCollection}/{docId} {
+          allow read: if isSuperAdmin() || isTournamentMember();
+          allow write: if isSuperAdmin() || (isSignedIn() &&
+            get(/databases/$(database)/documents/tournaments/$(hubId)).data.creatorId == request.auth.uid);
+
+          match /{deepCollection}/{deepDocId} {
+            allow read: if isSuperAdmin() || isTournamentMember();
+            allow write: if isSuperAdmin() || (isSignedIn() &&
+              get(/databases/$(database)/documents/tournaments/$(hubId)).data.creatorId == request.auth.uid);
+          }
+        }
+      }
+    }
+
+    // ─── Plans ──────────────────────────────────────────────────────────────
+    match /plans/{planId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    // ─── Subscriptions ───────────────────────────────────────────────────────
+    match /subscriptions/{subId} {
+      allow read: if isSuperAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow write: if false;
+    }
+
+    // ─── Calendar feeds ──────────────────────────────────────────────────────
+    match /calendarFeeds/{feedId} {
+      allow read, write: if false;
+    }
+
+    match /stripeConnectWebhookEvents/{eventId} {
+      allow read, write: if false;
+    }
+
+    // ─── Volunteers ──────────────────────────────────────────────────────────
+    match /volunteerOpportunities/{oppId} {
+      allow read: if isSignedIn();
+      allow write: if isSuperAdmin();
+
+      match /signups/{signupId} {
+        allow read, write: if isSuperAdmin();
+      }
+    }
+
+    // ─── Signatures ──────────────────────────────────────────────────────────
+    match /signatures/{sigId} {
+      allow read: if isSuperAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update: if isSuperAdmin() || (isSignedIn() && resource.data.userId == request.auth.uid);
+      allow delete: if isSuperAdmin();
+    }
+
+    // ─── Alerts ──────────────────────────────────────────────────────────────
+    match /alerts/{alertId} {
+      allow read, create, update, delete: if isSuperAdmin();
+    }
+
+    // ─── Facilities ───────────────────────────────────────────────────────────
+    match /facilities/{facilityId} {
+      // Facility records can include private operational notes such as access
+      // instructions. Only the creator and the global superadmin may read them.
+      allow read: if isSuperAdmin() || (
+        isSignedIn() && resource.data.clubId == request.auth.uid
+      );
+      allow create: if isSignedIn() &&
+        !facilityId.matches('fac_(main|secondary)_.*') &&
+        request.resource.data.get('isDemo', false) == false &&
+        request.resource.data.clubId == request.auth.uid;
+      allow update: if isSuperAdmin() || (
+        isSignedIn() &&
+        resource.data.clubId == request.auth.uid &&
+        request.resource.data.clubId == resource.data.clubId &&
+        request.resource.data.get('isDemo', false) == resource.data.get('isDemo', false)
+      );
+      // Deletion must use the authenticated server endpoint so linked schedules
+      // are checked and nested resources are removed atomically.
+      allow delete: if false;
+
+      match /fields/{fieldId} {
+        function isFacilityOwner() {
+          return isSignedIn() &&
+            get(/databases/$(database)/documents/facilities/$(facilityId)).data.clubId == request.auth.uid;
+        }
+
+        allow read: if isSuperAdmin() || isFacilityOwner();
+        allow create: if isSuperAdmin() || (
+          isFacilityOwner() &&
+          request.resource.data.facilityId == facilityId
+        );
+        allow update: if isSuperAdmin() || (
+          isFacilityOwner() &&
+          request.resource.data.get('facilityId', facilityId) ==
+            resource.data.get('facilityId', facilityId) &&
+          request.resource.data.get('isDemo', false) ==
+            resource.data.get('isDemo', false)
+        );
+        allow delete: if false;
+      }
+    }
+
+
+    // ─── Features ────────────────────────────────────────────────────────────
+    match /features/{featureId} {
+      allow read: if true;
+      allow write: if isSuperAdmin();
+    }
+
+    // ─── Clubs ───────────────────────────────────────────────────────────────
+    match /clubs/{clubId} {
+      allow read: if isSuperAdmin() || (
+        isSignedIn() && (
+          resource.data.get('ownerId', '') == request.auth.uid ||
+          resource.data.get('ownerUserId', '') == request.auth.uid
+        )
+      );
+      allow create: if isSignedIn() && (
+        request.resource.data.get('ownerId', '') == request.auth.uid ||
+        request.resource.data.get('ownerUserId', '') == request.auth.uid
+      );
+      allow update, delete: if isSuperAdmin() || (isSignedIn() && (
+        resource.data.get('ownerId', '') == request.auth.uid ||
+        resource.data.get('ownerUserId', '') == request.auth.uid
+      ));
+
+      match /{subCollection}/{docId} {
+        allow read: if isSuperAdmin() || (isSignedIn() &&
+          (
+            get(/databases/$(database)/documents/clubs/$(clubId)).data.get('ownerId', '') == request.auth.uid ||
+            get(/databases/$(database)/documents/clubs/$(clubId)).data.get('ownerUserId', '') == request.auth.uid
+          ));
+        allow write: if isSuperAdmin() || (isSignedIn() &&
+          (
+            get(/databases/$(database)/documents/clubs/$(clubId)).data.get('ownerId', '') == request.auth.uid ||
+            get(/databases/$(database)/documents/clubs/$(clubId)).data.get('ownerUserId', '') == request.auth.uid
+          ));
+      }
+    }
+
+    // ─── Invites ─────────────────────────────────────────────────────────────
+    // Youth invitation lookup and single-use redemption are server-mediated.
+    // The browser can never list child/family invitation PII.
+    match /invites/{inviteId} {
+      allow read, delete: if isSuperAdmin();
+      allow create, update: if false;
+    }
+
+    // ─── Beta Tester System ──────────────────────────────────────────────────
+    match /beta_applications/{appId} {
+      // Public submissions are written by the server API using Admin SDK.
+      allow create: if false;
+      allow read, update, delete: if isSuperAdmin();
+    }
+
+    match /bug_reports/{bugId} {
+      allow create: if isSignedIn();
+      allow read, update, delete: if isSuperAdmin();
+    }
+
+    match /beta_notifications/{notifId} {
+      allow create, update, delete: if isSuperAdmin();
+      allow read: if isSignedIn() && (
+        isSuperAdmin() ||
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.isBetaTester == true
+      );
+    }
+
+    // ─── CollectionGroup Rules ───────────────────────────────────────────────
+    match /{path=**}/members/{memberId} {
+      allow read: if isSuperAdmin() || (isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.parentId == request.auth.uid ||
+        resource.data.ownerUserId == request.auth.uid ||
+        (resource.data.schoolId != null && (isTeamMember(resource.data.schoolId) || isTeamOwner(resource.data.schoolId)))
+      ));
+    }
+
+    match /{path=**}/events/{eventId} {
+      allow read: if isSuperAdmin() || (isSignedIn() && (
+        resource.data.ownerUserId == request.auth.uid ||
+        (
+          resource.data.teamId != null &&
+          (isTeamMember(resource.data.teamId) || isTeamOwner(resource.data.teamId))
+        )
+      ));
+    }
+
+    match /{path=**}/signatures/{sigId} {
+      allow read: if isSuperAdmin() || (isSignedIn() && (
+        resource.data.userId == request.auth.uid ||
+        resource.data.ownerUserId == request.auth.uid
+      ));
+    }
+
+    match /{path=**}/documents/{docId} {
+      allow read: if isSuperAdmin() || (isSignedIn() && resource.data.ownerUserId == request.auth.uid);
+    }
+
+    // Incident reads use current team authority, never historical owner fields.
+
+    match /{path=**}/registrationEntries/{entryId} {
+      // Specific league/team scopes above decide which current organizers may
+      // read applicant PII. A recursive compatibility rule must never grant
+      // access from untrusted owner-like fields embedded in an entry.
+      allow read: if isSuperAdmin();
+      allow write: if false;
+    }
+
+    // ─── Newsletter signups ───────────────────────────────────────────────────
+    match /newsletter_signups/{docId} {
+      // Legacy collection retained for historical signups. New subscriptions
+      // use the rate-limited server endpoint and canonical collection below.
+      allow create: if false;
+      allow read, delete: if isSuperAdmin();
+    }
+
+    // Canonical newsletter contacts and campaign history are written only by
+    // authenticated server routes. Superadmins may read them for the dashboard,
+    // but browser clients cannot alter consent or delivery records directly.
+    match /newsletter_subscribers/{docId} {
+      allow read: if isSuperAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /newsletter_campaigns/{campaignId} {
+      allow read: if isSuperAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /newsletter_system/{configId} {
+      allow read, write: if false;
+    }
+
+    match /newsletter_webhook_events/{eventId} {
+      allow read: if isSuperAdmin();
+      allow create, update, delete: if false;
+    }
+
+    match /newsletter_email_events/{eventId} {
+      allow read: if isSuperAdmin();
+      allow create, update, delete: if false;
+    }
+
+    // ─── Sports Hub CMS ──────────────────────────────────────────────────────
+    match /sports_hub_rss_feeds/{feedId} {
+      allow read, create, update, delete: if isSuperAdmin();
+    }
+
+    match /sports_hub_articles/{articleId} {
+      // Public reads are served through the filtered /api/sports-hub/articles
+      // endpoint so drafts and future internal fields never leak directly.
+      allow read, create, update, delete: if isSuperAdmin();
+    }
+
+    match /sports_hub_newsletter_subscribers/{subscriberId} {
+      allow read, delete: if isSuperAdmin();
+      allow create, update: if false;
+    }
+
+    // ─── Contact Inquiries (enterprise contact form) ──────────────────────────
+    // The rate-limited server endpoint owns all writes and email delivery.
+    // Superadmin-only reads protect names, emails, and inquiry text.
+    match /contact_inquiries/{docId} {
+      allow read, delete: if isSuperAdmin();
+      allow create, update: if false;
+    }
+  }
+}

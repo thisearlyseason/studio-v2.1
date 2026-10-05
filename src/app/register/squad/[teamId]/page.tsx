@@ -1,0 +1,458 @@
+
+"use client";
+
+import React, { useState, useMemo, useEffect, Suspense } from 'react';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { useTeam } from '@/components/providers/team-provider';
+import { useAuth } from '@/firebase';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Checkbox } from '@/components/ui/checkbox';
+import { 
+  ShieldCheck, 
+  CheckCircle2, 
+  Loader2, 
+  Users, 
+  Signature, 
+  FileSignature,
+  Zap,
+  ArrowRight,
+  Info
+} from 'lucide-react';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import BrandLogo from '@/components/BrandLogo';
+import { cn } from '@/lib/utils';
+import { toast } from '@/hooks/use-toast';
+import { authHeader, getAuthToken } from '@/lib/client-auth';
+
+type RapidJoinData = {
+  team: { id: string; name: string };
+  waiver: { id: string; title: string; content: string; version: number; textHash: string } | null;
+  sessionToken: string;
+  expiresAt: string;
+};
+
+function RapidJoinForm() {
+  const { teamId } = useParams();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const code = searchParams.get('code');
+  const auth = useAuth();
+  const { user, firebaseUser, isParent, myChildren } = useTeam();
+  const [joinData, setJoinData] = useState<RapidJoinData | null>(null);
+  const [isLoading, setIsLoading] = useState(true);
+
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isSuccess, setIsSuccess] = useState(false);
+  const [waiverAgreed, setWaiverAgreed] = useState(false);
+  const [signature, setSignature] = useState('');
+  const [step, setStep] = useState(1);
+  const [formData, setFormData] = useState({
+    name: user?.name || '',
+    email: user?.email || '',
+    dateOfBirth: '',
+    guardianName: '',
+    guardianEmail: '',
+    guardianPhone: '',
+    playerId: ''
+  });
+
+  const isUnder18 = useMemo(() => {
+    if (!formData.dateOfBirth) return false;
+    const birthDate = new Date(formData.dateOfBirth);
+    const today = new Date();
+    let age = today.getFullYear() - birthDate.getFullYear();
+    const monthDiff = today.getMonth() - birthDate.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) age--;
+    return age < 18;
+  }, [formData.dateOfBirth]);
+
+  const team = joinData?.team || null;
+  const activeWaiver = joinData?.waiver || null;
+
+  useEffect(() => {
+    if (!teamId || !code) {
+      setIsLoading(false);
+      return;
+    }
+    const controller = new AbortController();
+    setIsLoading(true);
+    fetch(`/api/teams/join?teamId=${encodeURIComponent(String(teamId))}&code=${encodeURIComponent(code)}`, {
+      signal: controller.signal,
+    })
+      .then(async response => {
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(result.error || 'Invalid squad invitation.');
+        setJoinData(result.data as RapidJoinData);
+      })
+      .catch(error => {
+        if (error.name !== 'AbortError') setJoinData(null);
+      })
+      .finally(() => setIsLoading(false));
+    return () => controller.abort();
+  }, [teamId, code]);
+
+  const activeSteps = useMemo(() => {
+    const steps = [{ id: 'identity', label: 'Personal Data', icon: Users }];
+    if (isUnder18) {
+      steps.push({ id: 'guardian', label: 'Guardian Info', icon: ShieldCheck });
+    }
+    if (activeWaiver) {
+      steps.push({ id: 'compliance', label: 'Compliance', icon: FileSignature });
+    }
+    return steps;
+  }, [isUnder18, activeWaiver]);
+
+  const totalSteps = activeSteps.length;
+  const currentStepId = useMemo(() => activeSteps[step - 1]?.id || 'identity', [activeSteps, step]);
+
+  useEffect(() => {
+    if (user?.name || user?.email) {
+      setFormData(prev => ({ ...prev, name: user.name ?? prev.name, email: user.email ?? prev.email }));
+    }
+  }, [user?.name, user?.email]);
+
+  const handleNextStep = (e?: React.MouseEvent) => {
+    if (step < totalSteps) {
+      setStep(step + 1);
+    } else {
+      // If we're at the last step, we should trigger form submission
+      // Since our button is type="button", we call handleSubmit manually
+      const mockEvent = { preventDefault: () => {} } as React.FormEvent;
+      handleSubmit(mockEvent);
+    }
+  };
+
+  const handlePrevStep = () => {
+    setStep(prev => Math.max(prev - 1, 1));
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!team || isSubmitting) return;
+
+    if (activeWaiver && (currentStepId === 'compliance') && (!waiverAgreed || !signature.trim())) {
+      toast({ title: "Compliance Required", description: "Please sign the required documentation.", variant: "destructive" });
+      return;
+    }
+
+    if (isParent && !formData.playerId) {
+      toast({ title: "Player Required", description: "Please select which player is joining.", variant: "destructive" });
+      return;
+    }
+
+    setIsSubmitting(true);
+    try {
+      const playerId = isParent ? formData.playerId : `p_${firebaseUser?.uid}`;
+      
+      if (!firebaseUser || !joinData?.sessionToken) throw new Error('Sign in before joining this squad.');
+      const idToken = await getAuthToken(auth);
+      const joinResponse = await fetch('/api/teams/join', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', ...authHeader(idToken) },
+        body: JSON.stringify({
+          sessionToken: joinData.sessionToken, playerId, enrollmentIntent: 'player',
+          ...(activeWaiver ? { waiverAcceptance: {
+            documentId: activeWaiver.id, signatureName: signature.trim(),
+            expectedVersion: activeWaiver.version, expectedTextHash: activeWaiver.textHash,
+          } } : {}),
+        }),
+      });
+      const joinResult = await joinResponse.json().catch(() => ({}));
+      if (!joinResponse.ok) throw new Error(joinResult.error || 'Join failed.');
+
+      setIsSuccess(true);
+    } catch (error) {
+      console.error(error);
+      toast({ title: "Enrollment Failed", description: error instanceof Error ? error.message : undefined, variant: "destructive" });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  if (isLoading) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-muted/30 p-6">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        <p className="mt-4 text-[10px] font-black uppercase tracking-widest opacity-40">Syncing with Squad...</p>
+      </div>
+    );
+  }
+
+  if (!team) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-muted/30 p-6 text-center">
+        <BrandLogo variant="light-background" className="h-10 w-40 mb-10" />
+        <Card className="max-w-md w-full border-none shadow-2xl rounded-[3rem] bg-white p-12">
+          <Info className="h-12 w-12 text-destructive mx-auto mb-4" />
+          <h2 className="text-xl font-black uppercase text-black">Squad Not Found</h2>
+          <Button className="mt-6 w-full h-12 rounded-xl" onClick={() => router.push('/')}>Return to Hub</Button>
+        </Card>
+      </div>
+    );
+  }
+
+  if (isSuccess) {
+    return (
+      <div className="min-h-screen bg-muted/30 flex flex-col items-center justify-center p-6 text-center text-foreground">
+        <BrandLogo variant="light-background" className="h-10 w-40 mb-10" />
+        <Card className="max-w-lg w-full p-10 rounded-[3rem] border-none shadow-2xl bg-white animate-in zoom-in-95 duration-500">
+          <div className="bg-green-100 h-20 w-20 rounded-full flex items-center justify-center mx-auto mb-8">
+            <CheckCircle2 className="h-10 w-10 text-green-600" />
+          </div>
+          <h2 className="text-3xl font-black uppercase tracking-tighter">You're in the Squad</h2>
+          <p className="text-muted-foreground font-bold uppercase tracking-widest text-[10px] mt-2 mb-8">Member Registry Updated</p>
+          
+          <div className="bg-primary/5 p-6 rounded-2xl border-2 border-dashed border-primary/20 text-left">
+            <p className="text-[10px] font-black uppercase text-primary">Confirmation</p>
+            <p className="text-sm font-bold mt-1 leading-relaxed">
+              Your enrollment in {team.name} is complete. You can now access schedules, rosters, and team communications in your dashboard.
+            </p>
+          </div>
+
+          <Button className="mt-10 w-full h-16 rounded-2xl font-black uppercase shadow-xl" onClick={() => router.push('/')}>Open Dashboard</Button>
+        </Card>
+      </div>
+    );
+  }
+
+  return (
+    <div className="min-h-screen bg-muted/30 flex flex-col items-center py-12 px-6 text-foreground">
+      <BrandLogo variant="light-background" className="h-10 w-40 mb-12" />
+      
+      <div className="max-w-2xl w-full space-y-8">
+        <div className="text-center space-y-3">
+          <div className="inline-flex items-center gap-2 bg-primary px-4 py-1.5 rounded-full text-white shadow-lg overflow-hidden">
+             <Zap className="h-4 w-4 fill-white" />
+             <span className="text-[10px] font-black uppercase tracking-widest">Rapid Join Portal</span>
+          </div>
+          <h1 className="text-5xl font-black tracking-tighter uppercase leading-[0.8]">{team.name}</h1>
+          <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px]">Onboarding Handshake</p>
+        </div>
+
+        <Card className="rounded-[3rem] border-none shadow-2xl overflow-hidden bg-white ring-1 ring-black/5">
+
+          <form onSubmit={handleSubmit}>
+            <CardHeader className="p-8 lg:p-10 pb-4">
+              <div className="flex items-center justify-between mb-4">
+                <div className="flex items-center gap-4">
+                  <div className="bg-muted p-3 rounded-2xl">
+                    <Users className="h-6 w-6 text-primary" />
+                  </div>
+                  <div>
+                    <CardTitle className="text-2xl font-black uppercase tracking-tight">
+                      {step === 1 ? 'Personal Data' : step === 2 && isUnder18 ? 'Guardian Info' : 'Compliance'}
+                    </CardTitle>
+                    <CardDescription className="text-[10px] font-bold uppercase tracking-widest mt-1">Step {step} of {totalSteps}</CardDescription>
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  {Array.from({ length: totalSteps }, (_, i) => i + 1).map(s => (
+                    <div key={s} className={cn("h-2 rounded-full transition-all duration-300", step >= s ? "w-8 bg-primary" : "w-4 bg-muted")} />
+                  ))}
+                </div>
+              </div>
+            </CardHeader>
+            
+            <CardContent className="p-8 lg:p-10 space-y-8">
+              {step === 1 && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                    <div className="space-y-2">
+                      <Label htmlFor="squad-join-name" className="text-[10px] font-black uppercase tracking-widest ml-1">Full Name</Label>
+                      <Input 
+                        id="squad-join-name"
+                        required 
+                        value={formData.name} 
+                        onChange={e => setFormData(p => ({ ...p, name: e.target.value }))}
+                        className="h-12 rounded-xl border-2 font-bold bg-muted/10" 
+                      />
+                    </div>
+                    <div className="space-y-2">
+                      <Label htmlFor="squad-join-email" className="text-[10px] font-black uppercase tracking-widest ml-1">Email Address</Label>
+                      <Input 
+                        id="squad-join-email"
+                        required 
+                        type="email"
+                        value={formData.email} 
+                        onChange={e => setFormData(p => ({ ...p, email: e.target.value }))}
+                        className="h-12 rounded-xl border-2 font-bold bg-muted/10" 
+                      />
+                    </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="squad-join-date-of-birth" className="text-[10px] font-black uppercase tracking-widest ml-1">Date of Birth <span className="text-primary">*</span></Label>
+                    <Input 
+                      id="squad-join-date-of-birth"
+                      required
+                      type="date"
+                      value={formData.dateOfBirth} 
+                      onChange={e => setFormData(p => ({ ...p, dateOfBirth: e.target.value }))}
+                      className="h-12 rounded-xl border-2 font-bold bg-muted/10" 
+                    />
+                    {formData.dateOfBirth && (
+                      <p className={cn("text-[10px] font-black uppercase tracking-widest mt-2", isUnder18 ? "text-amber-600" : "text-green-600")}>
+                        {isUnder18 ? "Guardian information will be required (Under 18)" : "No guardian required (18 or older)"}
+                      </p>
+                    )}
+                  </div>
+
+                  {isParent && (
+                    <div className="space-y-3 pt-4 border-t">
+                      <Label id="squad-player-label" className="text-[10px] font-black uppercase tracking-widest ml-1">Select Active Player <span className="text-primary">*</span></Label>
+                      <div role="radiogroup" aria-labelledby="squad-player-label" className="grid grid-cols-1 gap-3">
+                        {myChildren.map(child => (
+                          <button
+                            type="button"
+                            role="radio"
+                            aria-checked={formData.playerId === child.id}
+                            key={child.id}
+                            onClick={() => setFormData(p => ({ ...p, playerId: child.id }))}
+                            className={cn(
+                              "flex items-center justify-between p-4 rounded-2xl border-2 transition-all cursor-pointer",
+                              formData.playerId === child.id ? "bg-primary/5 border-primary shadow-sm" : "bg-muted/5 border-transparent hover:border-black/5"
+                            )}
+                          >
+                            <div className="flex items-center gap-3">
+                              <div className={cn("h-4 w-4 rounded-full border-2 p-0.5", formData.playerId === child.id ? "border-primary" : "border-muted-foreground/30")}>
+                                {formData.playerId === child.id && <div className="h-full w-full rounded-full bg-primary" />}
+                              </div>
+                              <span className="font-black uppercase text-xs tracking-tight">{child.firstName} {child.lastName}</span>
+                            </div>
+                            <CheckCircle2 className={cn("h-5 w-5", formData.playerId === child.id ? "text-primary opacity-100" : "opacity-0")} />
+                          </button>
+                        ))}
+                        {myChildren.length === 0 && (
+                            <p className="text-[10px] font-bold text-muted-foreground uppercase italic px-1">No players found in your registry. Please add them in the family dashboard.</p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {step === 2 && isUnder18 && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+                  <div className="flex items-center gap-3 p-4 bg-amber-50 rounded-2xl border-2 border-amber-200">
+                    <ShieldCheck className="h-6 w-6 text-amber-600" />
+                    <p className="text-sm font-bold text-amber-800">Guardian Information Required (Under 18)</p>
+                  </div>
+                  <div className="space-y-6">
+                    <div className="space-y-2">
+                      <Label htmlFor="squad-guardian-name" className="text-[10px] font-black uppercase tracking-widest ml-1">Guardian Full Name <span className="text-primary">*</span></Label>
+                      <Input 
+                        id="squad-guardian-name"
+                        required
+                        placeholder="e.g. Sarah Thompson" 
+                        value={formData.guardianName} 
+                        onChange={e => setFormData(p => ({ ...p, guardianName: e.target.value }))}
+                        className="h-12 rounded-xl border-2 font-bold bg-muted/10" 
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+                      <div className="space-y-2">
+                        <Label htmlFor="squad-guardian-email" className="text-[10px] font-black uppercase tracking-widest ml-1">Guardian Email <span className="text-primary">*</span></Label>
+                        <Input 
+                          id="squad-guardian-email"
+                          required
+                          type="email"
+                          placeholder="guardian@email.com" 
+                          value={formData.guardianEmail} 
+                          onChange={e => setFormData(p => ({ ...p, guardianEmail: e.target.value }))}
+                          className="h-12 rounded-xl border-2 font-bold bg-muted/10" 
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor="squad-guardian-phone" className="text-[10px] font-black uppercase tracking-widest ml-1">Guardian Phone</Label>
+                        <Input 
+                          id="squad-guardian-phone"
+                          type="tel"
+                          placeholder="(555) 000-0000" 
+                          value={formData.guardianPhone} 
+                          onChange={e => setFormData(p => ({ ...p, guardianPhone: e.target.value }))}
+                          className="h-12 rounded-xl border-2 font-bold bg-muted/10" 
+                        />
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {step === 2 && !isUnder18 && (
+                <div className="space-y-8 animate-in fade-in slide-in-from-right-4 duration-500">
+                  <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
+                    <ShieldCheck className="h-16 w-16 text-green-600" />
+                    <p className="text-xl font-black uppercase tracking-tight text-green-700">Guardian Not Required</p>
+                    <p className="text-sm font-medium text-muted-foreground">You are 18 or older and do not need guardian information.</p>
+                  </div>
+                </div>
+              )}
+
+              {activeWaiver && ((step === 3 && isUnder18) || (step === 2 && !isUnder18)) && (
+                <div className="space-y-6 pt-8 border-t animate-in fade-in slide-in-from-right-4 duration-500">
+                  <div className="flex items-center gap-3"><Signature className="h-6 w-6 text-primary" /><h4 className="text-lg font-black uppercase tracking-tight">Compliance Protocol</h4></div>
+                  
+                  <div className="space-y-2">
+                    <p className="text-[10px] font-black uppercase tracking-widest text-primary ml-1">{activeWaiver.title}</p>
+                    <ScrollArea className="h-48 p-5 rounded-2xl bg-muted/10 border-2 font-medium text-xs leading-relaxed text-foreground/80">
+                      {activeWaiver.content}
+                    </ScrollArea>
+                  </div>
+
+                  <div 
+                    className={cn(
+                        "flex items-center space-x-3 p-5 rounded-2xl border-2 transition-all cursor-pointer",
+                        waiverAgreed ? "bg-primary/5 border-primary/20" : "bg-muted/5 border-transparent"
+                    )}
+                    onClick={() => setWaiverAgreed(!waiverAgreed)}
+                  >
+                    <Checkbox id="waiver_agree" checked={waiverAgreed} onCheckedChange={v => setWaiverAgreed(!!v)} />
+                    <Label htmlFor="waiver_agree" className="text-[10px] font-black uppercase tracking-tight cursor-pointer leading-tight flex-1">
+                      I verify that I have read and accept all participation terms and institutional agreements.
+                    </Label>
+                  </div>
+                  
+                  <div className="space-y-2">
+                    <Label htmlFor="squad-waiver-signature" className="text-[10px] font-black uppercase tracking-widest ml-1">Digital Execution (Full Legal Name)</Label>
+                    <Input 
+                        id="squad-waiver-signature"
+                        placeholder="Type legal name to execute..." 
+                        value={signature} 
+                        onChange={e => setSignature(e.target.value)} 
+                        className="h-16 rounded-xl border-2 font-mono italic text-center text-2xl bg-muted/10 focus:bg-white transition-all shadow-inner" 
+                        required 
+                    />
+                    <p className="text-[8px] font-black uppercase text-center opacity-30 mt-2">Time-Stamped Institutional Handshake Protocol</p>
+                  </div>
+                </div>
+              )}
+            </CardContent>
+
+            <CardFooter className="p-8 lg:p-10 pt-0 flex gap-4">
+              {step > 1 && (
+                <Button type="button" variant="outline" className="h-14 px-8 rounded-xl border-2 font-black uppercase text-xs" onClick={handlePrevStep}>
+                  Back
+                </Button>
+              )}
+              <Button type="button" className="flex-1 h-14 rounded-xl text-base font-black shadow-2xl shadow-primary/20" disabled={isSubmitting || (step === 1 && (!formData.name || !formData.email || !formData.dateOfBirth)) || (step === 2 && isUnder18 && (!formData.guardianName || !formData.guardianEmail))} onClick={handleNextStep}>
+                {step < totalSteps ? 'Continue' : 'Execute Join Portal'}
+              </Button>
+            </CardFooter>
+          </form>
+        </Card>
+
+        <p className="text-center text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground/40">Secure Institutional Handshake</p>
+      </div>
+    </div>
+  );
+}
+
+export default function RapidJoinPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin" /></div>}>
+      <RapidJoinForm />
+    </Suspense>
+  );
+}

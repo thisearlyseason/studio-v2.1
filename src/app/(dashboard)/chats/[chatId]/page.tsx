@@ -1,0 +1,724 @@
+
+"use client";
+
+import { ContentSafety, BlockedUsers, useBlockedAuthors } from '@/components/content-safety';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { format } from 'date-fns';
+import { useParams, useRouter, useSearchParams } from 'next/navigation';
+import { 
+  ChevronLeft, 
+  Send, 
+  BarChart2, 
+  MoreVertical, 
+  X,
+  Plus,
+  Trash2,
+  Users,
+  ImagePlus,
+  XCircle,
+  Loader2,
+  ImageIcon,
+  ShieldAlert,
+  Hash,
+  Clock,
+  CheckCircle2,
+  Paperclip,
+  MessageSquare,
+  Edit3,
+  UserPlus
+} from 'lucide-react';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogDescription, 
+  DialogFooter,
+} from '@/components/ui/dialog';
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuTrigger,
+  DropdownMenuSeparator
+} from "@/components/ui/dropdown-menu";
+import { Label } from '@/components/ui/label';
+import { cn } from '@/lib/utils';
+import { toast } from '@/hooks/use-toast';
+import { useTeam, Message, Member } from '@/components/providers/team-provider';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
+import { useFirestore, useDoc, useMemoFirebase, useCollection, useAuth } from '@/firebase';
+import { authHeader, getAuthToken } from '@/lib/client-auth';
+import { collection, query, orderBy, doc, limitToLast } from 'firebase/firestore';
+import { Checkbox } from '@/components/ui/checkbox';
+import { 
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
+import { normalizeChatMessage } from '@/lib/chat-message-normalization';
+import { clearDeviceNotifications } from '@/lib/device-notification-presentation';
+import { validatePollInput } from '@/lib/poll-policy';
+import { beginChatSend, failChatSend, finishChatSend, type ChatSendDraft } from '@/lib/chat-send-state';
+
+function ChatRoomInner() {
+  const { chatId } = useParams();
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { 
+    addMessage, votePoll, user, formatTime, activeTeam, 
+    updateChat, deleteChat, hideChatForUser, members: teamMembers, 
+    isStaff 
+  } = useTeam();
+  const db = useFirestore();
+  const auth = useAuth();
+  const { data: blocks, isLoading: blocksLoading } = useBlockedAuthors();
+
+  // For hub channels opened by an organizer who has no activeTeam selected,
+  // the teamId is passed as a URL query param so we can query Firestore directly
+  // without forcing a global team context switch.
+  const urlTeamId = searchParams?.get('teamId') ?? null;
+  const effectiveTeamId = urlTeamId || activeTeam?.id || null;
+  
+  const [input, setInput] = useState('');
+  const [isPollDialogOpen, setIsPollDialogOpen] = useState(false);
+  const [isPollSending,setIsPollSending] = useState(false);
+  const [isRenameDialogOpen, setIsRenameDialogOpen] = useState(false);
+  const [isMembersDialogOpen, setIsMembersDialogOpen] = useState(false);
+  const [newName, setNewName] = useState('');
+  
+  const [pollPrompt, setPollPrompt] = useState('');
+  const [pollOptions, setPollOptions] = useState<{text: string, image?: string}[]>([{text: '', image: undefined}, {text: '', image: undefined}]);
+  const [chatImage, setChatImage] = useState<string | undefined>();
+  const [sendAttempt, setSendAttempt] = useState<ChatSendDraft | null>(null);
+  const [memberDirectory, setMemberDirectory] = useState<Array<{ userId: string; name: string; position: string; avatar?: string; squadName?: string }>>([]);
+  
+  const scrollRef = useRef<HTMLDivElement>(null);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const hasInitializedName = useRef(false);
+
+  const chatDocRef = useMemoFirebase(() => {
+    if (!effectiveTeamId || !db || !chatId) return null;
+    return doc(db, 'teams', effectiveTeamId, 'groupChats', chatId as string);
+  }, [effectiveTeamId, db, chatId]);
+
+  const { data: currentChat, isLoading: isChatLoading, error: chatError } = useDoc(chatDocRef);
+
+  const messagesQuery = useMemoFirebase(() => {
+    if (!effectiveTeamId || !db || !chatId) return null;
+    return query(
+      collection(db, 'teams', effectiveTeamId, 'groupChats', chatId as string, 'messages'),
+      orderBy('createdAt', 'asc'),
+      limitToLast(100)
+    );
+  }, [effectiveTeamId, db, chatId]);
+
+  const { data: rawMessages, isLoading: isMessagesLoading, error: messagesError } = useCollection<Message>(messagesQuery);
+  const messages = useMemo(
+    () => (rawMessages ? rawMessages.map(normalizeChatMessage).filter(msg => !blocks?.some(block => block.authorId === msg.authorId)) as Message[] : []),
+    [rawMessages, blocks],
+  );
+
+  useEffect(() => {
+    if (!effectiveTeamId || !chatId || !user?.id || isMessagesLoading) return;
+    getAuthToken(auth).then(token => {
+      if (!token) return;
+      return fetch('/api/teams/chat', {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+        body: JSON.stringify({ teamId: effectiveTeamId, chatId }),
+      });
+    }).then(response => {
+      if (response?.ok) return clearDeviceNotifications({ chatId: String(chatId), teamId: effectiveTeamId });
+    }).catch(() => undefined);
+  }, [effectiveTeamId, chatId, user?.id, auth, isMessagesLoading, messages.length]);
+
+  useEffect(() => {
+    if (!effectiveTeamId || !chatId || !auth) return;
+    let cancelled = false;
+    getAuthToken(auth).then(token => {
+      if (!token) throw new Error('Your session has expired.');
+      return fetch(`/api/teams/chat?teamId=${encodeURIComponent(effectiveTeamId)}&chatId=${encodeURIComponent(String(chatId))}`, {
+        headers: authHeader(token),
+      });
+    }).then(async response => {
+      const payload = await response.json();
+      if (!response.ok) throw new Error(payload.error || 'Unable to load channel members.');
+      if (!cancelled) setMemberDirectory(Array.isArray(payload.memberDirectory) ? payload.memberDirectory : []);
+    }).catch(() => {
+      if (!cancelled) setMemberDirectory([]);
+    });
+    return () => { cancelled = true; };
+  }, [effectiveTeamId, chatId, auth]);
+
+  // Scroll to bottom whenever new messages arrive
+  useEffect(() => {
+    // Use requestAnimationFrame to ensure DOM has painted before scrolling
+    requestAnimationFrame(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+    });
+  }, [messages.length]);
+
+  useEffect(() => {
+    if (currentChat && !hasInitializedName.current) {
+      setNewName(currentChat.name);
+      hasInitializedName.current = true;
+    }
+  }, [currentChat]);
+
+  const transmitDraft = async (draft: ChatSendDraft) => {
+    if (!chatId || !user || !effectiveTeamId || draft.status === 'sent') return;
+    const sending = beginChatSend(draft, draft.requestId);
+    setSendAttempt(sending);
+    try {
+      await addMessage(chatId as string, user.name, sending.content, sending.type, sending.imageUrl, undefined, effectiveTeamId, sending.requestId);
+      setSendAttempt(finishChatSend(sending));
+      setInput('');
+      setChatImage(undefined);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Unable to send this message.';
+      setSendAttempt(failChatSend(sending, message));
+      toast({ title: 'Message Not Sent', description: `${message} Your draft is preserved.`, variant: 'destructive' });
+    }
+  };
+
+  const handleSendMessage = () => {
+    if ((!input.trim() && !chatImage) || !chatId || !user || sendAttempt?.status === 'sending') return;
+    const draft = beginChatSend({ content: input, imageUrl: chatImage, type: chatImage ? 'image' : 'text' }, crypto.randomUUID());
+    void transmitDraft(draft);
+  };
+
+  const handleRename = async () => {
+    if (!isStaff || !newName.trim() || !chatId || !effectiveTeamId) return;
+    try {
+      await updateChat(chatId as string, { name: newName.trim() }, effectiveTeamId);
+      setIsRenameDialogOpen(false);
+      toast({ title: "Channel Identity Updated" });
+    } catch (error) {
+      toast({ title: 'Channel Update Failed', description: error instanceof Error ? error.message : 'Try again.', variant: 'destructive' });
+    }
+  };
+
+  const handleAddMember = async (memberId: string) => {
+    if (!isStaff || !chatId || !effectiveTeamId || !currentChat) return;
+    try {
+      await updateChat(chatId as string, { memberIds: [...(currentChat.memberIds || []), memberId] }, effectiveTeamId);
+      toast({ title: "Squad Member Added" });
+    } catch (error) {
+      toast({ title: 'Member Update Failed', description: error instanceof Error ? error.message : 'Try again.', variant: 'destructive' });
+    }
+  };
+
+  const handleRemoveMember = async (memberId: string) => {
+    if (!isStaff || !chatId || !effectiveTeamId || !currentChat) return;
+    const newIds = (currentChat.memberIds || []).filter((id: string) => id !== memberId);
+    try {
+      await updateChat(chatId as string, { memberIds: newIds }, effectiveTeamId);
+      toast({ title: 'Member Removed' });
+    } catch (error) {
+      toast({ title: 'Member Update Failed', description: error instanceof Error ? error.message : 'Try again.', variant: 'destructive' });
+    }
+  };
+
+  const handleDeleteChat = async () => {
+    if (!chatId) return;
+    if (isStaff) {
+      await deleteChat(chatId as string, effectiveTeamId || undefined);
+      router.push('/chats');
+      toast({ title: "Channel Purged", description: "The group chat has been globally deleted." });
+    } else {
+      await hideChatForUser(chatId as string, effectiveTeamId || undefined);
+      router.push('/chats');
+      toast({ title: "Channel Hidden", description: "Removed from your personal tactical view." });
+    }
+  };
+
+  const handleCreatePoll = async () => {
+    if (!chatId || !user || isPollSending) return;
+    try {
+      const input=validatePollInput({question:pollPrompt,options:pollOptions});
+      setIsPollSending(true);
+      await addMessage(chatId as string,user.name,'','poll',undefined,input,effectiveTeamId || undefined);
+      setIsPollDialogOpen(false);setPollPrompt('');setPollOptions([{text:''},{text:''}]);
+    } catch(error) {
+      toast({title:'Invalid Poll',description:error instanceof Error ? error.message : 'Unable to create poll.',variant:'destructive'});
+    } finally {setIsPollSending(false);}
+  };
+
+  if (isChatLoading) {
+    return (
+      <div className="flex flex-col items-center justify-center h-full gap-4 animate-pulse">
+        <Loader2 className="h-10 w-10 animate-spin text-primary" />
+        <p className="text-xs font-black text-muted-foreground uppercase tracking-[0.2em]">Synchronizing Secure Feed...</p>
+      </div>
+    );
+  }
+
+  if (chatError || messagesError || !currentChat || currentChat.isDeleted === true) {
+    return (
+      <section role="alert" aria-labelledby="channel-unavailable-title" className="flex min-h-[50vh] flex-col items-center justify-center gap-5 text-center">
+        <ShieldAlert className="h-12 w-12 text-destructive" />
+        <div className="space-y-2">
+          <h1 id="channel-unavailable-title" className="text-2xl font-black uppercase">Channel unavailable</h1>
+          <p className="max-w-md text-sm font-medium text-muted-foreground">This channel was deleted, disabled, or your access was removed. No stale messages can be sent.</p>
+        </div>
+        <Button onClick={() => router.push('/chats')}>Return to chats</Button>
+      </section>
+    );
+  }
+
+  const currentMemberIds: string[] = currentChat?.memberIds || [];
+  const staffMetadata: Record<string, { name: string; position: string; avatar: string; squadName?: string }> = currentChat?.staffMetadata || {};
+  const staffKeywords = ['coach', 'director', 'coordinator', 'staff', 'manager', 'trainer'];
+
+  // Resolve each member ID from the authorized server directory first. Never
+  // expose an internal user ID as a display name.
+  const activeMemberEntries = currentMemberIds.map(uid => {
+    const directoryMember = memberDirectory.find(member => member.userId === uid);
+    if (directoryMember) return { id: uid, ...directoryMember };
+    const found = teamMembers.find(m => m.userId === uid || m.id === uid);
+    if (found) return { ...found, squadName: staffMetadata[uid]?.squadName };
+    const meta = staffMetadata[uid];
+    if (meta) return { id: uid, userId: uid, name: meta.name, position: meta.position, avatar: meta.avatar, squadName: meta.squadName };
+    return { id: uid, userId: uid, name: 'Squad Member', position: 'Member', avatar: undefined, squadName: undefined };
+  });
+
+  // For hub broadcast channels, only coaches/directors appear in the "Recruit to Channel" list
+  // — players are never recruitable to the broadcast channel
+  const availableMembers = teamMembers.filter(m => {
+    if (currentMemberIds.includes(m.userId) || currentMemberIds.includes(m.id)) return false;
+    if (currentChat?.isHubChannel) {
+      const pos = (m.position || '').toLowerCase();
+      const role = (m.role || '').toLowerCase();
+      return staffKeywords.some(kw => pos.includes(kw)) || role === 'admin';
+    }
+    return true;
+  });
+
+  return (
+    <div className="flex flex-col h-[calc(100vh-160px)] md:h-[calc(100vh-130px)] mt-0 md:mt-0 -mx-4 overflow-hidden bg-muted/5">
+      <div className="flex flex-col p-4 border-b bg-white sticky top-0 z-20 shadow-sm gap-3">
+        <div className="flex items-center gap-3">
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button aria-label="Back to chats" variant="ghost" size="icon" onClick={() => router.push('/chats')} className="rounded-xl h-10 w-10 shrink-0">
+                <ChevronLeft className="h-6 w-6" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent>
+              Withdraw to Communications Hub
+            </TooltipContent>
+          </Tooltip>
+          <div className="h-10 w-10 rounded-xl bg-primary/10 flex items-center justify-center text-primary shrink-0">
+            <Hash className="h-5 w-5 stroke-[3px]" />
+          </div>
+          <div className="flex-1 min-w-0">
+            <h2 className="font-black truncate text-lg tracking-tight uppercase leading-none">{currentChat?.name}</h2>
+            <div className="flex items-center gap-2 mt-1">
+              <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
+              <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Active Coordination</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-1">
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button aria-label="View channel members" variant="ghost" size="icon" className="rounded-xl h-10 w-10 text-muted-foreground hover:text-primary" onClick={() => setIsMembersDialogOpen(true)}>
+                  <Users className="h-5 w-5" />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent>
+                View Squad Enrollment
+              </TooltipContent>
+            </Tooltip>
+            
+            <DropdownMenu>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <DropdownMenuTrigger asChild>
+                    <Button aria-label="Channel parameters" variant="ghost" size="icon" className="rounded-xl h-10 w-10 text-muted-foreground hover:text-primary">
+                      <MoreVertical className="h-5 w-5" />
+                    </Button>
+                  </DropdownMenuTrigger>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Channel Parameters
+                </TooltipContent>
+              </Tooltip>
+              <DropdownMenuContent align="end" className="w-56 rounded-2xl p-2 shadow-2xl">
+                {isStaff && (
+                  <>
+                    <DropdownMenuItem className="p-3 rounded-xl font-bold gap-3" onClick={() => setIsRenameDialogOpen(true)}>
+                      <Edit3 className="h-4 w-4 text-primary" /> Rename Tactical Group
+                    </DropdownMenuItem>
+                    <DropdownMenuItem className="p-3 rounded-xl font-bold gap-3" onClick={() => setIsMembersDialogOpen(true)}>
+                      <UserPlus className="h-4 w-4 text-primary" /> Manage Squad Members
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator className="my-2" />
+                  </>
+                )}
+                <DropdownMenuItem className="p-3 rounded-xl font-bold gap-3 text-destructive" onClick={handleDeleteChat}>
+                  <Trash2 className="h-4 w-4" /> {isStaff ? 'Delete Global Hub' : 'Hide from Operations'}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
+          </div>
+        </div>
+        <div className="flex items-center gap-2 px-1 overflow-x-auto custom-scrollbar whitespace-nowrap pb-1">
+          <p className="text-[8px] font-black uppercase text-muted-foreground/60 tracking-widest shrink-0">Members:</p>
+          {activeMemberEntries.map((m, i) => (
+            <span key={m.id} className="text-[9px] font-bold text-muted-foreground bg-muted/50 px-2 py-0.5 rounded-full uppercase">
+              {m.name}{i < activeMemberEntries.length - 1 ? '' : ''}
+            </span>
+          ))}
+        </div>
+      </div>
+
+      <div className="px-4 py-2 border-b"><BlockedUsers /></div>
+      <ScrollArea className="flex-1 px-4 py-6">
+        <div className="max-w-4xl mx-auto space-y-8 pb-10" ref={scrollRef}>
+          {isMessagesLoading || blocksLoading ? (
+            <div className="flex justify-center p-8"><Loader2 className="h-6 w-6 animate-spin text-primary opacity-20" /></div>
+          ) : messages.length > 0 ? (
+            messages.map((msg, idx) => {
+              const isMe = msg.authorId === user?.id;
+              const isPoll = msg.type === 'poll';
+              const showAuthor = idx === 0 || messages[idx-1].authorId !== msg.authorId;
+              
+              return (
+                <div key={msg.id} className={cn("flex flex-col animate-in fade-in slide-in-from-bottom-2 duration-300", isMe ? 'items-end' : 'items-start', showAuthor && "pt-4")}>
+                  {showAuthor && (
+                    <div className="flex items-center gap-2 mb-2 px-1">
+                      {!isMe && <Avatar className="h-6 w-6 rounded-lg border shadow-sm"><AvatarFallback className="text-[8px] font-black">{msg.author[0]}</AvatarFallback></Avatar>}
+                      <span className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">{msg.author}</span>
+                      <span className="text-[8px] text-muted-foreground/40 font-bold">{format(new Date(msg.createdAt), 'MMMM d, yyyy h:mm a')}</span>
+                    </div>
+                  )}
+                  
+                  <ContentSafety target={{ teamId: effectiveTeamId!, kind: 'message', parentId: chatId as string, contentId: msg.id }} authorId={msg.authorId} authorName={msg.author} />
+                  {!isPoll ? (
+                    <div className={cn(
+                      "max-w-[85%] sm:max-w-[70%] p-4 rounded-3xl text-sm shadow-md space-y-3 relative group transition-all", 
+                      isMe 
+                        ? "bg-primary text-white rounded-tr-none" 
+                        : "bg-white text-foreground rounded-tl-none border ring-1 ring-black/5"
+                    )}>
+                      {msg.imageUrl && (
+                        <div className="relative overflow-hidden rounded-2xl border-2 border-white/10 group-hover:scale-[1.02] transition-transform">
+                          <img src={msg.imageUrl} className="w-full object-cover max-h-[400px]" alt="Shared Media" />
+                        </div>
+                      )}
+                      {msg.content && <p className="font-bold leading-relaxed">{msg.content}</p>}
+                    </div>
+                  ) : (
+                    <div className="w-full max-w-[95%] sm:max-w-[80%] bg-white border rounded-[2.5rem] overflow-hidden shadow-xl ring-1 ring-black/5">
+                      <div className="bg-primary/5 p-6 border-b flex items-center justify-between">
+                        <div className="space-y-1">
+                          <Badge className="bg-primary text-white border-none text-[8px] font-black uppercase h-5 px-3">Squad Consensus</Badge>
+                          <h4 className="font-black text-xl tracking-tight">{msg.poll?.question}</h4>
+                        </div>
+                        <BarChart2 className="h-8 w-8 text-primary opacity-20" />
+                      </div>
+                      <div className="p-6 space-y-4">
+                        {msg.poll?.options.map((opt, i: number) => {
+                          const percentage = msg.poll!.totalVotes > 0 ? (opt.votes / msg.poll!.totalVotes) * 100 : 0;
+                          return (
+                            <button 
+                              key={opt.id || i}
+                              onClick={() => votePoll(chatId as string, msg.id, opt.id || i, effectiveTeamId || undefined)}
+                              className="w-full text-left space-y-2 group/opt active:scale-[0.98] transition-all"
+                            >
+                              <div className="flex justify-between items-center text-[10px] font-black uppercase tracking-widest px-1">
+                                <span className="group-hover/opt:text-primary transition-colors">{opt.text}</span>
+                                <span className="text-primary bg-primary/10 px-2 py-0.5 rounded-full">{opt.votes} votes</span>
+                              </div>
+                              <div className="relative h-3 bg-muted rounded-full overflow-hidden shadow-inner border border-black/5">
+                                <div 
+                                  className="absolute top-0 left-0 h-full bg-primary transition-all duration-1000 ease-out" 
+                                  style={{ width: `${percentage}%` }}
+                                />
+                              </div>
+                            </button>
+                          );
+                        })}
+                      </div>
+                      <div className="bg-muted/30 p-4 text-center border-t">
+                        <p className="text-[9px] font-black uppercase text-muted-foreground tracking-[0.2em]">{msg.poll?.totalVotes || 0} TOTAL SQUAD RESPONSES</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          ) : (
+            <div className="flex flex-col items-center justify-center py-32 text-center space-y-6 opacity-20">
+              <div className="bg-primary/10 p-10 rounded-[3rem] ring-4 ring-primary/5">
+                <MessageSquare className="h-16 w-16 text-primary" />
+              </div>
+              <p className="text-sm font-black uppercase tracking-[0.3em]">Channel established. Awaiting tactical orders.</p>
+            </div>
+          )}
+          {/* Bottom anchor — new messages always appear below previous ones */}
+          <div ref={messagesEndRef} />
+        </div>
+      </ScrollArea>
+
+      <div className="p-4 md:p-6 bg-white border-t mt-auto relative z-30 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
+        <div className="max-w-4xl mx-auto space-y-4">
+          {sendAttempt?.status === 'failed' && (
+            <div role="status" className="flex items-center justify-between gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3">
+              <p className="text-sm font-bold text-destructive">Message not sent. Your draft is preserved.</p>
+              <Button variant="outline" size="sm" onClick={() => void transmitDraft(sendAttempt)}>Retry send</Button>
+            </div>
+          )}
+          {chatImage && (
+            <div className="relative inline-block animate-in zoom-in duration-300">
+              <img src={chatImage} className="h-24 w-auto rounded-[1.5rem] border-4 border-white shadow-xl ring-1 ring-black/10" alt="Preview" />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button aria-label="Remove attached image" variant="destructive" size="icon" className="absolute -top-3 -right-3 h-8 w-8 rounded-full shadow-lg border-2 border-white" onClick={() => setChatImage(undefined)}>
+                    <X className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent className="bg-destructive">
+                  Purge Attached Media
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          )}
+          <div className="flex items-end gap-3">
+            <div className="flex gap-2 pb-1">
+              <input 
+                type="file" 
+                ref={fileInputRef} 
+                className="hidden" 
+                accept="image/*" 
+                onChange={e => { 
+                  if (e.target.files?.[0]) { 
+                    const r = new FileReader(); 
+                    r.onload = ev => setChatImage(ev.target?.result as string); 
+                    r.readAsDataURL(e.target.files[0]); 
+                  } 
+                }} 
+              />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button aria-label="Attach image" variant="outline" size="icon" className="rounded-2xl shrink-0 h-12 w-12 border-muted hover:bg-primary/5 hover:border-primary/20 text-muted-foreground hover:text-primary transition-all shadow-sm" onClick={() => fileInputRef.current?.click()}>
+                    <ImageIcon className="h-5 w-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Attach Visual Intel
+                </TooltipContent>
+              </Tooltip>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button aria-label="Create poll" variant="outline" size="icon" className="rounded-2xl shrink-0 h-12 w-12 border-muted hover:bg-primary/5 hover:border-primary/20 text-muted-foreground hover:text-primary transition-all shadow-sm" onClick={() => setIsPollDialogOpen(true)}>
+                    <BarChart2 className="h-5 w-5" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Initialize Consensus Poll
+                </TooltipContent>
+              </Tooltip>
+            </div>
+            
+            <div className="flex-1 relative">
+              <Input 
+                className="w-full rounded-[1.5rem] bg-muted/30 border-2 border-transparent focus:border-primary/20 focus:bg-white h-12 px-6 font-bold text-base transition-all pr-12 shadow-inner" 
+                placeholder="Tactical update..." 
+                value={input} 
+                onChange={e => setInput(e.target.value)} 
+                onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); void handleSendMessage(); } }}
+                disabled={sendAttempt?.status === 'sending'}
+              />
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <Button 
+                    aria-label="Send message"
+                    size="icon" 
+                    className="absolute right-1.5 top-1.5 rounded-2xl h-9 w-9 shadow-lg shadow-primary/30 hover:scale-105 active:scale-95 transition-all" 
+                    onClick={handleSendMessage}
+                    disabled={sendAttempt?.status === 'sending' || (!input.trim() && !chatImage)}
+                  >
+                    <Send className="h-4 w-4" />
+                  </Button>
+                </TooltipTrigger>
+                <TooltipContent>
+                  Transmit Tactical Data
+                </TooltipContent>
+              </Tooltip>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <Dialog open={isRenameDialogOpen} onOpenChange={setIsRenameDialogOpen}>
+        <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-8">
+          <DialogTitle className="sr-only">Rename Tactical Group</DialogTitle>
+          <DialogHeader>
+            <DialogTitle className="text-2xl font-black uppercase tracking-tight">Identity Management</DialogTitle>
+            <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Update channel name</DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Tactical Group Name</Label>
+            <Input 
+              value={newName} 
+              onChange={e => setNewName(e.target.value)} 
+              className="h-14 rounded-2xl border-2 font-black text-lg" 
+            />
+          </div>
+          <DialogFooter>
+            <Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleRename}>Commit New Identity</Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isMembersDialogOpen} onOpenChange={setIsMembersDialogOpen}>
+        <DialogContent className="w-[calc(100vw-1rem)] max-w-md max-h-[calc(100dvh-1rem)] rounded-3xl sm:rounded-[2.5rem] border-none shadow-2xl p-0 overflow-y-auto">
+          <DialogTitle className="sr-only">Squad Enrollment Management</DialogTitle>
+
+          <div className="p-5 sm:p-8 space-y-5 sm:space-y-6">
+            <DialogHeader>
+              <DialogTitle className="text-xl sm:text-2xl font-black uppercase tracking-tight pr-8">Squad Enrollment</DialogTitle>
+              <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Manage access to coordination channel</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-6">
+              <div className="space-y-3">
+                <p className="text-[10px] font-black uppercase text-muted-foreground px-1 tracking-widest">Active Teammates ({currentMemberIds.length})</p>
+                <div className="max-h-[28dvh] sm:max-h-[200px] overflow-y-auto pr-2 custom-scrollbar space-y-2">
+                  {activeMemberEntries.map(m => {
+                    const memberId = m.userId || m.id;
+                    const isSelf = memberId === user?.id;
+                    return (
+                      <div key={m.id} className="flex items-center gap-3 p-3 bg-primary/5 rounded-2xl border border-primary/10">
+                        <Avatar className="h-8 w-8 rounded-xl border-2 border-background shadow-sm">
+                          <AvatarImage src={m.avatar} />
+                          <AvatarFallback className="font-black text-[10px] bg-white">{m.name[0]}</AvatarFallback>
+                        </Avatar>
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-black uppercase truncate">{m.name}</p>
+                          <p className="text-[8px] font-bold text-muted-foreground uppercase">{m.position}</p>
+                          {(m as any).squadName && (
+                            <p className="text-[8px] font-bold text-primary/60 uppercase tracking-widest mt-0.5">
+                              {(m as any).squadName}
+                            </p>
+                          )}
+                        </div>
+                        {!isSelf && (
+                          <Tooltip>
+                            <TooltipTrigger asChild>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-7 w-7 rounded-lg p-0 hover:bg-destructive/10 hover:text-destructive transition-all shrink-0"
+                                onClick={() => handleRemoveMember(memberId)}
+                              >
+                                <X className="h-3.5 w-3.5" />
+                              </Button>
+                            </TooltipTrigger>
+                            <TooltipContent>Remove from channel</TooltipContent>
+                          </Tooltip>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+
+              {availableMembers.length > 0 && (
+                <div className="space-y-3 pt-4 border-t">
+                  <p className="text-[10px] font-black uppercase text-primary px-1 tracking-widest">Recruit to Channel</p>
+                  <div className="max-h-[200px] overflow-y-auto pr-2 custom-scrollbar space-y-2">
+                    {availableMembers.map(m => (
+                      <div key={m.id} className="flex items-center justify-between p-3 bg-muted/30 rounded-2xl border border-transparent hover:border-primary/20 transition-all group">
+                        <div className="flex items-center gap-3">
+                          <Avatar className="h-8 w-8 rounded-xl border shadow-sm">
+                            <AvatarImage src={m.avatar} />
+                            <AvatarFallback className="font-black text-[10px]">{m.name[0]}</AvatarFallback>
+                          </Avatar>
+                          <div className="min-w-0">
+                            <p className="text-xs font-black uppercase truncate">{m.name}</p>
+                            <p className="text-[8px] font-bold text-muted-foreground uppercase">{m.position}</p>
+                          </div>
+                        </div>
+                        <Tooltip>
+                          <TooltipTrigger asChild>
+                            <Button 
+                              size="sm" 
+                              variant="ghost" 
+                              className="h-8 w-8 rounded-xl p-0 hover:bg-destructive hover:text-destructive-foreground transition-all" 
+                              onClick={() => handleAddMember(m.userId)}
+                            >
+                              <Plus className="h-4 w-4" />
+                            </Button>
+                          </TooltipTrigger>
+                          <TooltipContent>
+                            Recruit to Collective
+                          </TooltipContent>
+                        </Tooltip>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" className="w-full h-12 rounded-xl font-black uppercase text-xs tracking-widest border-2" onClick={() => setIsMembersDialogOpen(false)}>Close Roster</Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isPollDialogOpen} onOpenChange={setIsPollDialogOpen}>
+        <DialogContent className="sm:max-w-md rounded-[3rem] border-none shadow-2xl overflow-hidden p-0">
+          <DialogTitle className="sr-only">Launch Squad Poll</DialogTitle>
+
+          <div className="p-8">
+            <DialogHeader className="mb-6">
+              <DialogTitle className="text-3xl font-black uppercase tracking-tight leading-none">Launch Poll</DialogTitle>
+              <DialogDescription className="text-[10px] uppercase font-bold tracking-[0.2em] text-primary/60 mt-2">Build squad consensus</DialogDescription>
+            </DialogHeader>
+            <div className="space-y-6 py-2">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Tactical Question</Label>
+                <Input value={pollPrompt} onChange={e => setPollPrompt(e.target.value)} className="h-14 rounded-2xl font-black border-2 text-base" placeholder="e.g. Jersey design choice?" />
+              </div>
+              <div className="space-y-3">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Polling Options</Label>
+                <div className="space-y-2">
+                  {pollOptions.map((o, i) => (
+                    <Input key={i} placeholder={`Option ${i+1}`} value={o.text} onChange={e => { const n = [...pollOptions]; n[i].text = e.target.value; setPollOptions(n); }} className="h-11 rounded-xl bg-muted/20 border-none font-bold" />
+                  ))}
+                </div>
+                <Button disabled={pollOptions.length >= 10 || isPollSending} variant="ghost" size="sm" className="text-[10px] font-black uppercase tracking-widest text-primary h-8" onClick={() => setPollOptions([...pollOptions, {text: '', image: undefined}])}>+ Add Option</Button>
+              </div>
+            </div>
+            <DialogFooter className="mt-8">
+              <Button disabled={isPollSending} className="w-full h-16 rounded-2xl font-black text-lg uppercase shadow-xl shadow-primary/20 active:scale-95 transition-all" onClick={handleCreatePoll}>Deploy Squad Poll</Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+}
+
+export default function ChatRoomPage() {
+  return (
+    <React.Suspense
+      fallback={
+        <div className="flex flex-col items-center justify-center h-full gap-4 animate-pulse">
+          <Loader2 className="h-10 w-10 animate-spin text-primary" />
+          <p className="text-xs font-black text-muted-foreground uppercase tracking-[0.2em]">Synchronizing Secure Feed...</p>
+        </div>
+      }
+    >
+      <ChatRoomInner />
+    </React.Suspense>
+  );
+}

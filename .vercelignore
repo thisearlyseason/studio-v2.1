@@ -1,0 +1,11 @@
+.next
+node_modules
+.playwright-cli
+output
+firestore-debug.log
+*.log
+qa-audit
+FEATURES.md
+scratch
+.local-tools
+.DS_Store

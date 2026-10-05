@@ -1,0 +1,221 @@
+
+"use client";
+
+import OrganizerGuide from '@/components/guidance/OrganizerGuide';
+import React, { useState, useEffect, Suspense } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from '@/components/ui/select';
+import { useTeam } from '@/components/providers/team-provider';
+import { ChevronLeft, Trophy, Users, ShieldCheck, Zap, Check, ArrowRight, Loader2 } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { cn } from '@/lib/utils';
+import { toast } from '@/hooks/use-toast';
+import { isStoreDistribution } from '@/lib/app-distribution';
+
+function NewTeamForm() {
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const tierParam = searchParams.get('tier'); // 'starter' | 'pro'
+  const { createNewTeam, proQuotaStatus, activeTeam, isSchoolAdmin, setActiveTeam } = useTeam();
+  
+  const [teamName, setTeamName] = useState('');
+  const [description, setDescription] = useState('');
+  const [type, setType] = useState<"adult" | "youth" | "school" | "school_squad">('adult');
+  const [organizerPosition, setOrganizerPosition] = useState('Coach');
+  // Pre-select plan based on URL param
+  const [selectedPlan, setSelectedPlan] = useState<'free' | 'team'>(
+    !isStoreDistribution && tierParam === 'pro' ? 'team' : 'free',
+  );
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [customWaiverTitle, setCustomWaiverTitle] = useState('');
+  const [customWaiverContent, setCustomWaiverContent] = useState('');
+
+  useEffect(() => {
+    // Pre-select school types if user is a School Admin creating a sub-squad
+    if (isSchoolAdmin && activeTeam?.type === 'school') {
+      setType('school_squad');
+      setSelectedPlan('team');
+    }
+  }, [isSchoolAdmin, activeTeam]);
+
+  const handleCreate = async () => {
+    if (!teamName.trim()) return;
+
+    setIsProcessing(true);
+    try {
+      let targetType = type;
+      let targetSchoolId = undefined;
+
+      // Logic: If creating a sub-squad, inherit the school ID. New teams still
+      // start free and can be upgraded after they exist.
+      if (isSchoolAdmin && activeTeam?.type === 'school') {
+        targetType = 'school_squad';
+        targetSchoolId = activeTeam.id;
+      }
+      
+      const teamId = await createNewTeam(teamName, targetType, organizerPosition, description, 'free', customWaiverTitle, customWaiverContent, targetSchoolId);
+      if (!isStoreDistribution && selectedPlan === 'team' && proQuotaStatus.remaining <= 0) {
+        setActiveTeam({ id: teamId } as any);
+        router.push('/dashboard/billing');
+      } else {
+        router.push('/feed');
+      }
+    } catch (e: any) {
+      console.error(e);
+      toast({
+        title: 'Squad Creation Failed',
+        description: e?.message || 'Unable to create the squad. Please try again.',
+        variant: 'destructive',
+      });
+      setIsProcessing(false);
+    }
+  };
+
+  return (
+    <div className="max-w-4xl mx-auto space-y-6 pt-4 pb-20">
+      <OrganizerGuide kind="team" />
+      <Button variant="ghost" onClick={() => router.back()} className="font-bold">
+        <ChevronLeft className="h-4 w-4 mr-1" /> Back
+      </Button>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8">
+        <div className="lg:col-span-3 space-y-6">
+          <Card className="border-none shadow-2xl rounded-[2.5rem] overflow-hidden bg-white ring-1 ring-black/5">
+
+            <CardHeader className="p-8 lg:p-10">
+              <CardTitle className="text-3xl font-black uppercase tracking-tight">Create your team</CardTitle>
+              <CardDescription className="text-[10px] font-bold uppercase tracking-widest">Add the basics now. Invite people next.</CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-8 p-8 lg:p-10 pt-0">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest">Squad Name</Label>
+                <Input value={teamName} onChange={e => setTeamName(e.target.value)} className="h-14 text-xl rounded-2xl border-2 font-black" placeholder="e.g. Metro Elite U14" />
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest">Team type</Label>
+                  {isSchoolAdmin && activeTeam?.type === 'school' ? (
+                    <div className="h-12 rounded-xl border-2 border-muted bg-muted/20 flex items-center px-4 font-bold text-muted-foreground">
+                       {type === 'school_squad' ? 'Sub-Squad' : 'School Team'}
+                    </div>
+                  ) : (
+                    <Select value={type} onValueChange={(v: any) => setType(v)}>
+                      <SelectTrigger className="h-12 rounded-xl border-2 font-bold"><SelectValue /></SelectTrigger>
+                      <SelectContent className="rounded-xl">
+                        <SelectItem value="adult">Adult (18+)</SelectItem>
+                        <SelectItem value="youth">Youth (Minor Support)</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest">Your Role</Label>
+                  <Select value={organizerPosition} onValueChange={setOrganizerPosition}>
+                    <SelectTrigger className="h-12 rounded-xl border-2 font-bold"><SelectValue /></SelectTrigger>
+                    <SelectContent className="rounded-xl">
+                      <SelectItem value="Coach">Head Coach</SelectItem>
+                      <SelectItem value="Manager">Organization Lead</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest">Biography</Label>
+                <Textarea value={description} onChange={e => setDescription(e.target.value)} className="rounded-2xl min-h-[100px] border-2 font-medium" />
+              </div>
+
+              <div className="space-y-4 pt-4 border-t">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="h-5 w-5 text-primary" />
+                  <h3 className="font-black uppercase tracking-widest text-[12px]">League / Institutional Protocol</h3>
+                </div>
+                <p className="text-[10px] text-muted-foreground font-bold tracking-widest mb-4">Create a custom liability waiver, code of conduct, or media release. This will automatically deploy to all athletes assigned to this squad.</p>
+                <div className="space-y-4">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest">Protocol Title (Optional)</Label>
+                    <Input value={customWaiverTitle} onChange={e => setCustomWaiverTitle(e.target.value)} className="h-12 rounded-xl border-2 font-bold" placeholder="e.g. 2025 League Waiver" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest">Legal Execution Text</Label>
+                    <Textarea value={customWaiverContent} onChange={e => setCustomWaiverContent(e.target.value)} className="rounded-xl min-h-[120px] border-2 font-medium bg-muted/30" placeholder="Enter terms and conditions for your members..." />
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div className="lg:col-span-2 space-y-6">
+          <div className="space-y-4">
+            <h3 className="text-[10px] font-black uppercase tracking-[0.3em] ml-1">Tier Selection</h3>
+            <div 
+              className={cn("p-6 rounded-3xl border-2 cursor-pointer transition-all", selectedPlan === 'free' ? "border-black bg-white ring-4 ring-black/5" : "border-transparent bg-muted/30")}
+              onClick={() => setSelectedPlan('free')}
+            >
+              <p className="font-black text-sm uppercase">Starter Squad</p>
+              <p className="text-xl font-black mt-1">$0</p>
+              <p className="text-[10px] text-muted-foreground font-bold mt-1">Basic features, 1 team</p>
+            </div>
+            {(!isStoreDistribution || proQuotaStatus.remaining > 0) && (
+              <div
+                className={cn("p-6 rounded-3xl border-2 cursor-pointer transition-all relative overflow-hidden", selectedPlan === 'team' ? "border-primary bg-black text-white shadow-xl" : "border-transparent bg-muted/30")}
+                onClick={() => setSelectedPlan('team')}
+              >
+                <Zap className="absolute -right-2 -bottom-2 h-16 w-16 opacity-10 -rotate-12" />
+                <p className="font-black text-sm uppercase">Elite Pro</p>
+                {proQuotaStatus.remaining > 0 ? (
+                <>
+                  <p className="text-xl font-black mt-1 text-primary">Included in Plan</p>
+                  <p className="text-[10px] font-bold mt-1 opacity-60">{proQuotaStatus.remaining} slot(s) remaining</p>
+                </>
+              ) : (
+                <>
+                  <p className="text-xl font-black mt-1 text-primary">$19.99/mo</p>
+                  <p className="text-[10px] font-bold mt-1 opacity-60">Stripe payment required to activate</p>
+                </>
+                )}
+              </div>
+            )}
+            {!isStoreDistribution && selectedPlan === 'team' && proQuotaStatus.remaining <= 0 && (
+              <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200">
+                <Zap className="h-4 w-4 text-amber-500 shrink-0 mt-0.5" />
+                <p className="text-[10px] font-bold text-amber-700 uppercase tracking-wider leading-relaxed">
+                  The team will be created first. Upgrade it from Billing after creation.
+                </p>
+              </div>
+            )}
+          </div>
+
+          <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleCreate} disabled={isProcessing || !teamName.trim()}>
+            {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : (
+              !isStoreDistribution && selectedPlan === 'team' && proQuotaStatus.remaining <= 0
+                ? 'Create Then Upgrade →'
+                : 'Create team'
+            )}
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default function NewTeamPage() {
+  return (
+    <Suspense fallback={null}>
+      <NewTeamForm />
+    </Suspense>
+  );
+}

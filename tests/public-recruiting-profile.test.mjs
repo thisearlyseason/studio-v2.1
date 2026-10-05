@@ -1,0 +1,98 @@
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import test from 'node:test';
+import { buildPublicRecruitingProfile } from '../src/lib/public-recruiting-profile.ts';
+
+test('public recruiting payload excludes player, guardian, invite, contact, and evaluation data', () => {
+  const payload = buildPublicRecruitingProfile({
+    player: {
+      firstName: 'Alex', lastName: 'Rivera', dateOfBirth: '2011-02-03',
+      parentId: 'guardian-1', userId: 'player-1', pendingInviteEmail: 'private@example.test',
+      inviteToken: 'secret-token', skills: ['Serving'], photoURL: 'https://cdn.example/player.jpg',
+    },
+    profile: {
+      fullName: 'Alex Rivera', playerEmail: 'player@example.test', parentEmail: 'guardian@example.test',
+      bio: 'Outside hitter', photos: ['https://cdn.example/photo.jpg'],
+    },
+    metrics: { verticalJump: 28, medicalNotes: 'private', customStats: [{ label: 'Reach', value: '9ft 8in' }] },
+    stats: [{ season: '2026', gamesPlayed: 10, points: 40, assists: 8, privateNote: 'do not publish' }],
+    videos: [{ id: 'video-1', url: 'https://cdn.example/video.mp4', title: 'Highlights', internalReview: 'private' }],
+  });
+
+  assert.deepEqual(payload.player, {
+    firstName: 'Alex', lastName: 'Rivera', skills: ['Serving'], photoURL: 'https://cdn.example/player.jpg',
+  });
+  assert.deepEqual(payload.profile, {
+    fullName: 'Alex Rivera', bio: 'Outside hitter', photos: ['https://cdn.example/photo.jpg'],
+  });
+  assert.deepEqual(payload.metrics, { verticalJump: 28, customStats: [{ label: 'Reach', value: '9ft 8in' }] });
+  assert.deepEqual(payload.stats, [{ season: '2026', gamesPlayed: 10, points: 40, assists: 8 }]);
+  assert.deepEqual(payload.videos, [{
+    id: 'video-1', url: 'https://cdn.example/video.mp4', thumbnailUrl: undefined,
+    title: 'Highlights', description: undefined, type: 'video', isTacticalClip: false,
+    startAt: undefined, endAt: undefined, segments: undefined,
+  }]);
+});
+
+test('public recruiting payload rejects non-HTTPS media URLs', () => {
+  const payload = buildPublicRecruitingProfile({
+    player: { photoURL: 'javascript:alert(1)' }, profile: { photos: ['http://unsafe.example/photo.jpg'] },
+    metrics: {}, stats: [], videos: [{ id: 'bad', url: 'http://unsafe.example/video.mp4' }],
+  });
+  assert.deepEqual(payload.player, {});
+  assert.deepEqual(payload.profile, {});
+  assert.deepEqual(payload.videos, []);
+});
+
+test('public recruiting preserves only exact managed tokenless media routes alongside HTTPS links',()=>{
+  const url='/api/media?path=players%2Fp%2Favatar%2Fowned.png';
+  const payload=buildPublicRecruitingProfile({player:{photoURL:url},profile:{photos:[url,'/api/private?path=secret']},metrics:{},stats:[],videos:[]});
+  assert.equal(payload.player.photoURL,url);assert.deepEqual(payload.profile.photos,[url]);
+});
+
+test('private player documents are no longer the public recruiting transport', () => {
+  const rules = fs.readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
+  const publicPage = fs.readFileSync(new URL('../src/app/recruit/player/[playerId]/page.tsx', import.meta.url), 'utf8');
+  assert.doesNotMatch(rules, /allow read: if resource\.data\.get\('recruitingProfileEnabled'/);
+  assert.match(publicPage, /\/api\/public\/recruiting\//);
+  assert.doesNotMatch(publicPage, /recruitingContact/);
+});
+
+test('public recruiting metadata and API share one canonical status writer', () => {
+  const layout = fs.readFileSync(new URL('../src/app/recruit/player/[playerId]/layout.tsx', import.meta.url), 'utf8');
+  const provider = fs.readFileSync(new URL('../src/components/providers/team-provider.tsx', import.meta.url), 'utf8');
+  const editor = fs.readFileSync(new URL('../src/app/(dashboard)/coaches-corner/page.tsx', import.meta.url), 'utf8');
+  const toggle = provider.match(/const toggleRecruitingProfile[\s\S]*?\n\s*}, \[db, activeTeam\?\.id\]\);/)?.[0] || '';
+  assert.match(layout, /recruitingProfile.*profile/s);
+  assert.match(layout, /isProspectActivated/);
+  assert.doesNotMatch(layout, /recruitingProfileEnabled/);
+  assert.doesNotMatch(toggle, /recruitingProfile', 'profile'|status:/);
+  assert.match(editor, /updateRecruitingProfile\(member\.playerId,[\s\S]*toggleRecruitingProfile\(member\.playerId, isEnabled\)/);
+});
+
+test('public recruiting recursively allowlists video segments', () => {
+  const payload = buildPublicRecruitingProfile({
+    player: {}, profile: {}, metrics: {}, stats: [],
+    videos: [{
+      id: 'video-1', url: 'https://cdn.example/video.mp4',
+      segments: [
+        { start: 3, end: 9, title: 'Safe clip', privateContact: 'do-not-publish' },
+        { start: -1, end: 2, title: 'invalid' },
+        { start: 10, end: 4, title: 'backwards' },
+        { start: 12, end: 18, title: 'x'.repeat(500), nested: { secret: true } },
+      ],
+    }],
+  });
+  assert.deepEqual(payload.videos[0].segments, [
+    { start: 3, end: 9, title: 'Safe clip' },
+    { start: 12, end: 18, title: 'x'.repeat(160) },
+  ]);
+  assert.equal(JSON.stringify(payload).includes('privateContact'), false);
+  assert.equal(JSON.stringify(payload).includes('secret'), false);
+});
+
+test('a guardian retains update access to their own child without making the record public', () => {
+  const rules = fs.readFileSync(new URL('../firestore.rules', import.meta.url), 'utf8');
+  assert.match(rules, /resource\.data\.get\('parentId', ''\) == request\.auth\.uid/);
+  assert.match(rules, /documents\/players\/\$\(playerId\)\)\.data\.get\('parentId', ''\) == request\.auth\.uid/);
+});

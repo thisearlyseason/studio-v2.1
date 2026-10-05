@@ -1,0 +1,487 @@
+
+"use client";
+
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogDescription,
+  DialogFooter,
+  DialogTrigger
+} from '@/components/ui/dialog';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Badge } from '@/components/ui/badge';
+import { 
+  Select, 
+  SelectContent, 
+  SelectItem, 
+  SelectTrigger, 
+  SelectValue 
+} from '@/components/ui/select';
+import { 
+  Tooltip, 
+  TooltipContent, 
+  TooltipTrigger,
+} from '@/components/ui/tooltip';
+import { Megaphone, Bell, History, Clock, X, Lock, Users, ShieldAlert, GraduationCap, Baby, Trash2, Zap, Shield, CheckCircle2, Loader2 } from 'lucide-react';
+import { useTeam, TeamAlert } from '@/components/providers/team-provider';
+import { formatDistanceToNow } from 'date-fns';
+import { cn } from '@/lib/utils';
+import { useToast } from '@/hooks/use-toast';
+
+/**
+ * Handles the automatic one-time popup for high priority alerts
+ * respecting the target audience.
+ */
+export function AlertOverlay() {
+  const { alerts, seenAlertIds, markAlertAsSeen } = useTeam();
+  const [currentAlertId, setCurrentAlertId] = useState<string | null>(null);
+  const [isAlertOpen, setIsAlertOpen] = useState(false);
+  const [locallyAcknowledgedIds, setLocallyAcknowledgedIds] = useState<string[]>([]);
+
+  // Tactical logic to find the next unread alert
+  const findNextAlert = useCallback(() => {
+    return alerts.find(alert => !seenAlertIds.includes(alert.id) && !locallyAcknowledgedIds.includes(alert.id));
+  }, [alerts, seenAlertIds, locallyAcknowledgedIds]);
+
+  useEffect(() => {
+    if (isAlertOpen) return;
+
+    const unseenAlert = findNextAlert();
+    if (unseenAlert) {
+      setCurrentAlertId(unseenAlert.id);
+      // Brief delay to ensure state settled before opening
+      const timer = setTimeout(() => setIsAlertOpen(true), 500);
+      return () => clearTimeout(timer);
+    }
+  }, [findNextAlert, isAlertOpen]);
+
+  const handleUnderstood = () => {
+    if (currentAlertId) {
+      // Immediate local state update to prevent pop-back
+      setLocallyAcknowledgedIds(prev => [...prev, currentAlertId]);
+      markAlertAsSeen(currentAlertId);
+      setIsAlertOpen(false);
+      setCurrentAlertId(null);
+    }
+  };
+
+  const handleDismiss = () => {
+    if (currentAlertId) {
+      setLocallyAcknowledgedIds(previous => [...previous, currentAlertId]);
+    }
+    setIsAlertOpen(false);
+    setCurrentAlertId(null);
+  };
+
+  const latestAlert = alerts.find(a => a.id === currentAlertId);
+  if (!latestAlert) return null;
+
+  return (
+    <Dialog open={isAlertOpen} onOpenChange={(open) => {
+      if (!open) handleDismiss();
+    }}>
+      <DialogContent className="!left-1/2 !top-1/2 !h-auto !max-h-[90dvh] !-translate-x-1/2 !-translate-y-1/2 w-[calc(100vw-2rem)] max-w-lg p-0 rounded-[2rem] sm:rounded-[3rem] overflow-hidden border-none shadow-[0_30px_100px_rgba(255,0,0,0.2)] bg-white">
+        <DialogTitle className="sr-only">High Priority Team Alert</DialogTitle>
+        <DialogDescription className="sr-only">Important message from your team</DialogDescription>
+        {/* Championship Header */}
+        <div className="bg-primary text-white p-6 sm:p-8 relative overflow-hidden">
+          <div className="absolute top-0 right-0 p-6 opacity-10 -rotate-12 pointer-events-none">
+            <Megaphone className="h-40 w-48" />
+          </div>
+          <div className="relative z-10 space-y-3">
+            <div className="flex items-center gap-3">
+              <div className="bg-white/20 backdrop-blur-md p-2.5 rounded-2xl border border-white/20 animate-pulse">
+                <Bell className="h-6 w-6 text-white" />
+              </div>
+              <Badge className="bg-white text-primary border-none font-black uppercase tracking-[0.2em] text-[9px] h-6 px-3 shadow-lg">Priority Alert</Badge>
+            </div>
+            <h2 className="text-2xl sm:text-3xl md:text-4xl font-black leading-[0.9] tracking-tighter uppercase">
+              {latestAlert.title}
+            </h2>
+          </div>
+        </div>
+
+        <div className="p-6 sm:p-8 space-y-6">
+          <div className="bg-muted/30 p-5 sm:p-8 rounded-[2rem] border-2 border-dashed border-primary/10 relative group">
+            <QuoteIcon className="absolute -top-4 -left-2 h-10 w-10 text-primary/10" />
+            <p className="text-base sm:text-lg font-bold text-foreground leading-relaxed italic relative z-10">
+              &ldquo;{latestAlert.message}&rdquo;
+            </p>
+          </div>
+
+          <div className="grid grid-cols-2 gap-3">
+            <div className="bg-muted/20 p-4 rounded-2xl flex items-center gap-3 border border-transparent">
+              <div className="bg-white p-2 rounded-lg shadow-sm border shrink-0"><Users className="h-4 w-4 text-primary" /></div>
+              <div className="min-w-0">
+                <p className="text-[8px] font-black uppercase text-muted-foreground">Audience</p>
+                <p className="text-[10px] font-bold uppercase truncate">{latestAlert.audience}</p>
+              </div>
+            </div>
+            <div className="bg-muted/20 p-4 rounded-2xl flex items-center gap-3 border border-transparent">
+              <div className="bg-white p-2 rounded-lg shadow-sm border shrink-0"><Clock className="h-4 w-4 text-primary" /></div>
+              <div className="min-w-0">
+                <p className="text-[8px] font-black uppercase text-muted-foreground">Sent</p>
+                <p className="text-[10px] font-bold uppercase truncate">{(() => { try { return formatDistanceToNow(new Date(latestAlert.createdAt)); } catch { return 'recently'; } })()} ago</p>
+              </div>
+            </div>
+          </div>
+
+          <Button
+            className="w-full h-14 rounded-[2rem] text-sm font-black uppercase tracking-widest shadow-2xl shadow-primary/30 active:scale-95 transition-all"
+            onClick={handleUnderstood}
+          >
+            Got It
+          </Button>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function QuoteIcon({ className }: { className?: string }) {
+  return (
+    <svg 
+      viewBox="0 0 24 24" 
+      fill="currentColor" 
+      className={className}
+      xmlns="http://www.w3.org/2000/svg"
+    >
+      <path d="M14.017 21L14.017 18C14.017 16.8954 14.9124 16 16.017 16H19.017C19.5693 16 20.017 15.5523 20.017 15V9C20.017 8.44772 19.5693 8 19.017 8H15.017C14.4647 8 14.017 7.55228 14.017 7V5C14.017 4.44772 14.4647 4 15.017 4H19.017C21.2261 4 23.017 5.79086 23.017 8V15C23.017 18.3137 20.3307 21 17.017 21H14.017ZM1 15C1 18.3137 3.68629 21 7 21H10V18C10 16.8954 9.10457 16 8 16H5C4.44772 16 4 15.5523 4 15V9C4 8.44772 4.44772 8 5 8H9V4H5C2.79086 4 1 5.79086 1 8V15Z" />
+    </svg>
+  );
+}
+
+export function AlertsHistoryDialog({ children }: { children: React.ReactNode }) {
+  const { alerts, alertHistoryError, refreshAlertHistory, markAlertAsSeen, markAllAlertsAsSeen, seenAlertIds, isStaff, deleteAlert } = useTeam();
+  const [isOpen, setIsOpen] = useState(false);
+  const { toast } = useToast();
+
+  const [showArchived, setShowArchived] = useState(false);
+  const [processingIds, setProcessingIds] = useState<string[]>([]);
+
+  const { activeAlerts, archivedAlerts } = useMemo(() => {
+    return {
+      activeAlerts: alerts.filter((a: TeamAlert) => !seenAlertIds.includes(a.id) && !processingIds.includes(a.id)),
+      archivedAlerts: alerts.filter((a: TeamAlert) => seenAlertIds.includes(a.id) || (processingIds.includes(a.id) && !seenAlertIds.includes(a.id)))
+    };
+  }, [alerts, seenAlertIds, processingIds]);
+
+  const displayAlerts = showArchived ? [...activeAlerts, ...archivedAlerts] : activeAlerts;
+
+  return (
+    <Dialog open={isOpen} onOpenChange={setIsOpen}>
+      <DialogTrigger asChild>{children}</DialogTrigger>
+      <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl bg-white">
+        <DialogTitle className="sr-only">Squad Alert Inbox</DialogTitle>
+        <DialogDescription className="sr-only">History of all broadcasts dispatched to you</DialogDescription>
+
+        <DialogHeader className="p-8 pb-2">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-3">
+              <div className="bg-primary/5 p-2 rounded-xl text-primary">
+                <History className="h-6 w-6" />
+              </div>
+              <DialogTitle className="text-2xl font-black uppercase tracking-tight">Broadcast Inbox</DialogTitle>
+            </div>
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="outline" 
+                size="sm" 
+                className={cn(
+                  "text-[10px] font-black uppercase tracking-widest h-8 px-3 rounded-xl transition-all",
+                  showArchived ? "bg-primary text-white border-primary" : "hover:bg-primary/5 text-muted-foreground"
+                )}
+                onClick={() => setShowArchived(!showArchived)}
+              >
+                {showArchived ? 'Hide History' : 'Show History'}
+              </Button>
+              {activeAlerts.length > 0 && (
+                <Button 
+                  variant="ghost" 
+                  size="sm" 
+                  className="text-[10px] font-black uppercase tracking-widest h-8 px-3 hover:bg-primary/5 text-primary" 
+                  onClick={async () => {
+                    await markAllAlertsAsSeen();
+                    toast({
+                      title: "All Broadcasts Archived",
+                      description: "Every unread notification has been marked as seen."
+                    });
+                  }}
+                >
+                  Archive All
+                </Button>
+              )}
+            </div>
+          </div>
+        </DialogHeader>
+        <ScrollArea className="max-h-[450px] px-8 pb-10">
+          <div className="space-y-4 pt-4">
+            {alertHistoryError ? (
+              <div role="alert" className="space-y-3 rounded-2xl bg-muted/30 p-4">
+                <p className="text-sm font-medium">{alertHistoryError}</p>
+                <Button variant="outline" onClick={() => { void refreshAlertHistory(); }}>Try again</Button>
+              </div>
+            ) : displayAlerts.length > 0 ? displayAlerts.map((alert: TeamAlert) => {
+              const isUnread = !seenAlertIds.includes(alert.id);
+              return (
+                <div key={alert.id} className={cn(
+                  "group relative p-5 rounded-[2rem] border-2 transition-all duration-300",
+                  isUnread ? "bg-primary/5 border-primary shadow-sm" : "bg-muted/20 border-transparent opacity-60"
+                )}>
+                  {isUnread && (
+                    <div className="absolute top-5 right-5 h-2 w-2 bg-primary rounded-full animate-pulse shadow-[0_0_8px_rgba(255,0,0,0.5)]" />
+                  )}
+                  <div className="flex items-start gap-4">
+                    <div className={cn(
+                      "p-3 rounded-2xl shrink-0 transition-colors shadow-sm",
+                      isUnread ? "bg-primary text-white" : "bg-white text-muted-foreground"
+                    )}>
+                      <Megaphone className="h-5 w-5" />
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center justify-between gap-2 mb-1.5">
+                        <h4 className="font-black text-sm tracking-tight leading-tight uppercase truncate pr-12">{alert.title}</h4>
+                        <Badge variant="outline" className={cn(
+                          "text-[7px] font-black uppercase px-1.5 h-4 border-none shrink-0",
+                          isUnread ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
+                        )}>{alert.audience}</Badge>
+                      </div>
+                      <p className="text-xs font-medium text-foreground/80 leading-relaxed italic pr-4">"{alert.message}"</p>
+                      <div className="flex items-center justify-between mt-4">
+                        <div className="flex items-center gap-1.5 opacity-40">
+                          <Clock className="h-3 w-3" />
+                          <span className="text-[9px] font-black uppercase tracking-widest">{(() => { try { return formatDistanceToNow(new Date(alert.createdAt)); } catch { return 'recently'; } })()} ago</span>
+                        </div>
+                        <div className={cn(
+                          "flex items-center gap-1 transition-all",
+                          isUnread ? "opacity-100" : "opacity-0 group-hover:opacity-40"
+                        )}>
+                          {isUnread && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  aria-label={`Archive ${alert.title}`}
+                                  className="h-8 w-8 rounded-xl bg-white/80 hover:bg-primary hover:text-white shadow-sm border border-black/5" 
+                                  disabled={processingIds.includes(alert.id)}
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    setProcessingIds(prev => [...prev, alert.id]);
+                                    toast({ 
+                                      title: "Broadcast Archived", 
+                                      description: "Notification moved to history." 
+                                    });
+                                    await markAlertAsSeen(alert.id);
+                                    setProcessingIds(prev => prev.filter(pid => pid !== alert.id));
+                                  }}
+                                >
+                                  <CheckCircle2 className={cn("h-4 w-4", processingIds.includes(alert.id) && "animate-spin")} />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent className="bg-primary text-white border-none font-black uppercase text-[8px] tracking-widest">
+                                Archive broadcast
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                          {isUnread && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  aria-label={`Remove ${alert.title} from inbox`}
+                                  className="h-8 w-8 rounded-xl bg-white/80 hover:bg-black hover:text-white shadow-sm border border-black/5" 
+                                  disabled={processingIds.includes(alert.id)}
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    setProcessingIds(prev => [...prev, alert.id]);
+                                    toast({ 
+                                      title: "Notification Removed", 
+                                      description: "Moved to archive history." 
+                                    });
+                                    await markAlertAsSeen(alert.id);
+                                    setProcessingIds(prev => prev.filter(pid => pid !== alert.id));
+                                  }}
+                                >
+                                  <X className={cn("h-4 w-4", processingIds.includes(alert.id) && "animate-spin")} />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent className="bg-black text-white border-none font-black uppercase text-[8px] tracking-widest">
+                                Remove from inbox
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                          {isStaff && (
+                            <Tooltip>
+                              <TooltipTrigger asChild>
+                                <Button 
+                                  variant="ghost" 
+                                  size="icon" 
+                                  aria-label={`Permanently delete ${alert.title}`}
+                                  className="h-8 w-8 rounded-xl bg-white/80 hover:bg-destructive hover:text-white shadow-sm border border-black/5" 
+                                  disabled={processingIds.includes(alert.id)}
+                                  onClick={async (e) => {
+                                    e.stopPropagation();
+                                    e.preventDefault();
+                                    setProcessingIds(prev => [...prev, alert.id]);
+                                    toast({ 
+                                      title: "Broadcast Deleted", 
+                                      description: "Permanently removed from team history.",
+                                      variant: "destructive"
+                                    });
+                                    await deleteAlert(alert.id);
+                                    setProcessingIds(prev => prev.filter(pid => pid !== alert.id));
+                                  }}
+                                >
+                                  <Trash2 className={cn("h-4 w-4", processingIds.includes(alert.id) && "animate-spin")} />
+                                </Button>
+                              </TooltipTrigger>
+                              <TooltipContent className="bg-destructive text-white border-none font-black uppercase text-[8px] tracking-widest">
+                                Permanently delete (Admin)
+                              </TooltipContent>
+                            </Tooltip>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              );
+            }) : (
+              <div className="text-center py-20 opacity-20 flex flex-col items-center gap-4">
+                <div className="bg-muted p-6 rounded-[2rem]">
+                  <Bell className="h-12 w-12" />
+                </div>
+                <p className="text-xs font-black uppercase tracking-[0.3em]">Broadcast Inbox Clear</p>
+              </div>
+            )}
+          </div>
+        </ScrollArea>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+export function CreateAlertButton() {
+  const { createAlert, activeTeam, isSuperAdmin, purchasePro, firebaseUser } = useTeam();
+  const { toast } = useToast();
+  const [isCreateOpen, setIsCreateOpen] = useState(false);
+  const [title, setTitle] = useState('');
+  const [message, setMessage] = useState('');
+  const [audience, setAudience] = useState<TeamAlert['audience']>('everyone');
+  const [isSubmitting, setIsSubmitting] = useState(false);
+
+  const isAdmin = activeTeam?.ownerUserId === firebaseUser?.uid || isSuperAdmin;
+  const canAlert = activeTeam?.isPro || isSuperAdmin;
+
+  if (!isAdmin) return null;
+
+  if (!canAlert) {
+    return (
+      <Button
+        variant="outline"
+        size="icon"
+        aria-label="Upgrade to unlock squad broadcasts"
+        className="h-10 w-10 md:h-11 md:w-11 rounded-full border-primary/20 text-primary/40 opacity-50 relative"
+        onClick={purchasePro}
+      >
+        <Megaphone className="h-5 w-5 md:h-4 md:w-4" />
+        <Lock className="absolute -top-1 -right-1 h-3 w-3 bg-black text-white p-0.5 rounded-full border-2 border-background" />
+      </Button>
+    );
+  }
+
+  const handleCreate = async () => {
+    if (!title || !message) return;
+    setIsSubmitting(true);
+    try {
+      await createAlert(title, message, audience);
+      setIsCreateOpen(false);
+      setTitle('');
+      setMessage('');
+      setAudience('everyone');
+      toast({ title: "Broadcast Dispatched", description: "All relevant squad members have been notified." });
+    } catch (error: any) {
+      toast({
+        title: 'Broadcast Failed',
+        description: error.message || 'The broadcast was not saved. Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  return (
+    <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
+      <DialogTrigger asChild>
+        <Button
+          variant="outline"
+          size="icon"
+          aria-label="Create squad broadcast"
+          className="h-10 w-10 md:h-11 md:w-11 rounded-full border-primary/20 text-primary hover:bg-primary/5 shadow-sm transition-all active:scale-95 group"
+        >
+          <Megaphone className="h-5 w-5 md:h-4 md:w-4 group-hover:animate-pulse" />
+        </Button>
+      </DialogTrigger>
+      <DialogContent className="sm:max-w-md rounded-[3rem] border-none shadow-2xl overflow-hidden p-0 bg-white">
+        <DialogTitle className="sr-only">Deploy Broadcast</DialogTitle>
+        <DialogDescription className="sr-only">Dispatch high priority directive to the roster</DialogDescription>
+
+        <div className="p-8 lg:p-10 space-y-8">
+          <DialogHeader>
+            <div className="flex items-center gap-4 mb-2">
+              <div className="bg-primary/10 p-3 rounded-2xl text-primary">
+                <Zap className="h-6 w-6" />
+              </div>
+              <div>
+                <DialogTitle className="text-3xl font-black uppercase tracking-tight">Deploy Broadcast</DialogTitle>
+                <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest mt-1">Institutional High-Priority Alert</DialogDescription>
+              </div>
+            </div>
+          </DialogHeader>
+          <div className="space-y-6">
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Target Roster Segment</Label>
+              <Select value={audience} onValueChange={(v: any) => setAudience(v)}>
+                <SelectTrigger className="h-14 rounded-2xl border-2 font-black shadow-inner focus:ring-primary/20">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent className="rounded-xl border-2">
+                  <SelectItem value="everyone" className="font-black uppercase text-[10px] py-3"><div className="flex items-center gap-3 text-foreground"><Users className="h-4 w-4 text-primary" /> Global Roster</div></SelectItem>
+                  <SelectItem value="coaches" className="font-black uppercase text-[10px] py-3"><div className="flex items-center gap-3 text-foreground"><Shield className="h-4 w-4 text-primary" /> Command Staff Only</div></SelectItem>
+                  <SelectItem value="players" className="font-black uppercase text-[10px] py-3"><div className="flex items-center gap-3 text-foreground"><GraduationCap className="h-4 w-4 text-primary" /> Athletes Only</div></SelectItem>
+                  <SelectItem value="parents" className="font-black uppercase text-[10px] py-3"><div className="flex items-center gap-3 text-foreground"><Baby className="h-4 w-4 text-primary" /> Guardians Only</div></SelectItem>
+                </SelectContent>
+              </Select>
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Directive Headline</Label>
+              <Input placeholder="e.g. Mandatory Venue Update" value={title} onChange={e => setTitle(e.target.value)} className="rounded-2xl h-14 border-2 font-black text-base shadow-inner text-foreground" />
+            </div>
+            <div className="space-y-2">
+              <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Operational Instructions</Label>
+              <Textarea placeholder="Define the urgent context and requirements..." value={message} onChange={e => setMessage(e.target.value)} className="rounded-[1.5rem] min-h-[150px] border-2 font-medium p-6 bg-muted/10 focus:bg-white transition-all shadow-inner resize-none text-foreground" />
+            </div>
+          </div>
+          <DialogFooter>
+            <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all border-none" onClick={handleCreate} disabled={isSubmitting || !title || !message}>
+              {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
+              {isSubmitting ? 'Dispatching Broadcast' : 'Dispatch Strategic Broadcast'}
+            </Button>
+          </DialogFooter>
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}

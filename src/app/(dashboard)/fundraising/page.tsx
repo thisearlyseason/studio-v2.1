@@ -1,0 +1,914 @@
+"use client";
+
+import React, { useState, useMemo, useCallback } from 'react';
+import { useTeam, FundraisingOpportunity, DonationEntry } from '@/components/providers/team-provider';
+import { useAuth, useFirestore, useCollection, useMemoFirebase } from '@/firebase';
+import { collection, query, orderBy, doc, getDocs, increment, writeBatch } from 'firebase/firestore';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
+import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Textarea } from '@/components/ui/textarea';
+import { Badge } from '@/components/ui/badge';
+import { Progress } from '@/components/ui/progress';
+import { Switch } from '@/components/ui/switch';
+import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { 
+  PiggyBank, 
+  Plus, 
+  DollarSign, 
+  Target, 
+  Users, 
+  Clock, 
+  Loader2, 
+  Trash2, 
+  Globe,
+  Share2,
+  CheckCircle2,
+  AlertCircle,
+  TrendingUp,
+  BarChart3,
+  Search,
+  ChevronRight,
+  Zap,
+  History,
+  Info,
+  Download,
+  Filter,
+  ExternalLink
+} from 'lucide-react';
+import { AccessRestricted } from '@/components/layout/AccessRestricted';
+import { 
+  Dialog, 
+  DialogContent, 
+  DialogHeader, 
+  DialogTitle, 
+  DialogTrigger,
+  DialogDescription, 
+  DialogFooter
+} from '@/components/ui/dialog';
+import { toast } from '@/hooks/use-toast';
+import { cn } from '@/lib/utils';
+import { format, isPast, isWithinInterval, parseISO, startOfDay, endOfDay } from 'date-fns';
+import { Lock as LockIcon } from 'lucide-react';
+import { DatePicker } from "@/components/ui/date-picker";
+import { StripeConnectSetup } from '@/components/finance/StripeConnectSetup';
+import { authHeader, getAuthToken } from '@/lib/client-auth';
+import { isStoreDistribution } from '@/lib/app-distribution';
+
+// ── View All Donations Modal ─────────────────────────────────────────────────
+function ViewAllDonationsModal({ fund, isOpen, onOpenChange }: { 
+  fund: FundraisingOpportunity | null; 
+  isOpen: boolean; 
+  onOpenChange: (o: boolean) => void;
+}) {
+  const { activeTeam, confirmExternalDonation } = useTeam();
+  const db = useFirestore();
+  const q = useMemoFirebase(() => (db && activeTeam?.id && fund?.id) 
+    ? query(collection(db, 'teams', activeTeam.id, 'fundraising', fund.id, 'donations'), orderBy('createdAt', 'desc')) 
+    : null, [db, activeTeam?.id, fund?.id]);
+  const { data: donations, isLoading } = useCollection<DonationEntry>(q);
+
+  const [searchTerm, setSearchTerm] = useState('');
+  const [dateFrom, setDateFrom] = useState('');
+  const [dateTo, setDateTo] = useState('');
+  const [page, setPage] = useState(0);
+  const PAGE_SIZE = 10;
+
+  const filtered = useMemo(() => {
+    if (!donations) return [];
+    return donations.filter(d => {
+      const matchesSearch = !searchTerm || 
+        d.donorName?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        d.donorEmail?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+        format(new Date(d.createdAt), 'MMM d yyyy').toLowerCase().includes(searchTerm.toLowerCase());
+      let matchesDate = true;
+      if (dateFrom || dateTo) {
+        const donDate = new Date(d.createdAt);
+        if (dateFrom) matchesDate = matchesDate && donDate >= startOfDay(new Date(dateFrom));
+        if (dateTo) matchesDate = matchesDate && donDate <= endOfDay(new Date(dateTo));
+      }
+      return matchesSearch && matchesDate;
+    });
+  }, [donations, searchTerm, dateFrom, dateTo]);
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const paginated = filtered.slice(page * PAGE_SIZE, (page + 1) * PAGE_SIZE);
+  const totalFiltered = filtered.reduce((sum, d) => sum + (d.amount || 0), 0);
+
+  const handleExportCSV = useCallback(() => {
+    if (!filtered.length || !fund) return;
+    const header = ['Donor Name', 'Email', 'Amount ($)', 'Method', 'Status', 'Date'];
+    const rows = filtered.map(d => [
+      d.donorName || '',
+      d.donorEmail || '',
+      d.amount?.toString() || '0',
+      d.method === 'external' ? 'Digital Hub' : 'E-Transfer',
+      d.status || 'pending',
+      format(new Date(d.createdAt), 'MMM d yyyy h:mm a')
+    ]);
+    const csv = [header, ...rows].map(r => r.map(v => `"${v.replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `DONATIONS_${(fund.title || 'fund').replace(/\s+/g, '_').toUpperCase()}_${format(new Date(), 'yyyyMMdd')}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    toast({ title: 'CSV Exported', description: `${filtered.length} records downloaded.` });
+  }, [filtered, fund]);
+
+  return (
+    <Dialog open={isOpen} onOpenChange={(o) => { onOpenChange(o); if (!o) { setSearchTerm(''); setDateFrom(''); setDateTo(''); setPage(0); } }}>
+      <DialogContent className="rounded-[2.5rem] sm:max-w-3xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
+        <DialogTitle className="sr-only">All Donations — {fund?.title}</DialogTitle>
+
+        <div className="p-8 space-y-6">
+          <DialogHeader>
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
+                <div className="bg-primary/10 p-3 rounded-2xl text-primary"><History className="h-6 w-6" /></div>
+                <div>
+                  <DialogTitle className="text-2xl font-black uppercase tracking-tight text-foreground">All Donations</DialogTitle>
+                  <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">{fund?.title}</DialogDescription>
+                </div>
+              </div>
+              <Button variant="outline" onClick={handleExportCSV} className="h-10 px-5 rounded-xl font-black uppercase text-[10px] border-2 gap-2">
+                <Download className="h-4 w-4" /> Export CSV
+              </Button>
+            </div>
+          </DialogHeader>
+
+          {/* Filters */}
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+            <div className="relative md:col-span-1">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input 
+                placeholder="Search name, email, date..." 
+                value={searchTerm} 
+                onChange={e => { setSearchTerm(e.target.value); setPage(0); }}
+                className="pl-10 h-11 rounded-xl border-2 font-bold text-sm" 
+              />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[8px] font-black uppercase tracking-widest text-muted-foreground ml-1">From</Label>
+              <Input type="date" value={dateFrom} onChange={e => { setDateFrom(e.target.value); setPage(0); }} className="h-11 rounded-xl border-2 font-bold" />
+            </div>
+            <div className="space-y-1">
+              <Label className="text-[8px] font-black uppercase tracking-widest text-muted-foreground ml-1">To</Label>
+              <Input type="date" value={dateTo} onChange={e => { setDateTo(e.target.value); setPage(0); }} className="h-11 rounded-xl border-2 font-bold" />
+            </div>
+          </div>
+
+          {/* Summary bar */}
+          <div className="flex items-center justify-between p-4 bg-primary/5 rounded-2xl border border-primary/10">
+            <div className="flex items-center gap-3">
+              <Badge className="bg-primary text-white border-none font-black text-[9px] h-6 px-3">{filtered.length} Records</Badge>
+              {(searchTerm || dateFrom || dateTo) && (
+                <button onClick={() => { setSearchTerm(''); setDateFrom(''); setDateTo(''); setPage(0); }} className="text-[9px] font-black uppercase text-muted-foreground hover:text-primary transition-colors">Clear Filters</button>
+              )}
+            </div>
+            <p className="font-black text-primary text-sm">Total: ${totalFiltered.toLocaleString()}</p>
+          </div>
+
+          {/* Table */}
+          {isLoading ? (
+            <div className="py-16 flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>
+          ) : (
+            <ScrollArea className="h-[360px]">
+              <div className="space-y-2 pr-2">
+                {paginated.length === 0 ? (
+                  <div className="py-16 text-center opacity-30">
+                    <BarChart3 className="h-12 w-12 mx-auto mb-3" />
+                    <p className="text-xs font-black uppercase">No records match your filters</p>
+                  </div>
+                ) : paginated.map(don => (
+                  <div key={don.id} className="p-4 bg-muted/20 rounded-2xl border flex items-center justify-between gap-4 hover:bg-primary/5 transition-colors">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-black text-sm uppercase truncate">{don.donorName}</p>
+                      <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-wider">
+                        {don.donorEmail || '—'} • {don.method === 'external' ? 'Digital Hub' : 'E-Transfer'} • {format(new Date(don.createdAt), 'MMM d, yyyy h:mm a')}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3 shrink-0">
+                      <span className="font-black text-primary">${don.amount?.toLocaleString()}</span>
+                      {don.status === 'pending' ? (
+                        <Button size="sm" className="h-8 px-4 rounded-xl font-black text-[8px] uppercase" onClick={() => confirmExternalDonation(fund!.id, don.id, don.amount)}>Confirm</Button>
+                      ) : (
+                        <Badge className="bg-green-100 text-green-700 border-none font-black text-[8px] h-6 px-3">VERIFIED</Badge>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </ScrollArea>
+          )}
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between pt-2">
+              <Button variant="outline" size="sm" disabled={page === 0} onClick={() => setPage(p => p - 1)} className="rounded-xl font-black text-[10px] uppercase border-2">← Prev</Button>
+              <span className="text-[10px] font-black uppercase text-muted-foreground">Page {page + 1} of {totalPages}</span>
+              <Button variant="outline" size="sm" disabled={page >= totalPages - 1} onClick={() => setPage(p => p + 1)} className="rounded-xl font-black text-[10px] uppercase border-2">Next →</Button>
+            </div>
+          )}
+        </div>
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+function DonationAuditLedger({ fundId }: { fundId: string }) {
+  const { activeTeam, confirmExternalDonation } = useTeam();
+  const db = useFirestore();
+  const q = useMemoFirebase(() => (db && activeTeam?.id && fundId) ? query(collection(db, 'teams', activeTeam.id, 'fundraising', fundId, 'donations'), orderBy('createdAt', 'desc')) : null, [db, activeTeam?.id, fundId]);
+  const { data: donations, isLoading } = useCollection<DonationEntry>(q);
+
+  if (isLoading) return <div className="p-10 text-center animate-pulse"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></div>;
+  if (!donations || donations.length === 0) return <p className="text-[10px] text-center opacity-20 py-10 uppercase font-black">No donations recorded.</p>;
+
+  return (
+    <div className="space-y-3">
+      {donations.map(don => (
+        <div key={don.id} className="p-4 bg-muted/20 rounded-2xl border flex items-center justify-between group">
+          <div className="min-w-0">
+            <p className="font-black text-sm uppercase truncate">{don.donorName}</p>
+            <p className="text-[8px] font-bold text-muted-foreground uppercase">{don.method === 'external' ? 'Digital Hub' : 'E-Transfer/Offline'} • {format(new Date(don.createdAt), 'MMM d, h:mm a')}</p>
+          </div>
+          <div className="flex items-center gap-4">
+            <span className="font-black text-sm text-primary">${don.amount.toLocaleString()}</span>
+            {don.status === 'pending' ? (
+              <Button size="sm" className="h-8 px-4 rounded-xl font-black text-[8px] uppercase shadow-lg shadow-primary/20" onClick={() => confirmExternalDonation(fundId, don.id, don.amount)}>Confirm</Button>
+            ) : (
+              <Badge className="bg-green-100 text-green-700 border-none font-black text-[8px] h-6 px-3">VERIFIED</Badge>
+            )}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+export default function FundraisingPage() {
+  const { isStaff } = useTeam();
+  if (!isStaff) {
+    return <AccessRestricted type="role" title="Fundraising Access Restricted" description="Campaign management is reserved for authorized squad staff." />;
+  }
+  return <AuthorizedFundraisingPage />;
+}
+
+function AuthorizedFundraisingPage() {
+  const { activeTeam, user, isStaff, isParent, isPlayer, recordDonation, addFundraisingOpportunity, updateFundraisingOpportunity, deleteFundraisingOpportunity, isPro, purchasePro } = useTeam();
+  const db = useFirestore();
+  const auth = useAuth();
+  
+  const [filterMode, setFilterMode] = useState<'active' | 'past'>('active');
+  const [isAddOpen, setIsAddOpen] = useState(false);
+  const [isEditOpen, setIsEditOpen] = useState(false);
+  const [editingFund, setEditingFund] = useState<FundraisingOpportunity | null>(null);
+  const [isAuditOpen, setIsAuditOpen] = useState(false);
+  const [selectedFundId, setSelectedFundId] = useState<string | null>(null);
+  // View All Modal
+  const [viewAllFund, setViewAllFund] = useState<FundraisingOpportunity | null>(null);
+  const [isViewAllOpen, setIsViewAllOpen] = useState(false);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [stripeChargesEnabled, setStripeChargesEnabled] = useState(false);
+  const [searchTerm, setSearchTerm] = useState('');
+  
+  const [newFund, setNewFund] = useState({ 
+    title: '', description: '', goal: '1000', deadline: '', 
+    isShareable: false, externalLink: '', eTransferDetails: '' 
+  });
+  const [isCommitOpen, setIsCommitOpen] = useState(false);
+  const [selectedFundForCommit, setSelectedFundForCommit] = useState<FundraisingOpportunity | null>(null);
+  const [commitData, setCommitData] = useState({ amount: '50', method: 'external' as 'external' | 'e-transfer' });
+  const [configMethod, setConfigMethod] = useState<'stripe' | 'e-transfer'>('stripe');
+
+  const fundsQuery = useMemoFirebase(() => (activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'fundraising'), orderBy('deadline', 'asc')) : null, [activeTeam?.id, db]);
+  const { data: rawCampaigns, isLoading } = useCollection<FundraisingOpportunity>(fundsQuery);
+  const allCampaigns = rawCampaigns || [];
+
+  const activeCampaigns = useMemo(() => allCampaigns.filter(f => !isPast(new Date(f.deadline))), [allCampaigns]);
+  const pastCampaigns = useMemo(() => allCampaigns.filter(f => isPast(new Date(f.deadline))), [allCampaigns]);
+  
+  const displayedCampaigns = useMemo(() => {
+    const list = filterMode === 'active' ? activeCampaigns : pastCampaigns;
+    return list.filter(f => f.title.toLowerCase().includes(searchTerm.toLowerCase()));
+  }, [filterMode, activeCampaigns, pastCampaigns, searchTerm]);
+
+  const stats = useMemo(() => {
+    const totalRaised = allCampaigns.reduce((sum, f) => sum + (f.currentAmount || 0), 0);
+    const totalGoal = allCampaigns.reduce((sum, f) => sum + (f.goalAmount || 0), 0);
+    const efficiency = totalGoal > 0 ? Math.round((totalRaised / totalGoal) * 100) : 0;
+    const donorCount = allCampaigns.length > 0 ? Math.floor(totalRaised / 50) + allCampaigns.length : 0;
+    return { totalRaised, efficiency, donorCount };
+  }, [allCampaigns]);
+
+  const isLimitReached = !isPro && activeCampaigns.length >= 2;
+
+  const handleAddCampaign = async () => {
+    if (!newFund.title || !newFund.goal || !newFund.deadline || !activeTeam?.id || !user?.id) {
+      toast({ title: 'Campaign details required', description: 'Enter a title, goal, and valid deadline before deployment.', variant: 'destructive' });
+      return;
+    }
+    const deadlineDate = new Date(newFund.deadline);
+    const goalAmount = Number(newFund.goal);
+    if (!Number.isFinite(goalAmount) || goalAmount <= 0 || Number.isNaN(deadlineDate.getTime())) {
+      toast({ title: 'Campaign details invalid', description: 'Use a positive goal and a valid campaign deadline.', variant: 'destructive' });
+      return;
+    }
+    if (configMethod === 'stripe' && !stripeChargesEnabled) {
+      toast({
+        title: 'Connect Stripe First',
+        description: 'Complete the Stripe connection below before enabling online donations.',
+        variant: 'destructive',
+      });
+      return;
+    }
+    setIsProcessing(true);
+    let createdCampaignId: string | undefined;
+    try {
+      const campaignId = await addFundraisingOpportunity({
+        ...newFund,
+        goalAmount,
+        paymentMethod: configMethod,
+        externalLink: '',
+        eTransferDetails: configMethod === 'e-transfer' ? newFund.eTransferDetails : '',
+      });
+      if (!campaignId) throw new Error('Campaign could not be created.');
+      createdCampaignId = campaignId;
+
+      if (configMethod === 'stripe') {
+        const token = await getAuthToken(auth);
+        if (!token) throw new Error('Your sign-in expired. Sign in again and retry.');
+        const response = await fetch('/api/stripe/fundraising-link', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+          body: JSON.stringify({
+            userId: user.id,
+            teamId: activeTeam.id,
+            campaignId,
+            campaignTitle: newFund.title,
+            campaignDescription: newFund.description,
+            operationId: crypto.randomUUID(),
+          }),
+        });
+        const result = await response.json().catch(() => ({}));
+        if (!response.ok) {
+          throw new Error(result.error || 'Stripe donation link could not be created.');
+        }
+      }
+
+      setIsAddOpen(false);
+      setNewFund({ title: '', description: '', goal: '1000', deadline: '', isShareable: false, externalLink: '', eTransferDetails: '' });
+      toast({
+        title: 'Campaign Strategy Launched',
+        description: configMethod === 'stripe'
+          ? 'Donations will route to the connected Stripe account and be verified automatically.'
+          : 'E-Transfer donations require manual verification.',
+      });
+    } catch (error: any) {
+      console.error('[Fundraising] Campaign creation failed:', error);
+      if (createdCampaignId) {
+        await deleteFundraisingOpportunity(createdCampaignId).catch(cleanupError => {
+          console.error('[Fundraising] Failed to roll back incomplete campaign:', cleanupError);
+        });
+      }
+      toast({
+        title: 'Campaign Setup Failed',
+        description: error?.message || 'Please try again.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
+  const handleEditCampaign = async () => {
+    if (!editingFund) return;
+    setIsProcessing(true);
+    await updateFundraisingOpportunity(editingFund.id, {
+      ...editingFund,
+      goalAmount: parseFloat(String(editingFund.goalAmount))
+    });
+    setIsEditOpen(false);
+    setIsProcessing(false);
+    setEditingFund(null);
+    toast({ title: "Campaign Strategy Updated" });
+  };
+
+  const handleCopyLink = (fundId: string) => {
+    const url = `${window.location.origin}/public/donate/${activeTeam?.id}/${fundId}`;
+    navigator.clipboard.writeText(url);
+    toast({ title: "Portal Link Copied", description: "External contributors can now donate via this URL." });
+  };
+
+  const handleCommitDonation = async () => {
+    if (!selectedFundForCommit || !commitData.amount) return;
+    setIsProcessing(true);
+    await recordDonation(
+      selectedFundForCommit.id, 
+      parseFloat(commitData.amount), 
+      user?.name || "Anonymous Donor", 
+      commitData.method
+    );
+    setIsCommitOpen(false);
+    setIsProcessing(false);
+    toast({ 
+      title: "Impact Recorded", 
+      description: commitData.method === 'external' 
+        ? "Redirecting to primary payment portal..." 
+        : "Please follow E-Transfer instructions to finalize." 
+    });
+    
+    if (commitData.method === 'external' && selectedFundForCommit.externalLink) {
+      window.open(selectedFundForCommit.externalLink, '_blank');
+    }
+  };
+
+  if (isLoading) return (
+    <div className="flex flex-col items-center justify-center py-20 gap-4">
+      <Loader2 className="h-8 w-8 animate-spin text-primary" />
+      <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Opening Fiscal Hub...</p>
+    </div>
+  );
+
+  return (
+    <div className="relative min-h-[calc(100vh-10rem)]">
+      {!isPro && (
+        <div 
+          className="absolute inset-x-[-2rem] inset-y-[-2rem] z-50 flex items-center justify-center p-6 sm:p-10 animate-in fade-in zoom-in duration-500"
+          style={{ 
+            background: 'radial-gradient(circle at center, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.8) 100%)',
+            backdropFilter: 'blur(12px)'
+          }}
+        >
+          <Card className="max-w-md w-full rounded-[3.5rem] border-none shadow-[0_40px_80px_-15px_rgba(0,0,0,0.15)] bg-white overflow-hidden ring-1 ring-black/5">
+
+            <CardHeader className="p-10 lg:p-12 text-center space-y-6">
+              <div className="bg-primary/10 w-20 h-20 rounded-[2rem] flex items-center justify-center mx-auto shadow-inner ring-8 ring-primary/5">
+                <LockIcon className="h-10 w-10 text-primary" />
+              </div>
+              <div className="space-y-2">
+                <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[9px] h-6 px-4 mb-2 mx-auto">Fiscal Access Protocol</Badge>
+                <CardTitle className="text-3xl font-black uppercase tracking-tight leading-none">Fundraising Locked</CardTitle>
+                <CardDescription className="font-bold uppercase tracking-widest text-[10px] text-muted-foreground/60">Institutional Capital Mobilization Hub</CardDescription>
+              </div>
+              <p className="text-xs font-medium text-muted-foreground leading-relaxed">
+                {isStoreDistribution
+                  ? 'This account does not currently include fundraising. Existing access is managed by your organization.'
+                  : <>Unlock the <span className="text-primary font-black uppercase tracking-tighter">Elite Pro</span> fundraising suite. Manage multi-channel campaigns, automated audit ledgers, and institutional donor portals.</>}
+              </p>
+            </CardHeader>
+            <CardFooter className="p-10 lg:p-12 pt-0">
+              {!isStoreDistribution && <Button
+                onClick={purchasePro}
+                className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all bg-primary"
+              >
+                Unlock Pro Capital Hub
+              </Button>}
+            </CardFooter>
+          </Card>
+        </div>
+      )}
+
+      <div className={cn("space-y-10 pb-20 animate-in fade-in duration-500", !isPro && "blur-[1px] pointer-events-none grayscale opacity-40")}>
+      <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+        <div className="space-y-1">
+          <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[9px] h-6 px-3">Squad Capital</Badge>
+          <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none text-foreground">Fundraising</h1>
+          <p className="text-muted-foreground font-bold uppercase tracking-[0.2em] text-[10px] ml-1">Institutional Capital Mobilization</p>
+        </div>
+        {!isStoreDistribution && isStaff && (
+          <Button 
+            onClick={() => isLimitReached ? null : setIsAddOpen(true)} 
+            className={cn("h-14 px-8 rounded-2xl text-lg font-black shadow-xl transition-all", isLimitReached ? "bg-muted text-muted-foreground cursor-not-allowed" : "shadow-primary/20 active:scale-95")}
+          >
+            {isLimitReached ? <AlertCircle className="h-5 w-5 mr-2 text-red-600" /> : <Plus className="h-5 w-5 mr-2" />}
+            Launch Campaign
+          </Button>
+        )}
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+        <Card className="rounded-[2.5rem] border-none shadow-md bg-primary text-white p-8 space-y-4 relative overflow-hidden group">
+          <TrendingUp className="absolute -right-4 -bottom-4 h-24 w-24 opacity-10 -rotate-12 group-hover:scale-110 transition-transform duration-700" />
+          <p className="text-[10px] font-black uppercase tracking-widest opacity-60">Total Capital Raised</p>
+          <p className="text-4xl font-black">${stats.totalRaised.toLocaleString()}</p>
+        </Card>
+        <Card className="rounded-[2.5rem] border-none shadow-md bg-black text-white p-8 space-y-4">
+          <p className="text-[10px] font-black uppercase tracking-widest opacity-60">Campaign Efficiency</p>
+          <div className="space-y-2">
+            <p className="text-4xl font-black text-primary">{stats.efficiency}%</p>
+            <Progress value={stats.efficiency} className="h-1.5 bg-white/10" />
+          </div>
+        </Card>
+        <Card className="rounded-[2.5rem] border-none shadow-md bg-white p-8 space-y-4 ring-1 ring-black/5">
+          <p className="text-[10px] font-black uppercase text-muted-foreground">Strategic Units</p>
+          <div className="flex items-baseline gap-2">
+            <p className="text-4xl font-black text-foreground">{allCampaigns.length}</p>
+            <span className="text-[10px] font-bold text-muted-foreground uppercase">Campaigns</span>
+          </div>
+        </Card>
+        <Card className="rounded-[2.5rem] border-none shadow-md bg-muted/20 p-8 space-y-4">
+          <div className="flex items-center gap-3">
+            <Users className="h-5 w-5 text-primary" />
+            <p className="text-[10px] font-black uppercase">Contributor Pulse</p>
+          </div>
+          <p className="text-4xl font-black text-foreground">{stats.donorCount}</p>
+        </Card>
+      </div>
+
+      <div className="flex flex-col md:flex-row items-center justify-between gap-6 px-2">
+        <div className="flex bg-muted/50 p-1.5 rounded-2xl border-2 shadow-inner w-full md:w-auto">
+          <Button variant={filterMode === 'active' ? 'default' : 'ghost'} className="flex-1 md:flex-none rounded-xl h-10 px-8 font-black uppercase text-[10px] tracking-widest" onClick={() => setFilterMode('active')}>Active Strategies</Button>
+          <Button variant={filterMode === 'past' ? 'default' : 'ghost'} className="flex-1 md:flex-none rounded-xl h-10 px-8 font-black uppercase text-[10px] tracking-widest" onClick={() => setFilterMode('past')}>Archive Ledger</Button>
+        </div>
+        <div className="relative w-full md:w-72">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input 
+            placeholder="Search campaigns..." 
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            className="pl-10 h-11 w-full rounded-xl bg-muted/30 border-none font-bold text-xs focus:ring-2 focus:ring-primary/20 outline-none" 
+          />
+        </div>
+      </div>
+
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
+        {displayedCampaigns.map((fund) => {
+          const progress = (fund.currentAmount / fund.goalAmount) * 100;
+          const isArchive = isPast(new Date(fund.deadline));
+          
+          return (
+            <Card key={fund.id} className="rounded-[3rem] border-none shadow-xl overflow-hidden bg-white flex flex-col group transition-all hover:shadow-2xl hover:ring-2 hover:ring-primary/10">
+
+              <CardContent className="p-8 lg:p-10 space-y-8 flex-1">
+                <div className="flex justify-between items-start">
+                  <div className="bg-primary/5 p-5 rounded-[1.5rem] text-primary group-hover:text-black shadow-inner transition-colors">
+                    <PiggyBank className="h-10 w-10" />
+                  </div>
+                  <div className="flex gap-1">
+                    {!isStoreDistribution && fund.isShareable && (
+                      <Button variant="ghost" size="icon" className="h-8 w-8 text-primary hover:bg-primary/5 rounded-lg" onClick={() => handleCopyLink(fund.id)}>
+                        <Share2 className="h-4 w-4" />
+                      </Button>
+                    )}
+                    <Badge variant="secondary" className="bg-black text-white border-none font-black text-[10px] h-7 px-4 shadow-lg flex items-center gap-2">
+                       <Target className="h-3 w-3" /> ${fund.goalAmount.toLocaleString()}
+                    </Badge>
+                  </div>
+                </div>
+                <div>
+                  <h3 className="text-3xl font-black uppercase tracking-tight leading-none group-hover:text-black transition-colors uppercase">{fund.title}</h3>
+                  <div className="flex items-center gap-2 mt-2">
+                    <Clock className="h-3 w-3 text-muted-foreground" />
+                    <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
+                      {isArchive ? 'Archived' : 'Ends'}: {format(new Date(fund.deadline), 'MMM d, yyyy')}
+                    </p>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <div className="flex justify-between items-end">
+                    <div className="space-y-0.5">
+                      <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground opacity-60">Verified Total</p>
+                      <p className="text-3xl font-black text-primary">${fund.currentAmount.toLocaleString()}</p>
+                    </div>
+                    <Badge variant="outline" className="border-primary/20 text-primary font-black text-[10px] h-6">{Math.round(progress)}%</Badge>
+                  </div>
+                  <Progress value={progress} className="h-3 rounded-full" />
+                </div>
+                {isStaff ? (
+                  <div className="flex flex-col gap-2 pt-4">
+                    <div className="flex gap-2">
+                      <Button variant="outline" className="flex-1 rounded-xl h-12 font-black uppercase text-[10px] border-2 group-hover:border-primary hover:text-black transition-all" onClick={() => { setSelectedFundId(fund.id); setIsAuditOpen(true); }}>
+                        <DollarSign className="h-4 w-4 mr-2" /> Audit Hub
+                      </Button>
+                      <div className="flex gap-1">
+                        <Button variant="ghost" size="icon" className="h-12 w-12 rounded-xl text-primary hover:bg-primary/5" onClick={() => { setEditingFund(fund); setIsEditOpen(true); }}>
+                          <Zap className="h-4 w-4" />
+                        </Button>
+                        <Button variant="ghost" size="icon" className="h-12 w-12 rounded-xl text-destructive hover:bg-destructive/5" onClick={() => deleteFundraisingOpportunity(fund.id)}>
+                          <Trash2 className="h-4 w-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    <Button 
+                      variant="outline"
+                      className="w-full h-11 rounded-xl font-black uppercase text-[10px] border-2 border-primary/20 text-primary hover:bg-primary hover:text-white transition-all"
+                      onClick={() => { setViewAllFund(fund); setIsViewAllOpen(true); }}
+                    >
+                      <ExternalLink className="h-4 w-4 mr-2" /> View All Donations
+                    </Button>
+                  </div>
+                ) : !isStoreDistribution ? (
+                  <div className="pt-4">
+                    <Button 
+                      className="w-full h-12 rounded-xl font-black uppercase text-xs shadow-lg shadow-primary/20 hover:scale-[1.02] transition-all bg-primary"
+                      onClick={() => { setSelectedFundForCommit(fund); setIsCommitOpen(true); }}
+                    >
+                      <DollarSign className="h-4 w-4 mr-2" /> Contribute to Goal
+                    </Button>
+                  </div>
+                ) : null}
+              </CardContent>
+            </Card>
+          );
+        })}
+        {displayedCampaigns.length === 0 && (
+          <div className="col-span-full py-32 text-center border-2 border-dashed rounded-[3rem] bg-muted/10 opacity-40 text-foreground">
+            <BarChart3 className="h-16 w-16 mx-auto mb-4" />
+            <p className="text-sm font-black uppercase tracking-widest">No strategies found in this sector.</p>
+          </div>
+        )}
+      </div>
+
+      {/* View All Donations Modal */}
+      <ViewAllDonationsModal 
+        fund={viewAllFund} 
+        isOpen={isViewAllOpen} 
+        onOpenChange={setIsViewAllOpen} 
+      />
+
+      <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
+        <DialogContent className="rounded-[3.5rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
+          <DialogTitle className="sr-only">Campaign Deployment Strategy</DialogTitle>
+          <DialogDescription className="sr-only">Configure multi-channel payment protocols for fundraising</DialogDescription>
+
+          <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar text-foreground">
+            <DialogHeader>
+              <div className="flex items-center gap-4 mb-2">
+                <div className="bg-primary/10 p-3 rounded-2xl text-primary"><Zap className="h-6 w-6" /></div>
+                <div>
+                  <DialogTitle className="text-3xl font-black uppercase tracking-tight text-foreground">Campaign Strategy</DialogTitle>
+                  <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Deploy a new capital mobilization strategy</DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Campaign Title</Label>
+                <Input placeholder="e.g. 2024 Nationals Travel Fund" value={newFund.title} onChange={e => setNewFund({...newFund, title: e.target.value})} className="h-14 rounded-2xl border-2 font-bold focus:border-primary/20 transition-all shadow-inner text-foreground" />
+              </div>
+              <div className="grid grid-cols-2 gap-6">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Goal ($)</Label>
+                  <Input type="number" value={newFund.goal} onChange={e => setNewFund({...newFund, goal: e.target.value})} className="h-14 rounded-2xl border-2 font-black text-xl text-primary" />
+                </div>
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Deadline</Label>
+                  <DatePicker 
+                    date={newFund.deadline} 
+                    setDate={d => setNewFund({...newFund, deadline: d})} 
+                    placeholder="Campaign Deadline"
+                    className="h-14 rounded-2xl border-2 font-black bg-white"
+                  />
+                </div>
+              </div>
+              
+              <div className="space-y-4 pt-4 border-t">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Configure Payment Protocol</Label>
+                <RadioGroup value={configMethod} onValueChange={(v: 'stripe' | 'e-transfer') => setConfigMethod(v)} className="grid grid-cols-2 gap-4">
+                  <div className={cn("p-4 rounded-xl border-2 transition-all cursor-pointer", configMethod === 'stripe' ? "border-primary bg-primary/5 shadow-sm" : "border-muted")} onClick={() => setConfigMethod('stripe')}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <RadioGroupItem value="stripe" id="c_stripe" />
+                      <Label htmlFor="c_stripe" className="font-black text-[10px] uppercase cursor-pointer text-foreground">Connected Stripe</Label>
+                    </div>
+                    <p className="text-[8px] font-medium text-muted-foreground uppercase">Automatic verification</p>
+                  </div>
+                  <div className={cn("p-4 rounded-xl border-2 transition-all cursor-pointer", configMethod === 'e-transfer' ? "border-primary bg-primary/5 shadow-sm" : "border-muted")} onClick={() => setConfigMethod('e-transfer')}>
+                    <div className="flex items-center gap-2 mb-1">
+                      <RadioGroupItem value="e-transfer" id="c_et" />
+                      <Label htmlFor="c_et" className="font-black text-[10px] uppercase cursor-pointer text-foreground">E-Transfer</Label>
+                    </div>
+                    <p className="text-[8px] font-medium text-muted-foreground uppercase">Manual verification</p>
+                  </div>
+                </RadioGroup>
+
+                {configMethod === 'stripe' && activeTeam?.id && user?.id && (
+                  <div className="animate-in slide-in-from-top-2">
+                    <StripeConnectSetup
+                      userId={user.id}
+                      teamId={activeTeam.id}
+                      onConnected={() => setStripeChargesEnabled(true)}
+                    />
+                    <p className="mt-2 px-1 text-[9px] font-bold uppercase text-muted-foreground">
+                      Funds go directly to this connected Stripe account. Successful Stripe webhooks mark donations paid automatically.
+                    </p>
+                  </div>
+                )}
+
+                {configMethod === 'e-transfer' && (
+                  <div className="space-y-2 animate-in slide-in-from-top-2">
+                    <Label className="text-[10px] font-black uppercase ml-1 text-foreground">E-Transfer Protocol</Label>
+                    <Textarea placeholder="Recipient email and security instructions..." value={newFund.eTransferDetails} onChange={e => setNewFund({...newFund, eTransferDetails: e.target.value})} className="min-h-[80px] rounded-2xl border-2 font-medium bg-muted/10 resize-none p-4 text-foreground" />
+                  </div>
+                )}
+
+                <div className="flex items-center justify-between p-5 bg-primary/5 rounded-[2rem] border-2 border-dashed border-primary/20 mt-4">
+                  <div>
+                    <p className="text-xs font-black uppercase leading-tight text-foreground">Public Enrollment</p>
+                    <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-tighter mt-1">Enable unauthenticated portal links</p>
+                  </div>
+                  <Switch checked={newFund.isShareable} onCheckedChange={v => setNewFund({...newFund, isShareable: v})} />
+                </div>
+              </div>
+            </div>
+            <DialogFooter>
+              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all border-none" onClick={handleAddCampaign} disabled={isProcessing || !newFund.title || !newFund.goal || !newFund.deadline || (configMethod === 'stripe' && !stripeChargesEnabled)}>
+                {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Authorize Deployment"}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
+        <DialogContent className="rounded-[3.5rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
+          <DialogTitle className="sr-only">Edit Campaign Strategy</DialogTitle>
+
+          <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar text-foreground">
+            <DialogHeader>
+              <div className="flex items-center gap-4 mb-2">
+                <div className="bg-primary/10 p-3 rounded-2xl text-primary"><Zap className="h-6 w-6" /></div>
+                <div>
+                  <DialogTitle className="text-3xl font-black uppercase tracking-tight text-foreground">Edit Strategy</DialogTitle>
+                  <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Modify existing capital mobilization protocol</DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+            {editingFund && (
+              <div className="space-y-6">
+                <div className="space-y-2">
+                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Campaign Title</Label>
+                  <Input placeholder="e.g. 2024 Nationals Travel Fund" value={editingFund.title} onChange={e => setEditingFund({...editingFund, title: e.target.value})} className="h-14 rounded-2xl border-2 font-bold focus:border-primary/20 transition-all shadow-inner text-foreground" />
+                </div>
+                <div className="grid grid-cols-2 gap-6">
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Goal ($)</Label>
+                    <Input type="number" value={editingFund.goalAmount} onChange={e => setEditingFund({...editingFund, goalAmount: parseFloat(e.target.value)})} className="h-14 rounded-2xl border-2 font-black text-xl text-primary" />
+                  </div>
+                  <div className="space-y-2">
+                    <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-foreground">Deadline</Label>
+                    <DatePicker 
+                      date={editingFund.deadline} 
+                      setDate={d => setEditingFund({...editingFund, deadline: d})} 
+                      placeholder="Campaign Deadline"
+                      className="h-14 rounded-2xl border-2 font-black bg-white"
+                    />
+                  </div>
+                </div>
+                
+                {!isStoreDistribution && editingFund.externalLink && (
+                  <div className="space-y-2 animate-in slide-in-from-top-2">
+                    <Label className="text-[10px] font-black uppercase ml-1 text-foreground">Managed Payment Link</Label>
+                    <Input readOnly value={editingFund.externalLink} className="h-12 rounded-xl border-2 bg-muted/30 font-bold text-muted-foreground" />
+                    <p className="text-[9px] font-bold uppercase text-muted-foreground">Managed by the connected Stripe account; it cannot be replaced from the browser.</p>
+                  </div>
+                )}
+
+                {!isStoreDistribution && <div className="space-y-2 animate-in slide-in-from-top-2">
+                  <Label className="text-[10px] font-black uppercase ml-1 text-foreground">E-Transfer Protocol</Label>
+                  <Textarea placeholder="Recipient email and security instructions..." value={editingFund.eTransferDetails} onChange={e => setEditingFund({...editingFund, eTransferDetails: e.target.value})} className="min-h-[80px] rounded-2xl border-2 font-medium bg-muted/10 resize-none p-4 text-foreground" />
+                </div>}
+
+                {!isStoreDistribution && <div className="flex items-center justify-between p-5 bg-primary/5 rounded-[2rem] border-2 border-dashed border-primary/20 mt-4">
+                  <div>
+                    <p className="text-xs font-black uppercase leading-tight text-foreground">Public Enrollment</p>
+                    <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-tighter mt-1">Enable unauthenticated portal links</p>
+                  </div>
+                  <Switch checked={editingFund.isShareable} onCheckedChange={v => setEditingFund({...editingFund, isShareable: v})} />
+                </div>}
+              </div>
+            )}
+            <DialogFooter>
+              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all border-none" onClick={handleEditCampaign} disabled={isProcessing || !editingFund?.title}>
+                {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Update Strategy"}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isAuditOpen} onOpenChange={setIsAuditOpen}>
+        <DialogContent className="rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white sm:max-w-lg text-foreground">
+          <DialogTitle className="sr-only">Donation Details</DialogTitle>
+          <DialogDescription className="sr-only">Verify and confirm receipt of manual or digital donations</DialogDescription>
+
+          <div className="p-8 lg:p-10 space-y-8">
+            <DialogHeader>
+              <div className="flex items-center gap-4">
+                <div className="bg-black p-3 rounded-2xl text-white shadow-lg"><History className="h-6 w-6" /></div>
+                <div>
+                  <DialogTitle className="text-2xl font-black uppercase tracking-tight text-foreground">Campaign Audit</DialogTitle>
+                  <DialogDescription className="font-bold text-muted-foreground uppercase text-[10px] tracking-widest">Verify and confirm manual receipts</DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+            <div className="py-2">
+              {selectedFundId && <DonationAuditLedger fundId={selectedFundId} />}
+            </div>
+            <DialogFooter>
+              <Button variant="outline" className="w-full h-12 rounded-xl font-black uppercase text-[10px] border-2 text-foreground" onClick={() => setIsAuditOpen(false)}>Close Audit Hub</Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={isCommitOpen} onOpenChange={setIsCommitOpen}>
+        <DialogContent className="rounded-[3.5rem] p-0 border-none shadow-2xl overflow-hidden bg-white sm:max-w-md text-foreground">
+          <DialogTitle className="sr-only">Commit to Donation</DialogTitle>
+
+          <div className="p-8 lg:p-12 space-y-8">
+            <DialogHeader>
+              <div className="flex items-center gap-4 mb-2">
+                <div className="bg-primary/10 p-3 rounded-2xl text-primary"><DollarSign className="h-6 w-6" /></div>
+                <div>
+                  <DialogTitle className="text-3xl font-black uppercase tracking-tight text-foreground">Contribute</DialogTitle>
+                  <DialogDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">Fuel the squad's strategic objectives</DialogDescription>
+                </div>
+              </div>
+            </DialogHeader>
+            
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contribution Amount ($)</Label>
+                <Input 
+                  type="number" 
+                  value={commitData.amount} 
+                  onChange={e => setCommitData({...commitData, amount: e.target.value})} 
+                  className="h-16 rounded-2xl border-2 font-black text-2xl text-primary" 
+                />
+              </div>
+
+              <div className="space-y-4">
+                <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Select Protocol</Label>
+                <div className="grid grid-cols-1 gap-4">
+                  {selectedFundForCommit?.externalLink && (
+                    <div 
+                      className={cn("p-5 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between", commitData.method === 'external' ? "border-primary bg-primary/5" : "border-muted")}
+                      onClick={() => setCommitData({...commitData, method: 'external'})}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className={cn("p-2 rounded-lg", commitData.method === 'external' ? "bg-primary text-white" : "bg-muted text-muted-foreground")}>
+                          <Globe className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="font-black text-xs uppercase text-foreground">Digital Portal</p>
+                          <p className="text-[8px] font-bold text-muted-foreground uppercase">Fast processing via {new URL(selectedFundForCommit.externalLink).hostname}</p>
+                        </div>
+                      </div>
+                      <RadioGroupItem value="external" checked={commitData.method === 'external'} />
+                    </div>
+                  )}
+                  
+                  {selectedFundForCommit?.eTransferDetails && (
+                    <div 
+                      className={cn("p-5 rounded-2xl border-2 transition-all cursor-pointer flex items-center justify-between", commitData.method === 'e-transfer' ? "border-primary bg-primary/5" : "border-muted")}
+                      onClick={() => setCommitData({...commitData, method: 'e-transfer'})}
+                    >
+                      <div className="flex items-center gap-4">
+                        <div className={cn("p-2 rounded-lg", commitData.method === 'e-transfer' ? "bg-primary text-white" : "bg-muted text-muted-foreground")}>
+                          <Search className="h-4 w-4" />
+                        </div>
+                        <div>
+                          <p className="font-black text-xs uppercase text-foreground">E-Transfer / Manual</p>
+                          <p className="text-[8px] font-bold text-muted-foreground uppercase">Follow manual instructions</p>
+                        </div>
+                      </div>
+                      <RadioGroupItem value="e-transfer" checked={commitData.method === 'e-transfer'} />
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {commitData.method === 'e-transfer' && selectedFundForCommit?.eTransferDetails && (
+                <div className="p-6 bg-muted/20 border-2 border-dashed rounded-2xl animate-in fade-in slide-in-from-top-2">
+                  <div className="flex items-center gap-2 mb-2 text-primary">
+                    <Info className="h-3 w-3" />
+                    <p className="text-[9px] font-black uppercase tracking-widest">Protocol Instructions</p>
+                  </div>
+                  <p className="text-xs font-medium leading-relaxed italic text-foreground">
+                    {selectedFundForCommit.eTransferDetails}
+                  </p>
+                </div>
+              )}
+            </div>
+
+            <DialogFooter>
+              <Button 
+                className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all bg-primary" 
+                onClick={handleCommitDonation} 
+                disabled={isProcessing || !commitData.amount}
+              >
+                {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Authorize Contribution"}
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+    </div>
+  );
+}

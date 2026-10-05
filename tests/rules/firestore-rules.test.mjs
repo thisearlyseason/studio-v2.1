@@ -1,0 +1,1501 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { after, before, beforeEach, test } from 'node:test';
+import {
+  assertFails,
+  assertSucceeds,
+  initializeTestEnvironment,
+} from '@firebase/rules-unit-testing';
+import {
+  collection,
+  deleteDoc,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  setDoc,
+  where,
+  writeBatch,
+} from 'firebase/firestore';
+
+const projectId = 'demo-the-squad-rules-test';
+let testEnv;
+
+test('Tournament lifecycle, schedule, referee, and scoring fields are server-only', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'teams/team-a/events/lifecycle-cup'), { isTournament: true, eventType: 'tournament', title: 'Cup', lifecycleVersion: 1, tournamentGames: [] });
+  });
+  const owner = authenticatedDb('owner'), ref = doc(owner, 'teams/team-a/events/lifecycle-cup');
+  await assertFails(setDoc(doc(owner, 'teams/team-a/events/forged-cup'), { isTournament: true, title: 'Forged' }));
+  for (const changes of [{ title: 'Changed' }, { isArchived: true }, { lifecycleVersion: 2 }, { registrationCode: 'FORGED' }, { isTournament: false }, { tournamentTeamsData: [{ id: 'forged', name: 'Forged' }] }]) {
+    await assertFails(setDoc(ref, changes, { merge: true }));
+  }
+  await assertFails(deleteDoc(ref));
+  await assertFails(setDoc(ref, { refereePool: [], scoringCode: 'TESTPIN', deploymentStatus: 'failed', deploymentError: 'Example failure' }, { merge: true }));
+  await assertFails(setDoc(doc(owner, 'teams/team-a/events/lifecycle-cup/brackets/forged'), { team1Id: 'alpha', team2Id: 'beta' }));
+  await assertFails(setDoc(doc(owner, 'tournamentRefereeAssignments/forged'), { eventId: 'lifecycle-cup', refereeKey: 'victim@example.test' }));
+  await assertFails(getDoc(doc(owner, 'tournamentReferees/private')));
+  await assertFails(setDoc(doc(owner, 'tournamentReferees/forged'), { eventId: 'lifecycle-cup', email: 'victim@example.test' }));
+  await assertFails(getDoc(doc(owner, 'teams/team-a/events/lifecycle-cup/private/scoring')));
+  await assertFails(setDoc(doc(owner, 'teams/team-a/events/lifecycle-cup/private/scoring'), { scorekeeperCodeHash: 'forged' }));
+});
+
+test('League member roots, raw spectator projections, score records, and game generation floor are server-only', async () => {
+  const member = authenticatedDb('member');
+  const owner = authenticatedDb('owner');
+  await assertFails(getDoc(doc(member, 'leagues', 'league-a')));
+  await assertFails(getDoc(doc(testEnv.unauthenticatedContext().firestore(), 'publicLeagueViews', 'league-a')));
+  await assertFails(setDoc(doc(owner, 'leagues', 'league-a'), { gameVersionFloor: 0 }, { merge: true }));
+  await assertFails(setDoc(doc(owner, 'leagues', 'league-a', 'scores', 'forged'), { score1: 999 }));
+  await assertSucceeds(getDoc(doc(owner, 'leagues', 'league-a')));
+});
+
+test('feed posts comments receipts and audit cannot bypass authenticated audience service',async()=>{
+  await testEnv.withSecurityRulesDisabled(async context=>{
+    const db=context.firestore();
+    for(const path of ['feedPosts/private','feedPosts/private/comments/private','feedOperations/receipt','feedAudit/audit']) await setDoc(doc(db,`teams/team-a/${path}`),{audience:'coaches',content:'private'});
+  });
+  for(const uid of ['member','owner']) {const db=authenticatedDb(uid);for(const path of ['feedPosts/private','feedPosts/private/comments/private','feedOperations/receipt','feedAudit/audit']) {
+    const ref=doc(db,`teams/team-a/${path}`);
+    await assertFails(getDoc(ref));
+    await assertFails(setDoc(ref,{content:'forged'}));
+  }}
+});
+
+before(async () => {
+  testEnv = await initializeTestEnvironment({
+    projectId,
+    firestore: {
+      rules: readFileSync('firestore.rules', 'utf8'),
+    },
+  });
+});
+
+test('Library service metadata cannot be forged or directly deleted, while legacy and Film reads remain compatible',async()=>{
+  await testEnv.withSecurityRulesDisabled(async context=>{
+    const db=context.firestore();
+    await setDoc(doc(db,'teams/team-a/files/managed'),{name:'PDF',storagePath:'teams/team-a/library/managed/content',category:'Documents'});
+    await setDoc(doc(db,'teams/team-a/files/legacy'),{name:'Legacy PDF',url:'data:application/pdf;base64,cGRm',category:'Documents'});
+  });
+  const owner=authenticatedDb('owner'),member=authenticatedDb('member');
+  await assertSucceeds(getDoc(doc(member,'teams/team-a/files/managed')));
+  await assertSucceeds(getDoc(doc(member,'teams/team-a/files/legacy')));
+  await assertFails(setDoc(doc(owner,'teams/team-a/files/forged'),{storagePath:'players/foreign/avatar/a',category:'Documents'}));
+  await assertFails(setDoc(doc(owner,'teams/team-a/files/bypass'),{url:'data:application/pdf;base64,cGRm',category:'Documents'}));
+  await assertFails(deleteDoc(doc(owner,'teams/team-a/files/managed')));
+  await assertSucceeds(setDoc(doc(owner,'teams/team-a/files/film'),{url:'https://example.test/video',category:'Game Tape'}));
+  await assertSucceeds(setDoc(doc(owner,'teams/team-a/files/link'),{url:'https://example.test/resource',category:'Link / URL'}));
+});
+
+beforeEach(async () => {
+  await testEnv.clearFirestore();
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+
+    await Promise.all([
+      setDoc(doc(db, 'users', 'owner'), { role: 'coach', name: 'Owner' }),
+      setDoc(doc(db, 'users', 'member'), { role: 'parent', name: 'Member' }),
+      setDoc(doc(db, 'users', 'parent-account'), { role: 'parent', name: 'Child Guardian' }),
+      setDoc(doc(db, 'users', 'staff'), { role: 'coach', name: 'Assistant Coach' }),
+      setDoc(doc(db, 'users', 'outsider'), { role: 'coach', name: 'Outsider' }),
+      setDoc(doc(db, 'users', 'remote-staff'), { role: 'coach', name: 'Remote Staff' }),
+      setDoc(doc(db, 'users', 'legacy-remote-staff'), { role: 'coach', name: 'Legacy Remote Staff' }),
+      setDoc(doc(db, 'users', 'youth'), {
+        role: 'youth_player',
+        name: 'Youth',
+        linkedPlayerId: 'child-player',
+        parentId: 'parent-account',
+      }),
+      setDoc(doc(db, 'users', 'forged-youth'), {
+        role: 'youth_player',
+        name: 'Forged Youth',
+        linkedPlayerId: 'child-player',
+        parentId: 'different-parent',
+      }),
+      setDoc(doc(db, 'users', 'removed'), { role: 'adult_player', name: 'Removed' }),
+      setDoc(doc(db, 'users', 'suspended'), {
+        role: 'adult_player',
+        name: 'Suspended',
+        accountStatus: 'suspended',
+      }),
+      setDoc(doc(db, 'users', 'pending-delete'), {
+        role: 'adult_player',
+        name: 'Pending Delete',
+        deletionStatus: 'pending',
+      }),
+      setDoc(doc(db, 'users', 'owner', 'tokens', 'google'), {
+        access_token: 'server-secret',
+        refresh_token: 'server-refresh-secret',
+      }),
+      setDoc(doc(db, 'teams', 'team-a'), {
+        ownerUserId: 'owner',
+        isPro: true,
+        planId: 'team',
+      }),
+      setDoc(doc(db, 'teams', 'attacker-team'), {
+        ownerUserId: 'outsider',
+      }),
+      setDoc(doc(db, 'teams', 'team-b'), { ownerUserId: 'outsider' }),
+      setDoc(doc(db, 'teams', 'team-b', 'members', 'remote-staff'), {
+        userId: 'remote-staff', teamId: 'team-b', role: 'Admin', position: 'Assistant Coach', status: 'active',
+      }),
+      setDoc(doc(db, 'teams', 'team-b', 'members', 'legacy-member-record'), {
+        userId: 'legacy-remote-staff', teamId: 'team-b', role: 'Admin', position: 'Assistant Coach', status: 'active',
+      }),
+      setDoc(doc(db, 'teams', 'team-b', 'members', 'removed-legacy-record'), {
+        userId: 'legacy-remote-staff', teamId: 'team-b', role: 'Admin', position: 'Assistant Coach', status: 'removed',
+      }),
+      setDoc(doc(db, 'teams', 'demo-team'), {
+        ownerUserId: 'fictional-coach',
+        demoSessionOwnerId: 'demo-user',
+        isDemo: true,
+        isPro: true,
+        planId: 'team',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'members', 'member'), {
+        userId: 'member',
+        ownerUserId: 'owner',
+        teamId: 'team-a',
+        role: 'Member',
+        position: 'Parent',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'members', 'owner'), {
+        userId: 'owner',
+        ownerUserId: 'owner',
+        teamId: 'team-a',
+        role: 'Admin',
+        position: 'Head Coach',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'members', 'staff'), {
+        userId: 'staff',
+        ownerUserId: 'owner',
+        teamId: 'team-a',
+        role: 'Member',
+        position: 'Assistant Coach',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'members', 'child-player'), {
+        userId: 'parent-account',
+        playerId: 'child-player',
+        parentId: 'parent-account',
+        teamId: 'team-a',
+        role: 'Member',
+        position: 'Player',
+        status: 'active',
+      }),
+      setDoc(doc(db, 'players', 'child-player'), {
+        id: 'child-player',
+        userId: 'youth',
+        parentId: 'parent-account',
+        primaryTeamId: 'team-a',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'members', 'removed'), {
+        userId: 'removed',
+        role: 'Member',
+        position: 'Player',
+        status: 'removed',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'members', 'suspended'), {
+        userId: 'suspended',
+        role: 'Member',
+        position: 'Player',
+        status: 'active',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'members', 'pending-delete'), {
+        userId: 'pending-delete',
+        role: 'Member',
+        position: 'Player',
+        status: 'active',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'chat-a'), {
+        createdBy: 'owner',
+        memberIds: ['owner', 'member', 'removed'],
+        memberAuthorities: {
+          owner: { teamId: 'team-a', memberId: 'owner' },
+          member: { teamId: 'team-a', memberId: 'member' },
+          removed: { teamId: 'team-a', memberId: 'removed' },
+        },
+        isDeleted: false,
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'chat-a', 'messages', 'existing'), {
+        authorId: 'owner',
+        text: 'private',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'staff-chat'), {
+        createdBy: 'owner',
+        memberIds: ['owner', 'staff'],
+        staffOnly: true,
+        isDeleted: false,
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'staff-chat', 'messages', 'staff-message'), {
+        authorId: 'owner',
+        text: 'staff only',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'deleted-chat'), {
+        createdBy: 'owner',
+        memberIds: ['owner', 'member'],
+        isDeleted: true,
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'deleted-chat', 'messages', 'deleted-message'), {
+        authorId: 'owner',
+        text: 'deleted private content',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'remote-chat'), {
+        createdBy: 'owner', memberIds: ['owner', 'remote-staff'], isDeleted: false,
+        memberAuthorities: {
+          owner: { teamId: 'team-a', memberId: 'owner' },
+          'remote-staff': { teamId: 'team-b', memberId: 'remote-staff' },
+        },
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'remote-chat', 'messages', 'remote-message'), {
+        authorId: 'owner', content: 'league staff coordination',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'legacy-remote-chat'), {
+        createdBy: 'owner', memberIds: ['owner', 'legacy-remote-staff'], isDeleted: false,
+        memberAuthorities: {
+          owner: { teamId: 'team-a', memberId: 'owner' },
+          'legacy-remote-staff': { teamId: 'team-b', memberId: 'legacy-member-record' },
+        },
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'legacy-remote-chat', 'messages', 'legacy-remote-message'), {
+        authorId: 'owner', content: 'legacy league staff coordination',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'forged-member-authority-chat'), {
+        createdBy: 'owner', memberIds: ['owner', 'legacy-remote-staff'], isDeleted: false,
+        memberAuthorities: {
+          'legacy-remote-staff': { teamId: 'team-b', memberId: 'remote-staff' },
+        },
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'forged-team-authority-chat'), {
+        createdBy: 'owner', memberIds: ['owner', 'legacy-remote-staff'], isDeleted: false,
+        memberAuthorities: {
+          'legacy-remote-staff': { teamId: 'team-a', memberId: 'legacy-member-record' },
+        },
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'incomplete-authority-chat'), {
+        createdBy: 'owner', memberIds: ['owner', 'legacy-remote-staff'], isDeleted: false,
+        memberAuthorities: {
+          'legacy-remote-staff': { teamId: 'team-b' },
+        },
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'removed-authority-chat'), {
+        createdBy: 'owner', memberIds: ['owner', 'legacy-remote-staff'], isDeleted: false,
+        memberAuthorities: {
+          'legacy-remote-staff': { teamId: 'team-b', memberId: 'removed-legacy-record' },
+        },
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'groupChats', 'chat-a', 'messages', 'member-message'), {
+        authorId: 'member', content: 'immutable text', createdAt: '2026-09-06T00:00:00.000Z',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'events', 'event-a'), {
+        title: 'Open Tryout',
+        date: '2026-09-01',
+        endDate: '2026-09-03',
+        tournamentType: 'single_elimination',
+        tournamentTeams: ['Alpha', 'Beta'],
+        tournamentTeamsData: [{ id: 'alpha', name: 'Alpha' }, { id: 'beta', name: 'Beta' }],
+        selectedFields: ['facility-a:main'],
+        manualVenue: '',
+        gameLength: 60,
+        breakLength: 15,
+        gamesPerTeam: 1,
+        maxDailyGamesPerTeam: 2,
+        poolCount: 0,
+        advancePerPool: 0,
+        dailyWindows: [{ date: '2026-09-01', startTime: '08:00', endTime: '18:00' }],
+        tournamentGames: [{ id: 'final', team1Id: 'alpha', team2Id: 'beta' }],
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'events', 'event-a', 'registrations', 'response-a'), {
+        name: 'Applicant',
+        email: 'applicant@example.test',
+        phone: '555-0101',
+        status: 'pending',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'registrationEntries', 'legacy-response'), {
+        event_id: 'event-a',
+        answers: { email: 'legacy@example.test' },
+        status: 'pending',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'documents', 'staff-waiver'), {
+        id: 'staff-waiver', teamId: 'team-a', type: 'waiver', isActive: true, waiverAudience: 'team',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'alerts', 'coaches-only'), {
+        audience: 'coaches',
+        title: 'Private staff alert',
+        createdBy: 'owner',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'alerts', 'parents-only'), {
+        audience: 'parents',
+        title: 'Parent alert',
+        createdBy: 'owner',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'alerts', 'targeted-other'), {
+        audience: 'everyone',
+        targetUserId: 'someone-else',
+        title: 'Targeted alert',
+        createdBy: 'owner',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'paymentItems', 'item-a'), {
+        name: 'Team dues',
+        amount: 5000,
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'payments', 'member-payment'), {
+        payer_email: 'member@example.test',
+        amount: 5000,
+        payment_method: 'online',
+        status: 'paid',
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'payments', 'other-payment'), {
+        payer_email: 'other@example.test',
+        amount: 7500,
+        payment_method: 'offline',
+        status: 'paid',
+      }),
+      setDoc(doc(db, 'players', 'private-player'), {
+        userId: 'member',
+        parentId: 'member',
+        primaryTeamId: 'team-a',
+        recruitingProfileEnabled: false,
+      }),
+      setDoc(doc(db, 'players', 'public-player'), {
+        userId: 'member',
+        parentId: 'member',
+        primaryTeamId: 'team-a',
+        recruitingProfileEnabled: true,
+      }),
+      setDoc(doc(db, 'players', 'public-player', 'contact', 'private'), {
+        email: 'guardian@example.test',
+      }),
+      setDoc(doc(db, 'leagues', 'league-a'), {
+        creatorId: 'owner',
+        billingOwnerUserId: 'owner',
+        tenantId: 'team-a',
+        memberUserIds: ['owner', 'member'],
+        sensitiveFieldsMigrated: true,
+      }),
+      setDoc(doc(db, 'leagues', 'scheduled-league'), {
+        creatorId: 'owner',
+        memberUserIds: ['owner'],
+        startDate: '2026-09-01',
+        endDate: '2026-09-30',
+        schedule: [],
+        schedulerConfig: {
+          startDate: '2026-09-01',
+          endDate: '2026-09-30',
+          startTime: '18:00',
+          endTime: '21:00',
+        },
+      }),
+      setDoc(doc(db, 'publicLeagueViews', 'league-a'), {
+        schedule: [],
+        roster: [],
+      }),
+      setDoc(doc(db, 'facilities', 'facility-a'), {
+        clubId: 'owner',
+        name: 'Private Venue',
+      }),
+      setDoc(doc(db, 'clubs', 'club-a'), {
+        ownerUserId: 'owner',
+        subscriptionStatus: 'active',
+      }),
+      setDoc(doc(db, 'leagues', 'global', 'invites', 'legacy-invite'), {
+        invitedEmail: 'private@example.test',
+        leagueId: 'league-a',
+      }),
+      setDoc(doc(db, 'alerts', 'legacy-global'), {
+        createdBy: 'owner',
+        message: 'Legacy global alert',
+      }),
+      setDoc(doc(db, 'subscriptions', 'subscription-a'), {
+        userId: 'owner',
+        status: 'active',
+      }),
+      setDoc(doc(db, 'newsletter_subscribers', 'subscriber-a'), {
+        email: 'subscriber@example.com',
+        isActive: true,
+      }),
+      setDoc(doc(db, 'newsletter_campaigns', 'campaign-a'), {
+        subject: 'Private campaign',
+        status: 'sent',
+      }),
+      setDoc(doc(db, 'newsletter_webhook_events', 'webhook-a'), {
+        eventType: 'email.delivered',
+        status: 'completed',
+      }),
+      setDoc(doc(db, 'newsletter_email_events', 'email-event-a'), {
+        emailId: 'email-a',
+        eventType: 'email.delivered',
+      }),
+      setDoc(doc(db, 'contact_inquiries', 'inquiry-a'), {
+        email: 'visitor@example.com',
+        inquiry: 'Private inquiry',
+        deliveryStatus: 'sent',
+      }),
+      setDoc(doc(db, 'sports_hub_rss_feeds', 'feed-a'), {
+        name: 'Private feed configuration',
+        url: 'https://example.com/rss',
+      }),
+      setDoc(doc(db, 'sports_hub_articles', 'published-a'), {
+        title: 'Published article',
+        isDraft: false,
+      }),
+      setDoc(doc(db, 'sports_hub_articles', 'draft-a'), {
+        title: 'Draft article',
+        isDraft: true,
+      }),
+      setDoc(doc(db, 'sports_hub_newsletter_subscribers', 'hub-subscriber-a'), {
+        email: 'hub@example.com',
+        isActive: true,
+      }),
+      setDoc(doc(db, 'calendarFeeds', 'existing-feed'), {
+        type: 'team',
+        userId: 'owner',
+        teamId: 'team-a',
+        active: true,
+      }),
+      setDoc(doc(db, 'teams', 'team-a', 'incidents', 'incident-a'), {
+        teamId: 'team-a',
+        ownerUserId: 'owner',
+        reportedBy: 'owner',
+        title: 'Original report',
+        description: 'Original factual narrative',
+        date: '2026-09-05',
+        status: 'open',
+        createdAt: '2026-09-05T00:00:00.000Z',
+        auditHistory: [],
+      }),
+    ]);
+  });
+});
+
+after(async () => {
+  await testEnv?.cleanup();
+});
+
+function authenticatedDb(uid, claims = {}) {
+  return testEnv.authenticatedContext(uid, {
+    email_verified: true,
+    ...claims,
+  }).firestore();
+}
+
+test('user profiles remain private and billing authority cannot be self-granted', async () => {
+  const ownerDb = authenticatedDb('owner');
+  const outsiderDb = authenticatedDb('outsider');
+
+  await assertSucceeds(getDoc(doc(ownerDb, 'users', 'owner')));
+  await assertFails(getDoc(doc(outsiderDb, 'users', 'owner')));
+  await assertFails(setDoc(doc(outsiderDb, 'users', 'new-user'), {
+    role: 'coach',
+    plan_type: 'school',
+    team_limit: 100,
+  }));
+});
+
+test('OAuth credentials remain server-only despite the user subcollection fallback', async () => {
+  const ownerDb = authenticatedDb('owner');
+  const superAdminDb = authenticatedDb('root', { role: 'superadmin' });
+  const tokenRef = doc(ownerDb, 'users', 'owner', 'tokens', 'google');
+
+  await assertFails(getDoc(tokenRef));
+  await assertFails(setDoc(tokenRef, { access_token: 'forged' }));
+  await assertFails(getDoc(doc(superAdminDb, 'users', 'owner', 'tokens', 'google')));
+});
+
+test('calendar feed documents are readable and writable only by trusted server code', async () => {
+  const ownerDb = authenticatedDb('owner');
+  const superAdminDb = authenticatedDb('root', { role: 'superadmin' });
+  const feedRef = doc(ownerDb, 'calendarFeeds', 'existing-feed');
+
+  await assertFails(getDoc(feedRef));
+  await assertFails(setDoc(doc(ownerDb, 'calendarFeeds', 'forged-feed'), {
+    type: 'team',
+    userId: 'owner',
+    teamId: 'another-team',
+    active: true,
+  }));
+  await assertFails(setDoc(feedRef, { teamId: 'another-team' }, { merge: true }));
+  await assertFails(setDoc(doc(superAdminDb, 'stripeConnectWebhookEvents', 'evt_forged'), {
+    status: 'completed',
+  }));
+});
+
+test('incident service owns writes and current team authority revokes historical owner reads', async () => {
+  const staff = authenticatedDb('staff');
+  await assertFails(setDoc(doc(staff, 'teams/team-a/incidents/incomplete'), {
+    teamId: 'team-a', ownerUserId: 'owner', reportedBy: 'staff', createdAt: '2026-09-06T00:00:00.000Z',
+  }));
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'teams/team-a/incidents/audit-prefix'), {
+      teamId: 'team-a', ownerUserId: 'former-owner', status: 'monitoring',
+      auditHistory: [{action: 'status:monitoring', userId: 'staff', at: 'original'}],
+    });
+    await setDoc(doc(db, 'users/former-owner'), {role:'coach'});
+  });
+  await assertFails(setDoc(doc(staff, 'teams/team-a/incidents/audit-prefix'), {
+    status: 'follow_up_required', updatedBy:'staff', updatedAt:'now',
+    auditHistory: [{action:'forged',userId:'outsider',at:'rewritten'}, {action:'status:follow_up_required',userId:'staff',at:'now'}],
+  }, {merge:true}));
+  await assertFails(getDoc(doc(authenticatedDb('former-owner'), 'teams/team-a/incidents/audit-prefix')));
+  await assertSucceeds(getDoc(doc(staff, 'teams/team-a/incidents/audit-prefix')));
+});
+
+test('incident originals and status transitions cannot bypass the incident service', async () => {
+  const staffDb = authenticatedDb('staff');
+  const superAdminDb = authenticatedDb('root', { role: 'superadmin' });
+  const incidentRef = doc(staffDb, 'teams', 'team-a', 'incidents', 'incident-a');
+
+  await assertFails(setDoc(incidentRef, {
+    description: 'Rewritten after the fact',
+    updatedAt: '2026-09-05T01:00:00.000Z',
+    updatedBy: 'staff',
+    auditHistory: [{ action: 'updated', userId: 'staff', at: '2026-09-05T01:00:00.000Z' }],
+  }, { merge: true }));
+
+  await assertFails(deleteDoc(doc(superAdminDb, 'teams', 'team-a', 'incidents', 'incident-a')));
+
+  await assertFails(setDoc(incidentRef, {
+    status: 'resolved',
+    resolvedAt: '2026-09-05T01:00:00.000Z',
+    resolvedBy: 'staff',
+    updatedAt: '2026-09-05T01:00:00.000Z',
+    updatedBy: 'staff',
+    auditHistory: [{ action: 'status:resolved', userId: 'staff', at: '2026-09-05T01:00:00.000Z' }],
+  }, { merge: true }));
+});
+
+test('payment records are server-written and members can read only their own records', async () => {
+  const ownerDb = authenticatedDb('owner', { email: 'owner@example.test' });
+  const staffDb = authenticatedDb('staff', { email: 'staff@example.test' });
+  const memberDb = authenticatedDb('member', { email: 'member@example.test' });
+  const outsiderDb = authenticatedDb('outsider', { email: 'member@example.test' });
+
+  await assertFails(setDoc(doc(ownerDb, 'teams', 'team-a', 'payments', 'forged-owner'), {
+    payer_email: 'owner@example.test',
+    amount: 1,
+    status: 'paid',
+  }));
+  await assertFails(setDoc(doc(staffDb, 'teams', 'team-a', 'payments', 'forged-staff'), {
+    payer_email: 'staff@example.test',
+    amount: 1,
+    status: 'paid',
+  }));
+  await assertFails(setDoc(doc(staffDb, 'teams', 'team-a', 'paymentItems', 'forged-item'), {
+    name: 'Forged fee',
+    amount: 1,
+  }));
+
+  await assertSucceeds(getDoc(doc(memberDb, 'teams', 'team-a', 'payments', 'member-payment')));
+  await assertFails(getDoc(doc(memberDb, 'teams', 'team-a', 'payments', 'other-payment')));
+  await assertFails(getDoc(doc(outsiderDb, 'teams', 'team-a', 'payments', 'member-payment')));
+  await assertSucceeds(getDoc(doc(staffDb, 'teams', 'team-a', 'payments', 'other-payment')));
+  await assertSucceeds(getDoc(doc(ownerDb, 'teams', 'team-a', 'payments', 'other-payment')));
+  await assertSucceeds(getDocs(query(
+    collection(memberDb, 'teams', 'team-a', 'payments'),
+    where('payer_email', '==', 'member@example.test'),
+  )));
+  await assertFails(getDocs(collection(memberDb, 'teams', 'team-a', 'payments')));
+});
+
+test('team creation is server-only and tenant reads require membership', async () => {
+  const ownerDb = authenticatedDb('owner');
+  const memberDb = authenticatedDb('member');
+  const staffDb = authenticatedDb('staff');
+  const outsiderDb = authenticatedDb('outsider');
+
+  await assertSucceeds(getDoc(doc(ownerDb, 'teams', 'team-a')));
+  await assertSucceeds(getDoc(doc(memberDb, 'teams', 'team-a')));
+  await assertFails(getDoc(doc(outsiderDb, 'teams', 'team-a')));
+
+  await assertFails(setDoc(doc(outsiderDb, 'teams', 'free-team'), {
+    ownerUserId: 'outsider',
+    isPro: false,
+    planId: 'free',
+  }));
+  await assertFails(setDoc(doc(outsiderDb, 'teams', 'forged-pro-team'), {
+    ownerUserId: 'outsider',
+    isPro: true,
+    planId: 'team',
+  }));
+});
+
+test('event registration contact details are readable only by staff', async () => {
+  const responsePath = ['teams', 'team-a', 'events', 'event-a', 'registrations', 'response-a'];
+  await assertFails(getDoc(doc(authenticatedDb('member'), ...responsePath)));
+  await assertFails(getDoc(doc(authenticatedDb('outsider'), ...responsePath)));
+  await assertSucceeds(getDoc(doc(authenticatedDb('staff'), ...responsePath)));
+  await assertSucceeds(getDoc(doc(authenticatedDb('owner'), ...responsePath)));
+  await assertFails(setDoc(doc(authenticatedDb('staff'), 'teams', 'team-a', 'events', 'event-a', 'registrations', 'forged'), {
+    name: 'Forged', email: 'forged@example.test', phone: '555-9999',
+  }));
+});
+
+test('registration capacity counters cannot be forged by otherwise authorized clients',async()=>{
+  const staffDb=authenticatedDb('staff'),ownerDb=authenticatedDb('owner');
+  await assertFails(setDoc(doc(staffDb,'teams','team-a','events','event-a'),{registrationCount:999},{merge:true}));
+  await assertFails(setDoc(doc(staffDb,'teams','team-a','events','event-a'),{registrationEntryCount:999},{merge:true}));
+  await assertFails(setDoc(doc(ownerDb,'leagues','league-a'),{registrationEntryCount:999},{merge:true}));
+});
+
+test('legacy tournament responses remain staff-readable and server-only while organizers migrate them', async () => {
+  const responsePath = ['teams', 'team-a', 'registrationEntries', 'legacy-response'];
+  await assertFails(getDoc(doc(authenticatedDb('member'), ...responsePath)));
+  await assertSucceeds(getDoc(doc(authenticatedDb('staff'), ...responsePath)));
+  await assertFails(setDoc(doc(authenticatedDb('staff'), ...responsePath), { status: 'accepted' }, { merge: true }));
+});
+
+test('league creation is server-only and legacy invite PII is admin-only', async () => {
+  const ownerDb = authenticatedDb('owner');
+  const outsiderDb = authenticatedDb('outsider');
+  const superAdminDb = authenticatedDb('root', { role: 'superadmin' });
+
+  await assertFails(setDoc(doc(ownerDb, 'leagues', 'forged-league'), {
+    creatorId: 'owner',
+    memberUserIds: ['owner'],
+  }));
+  await assertFails(getDoc(doc(ownerDb, 'leagues', 'global', 'invites', 'legacy-invite')));
+  await assertSucceeds(getDoc(doc(superAdminDb, 'leagues', 'global', 'invites', 'legacy-invite')));
+  await assertFails(getDoc(doc(outsiderDb, 'clubs', 'club-a')));
+  await assertSucceeds(getDoc(doc(ownerDb, 'clubs', 'club-a')));
+});
+
+test('league lifecycle roots and sensitive fields are server-owned', async () => {
+  const ownerDb = authenticatedDb('owner');
+  const memberDb = authenticatedDb('member');
+  const staffDb = authenticatedDb('staff');
+  const outsiderDb = authenticatedDb('outsider');
+  const leagueRef = doc(ownerDb, 'leagues', 'league-a');
+
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await Promise.all([
+      setDoc(doc(db, 'leagues', 'league-a', 'private', 'lifecycle'), {
+        teamContacts: { 'team-a': { coachEmail: 'coach@example.test' } },
+        individualRecruits: { 'recruit-a': { email: 'applicant@example.test', phone: '555-0100' } },
+      }),
+      setDoc(doc(db, 'leagues', 'league-a', 'invites', 'invite-a'), { invitedEmail: 'invitee@example.test' }),
+      setDoc(doc(db, 'leagues', 'unsafe-league'), {
+        creatorId: 'owner', memberUserIds: ['owner', 'member'],
+        teams: { 'team-a': { coachEmail: 'coach@example.test' } },
+        individualRecruits: { 'recruit-a': { email: 'applicant@example.test' } },
+      }),
+    ]);
+  });
+
+  await assertFails(getDoc(doc(memberDb, 'leagues', 'league-a')));
+  await assertFails(getDoc(doc(outsiderDb, 'leagues', 'league-a')));
+  await assertFails(getDoc(doc(memberDb, 'leagues', 'unsafe-league')));
+  await assertFails(setDoc(leagueRef, { name: 'Direct metadata bypass' }, { merge: true }));
+  await assertFails(setDoc(leagueRef, { scorekeeperPin: '8274' }, { merge: true }));
+  await assertFails(setDoc(leagueRef, { contactEmail: 'private@example.test' }, { merge: true }));
+  await assertFails(setDoc(leagueRef, { teams: { 'team-a': { coachEmail: 'private@example.test' } } }, { merge: true }));
+  await assertFails(setDoc(leagueRef, { individualRecruits: { 'recruit-a': { email: 'private@example.test' } } }, { merge: true }));
+  await assertFails(deleteDoc(leagueRef));
+  await assertSucceeds(setDoc(leagueRef, { finances: { 'team-a': { totalPaid: 25 } } }, { merge: true }));
+  await assertFails(setDoc(doc(ownerDb, 'leagues', 'league-a', 'private', 'lifecycle'), { scorekeeperPinHash: 'forged' }));
+  await assertSucceeds(getDoc(doc(staffDb, 'leagues', 'league-a', 'private', 'lifecycle')));
+  await assertFails(getDoc(doc(memberDb, 'leagues', 'league-a', 'private', 'lifecycle')));
+  await assertSucceeds(getDoc(doc(ownerDb, 'leagues', 'league-a', 'invites', 'invite-a')));
+  await assertSucceeds(getDoc(doc(staffDb, 'leagues', 'league-a', 'invites', 'invite-a')));
+  await assertFails(getDoc(doc(memberDb, 'leagues', 'league-a', 'invites', 'invite-a')));
+  await assertFails(getDoc(doc(outsiderDb, 'leagues', 'league-a', 'invites', 'invite-a')));
+  await assertFails(setDoc(doc(memberDb, 'leagueLifecycleAudits', 'forged'), { action: 'delete' }));
+  await assertFails(getDoc(doc(memberDb, 'leagueLifecycleAudits', 'forged')));
+});
+
+test('deleted League tombstones and retained operations cannot be read or forged by clients', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'leagueLifecycleTombstones', 'deleted'), { tenantId: 'team-a', operationId: 'operation-a' });
+    await setDoc(doc(db, 'competitionOperations', 'operation-a'), { actorUid: 'owner', result: { deleted: true } });
+  });
+  for (const uid of ['owner', 'staff', 'member', 'outsider']) {
+    const db = authenticatedDb(uid);
+    for (const collectionName of ['leagueLifecycleTombstones', 'competitionOperations']) {
+      const ref = doc(db, collectionName, collectionName === 'leagueLifecycleTombstones' ? 'deleted' : 'operation-a');
+      await assertFails(getDoc(ref));
+      await assertFails(getDocs(query(collection(db, collectionName))));
+      await assertFails(setDoc(ref, { tenantId: 'team-b' }, { merge: true }));
+      await assertFails(deleteDoc(ref));
+      await assertFails(setDoc(doc(db, collectionName, 'forged'), { tenantId: 'team-b', operationId: 'operation-a' }));
+    }
+  }
+});
+
+test('anonymous demo sessions can read only their server-scoped demo teams', async () => {
+  const demoDb = authenticatedDb('demo-user', {
+    firebase: { sign_in_provider: 'anonymous' },
+  });
+  const otherDemoDb = authenticatedDb('other-demo-user', {
+    firebase: { sign_in_provider: 'anonymous' },
+  });
+
+  await assertSucceeds(getDoc(doc(demoDb, 'teams', 'demo-team')));
+  await assertFails(getDoc(doc(otherDemoDb, 'teams', 'demo-team')));
+});
+
+test('anonymous demos cannot directly enrich protected server-created league shells', async () => {
+  const demoDb = authenticatedDb('demo-user', {
+    firebase: { sign_in_provider: 'anonymous' },
+  });
+
+  await testEnv.withSecurityRulesDisabled(async (context) => {
+    const db = context.firestore();
+    await Promise.all([
+      setDoc(doc(db, 'users', 'demo-user'), {
+        role: 'coach',
+        isDemo: true,
+      }),
+      setDoc(doc(db, 'leagues', 'demo-league'), {
+        creatorId: 'demo-user',
+        memberUserIds: ['demo-user'],
+        memberTeamIds: ['demo-team'],
+        isDemo: true,
+        demoSessionOwnerId: 'demo-user',
+        demoSeeded: true,
+      }),
+    ]);
+  });
+
+  await assertFails(setDoc(doc(demoDb, 'leagues', 'demo-league'), {
+    creatorId: 'demo-user',
+    memberUserIds: ['demo-user'],
+    memberTeamIds: ['demo-team'],
+    name: 'Demo League',
+  }, { merge: true }));
+
+  const batch = writeBatch(demoDb);
+  batch.set(doc(demoDb, 'teams', 'demo-team'), {
+    name: 'Demo Team',
+    ownerUserId: 'fictional-coach',
+    demoSessionOwnerId: 'demo-user',
+    isDemo: true,
+    isPro: true,
+    planId: 'team',
+  }, { merge: true });
+  batch.set(doc(demoDb, 'users', 'demo-user', 'teamMemberships', 'demo-team'), {
+    teamId: 'demo-team',
+    ownerUserId: 'fictional-coach',
+    isDemo: true,
+  });
+
+  await assertSucceeds(batch.commit());
+  await assertFails(setDoc(doc(demoDb, 'leagues', 'demo-league'), {
+    demoSessionOwnerId: 'other-demo-user',
+  }, { merge: true }));
+  await assertFails(setDoc(doc(demoDb, 'leagues', 'demo-league'), {
+    demoSeeded: false,
+  }, { merge: true }));
+});
+
+test('linked youth members retain access while removed members lose it', async () => {
+  const youthDb = authenticatedDb('youth');
+  const removedDb = authenticatedDb('removed');
+
+  await assertSucceeds(getDoc(doc(youthDb, 'teams', 'team-a')));
+  await assertFails(getDoc(doc(removedDb, 'teams', 'team-a')));
+  await assertFails(getDoc(doc(removedDb, 'teams', 'team-a', 'groupChats', 'chat-a')));
+  await assertFails(getDoc(doc(
+    removedDb,
+    'teams',
+    'team-a',
+    'groupChats',
+    'chat-a',
+    'messages',
+    'existing',
+  )));
+});
+
+test('registered members cannot forge or restore their server-owned team access projection', async () => {
+  const memberDb = authenticatedDb('member');
+  await assertFails(setDoc(doc(memberDb, 'users', 'member', 'teamMemberships', 'team-a'), {
+    teamId: 'team-a',
+    status: 'active',
+    isPro: true,
+    planId: 'team',
+  }));
+});
+
+test('linked youth authority requires the complete user, player, guardian, team, and active roster binding', async () => {
+  const youthDb = authenticatedDb('youth');
+  const forgedYouthDb = authenticatedDb('forged-youth');
+
+  await assertSucceeds(getDoc(doc(youthDb, 'teams', 'team-a')));
+  await assertFails(getDoc(doc(forgedYouthDb, 'teams', 'team-a')));
+
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'players', 'child-player'), {
+      id: 'child-player', userId: 'other-youth', parentId: 'parent-account',
+    });
+  });
+  await assertFails(getDoc(doc(youthDb, 'teams', 'team-a')));
+
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'players', 'child-player'), {
+      id: 'child-player', userId: 'youth', parentId: 'parent-account',
+    });
+    await setDoc(doc(db, 'teams', 'team-a', 'members', 'child-player'), {
+      userId: 'parent-account', playerId: 'child-player', parentId: 'different-parent',
+      teamId: 'team-a', role: 'Admin', position: 'Head Coach', status: 'active',
+    });
+  });
+  await assertFails(getDoc(doc(youthDb, 'teams', 'team-a')));
+  await assertFails(setDoc(doc(youthDb, 'teams', 'team-a', 'drills', 'forged-staff'), {
+    title: 'forged',
+  }));
+
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'teams', 'team-a', 'members', 'child-player'), {
+      userId: 'parent-account', playerId: 'child-player', parentId: 'parent-account',
+      teamId: 'different-team', role: 'Member', position: 'Player', status: 'active',
+    });
+  });
+  await assertFails(getDoc(doc(youthDb, 'teams', 'team-a')));
+});
+
+test('legitimate linked youth membership never inherits roster staff authority', async () => {
+  const youthDb = authenticatedDb('youth');
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'teams', 'team-a', 'members', 'child-player'), {
+      userId: 'parent-account', playerId: 'child-player', parentId: 'parent-account',
+      teamId: 'team-a', role: 'Admin', position: 'Head Coach', status: 'active',
+    });
+  });
+
+  await assertSucceeds(getDoc(doc(youthDb, 'teams', 'team-a')));
+  await assertFails(setDoc(doc(youthDb, 'teams', 'team-a', 'drills', 'linked-staff'), {
+    title: 'must remain denied',
+  }));
+});
+
+test('film metadata and coach marks are staff-only while watch progress is self-keyed', async () => {
+  const ownerDb = authenticatedDb('owner');
+  const youthDb = authenticatedDb('youth');
+  const outsiderDb = authenticatedDb('outsider');
+  const film = doc(ownerDb, 'players', 'child-player', 'videos', 'film-a');
+
+  await assertSucceeds(setDoc(film, { title: 'Team A Film', url: 'https://example.test/film.mp4', comments: [] }));
+  await assertSucceeds(getDoc(doc(youthDb, 'players', 'child-player', 'videos', 'film-a')));
+  await assertFails(getDoc(doc(outsiderDb, 'players', 'child-player', 'videos', 'film-a')));
+  await assertFails(setDoc(doc(youthDb, 'players', 'child-player', 'videos', 'film-a'), { comments: [{ text: 'forged mark' }] }, { merge: true }));
+  await assertSucceeds(setDoc(doc(youthDb, 'players', 'child-player', 'videos', 'film-a', 'watchProgress', 'youth'), {
+    userId: 'youth', percentage: 75, watchedAt: '2026-09-06T00:00:00.000Z',
+  }));
+  await assertFails(setDoc(doc(youthDb, 'players', 'child-player', 'videos', 'film-a', 'watchProgress', 'other-user'), {
+    userId: 'other-user', percentage: 75, watchedAt: '2026-09-06T00:00:00.000Z',
+  }));
+});
+
+test('an unrelated team owner cannot take over another player through mutable team fields', async () => {
+  const attackerDb = authenticatedDb('outsider');
+
+  await assertFails(setDoc(doc(attackerDb, 'players', 'private-player'), {
+    userId: 'outsider',
+    parentId: 'outsider',
+    primaryTeamId: 'attacker-team',
+    updatedByTeamId: 'attacker-team',
+  }, { merge: true }));
+  await assertFails(setDoc(doc(attackerDb, 'players', 'private-player', 'medicalNotes', 'forged'), {
+    note: 'exfiltrate',
+    updatedByTeamId: 'attacker-team',
+  }));
+  await assertFails(deleteDoc(doc(attackerDb, 'players', 'private-player')));
+});
+
+test('client player edits cannot forge the server-owned youth identity binding', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'players', 'parent-child'), {
+      id: 'parent-child', parentId: 'member', userId: '', guardianIds: [], name: 'Child',
+    });
+  });
+  const parentDb = authenticatedDb('member');
+  await assertSucceeds(setDoc(doc(parentDb, 'players', 'parent-child'), { name: 'Updated child' }, { merge: true }));
+  await assertFails(setDoc(doc(parentDb, 'players', 'parent-child'), { userId: 'youth' }, { merge: true }));
+  await assertFails(setDoc(doc(parentDb, 'players', 'parent-child'), { parentId: 'different-parent' }, { merge: true }));
+  await assertFails(setDoc(doc(parentDb, 'players', 'parent-child'), { guardianIds: ['outsider'] }, { merge: true }));
+  await assertFails(setDoc(doc(parentDb, 'players', 'forged-child'), {
+    id: 'forged-child', parentId: 'member', userId: 'youth', guardianIds: [],
+  }));
+});
+
+test('a removed staff record cannot retain staff write authority', async () => {
+  const ownerDb = authenticatedDb('owner');
+  await setDoc(doc(ownerDb, 'teams', 'team-a', 'members', 'removed'), {
+    userId: 'staff',
+    role: 'Admin',
+    position: 'Head Coach',
+    status: 'removed',
+  });
+
+  await setDoc(doc(ownerDb, 'teams', 'team-a', 'members', 'staff'), {
+    userId: 'staff',
+    role: 'Admin',
+    position: 'Head Coach',
+    status: 'removed',
+  });
+  await assertFails(setDoc(doc(authenticatedDb('staff'), 'teams', 'team-a', 'drills', 'removed-forged'), {
+    title: 'forged',
+  }));
+});
+
+test('profiles cannot self-assign a linked player authority record', async () => {
+  await assertFails(setDoc(doc(authenticatedDb('outsider'), 'users', 'new-attacker'), {
+    role: 'coach',
+    linkedPlayerId: 'removed',
+  }));
+});
+
+test('unverified, suspended, and deletion-pending accounts cannot retain tenant access', async () => {
+  const unverifiedDb = testEnv.authenticatedContext('member', {
+    email_verified: false,
+  }).firestore();
+  const suspendedDb = authenticatedDb('suspended');
+  const pendingDeleteDb = authenticatedDb('pending-delete');
+
+  await assertFails(getDoc(doc(unverifiedDb, 'teams', 'team-a')));
+  await assertFails(getDoc(doc(suspendedDb, 'teams', 'team-a')));
+  await assertFails(getDoc(doc(pendingDeleteDb, 'teams', 'team-a')));
+});
+
+test('members cannot create or promote their own team membership', async () => {
+  const memberDb = authenticatedDb('member');
+  const ownerDb = authenticatedDb('owner');
+
+  await assertFails(setDoc(doc(memberDb, 'teams', 'team-a', 'members', 'member'), {
+    userId: 'member',
+    role: 'Owner',
+  }));
+  await assertSucceeds(setDoc(doc(ownerDb, 'teams', 'team-a', 'members', 'member-2'), {
+    userId: 'member-2',
+    ownerUserId: 'owner',
+    teamId: 'team-a',
+  }));
+});
+
+test('delegated staff can run team operations without changing authority or billing', async () => {
+  const staffDb = authenticatedDb('staff');
+
+  await assertSucceeds(setDoc(doc(staffDb, 'teams', 'team-a', 'events', 'practice-a'), {
+    eventType: 'practice',
+    title: 'Staff practice',
+  }));
+  await assertSucceeds(setDoc(doc(staffDb, 'teams', 'team-a', 'drills', 'drill-a'), {
+    title: 'Passing',
+  }));
+  await assertSucceeds(setDoc(doc(staffDb, 'teams', 'team-a', 'members', 'player-a'), {
+    userId: 'player-a',
+    role: 'Member',
+    position: 'Player',
+    name: 'New Player',
+  }));
+  await assertSucceeds(setDoc(
+    doc(staffDb, 'teams', 'team-a', 'members', 'member'),
+    { name: 'Updated member', role: 'Member', position: 'Parent', userId: 'member', ownerUserId: 'owner', teamId: 'team-a' },
+  ));
+  await assertSucceeds(setDoc(
+    doc(staffDb, 'teams', 'team-a'),
+    { parentChatEnabled: true },
+    { merge: true },
+  ));
+
+  await assertFails(setDoc(doc(staffDb, 'teams', 'team-a', 'members', 'promoted'), {
+    userId: 'promoted',
+    role: 'Admin',
+    position: 'Head Coach',
+  }));
+  await assertFails(setDoc(
+    doc(staffDb, 'teams', 'team-a', 'members', 'member'),
+    { role: 'Admin', position: 'Head Coach' },
+    { merge: true },
+  ));
+  await assertFails(deleteDoc(doc(staffDb, 'teams', 'team-a', 'members', 'owner')));
+  await assertFails(setDoc(
+    doc(staffDb, 'teams', 'team-a'),
+    { planId: 'school', isPro: true },
+    { merge: true },
+  ));
+});
+
+test('published league and tournament schedules are server-owned', async () => {
+  const ownerDb = authenticatedDb('owner');
+  const staffDb = authenticatedDb('staff');
+
+  await assertFails(setDoc(doc(ownerDb, 'leagues', 'league-a'), {
+    schedule: [{ id: 'forged-game', date: '2026-09-01' }],
+  }, { merge: true }));
+  await assertFails(setDoc(doc(ownerDb, 'leagues', 'league-a'), {
+    name: 'Updated League Name',
+  }, { merge: true }));
+  await assertFails(setDoc(doc(ownerDb, 'leagues', 'scheduled-league'), {
+    schedulerConfig: {
+      startDate: '2026-10-01',
+      endDate: '2026-10-31',
+      startTime: '18:00',
+      endTime: '21:00',
+    },
+  }, { merge: true }));
+
+  await assertFails(setDoc(doc(staffDb, 'teams', 'team-a', 'events', 'timed-bypass'), {
+    title: 'Conflicting practice',
+    date: '2026-09-01',
+    startTime: '18:00',
+    location: 'Main Field',
+  }));
+  await assertFails(setDoc(doc(staffDb, 'teams', 'team-a', 'events', 'tournament-shell'), {
+    title: 'Tournament shell',
+    isTournament: true,
+    tournamentGames: [],
+  }));
+  await assertFails(setDoc(doc(staffDb, 'teams', 'team-a', 'events', 'tournament-shell'), {
+    date: '2026-09-01',
+    startTime: '18:00',
+    location: 'Main Field',
+  }, { merge: true }));
+
+  await assertFails(setDoc(doc(staffDb, 'teams', 'team-a', 'events', 'event-a'), {
+    tournamentGames: [{ id: 'forged-bracket-game' }],
+  }, { merge: true }));
+  await assertFails(setDoc(doc(staffDb, 'teams', 'team-a', 'events', 'event-a'), {
+    date: '2026-09-02',
+  }, { merge: true }));
+  await assertFails(setDoc(doc(staffDb, 'teams', 'team-a', 'events', 'event-a'), {
+    selectedFields: ['facility-b:other'],
+  }, { merge: true }));
+  await assertSucceeds(setDoc(doc(staffDb, 'teams', 'team-a', 'events', 'event-a'), {
+    title: 'Updated Tournament Title',
+  }, { merge: true }));
+});
+
+test('unsupported root tournament hubs cannot bypass team-scoped tournament controls', async () => {
+  const ownerDb = authenticatedDb('owner');
+  await assertFails(setDoc(doc(ownerDb, 'tournaments', 'forged-hub'), {
+    creatorId: 'owner',
+    memberUserIds: ['owner'],
+  }));
+});
+
+test('team chat messages are server-authored and cannot be impersonated by clients', async () => {
+  const memberDb = authenticatedDb('member');
+  const uninvitedYouthDb = authenticatedDb('youth');
+
+  await assertFails(setDoc(
+    doc(memberDb, 'teams', 'team-a', 'groupChats', 'chat-a', 'messages', 'self-message'),
+    { authorId: 'member', text: 'hello' },
+  ));
+  await assertFails(setDoc(
+    doc(memberDb, 'teams', 'team-a', 'groupChats', 'chat-a', 'messages', 'forged-message'),
+    { authorId: 'owner', text: 'forged' },
+  ));
+  await assertFails(getDoc(doc(
+    uninvitedYouthDb,
+    'teams',
+    'team-a',
+    'groupChats',
+    'chat-a',
+  )));
+  await assertFails(getDoc(doc(
+    uninvitedYouthDb,
+    'teams',
+    'team-a',
+    'groupChats',
+    'chat-a',
+    'messages',
+    'existing',
+  )));
+});
+
+test('parents and players cannot read staff-only channels or their messages', async () => {
+  for (const uid of ['member', 'youth']) {
+    const db = authenticatedDb(uid);
+    await assertFails(getDoc(doc(db, 'teams', 'team-a', 'groupChats', 'staff-chat')));
+    await assertFails(getDoc(doc(db, 'teams', 'team-a', 'groupChats', 'staff-chat', 'messages', 'staff-message')));
+  }
+});
+
+test('deleted and module-disabled chats revoke channel and message reads', async () => {
+  const ownerDb = authenticatedDb('owner');
+  const memberDb = authenticatedDb('member');
+  for (const db of [ownerDb, memberDb]) {
+    await assertFails(getDoc(doc(db, 'teams', 'team-a', 'groupChats', 'deleted-chat')));
+    await assertFails(getDoc(doc(db, 'teams', 'team-a', 'groupChats', 'deleted-chat', 'messages', 'deleted-message')));
+  }
+
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'teams', 'team-a'), { features: { tacticalChat: false } }, { merge: true });
+  });
+  try {
+    for (const db of [ownerDb, memberDb]) {
+      await assertFails(getDoc(doc(db, 'teams', 'team-a', 'groupChats', 'chat-a')));
+      await assertFails(getDoc(doc(db, 'teams', 'team-a', 'groupChats', 'chat-a', 'messages', 'existing')));
+    }
+  } finally {
+    await testEnv.withSecurityRulesDisabled(async context => {
+      await setDoc(doc(context.firestore(), 'teams', 'team-a'), { features: { tacticalChat: true } }, { merge: true });
+    });
+  }
+});
+
+test('chat channel lifecycle cannot bypass the authenticated server policy with direct client writes', async () => {
+  const ownerDb = authenticatedDb('owner');
+  await assertFails(setDoc(doc(ownerDb, 'teams', 'team-a', 'groupChats', 'forged-chat'), {
+    createdBy: 'owner', memberIds: ['owner', 'member'],
+  }));
+  await assertFails(setDoc(doc(ownerDb, 'teams', 'team-a', 'groupChats', 'chat-a'), {
+    memberIds: ['owner', 'member', 'youth'],
+  }, { merge: true }));
+});
+
+test('active chat list query excludes deleted channels while preserving live member discovery', async () => {
+  const memberDb = authenticatedDb('member');
+  const scoped = query(
+    collection(memberDb, 'teams', 'team-a', 'groupChats'),
+    where('memberIds', 'array-contains', 'member'),
+    where('isDeleted', '==', false),
+  );
+  const result = await assertSucceeds(getDocs(scoped));
+  assert.deepEqual(result.docs.map(snapshot => snapshot.id), ['chat-a']);
+});
+
+test('server-derived remote staff membership grants only its enrolled chat scope', async () => {
+  const remoteDb = authenticatedDb('remote-staff');
+  await assertSucceeds(getDoc(doc(remoteDb, 'teams', 'team-a', 'groupChats', 'remote-chat')));
+  await assertSucceeds(getDoc(doc(remoteDb, 'teams', 'team-a', 'groupChats', 'remote-chat', 'messages', 'remote-message')));
+  await assertFails(getDoc(doc(remoteDb, 'teams', 'team-a', 'groupChats', 'chat-a')));
+});
+
+test('server-derived chat authority supports active membership documents whose id differs from the user id', async () => {
+  const legacyRemoteDb = authenticatedDb('legacy-remote-staff');
+  await assertSucceeds(getDoc(doc(legacyRemoteDb, 'teams', 'team-a', 'groupChats', 'legacy-remote-chat')));
+  await assertSucceeds(getDoc(doc(legacyRemoteDb, 'teams', 'team-a', 'groupChats', 'legacy-remote-chat', 'messages', 'legacy-remote-message')));
+  await assertFails(getDoc(doc(legacyRemoteDb, 'teams', 'team-a', 'groupChats', 'remote-chat')));
+  for (const chatId of [
+    'forged-member-authority-chat',
+    'forged-team-authority-chat',
+    'incomplete-authority-chat',
+    'removed-authority-chat',
+  ]) {
+    await assertFails(getDoc(doc(legacyRemoteDb, 'teams', 'team-a', 'groupChats', chatId)));
+  }
+});
+
+test('message authors cannot rewrite immutable message content through direct clients', async () => {
+  const message = doc(authenticatedDb('member'), 'teams', 'team-a', 'groupChats', 'chat-a', 'messages', 'member-message');
+  await assertFails(setDoc(message, { content: 'tampered', authorId: 'member' }, { merge: true }));
+});
+
+test('team waiver attestation is server-only even for otherwise authorized staff', async () => {
+  const signature = uid => ({
+    waiverDocId: 'staff-waiver', waiverTitle: 'Staff waiver', signedBy: uid,
+    signedByName: 'Signer', signedAt: new Date(), isGlobal: true,
+    isClubMaster: true, teamId: 'team-a',
+  });
+  await assertFails(setDoc(doc(authenticatedDb('member'), 'teams/team-a/coachWaiverSignatures/staff-waiver'), signature('member')));
+  await assertFails(setDoc(doc(authenticatedDb('staff'), 'teams/team-a/coachWaiverSignatures/wrong-waiver'), signature('staff')));
+  await assertFails(setDoc(doc(authenticatedDb('staff'), 'teams/team-a/coachWaiverSignatures/staff-waiver'), { ...signature('staff'), teamId: 'attacker-team' }));
+  await assertFails(setDoc(doc(authenticatedDb('staff'), 'teams/team-a/coachWaiverSignatures/staff-waiver'), signature('staff')));
+});
+
+test('server-created waiver receipts are staff-readable and client-immutable', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    await setDoc(doc(context.firestore(), 'teams/team-a/archived_waivers/receipt-v1'), {
+      id: 'receipt-v1', documentId: 'staff-waiver', version: 1,
+      textHash: 'a'.repeat(64), waiverText: 'Immutable terms', immutable: true,
+    });
+  });
+  const receipt = doc(authenticatedDb('staff'), 'teams/team-a/archived_waivers/receipt-v1');
+  await assertSucceeds(getDoc(receipt));
+  await assertFails(setDoc(receipt, { waiverText: 'Rewritten terms' }, { merge: true }));
+  await assertFails(deleteDoc(receipt));
+  await assertFails(setDoc(doc(authenticatedDb('staff'), 'teams/team-a/archived_waivers/forged'), {
+    documentId: 'staff-waiver', waiverText: 'Forged terms', immutable: true,
+  }));
+});
+
+test('participant waiver signatures are server-only for self and guardians', async () => {
+  await assertFails(setDoc(doc(authenticatedDb('member'), 'teams/team-a/members/member/signatures/staff-waiver_v1'), {
+    documentId: 'staff-waiver', version: 1, signedBy: 'member', immutable: true,
+  }));
+});
+
+test('waiver signatures and certificate projections are private to subject guardian or staff', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'teams/team-a/members/member/signatures/member-v1'), { memberId: 'member', userId: 'member', signedBy: 'member' });
+    await setDoc(doc(db, 'teams/team-a/members/child-player/signatures/child-v1'), { memberId: 'child-player', userId: 'parent-account', signedBy: 'parent-account' });
+    await setDoc(doc(db, 'teams/team-a/coachWaiverSignatures/coach-v1'), { waiverDocId: 'waiver', signedBy: 'staff' });
+    await setDoc(doc(db, 'teams/team-a/files/cert-member'), { category: 'Signed Certificate', memberId: 'member', documentId: 'waiver', version: 1 });
+    await setDoc(doc(db, 'teams/team-a/files/cert-child'), { category: 'Signed Certificate', memberId: 'child-player', documentId: 'waiver', version: 1 });
+    await setDoc(doc(db, 'teams/team-a/files/cert-removed'), { category: 'Signed Certificate', memberId: 'removed', documentId: 'waiver', version: 1 });
+    await setDoc(doc(db, 'teams/team-a/files/ordinary-file'), { category: 'Documents', name: 'Ordinary team file' });
+  });
+  await assertSucceeds(getDoc(doc(authenticatedDb('member'), 'teams/team-a/members/member/signatures/member-v1')));
+  await assertFails(getDoc(doc(authenticatedDb('member'), 'teams/team-a/members/child-player/signatures/child-v1')));
+  await assertSucceeds(getDoc(doc(authenticatedDb('parent-account'), 'teams/team-a/members/child-player/signatures/child-v1')));
+  await assertSucceeds(getDoc(doc(authenticatedDb('staff'), 'teams/team-a/members/child-player/signatures/child-v1')));
+  await assertFails(getDoc(doc(authenticatedDb('outsider'), 'teams/team-a/members/member/signatures/member-v1')));
+  await assertFails(getDoc(doc(authenticatedDb('member'), 'teams/team-a/coachWaiverSignatures/coach-v1')));
+  await assertSucceeds(getDoc(doc(authenticatedDb('staff'), 'teams/team-a/coachWaiverSignatures/coach-v1')));
+  await assertSucceeds(getDoc(doc(authenticatedDb('member'), 'teams/team-a/files/cert-member')));
+  await assertFails(getDoc(doc(authenticatedDb('member'), 'teams/team-a/files/cert-child')));
+  await assertSucceeds(getDoc(doc(authenticatedDb('parent-account'), 'teams/team-a/files/cert-child')));
+  await assertFails(getDoc(doc(authenticatedDb('member'), 'teams/team-a/files/cert-removed')));
+  await assertFails(getDoc(doc(authenticatedDb('removed'), 'teams/team-a/files/cert-removed')));
+  await assertSucceeds(getDoc(doc(authenticatedDb('staff'), 'teams/team-a/files/cert-removed')));
+  await assertSucceeds(getDoc(doc(authenticatedDb('member'), 'teams/team-a/files/ordinary-file')));
+
+  const memberDb = authenticatedDb('member');
+  await assertFails(getDocs(query(
+    collection(memberDb, 'teams/team-a/files'),
+    where('category', '==', 'Signed Certificate'),
+  )));
+  const ownCertificates = await assertSucceeds(getDocs(query(
+    collection(memberDb, 'teams/team-a/files'),
+    where('category', '==', 'Signed Certificate'),
+    where('memberId', '==', 'member'),
+  )));
+  assert.deepEqual(ownCertificates.docs.map(snapshot => snapshot.id), ['cert-member']);
+  const guardianCertificates = await assertSucceeds(getDocs(query(
+    collection(authenticatedDb('parent-account'), 'teams/team-a/files'),
+    where('category', '==', 'Signed Certificate'),
+    where('memberId', '==', 'child-player'),
+  )));
+  assert.deepEqual(guardianCertificates.docs.map(snapshot => snapshot.id), ['cert-child']);
+  const ordinaryFiles = await assertSucceeds(getDocs(query(
+    collection(memberDb, 'teams/team-a/files'),
+    where('category', 'in', ['Documents', 'Photos', 'Compliance', 'Other']),
+  )));
+  assert.deepEqual(ordinaryFiles.docs.map(snapshot => snapshot.id), ['ordinary-file']);
+});
+
+test('team alert audiences and targets are enforced by rules, not only the UI', async () => {
+  const ownerDb = authenticatedDb('owner');
+  const parentDb = authenticatedDb('member');
+
+  await assertSucceeds(getDoc(doc(ownerDb, 'teams', 'team-a', 'alerts', 'coaches-only')));
+  await assertFails(getDoc(doc(parentDb, 'teams', 'team-a', 'alerts', 'coaches-only')));
+  await assertSucceeds(getDoc(doc(parentDb, 'teams', 'team-a', 'alerts', 'parents-only')));
+  await assertFails(getDoc(doc(parentDb, 'teams', 'team-a', 'alerts', 'targeted-other')));
+});
+
+test('player records stay family-scoped even when recruiting is enabled', async () => {
+  const anonymousDb = testEnv.unauthenticatedContext().firestore();
+  const memberDb = authenticatedDb('member');
+
+  await assertFails(getDoc(doc(anonymousDb, 'players', 'private-player')));
+  await assertFails(getDoc(doc(anonymousDb, 'players', 'public-player')));
+  await assertFails(getDoc(doc(anonymousDb, 'players', 'public-player', 'contact', 'private')));
+  await assertSucceeds(getDoc(doc(memberDb, 'players', 'private-player')));
+});
+
+test('a guardian can maintain their child record and an outsider cannot', async () => {
+  const guardianDb = authenticatedDb('member');
+  const outsiderDb = authenticatedDb('outsider');
+  const playerRef = 'players/private-player';
+
+  await assertSucceeds(setDoc(doc(guardianDb, playerRef), {
+    guardianNote: 'Updated by guardian',
+  }, { merge: true }));
+  await assertFails(setDoc(doc(outsiderDb, playerRef), {
+    guardianNote: 'Forged update',
+  }, { merge: true }));
+});
+
+test('league applicant ledgers and waiver receipts are organizer-readable but server-write-only', async () => {
+  const memberDb = authenticatedDb('member');
+  const outsiderDb = authenticatedDb('outsider');
+  const ownerDb = authenticatedDb('owner');
+  await testEnv.withSecurityRulesDisabled(async context=>{const db=context.firestore();await setDoc(doc(db,'leagues','league-a','registration','team_config'),{is_active:false,title:'Private draft'});await setDoc(doc(db,'leagues','league-a','registrationEntries','private-entry'),{answers:{email:'private@example.test'},ownerUserId:'member'});await setDoc(doc(db,'leagues','league-a','archived_waivers','private-receipt'),{signer:'Applicant',waiverText:'Private terms'});});
+
+  await assertFails(getDoc(doc(memberDb, 'leagues', 'league-a')));
+  await assertFails(getDoc(doc(outsiderDb, 'leagues', 'league-a')));
+  await assertFails(getDoc(doc(memberDb,'leagues','league-a','registration','team_config')));
+  await assertFails(getDoc(doc(memberDb,'leagues','league-a','registrationEntries','private-entry')));
+  await assertFails(getDocs(collection(memberDb,'leagues','league-a','registrationEntries')));
+  await assertFails(getDoc(doc(memberDb,'leagues','league-a','archived_waivers','private-receipt')));
+  await assertSucceeds(getDoc(doc(ownerDb,'leagues','league-a','registration','team_config')));
+  await assertSucceeds(getDoc(doc(ownerDb,'leagues','league-a','registrationEntries','private-entry')));
+  await assertSucceeds(getDoc(doc(ownerDb,'leagues','league-a','archived_waivers','private-receipt')));
+  await assertFails(setDoc(doc(ownerDb,'leagues','league-a','registrationEntries','private-entry'),{verified:true},{merge:true}));
+  await assertFails(deleteDoc(doc(ownerDb,'leagues','league-a','registrationEntries','private-entry')));
+  await assertFails(setDoc(doc(ownerDb,'leagues','league-a','archived_waivers','private-receipt'),{waiverText:'changed'},{merge:true}));
+  await assertFails(deleteDoc(doc(ownerDb,'leagues','league-a','archived_waivers','private-receipt')));
+  await assertFails(setDoc(doc(outsiderDb, 'leagues', 'forged-league'), {
+    creatorId: 'outsider',
+    memberUserIds: ['outsider', 'member'],
+  }));
+});
+
+test('spectator projections allow direct links but cannot be enumerated', async () => {
+  const anonymousDb = testEnv.unauthenticatedContext().firestore();
+
+  await assertFails(getDoc(doc(anonymousDb, 'publicLeagueViews', 'league-a')));
+  await assertFails(getDocs(collection(anonymousDb, 'publicLeagueViews')));
+});
+
+test('facilities and subscriptions remain owner-scoped and server-controlled', async () => {
+  const ownerDb = authenticatedDb('owner');
+  const outsiderDb = authenticatedDb('outsider');
+
+  await assertSucceeds(getDoc(doc(ownerDb, 'facilities', 'facility-a')));
+  await assertFails(getDoc(doc(outsiderDb, 'facilities', 'facility-a')));
+  await assertSucceeds(setDoc(
+    doc(ownerDb, 'facilities', 'facility-a'),
+    { clubId: 'owner', name: 'Updated Venue' },
+  ));
+  await assertFails(deleteDoc(doc(ownerDb, 'facilities', 'facility-a')));
+
+  await assertSucceeds(getDoc(doc(ownerDb, 'subscriptions', 'subscription-a')));
+  await assertFails(getDoc(doc(outsiderDb, 'subscriptions', 'subscription-a')));
+  await assertFails(setDoc(doc(ownerDb, 'subscriptions', 'subscription-a'), {
+    userId: 'owner',
+    status: 'active',
+  }));
+});
+
+test('demo facility namespaces cannot be preclaimed while ordinary facilities remain writable', async () => {
+  const outsiderDb = authenticatedDb('outsider');
+  for (const prefix of ['fac_main_', 'fac_secondary_']) {
+    for (const isDemo of [true, false]) {
+      const facilityId = `${prefix}cf6ee6fe230ff5643bc9104c`;
+      await assertFails(setDoc(doc(outsiderDb, 'facilities', facilityId), {
+        clubId: 'outsider', name: 'Preclaimed victim venue', isDemo,
+      }));
+      await assertFails(setDoc(doc(outsiderDb, 'facilities', facilityId, 'fields', 'preclaimed'), {
+        facilityId, name: 'Preclaimed field',
+      }));
+    }
+  }
+  await assertFails(setDoc(doc(outsiderDb, 'facilities', 'custom-demo'), { clubId: 'outsider', isDemo: true }));
+  await assertSucceeds(setDoc(doc(outsiderDb, 'facilities', 'ordinary-venue'), { clubId: 'outsider', name: 'Training Centre' }));
+  await assertSucceeds(setDoc(doc(outsiderDb, 'facilities', 'ordinary-venue', 'fields', 'court-a'), { facilityId: 'ordinary-venue', name: 'Court A' }));
+});
+
+test('club billing metadata and legacy global alerts are not cross-account readable', async () => {
+  const ownerDb = authenticatedDb('owner');
+  const outsiderDb = authenticatedDb('outsider');
+
+  await assertSucceeds(getDoc(doc(ownerDb, 'clubs', 'club-a')));
+  await assertFails(getDoc(doc(outsiderDb, 'clubs', 'club-a')));
+  await assertFails(getDoc(doc(ownerDb, 'alerts', 'legacy-global')));
+});
+
+test('league collection queries cannot discover other organizations', async () => {
+  const memberDb = authenticatedDb('member');
+  const ownerDb = authenticatedDb('owner');
+  const staffDb = authenticatedDb('staff');
+  const outsiderDb = authenticatedDb('outsider');
+
+  await assertFails(getDocs(query(
+    collection(memberDb, 'leagues'),
+    where('memberUserIds', 'array-contains', 'member'),
+    where('sensitiveFieldsMigrated', '==', true),
+  )));
+  for (const organizerDb of [ownerDb, staffDb]) {
+    await assertSucceeds(getDocs(query(
+      collection(organizerDb, 'leagues'),
+      where('tenantId', '==', 'team-a'),
+    )));
+  }
+  await assertFails(getDocs(query(collection(memberDb, 'leagues'), where('tenantId', '==', 'team-a'))));
+  await assertFails(getDocs(collection(outsiderDb, 'leagues')));
+});
+
+test('newsletter consent and campaign records are server-controlled and superadmin-only', async () => {
+  const anonymousDb = testEnv.unauthenticatedContext().firestore();
+  const outsiderDb = authenticatedDb('outsider');
+  const superAdminDb = authenticatedDb('global-admin', { role: 'superadmin' });
+
+  await assertFails(setDoc(doc(anonymousDb, 'newsletter_signups', 'spam'), {
+    email: 'spam@example.com',
+  }));
+  await assertFails(getDoc(doc(outsiderDb, 'newsletter_subscribers', 'subscriber-a')));
+  await assertSucceeds(getDoc(doc(superAdminDb, 'newsletter_subscribers', 'subscriber-a')));
+  await assertSucceeds(getDoc(doc(superAdminDb, 'newsletter_campaigns', 'campaign-a')));
+  await assertFails(getDoc(doc(outsiderDb, 'newsletter_webhook_events', 'webhook-a')));
+  await assertFails(getDoc(doc(outsiderDb, 'newsletter_email_events', 'email-event-a')));
+  await assertSucceeds(getDoc(doc(superAdminDb, 'newsletter_webhook_events', 'webhook-a')));
+  await assertSucceeds(getDoc(doc(superAdminDb, 'newsletter_email_events', 'email-event-a')));
+  await assertFails(setDoc(doc(superAdminDb, 'newsletter_campaigns', 'forged-campaign'), {
+    status: 'sent',
+  }));
+  await assertFails(setDoc(doc(superAdminDb, 'newsletter_webhook_events', 'forged-event'), {
+    status: 'completed',
+  }));
+});
+
+test('contact inquiries are server-written and superadmin-readable only', async () => {
+  const anonymousDb = testEnv.unauthenticatedContext().firestore();
+  const outsiderDb = authenticatedDb('outsider');
+  const superAdminDb = authenticatedDb('global-admin', { role: 'superadmin' });
+
+  await assertFails(setDoc(doc(anonymousDb, 'contact_inquiries', 'forged'), {
+    email: 'visitor@example.com',
+    inquiry: 'Forged inquiry',
+  }));
+  await assertFails(getDoc(doc(outsiderDb, 'contact_inquiries', 'inquiry-a')));
+  await assertSucceeds(getDoc(doc(superAdminDb, 'contact_inquiries', 'inquiry-a')));
+  await assertFails(setDoc(doc(superAdminDb, 'contact_inquiries', 'inquiry-a'), {
+    deliveryStatus: 'sent',
+  }));
+});
+
+test('Sports Hub drafts, feeds, and subscriber data remain protected', async () => {
+  const anonymousDb = testEnv.unauthenticatedContext().firestore();
+  const outsiderDb = authenticatedDb('outsider');
+  const superAdminDb = authenticatedDb('global-admin', { role: 'superadmin' });
+
+  await assertFails(getDoc(doc(anonymousDb, 'sports_hub_articles', 'published-a')));
+  await assertFails(getDoc(doc(anonymousDb, 'sports_hub_articles', 'draft-a')));
+  await assertSucceeds(getDoc(doc(superAdminDb, 'sports_hub_articles', 'draft-a')));
+  await assertFails(setDoc(doc(outsiderDb, 'sports_hub_articles', 'forged'), {
+    title: 'Forged article',
+    isDraft: false,
+  }));
+  await assertFails(getDoc(doc(outsiderDb, 'sports_hub_rss_feeds', 'feed-a')));
+  await assertSucceeds(getDoc(doc(superAdminDb, 'sports_hub_rss_feeds', 'feed-a')));
+  await assertFails(getDoc(doc(outsiderDb, 'sports_hub_newsletter_subscribers', 'hub-subscriber-a')));
+  await assertSucceeds(getDoc(doc(superAdminDb, 'sports_hub_newsletter_subscribers', 'hub-subscriber-a')));
+});
+
+test('block lists are owner-readable only and all safety writes require the server', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'userSafety/member/blocks/owner'), { authorId: 'owner' });
+    await setDoc(doc(db, 'moderationReports/report'), { reporterId: 'member', status: 'pending' });
+  });
+  const member = testEnv.authenticatedContext('member', { email_verified: true }).firestore();
+  const outsider = testEnv.authenticatedContext('outsider', { email_verified: true }).firestore();
+  await assertSucceeds(getDoc(doc(member, 'userSafety/member/blocks/owner')));
+  await assertFails(getDoc(doc(outsider, 'userSafety/member/blocks/owner')));
+  await assertFails(setDoc(doc(member, 'userSafety/member/blocks/outsider'), { authorId: 'outsider' }));
+  await assertFails(deleteDoc(doc(member, 'userSafety/member/blocks/owner')));
+  await assertFails(getDoc(doc(member, 'moderationReports/report')));
+  await assertFails(setDoc(doc(member, 'moderationReports/new'), { status: 'pending' }));
+});
+
+test('feed clients cannot bypass server blocking or read comments after a moderated post is removed', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'teams/team-a/feedPosts/post'), { authorId: 'owner', content: 'Test' });
+    await setDoc(doc(db, 'teams/team-a/feedPosts/post/comments/comment'), { authorId: 'member', content: 'Reply' });
+  });
+  const owner = testEnv.authenticatedContext('owner', { email_verified: true }).firestore();
+  const member = testEnv.authenticatedContext('member', { email_verified: true }).firestore();
+  await assertFails(getDoc(doc(member, 'teams/team-a/feedPosts/post/comments/comment')));
+  await assertFails(setDoc(doc(owner, 'teams/team-a/feedPosts/post/comments/new'), { authorId: 'owner', content: 'Bypass' }));
+  await assertFails(setDoc(doc(owner, 'teams/team-a/feedPosts/new'), { authorId: 'owner', content: 'Bypass' }));
+  await testEnv.withSecurityRulesDisabled(context => deleteDoc(doc(context.firestore(), 'teams/team-a/feedPosts/post')));
+  await assertFails(getDoc(doc(member, 'teams/team-a/feedPosts/post/comments/comment')));
+});
+
+test('versioned tournament documents cannot bypass the validated workspace',async()=>{
+ await testEnv.withSecurityRulesDisabled(async context=>{await setDoc(doc(context.firestore(),'teams/team-a/events/versioned-cup'),{isTournament:true,eventType:'tournament',title:'Versioned Cup',competition:{version:2,revision:1,status:'draft'},tournamentGames:[]});});
+ const owner=authenticatedDb('owner');
+ await assertFails(setDoc(doc(owner,'teams/team-a/events/forged-workspace'),{title:'Forged',competition:{version:2,status:'published'}}));
+ await assertFails(setDoc(doc(owner,'teams/team-a/events/versioned-cup'),{competition:{version:2,revision:2,status:'published'}},{merge:true}));
+ await assertFails(setDoc(doc(owner,'teams/team-a/events/versioned-cup'),{location:'An overlapping field'},{merge:true}));
+});

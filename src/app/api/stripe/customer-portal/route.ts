@@ -1,0 +1,74 @@
+import { managedPortalAccess } from '@/lib/stripe-managed-checkout';
+import { NextRequest, NextResponse } from 'next/server';
+import { adminDb } from '@/lib/firebase-admin';
+import { getStripe } from '@/lib/stripe-client';
+import { verifyFirebaseToken, assertOwner } from '@/lib/api-auth';
+import { resolvePortalCustomerId } from '@/lib/stripe-portal-customer';
+import {
+  enforceUserRateLimit,
+  getTrustedAppOrigin,
+  readJsonBodyWithLimit,
+  RequestBodyError,
+} from '@/lib/server-request-guards';
+import { storePurchaseResponse } from '@/lib/store-request-guard';
+
+export async function POST(req: NextRequest) {
+  const blocked = storePurchaseResponse();
+  if (blocked) return blocked;
+  const auth = await verifyFirebaseToken(req);
+  if (auth instanceof NextResponse) return auth;
+
+  try {
+    const limited = await enforceUserRateLimit(auth.uid, 'stripe-customer-portal', 30, 60 * 60 * 1000);
+    if (limited) return limited;
+    const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 4_000);
+    const userId = body.userId;
+    const purpose = body.purpose;
+    if (purpose !== undefined && purpose !== 'payment_method_update') return NextResponse.json({ error: 'Invalid portal purpose' }, { status: 400 });
+
+    if (typeof userId !== 'string' || !userId) return NextResponse.json({ error: 'Missing userId' }, { status: 400 });
+
+    const ownerCheck = assertOwner(auth, userId);
+    if (ownerCheck) return ownerCheck;
+
+    const stripe = getStripe();
+    const userSnap = await adminDb.collection('users').doc(userId).get();
+
+    if (!userSnap.exists) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    const userData = userSnap.data()!;
+    const stripeCustomerId = await resolvePortalCustomerId(stripe, userId, userData);
+
+    if (!stripeCustomerId) {
+      return NextResponse.json({
+        error: 'We could not link this subscription to Stripe. Please refresh billing or contact support.',
+      }, { status: 409 });
+    }
+
+    let configuration: string | undefined;
+    if (userData.stripe_subscription_id) {
+      const subscription = await stripe.subscriptions.retrieve(userData.stripe_subscription_id);
+      const access = await managedPortalAccess(stripe, subscription);
+      configuration = access.configuration;
+      if (purpose === 'payment_method_update' ? !access.paymentMethodUpdateAllowed : !access.portalAllowed) {
+        return NextResponse.json({ error: 'This portal action is unavailable. You can still cancel from billing.' }, { status: 409 });
+      }
+    }
+    const origin = getTrustedAppOrigin(req);
+
+    const portalSession = await stripe.billingPortal.sessions.create({
+      customer: stripeCustomerId,
+      ...(configuration ? { configuration } : {}),
+      ...(purpose === 'payment_method_update' ? { flow_data: { type: 'payment_method_update' as const, after_completion: { type: 'redirect' as const, redirect: { return_url: `${origin}/dashboard/billing` } } } } : {}),
+      return_url: `${origin}/dashboard/billing`,
+    });
+
+    return NextResponse.json({ url: portalSession.url });
+  } catch (err: any) {
+    if (err instanceof RequestBodyError) return NextResponse.json({ error: err.message }, { status: err.status });
+    console.error('[stripe/customer-portal] Error:', err.message);
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}

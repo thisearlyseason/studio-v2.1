@@ -1,0 +1,70 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import {EventEmitter} from 'node:events';
+import * as practice from '../scripts/qa/certification/local/practice-browser.mjs';
+
+test('Practice browser receipts retain request-start case ownership, actual status, and no private body/query',()=>{
+  const page=new EventEmitter();
+  const observer=practice.createPracticeBrowserObserver(page,{baseUrl:'http://127.0.0.1:3100',prefix:'plan'});
+  observer.start(['plan-create-edit']);
+  const request={url:()=> 'http://127.0.0.1:8080/google.firestore.v1.Firestore/Write/channel?SID=private',method:()=> 'POST',postData:()=> 'req0___data__='+encodeURIComponent(JSON.stringify({writes:[{update:{name:'private'}}]}))};
+  page.emit('request',request);
+  observer.start(['plan-assign']);
+  page.emit('response',{request:()=>request,url:request.url,status:()=>200});
+  const unrelated={url:()=> 'https://example.com/private',method:()=> 'GET'};
+  page.emit('request',unrelated);page.emit('response',{request:()=>unrelated,url:unrelated.url,status:()=>200});
+  const result=observer.finish();
+  assert.deepEqual(result.observedResponses.map(r=>r.tag),['plan-create-edit','plan-console','plan-network']);
+  assert.ok(result.observedResponses.every(r=>r.method==='POST'&&r.status===200&&r.pathname==='/google.firestore.v1.Firestore/Write/channel'));
+  assert.ok(!JSON.stringify(result).includes('private'));
+  assert.equal(page.listenerCount('response'),0);
+});
+
+test('Practice excludes Write-channel handshakes that contain no application writes',()=>{
+  const page=new EventEmitter();const observer=practice.createPracticeBrowserObserver(page,{baseUrl:'http://127.0.0.1:3100',prefix:'plan'});observer.start(['plan-create-edit']);
+  const request={url:()=> 'http://127.0.0.1:8080/google.firestore.v1.Firestore/Write/channel',method:()=> 'POST',postData:()=> 'req0___data__='+encodeURIComponent(JSON.stringify({database:'private'}))};
+  page.emit('request',request);page.emit('response',{request:()=>request,url:request.url,status:()=>200});
+  assert.deepEqual(observer.finish().observedResponses,[]);
+});
+
+test('Practice response evidence rejects missing actual mutation transport and absent case captures',()=>{
+  const nav={tag:'plan-create-edit',method:'GET',pathname:'/practice',status:200};
+  assert.throws(()=>practice.requirePracticeResponses([nav],'plan-create-edit',{mutation:true}),/mutation/);
+  assert.throws(()=>practice.requirePracticeResponses([nav],'plan-assign'),/capture/);
+  const write={...nav,method:'POST',pathname:'/google.firestore.v1.Firestore/Write/channel'};
+  assert.equal(practice.requirePracticeResponses([nav,write],'plan-create-edit',{mutation:true}).length,2);
+});
+
+test('Practice layout rejects omitted desktop measurements and out-of-bounds relevant controls',()=>{
+  const row=(width,height)=>({viewport:{width,height},pageWidth:width,boxes:{dialog:{x:0,y:0,width:width-1,height:height-1},control:{x:5,y:5,width:20,height:20}}});
+  assert.throws(()=>practice.validatePracticeBounds([row(390,844)]),/both/);
+  const rows=[row(1440,900),row(390,844)];assert.equal(practice.validatePracticeBounds(rows),true);
+  rows[0].boxes.control.x=1440;assert.throws(()=>practice.validatePracticeBounds(rows),/bounds/);
+});
+
+test('Practice unused delete drains the aria-hiding overlay before locating any page role',async()=>{
+  let covered=true,deleted=false;
+  const page={getByRole(role,{name}){
+    if(role==='heading'){assert.equal(name,'Unused');return{async waitFor({state}){assert.equal(covered,false,'active modal removes page heading from the accessibility tree');if(state==='detached')assert.equal(deleted,true);}};}
+    assert.equal(name,'Delete Unused');return{async click(){assert.equal(covered,false,'active alert blocks visible delete');deleted=true;}};
+  },getByText(){return{async waitFor(){assert.equal(deleted,true);}};}};
+  assert.equal(await practice.deleteUnusedPracticeTemplate(page,'Unused',async()=>{covered=false;}),true);
+});
+
+test('Drill reorder waits for the supported write acknowledgement before navigation can discard responses',async()=>{
+  let saved=false;
+  const page={getByRole(){return{async click(){}};},getByText(text){assert.equal(text,'Playbook Reordered');return{async waitFor(){saved=true;}};},async reload(){assert.equal(saved,true,'reload must follow write acknowledgement');}};
+  await practice.reorderPracticeDrill(page,'Bravo');
+});
+
+test('Drill deletion response wait accepts only the actual exact document delete, not handshakes or other writes',async()=>{
+  let predicate;
+  const page={waitForResponse(check,options){predicate=check;assert.equal(options.timeout,10000);return Promise.resolve({status:()=>200});}};
+  await practice.waitForPracticeDeleteResponse(page,'owned');
+  const response=(writes,method='POST',origin='http://127.0.0.1:8080')=>({url:()=>origin+'/google.firestore.v1.Firestore/Write/channel?private=secret',request:()=>({method:()=>method,postData:()=> 'req0___data__='+encodeURIComponent(JSON.stringify({writes}))})});
+  assert.equal(predicate(response([{delete:'projects/demo/databases/(default)/documents/teams/a/drills/owned'}])),true);
+  assert.equal(predicate(response([{delete:'projects/demo/databases/(default)/documents/teams/a/drills/other'}])),false);
+  assert.equal(predicate(response([{update:{name:'projects/demo/databases/(default)/documents/teams/a/drills/owned'}}])),false);
+  assert.equal(predicate(response([])),false);
+  assert.equal(predicate(response([{delete:'teams/a/drills/owned'}],'POST','https://example.com')),false);
+});

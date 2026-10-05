@@ -1,0 +1,190 @@
+import assert from 'node:assert/strict';
+import { readFile } from 'node:fs/promises';
+import test from 'node:test';
+
+const readSource = path => readFile(new URL(path, import.meta.url), 'utf8');
+
+test('Schedule includes finalized games from the scorekeeping ledger', async () => {
+  const schedule = await readSource('../src/app/(dashboard)/calendar/page.tsx');
+
+  assert.match(schedule, /collection\(db, 'teams', activeTeam\.id, 'games'\)/);
+  assert.match(schedule, /recorded_game_/);
+  assert.match(schedule, /isCompleted: true/);
+  assert.match(schedule, /Final: \$\{activeTeam\?\.teamName/);
+});
+
+test('league enrollment moves from dashboard to Settings after joining', async () => {
+  const dashboard = await readSource('../src/app/(dashboard)/dashboard/page.tsx');
+  const settings = await readSource('../src/app/(dashboard)/settings/page.tsx');
+
+  assert.match(dashboard, /!hasLeagueMembership && \(/);
+  assert.match(settings, /hasLeagueMembership && \(/);
+  assert.match(settings, /href="\/teams\/join"/);
+  assert.match(settings, /League Membership/);
+});
+
+test('equipment inventory tracks optional sub-item stock and jersey sizes', async () => {
+  const equipment = await readSource('../src/app/(dashboard)/equipment/page.tsx');
+  const provider = await readSource('../src/components/providers/team-provider.tsx');
+
+  assert.match(equipment, /SizeStockEditor/);
+  assert.match(equipment, /Jersey sizes and stock/);
+  assert.match(equipment, /Stock sub-items/);
+  assert.match(equipment, /size, colour, type, or model/);
+  assert.match(equipment, /Object\.values\(buildSizeStock\(sizeRows\)\)/);
+  assert.match(equipment, /effectiveSizeStock/);
+  assert.match(equipment, /assignedForSize/);
+  assert.match(equipment, /Choose size\.\.\./);
+  assert.match(equipment, /\{available\} available/);
+  assert.match(equipment, /category === 'Uniforms'/);
+  assert.match(provider, /sizeStock\?: Record<string, number>/);
+  assert.match(provider, /details\?: \{ size\?: string; jerseyNumber\?: string \}/);
+  assert.match(provider, /jerseyNumber\?: string/);
+  assert.match(provider, /runTransaction\(db/);
+  assert.match(provider, /assignedForSize \+ q/);
+  assert.match(provider, /Select an available stock sub-item/);
+  assert.match(provider, /size: details\?\.size/);
+  assert.match(provider, /jerseyNumber: details\?\.jerseyNumber/);
+});
+
+test('assigned equipment cannot be deleted until it is returned', async () => {
+  const provider = await readSource('../src/components/providers/team-provider.tsx');
+  const equipment = await readSource('../src/app/(dashboard)/equipment/page.tsx');
+  assert.match(provider, /Cannot delete equipment while it is assigned/);
+  assert.match(provider, /transaction\.delete\(equipmentRef\)/);
+  assert.match(equipment, /Asset Still Assigned/);
+});
+
+test('competition queries avoid fragile OR filters and isolate tab failures', async () => {
+  const [leagues, competition, scoring] = await Promise.all([
+    readSource('../src/app/(dashboard)/leagues/leagues-page-content.tsx'),
+    readSource('../src/app/(dashboard)/competition/page.tsx'),
+    readSource('../src/app/api/leagues/scoring/route.ts'),
+  ]);
+
+  assert.doesNotMatch(leagues, /\bor\(/);
+  assert.match(leagues, /ownedLeaguesQuery/);
+  assert.match(leagues, /fetch\('\/api\/leagues\/scoring\?purpose=member&teamId='/);
+  assert.match(scoring, /where\('memberTeamIds', 'array-contains', teamId\)/);
+  assert.match(scoring, /isActiveCompetitionTeam\(team\.data\(\)\)/);
+  assert.match(competition, /CompetitionSectionErrorBoundary/);
+  assert.match(competition, /activeTab === 'leagues'/);
+});
+
+test('tournament logos accept and optimize common image formats with one close control', async () => {
+  const tournaments = await readSource(
+    '../src/app/(dashboard)/manage-tournaments/manage-tournaments-page-content.tsx'
+  );
+  const logoDialog = tournaments.slice(
+    tournaments.indexOf('{/* Logo Edit Dialog */'),
+    tournaments.indexOf('<TabsContent value="itinerary"')
+  );
+
+  assert.match(logoDialog, /accept="image\/jpeg,image\/png,image\/webp"/);
+  assert.match(tournaments, /compressImage\(raw, 480, 480, 0\.78\)/);
+  assert.equal((logoDialog.match(/<DialogClose/g) || []).length, 0);
+});
+
+test('fundraising uses connected Stripe and webhook idempotency instead of arbitrary URLs', async () => {
+  const fundraising = await readSource('../src/app/(dashboard)/fundraising/page.tsx');
+  const linkRoute = await readSource('../src/app/api/stripe/fundraising-link/route.ts');
+  const webhook = await readSource('../src/app/api/stripe/connect/webhook/route.ts');
+
+  assert.match(fundraising, /<StripeConnectSetup/);
+  assert.match(fundraising, /fetch\('\/api\/stripe\/fundraising-link'/);
+  assert.doesNotMatch(fundraising, /Stripe, PayPal, Venmo URL/);
+  assert.match(linkRoute, /payment_intent_data/);
+  assert.match(linkRoute, /externalLink: paymentLink\.url/);
+  assert.match(webhook, /recordFundraisingDonation/);
+  assert.match(webhook, /runTransaction/);
+  assert.match(webhook, /stripe_\$\{paymentIntentId\}/);
+  assert.match(webhook, /FieldValue\.increment\(\(refund\.net_amount - previousNet\) \/ 100\)/);
+});
+
+test('terms match the current USD checkout contract without stale hardcoded prices', async () => {
+  const terms = await readSource('../src/app/terms/page.tsx');
+
+  assert.match(terms, /prices are presented and billed in <strong>US dollars \(USD\)<\/strong>/);
+  assert.match(terms, /Stripe checkout summary presented before purchase controls/);
+  assert.doesNotMatch(terms, /\$12\.99 USD/);
+  assert.doesNotMatch(terms, /\$23\.99 USD/);
+});
+
+test('staging deployment fails closed when App Hosting is linked to another repository', async () => {
+  const appHosting = await readSource('../apphosting.yaml');
+  const ciWorkflow = await readSource('../.github/workflows/ci.yml');
+  const workflow = await readSource('../.github/workflows/deploy-staging.yml');
+  const runbook = await readSource('../docs/release-runbook.md');
+  const firebaseProjects = JSON.parse(await readSource('../.firebaserc'));
+
+  assert.match(workflow, /apphosting:backends:get/);
+  assert.match(workflow, /App Hosting backend is linked to/);
+  assert.match(workflow, /configured\.origin !== canonical\.origin/);
+  assert.ok(workflow.includes('const expectedLink = repository.replace('));
+  assert.ok(workflow.includes('/gitRepositoryLinks/${expectedLink}'));
+  assert.match(runbook, /linked to this repository \(`thisearlyseason\/studio-v2\.1`\)/);
+  assert.match(runbook, /legacy `thisearlyseason\/studio`/);
+  assert.match(runbook, /GitHub account `thisearlyseason`/);
+  assert.match(runbook, /Stripe test-mode products and webhooks/);
+  assert.equal(firebaseProjects.projects.staging, 'the-squad-v2-staging');
+  assert.doesNotMatch(`${ciWorkflow}\n${workflow}`, /actions\/(?:checkout|setup-node)@v4/);
+  assert.doesNotMatch(`${ciWorkflow}\n${workflow}`, /actions\/setup-java@v4/);
+  assert.match(workflow, /google-github-actions\/auth@v3/);
+  assert.match(appHosting, /NEXT_PUBLIC_FIREBASE_WEBAPP_CONFIG/);
+  assert.match(appHosting, /the-squad-v2-staging/);
+  assert.match(appHosting, /NEXT_PUBLIC_APP_URL/);
+  assert.match(appHosting, /variable: COMPETITION_CREDENTIAL_HMAC_SECRET[\s\S]{0,120}secret: COMPETITION_CREDENTIAL_HMAC_SECRET/);
+  assert.match(appHosting, /CALENDAR_FEED_BASE_URL/);
+  assert.match(appHosting, /the-squad-v2-staging\.cloudfunctions\.net\/getCalendarFeed/);
+  assert.match(appHosting, /secret: STRIPE_SECRET_KEY/);
+  assert.match(appHosting, /secret: RESEND_API_KEY/);
+  assert.doesNotMatch(appHosting, /value:\s*(?:sk_|re_|whsec_)/);
+});
+
+test('production configuration has no external AI provider dependency', async () => {
+  const envCheck = await readSource('../scripts/check-production-env.mjs');
+  const coachesCorner = await readSource('../src/app/(dashboard)/coaches-corner/page.tsx');
+  const chat = await readSource('../src/app/(dashboard)/chats/[chatId]/page.tsx');
+  const landing = await readSource('../src/app/page.tsx');
+  const guide = await readSource('../src/app/how-to/page.tsx');
+  const packageJson = JSON.parse(await readSource('../package.json'));
+  const functionsPackage = JSON.parse(await readSource('../functions/package.json'));
+
+  assert.doesNotMatch(
+    `${envCheck}\n${coachesCorner}\n${chat}`,
+    /STRAICO_API_KEY|straico|GOOGLE_AI_API_KEY|GoogleGenAI|gemini/i
+  );
+  assert.doesNotMatch(envCheck, /GOOGLE_CLIENT_ID|GOOGLE_CLIENT_SECRET|GOOGLE_REDIRECT_URI/);
+  assert.doesNotMatch(coachesCorner, /AI Reel Tool/);
+  assert.doesNotMatch(chat, /suggestPollQuestionAndOptions/);
+  assert.doesNotMatch(
+    `${landing}\n${guide}`,
+    /AI Scouting|GenAI protocols|FFmpeg Engine|HD Tactical Capture|AI Image\/Asset Optimization/i
+  );
+  assert.equal(packageJson.dependencies['@google/genai'], undefined);
+  assert.equal(functionsPackage.dependencies.googleapis, undefined);
+});
+
+test('the public help guide ships screenshot walkthroughs and retains legacy FAQ media', async () => {
+  const guide = await readSource('../src/app/how-to/page.tsx');
+  const faqAssets = [
+    '../public/faq/how-to-create-a-game.mp4',
+    '../public/faq/family-hub-mobile.png',
+    '../public/faq/player-dashboard-tablet.png',
+    '../public/faq/league-created.png',
+  ];
+
+  assert.match(guide, /GUIDE_CHAPTERS/);
+  assert.match(guide, /how-to\/screenshots\/\$\{step\.image\}\.webp/);
+  const screenshots = JSON.parse(await readSource('../src/lib/how-to/screenshots.json'));
+  assert.ok(Object.keys(screenshots).length > 0);
+  for (const id of Object.keys(screenshots)) {
+    const contents = await readFile(new URL(`../public/how-to/screenshots/${id}.webp`, import.meta.url));
+    assert.ok(contents.byteLength > 0, `${id} must be included in the production bundle`);
+  }
+
+  for (const asset of faqAssets) {
+    const contents = await readFile(new URL(asset, import.meta.url));
+    assert.ok(contents.byteLength > 0, `${asset} must be included in the production bundle`);
+  }
+});

@@ -1,0 +1,652 @@
+"use client";
+import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
+import { schoolInstitutionLandingAllowed } from '@/lib/dashboard-institution-context';
+import Link from 'next/link';
+
+import Shell from '@/components/layout/Shell';
+import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
+import { AlertOverlay } from '@/components/layout/AlertOverlay';
+import { useUser, useAuth } from '@/firebase';
+import { useRouter, usePathname, useSearchParams } from 'next/navigation';
+import { useEffect, useState, useRef, Suspense } from 'react';
+import { StripePaywall } from '@/components/StripePaywall';
+import { QuotaResolutionOverlay } from '@/components/layout/QuotaResolutionOverlay';
+import { BetaNotificationBanner } from '@/components/layout/BetaNotificationBanner';
+import { useTeam } from '@/components/providers/team-provider';
+import { Loader2, Timer } from 'lucide-react';
+import { seedGuestDemoTeam } from '@/lib/db-seeder';
+import { useFirestore } from '@/firebase';
+import { signOut } from 'firebase/auth';
+import { toast } from '@/hooks/use-toast';
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+import { DEMO_EXIT_PENDING_KEY, DEMO_START_KEY, getAuthToken, authHeader, clearBrowserSession, markDemoExitPending } from '@/lib/client-auth';
+import { isTeamModuleRouteDisabled } from '@/lib/team-module-visibility';
+import { isStoreDistribution, safeReturnPath } from '@/lib/app-distribution';
+import { shouldRedirectParentFromDashboard } from '@/lib/demo-plan-config';
+
+
+const DEMO_TIMEOUT_MS = 15 * 60 * 1000;
+const SEEDING_ATTEMPTED_KEY = 'squad_seeding_attempted'; // sessionStorage – survives remounts, cleared on tab close
+const LOADING_HARD_TIMEOUT_MS = 30_000; // 30 s max wait before forcing the loading state to resolve
+
+function DemoSeedWrapper({ 
+  user, 
+  isTeamsLoading, 
+  teamsCount, 
+  isDemoInitializing, 
+  setIsDemoInitializing,
+  setIsSeedingDemo 
+}: { 
+  user: any, 
+  isTeamsLoading: boolean, 
+  teamsCount: number,
+  isDemoInitializing: boolean,
+  setIsDemoInitializing: (v: boolean) => void,
+  setIsSeedingDemo: (v: boolean) => void
+}) {
+  const searchParams = useSearchParams();
+  const db = useFirestore();
+  const auth = useAuth();
+  useEffect(() => {
+    const demoPlanId = searchParams.get('seed_demo');
+    // Only allow known valid plan IDs to prevent arbitrary seeding
+    const ALLOWED_DEMO_PLANS = new Set([
+      // Homepage DEMO_OPTIONS
+      'starter_squad', 'squad_pro', 'elite_teams', 'school_demo', 'player_demo', 'parent_demo',
+      // League Creator
+      'league_demo',
+      // Settings page
+      'elite',
+      // Legacy / generic
+      'free', 'team', 'league', 'school',
+    ]);
+    if (!demoPlanId || !ALLOWED_DEMO_PLANS.has(demoPlanId)) return;
+    if (!user || isDemoInitializing || isTeamsLoading) return;
+    // Use sessionStorage so this guard survives React remounts within the same browser session.
+    // Unlike a useRef, this persists across component teardown/remount cycles.
+    const sessionAttemptKey = `${SEEDING_ATTEMPTED_KEY}_${demoPlanId}_${user.uid}`;
+    if (sessionStorage.getItem(sessionAttemptKey)) return;
+
+    // Also check the global Firestore write lock to avoid double-seeding
+    const globalLock = localStorage.getItem('squad_seeding_lock');
+    if (globalLock) {
+      // Use '|' as separator to avoid false splits on plan IDs containing underscores (e.g. 'starter_squad')
+      const separatorIdx = globalLock.indexOf('|');
+      const lockedPlanId = separatorIdx !== -1 ? globalLock.slice(0, separatorIdx) : '';
+      const timestamp = separatorIdx !== -1 ? parseInt(globalLock.slice(separatorIdx + 1), 10) : NaN;
+      if (lockedPlanId === demoPlanId && !isNaN(timestamp) && Date.now() - timestamp < 60_000) {
+        console.warn('[Demo] Active seeding lock found in another tab/process – skipping redundant seed.');
+        return;
+      } else {
+        localStorage.removeItem('squad_seeding_lock');
+      }
+    }
+
+    // Mark as attempted BEFORE going async so concurrent re-renders don't race
+    sessionStorage.setItem(sessionAttemptKey, 'true');
+    setIsDemoInitializing(true);
+    // Use '|' separator so plan IDs with underscores (e.g. 'starter_squad') parse correctly
+    localStorage.setItem('squad_seeding_lock', `${demoPlanId}|${Date.now()}`);
+    setIsSeedingDemo(true);
+
+    // Immediately strip the URL param to prevent a loop if the user hits refresh
+    const url = new URL(window.location.href);
+    url.searchParams.delete('seed_demo');
+    window.history.replaceState({}, '', url.pathname + url.search);
+
+    const seed = async (attempt = 1) => {
+      try {
+        if (!auth.currentUser) throw new Error('No authenticated user');
+
+        // Server establishes the protected profile and approved team shells.
+        // The rich client blueprint may only fill those server-approved demos.
+        const idToken = await getAuthToken(auth);
+        if (!idToken) throw new Error('Demo session expired. Please start the demo again.');
+        const bootstrapResponse = await fetch('/api/demo/seed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({ planId: demoPlanId }),
+        });
+        const bootstrapPayload = await bootstrapResponse.json();
+        if (!bootstrapResponse.ok) throw new Error(bootstrapPayload.error || 'Unable to initialize the demo.');
+        if (!/^[a-f0-9]{24}$/.test(String(bootstrapPayload.demoNamespace || ''))) throw new Error('Demo identity could not be established.');
+
+        const primaryId = await seedGuestDemoTeam(db, user.uid, demoPlanId, bootstrapPayload.demoNamespace, false, idToken);
+
+        if (primaryId) {
+          localStorage.setItem('sf_session_team_id', primaryId);
+        }
+        toast({ title: '✅ Environment Ready', description: 'Tactical data synchronized successfully.' });
+
+        // Clear the Firestore write-lock on success
+        localStorage.removeItem('squad_seeding_lock');
+
+        // Give Firestore an extra 2 s to propagate all writes before redirecting.
+        // The previous 1 s was too short on cold starts.
+        const redirectPath = demoPlanId === 'league_demo' ? '/competition' : '/dashboard';
+        setTimeout(() => {
+          window.location.replace(redirectPath);
+        }, 2000);
+
+      } catch (e: any) {
+        // Keep the diagnostic as one serialized string. Some hosted console
+        // collectors collapse object arguments to the literal word "Object",
+        // which hides the actionable Firebase code and project identifier.
+        const diagnostic = {
+          message: e?.message,
+          code: e?.code,
+          name: e?.name,
+          firebaseProjectId: auth.app.options.projectId,
+          stack: e?.stack?.split('\n').slice(0,5).join('\n'),
+        };
+        console.error(`[Demo] Seed attempt ${attempt} failed: ${JSON.stringify(diagnostic)}`);
+
+        if (e.code === 'resource-exhausted') {
+          // Quota errors are not recoverable — surface immediately
+          setIsDemoInitializing(false);
+          setIsSeedingDemo(false);
+          localStorage.removeItem('squad_seeding_lock');
+          sessionStorage.removeItem(sessionAttemptKey);
+          toast({
+            title: 'Quota Exceeded',
+            description: 'Database write bandwidth reached. Please try again in 24 hours or upgrade plan.',
+            variant: 'destructive'
+          });
+        } else if (attempt < 3) {
+          // Transient network/Firestore error — retry with exponential back-off
+          console.warn(`[Demo] Retrying seed in ${attempt * 1500} ms…`);
+          setTimeout(() => seed(attempt + 1), attempt * 1500);
+        } else {
+          // All retries exhausted
+          setIsDemoInitializing(false);
+          setIsSeedingDemo(false);
+          localStorage.removeItem('squad_seeding_lock');
+          sessionStorage.removeItem(sessionAttemptKey);
+          toast({
+            title: 'Sync Failed',
+            description: 'Environment could not be established after multiple attempts. Please try again.',
+            variant: 'destructive'
+          });
+        }
+      }
+    };
+    seed();
+  }, [user, isTeamsLoading, teamsCount, isDemoInitializing, searchParams, auth, db, setIsDemoInitializing, setIsSeedingDemo]);
+
+  return null;
+}
+
+/**
+ * Auto-seeds a demo team for newly approved beta testers.
+ * Fires once per session when the user is a beta tester with no teams.
+ * Stores a Firestore flag (betaDemoSeeded) so it only seeds once ever.
+ */
+function BetaDemoSeeder({
+  user,
+  userProfile,
+  isTeamsLoading,
+  teamsCount,
+  isDemoInitializing,
+  setIsDemoInitializing,
+  setIsSeedingDemo,
+}: {
+  user: any;
+  userProfile: any;
+  isTeamsLoading: boolean;
+  teamsCount: number;
+  isDemoInitializing: boolean;
+  setIsDemoInitializing: (v: boolean) => void;
+  setIsSeedingDemo: (v: boolean) => void;
+}) {
+  const db = useFirestore();
+  const auth = useAuth();
+  const seederFiredRef = useRef(false);
+
+  useEffect(() => {
+    // Only run for approved beta testers who have no teams yet
+    if (!user?.uid || !userProfile || !db) return;
+    if (!userProfile.isBetaTester) return;
+    if (isTeamsLoading || teamsCount > 0) return;
+    if (isDemoInitializing) return;
+    if (seederFiredRef.current) return;
+
+    // Firestore-persisted guard: if the flag is set, this user already has their demo
+    // (survives logout, different browsers, new devices)
+    if (userProfile.betaDemoSeeded) return;
+
+    // Session-level guard: prevents re-running on every React remount within a tab
+    const sessionKey = `squad_beta_demo_seeded_${user.uid}`;
+    if (sessionStorage.getItem(sessionKey)) return;
+
+    // Determine which plan to seed from the user's beta plan_type
+    const planMap: Record<string, string> = {
+      free: 'starter_squad',
+      team: 'squad_pro',
+      elite: 'elite_teams',
+      league: 'elite_teams',
+      school: 'school_demo',
+    };
+    const planId = planMap[userProfile.plan_type] || 'starter_squad';
+
+    seederFiredRef.current = true;
+    sessionStorage.setItem(sessionKey, 'true');
+    setIsDemoInitializing(true);
+    setIsSeedingDemo(true);
+
+    const seed = async (attempt = 1) => {
+      try {
+        const idToken = await getAuthToken(auth);
+        if (!idToken) throw new Error('Beta session expired. Please sign in again.');
+        const bootstrap = await fetch('/api/demo/seed', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+          body: JSON.stringify({ planId }),
+        });
+        const bootstrapPayload = await bootstrap.json();
+        if (!bootstrap.ok) throw new Error(bootstrapPayload.error || 'Unable to initialize beta workspace.');
+        if (!/^[a-f0-9]{24}$/.test(String(bootstrapPayload.demoNamespace || ''))) throw new Error('Demo identity could not be established.');
+
+        const primaryId = await seedGuestDemoTeam(db, user.uid, planId, bootstrapPayload.demoNamespace, true /* isBetaTester */, idToken);
+        if (primaryId) {
+          localStorage.setItem('sf_session_team_id', primaryId);
+        }
+        const complete = await fetch('/api/demo/seed', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${idToken}` },
+        });
+        if (!complete.ok) throw new Error((await complete.json()).error || 'Unable to finalize beta workspace.');
+
+        toast({ title: '🎮 Beta Environment Ready', description: 'Your demo workspace has been set up.' });
+        setTimeout(() => window.location.replace('/dashboard'), 1500);
+      } catch (e: any) {
+        if (attempt < 3) {
+          setTimeout(() => seed(attempt + 1), attempt * 1500);
+        } else {
+          seederFiredRef.current = false;
+          sessionStorage.removeItem(sessionKey);
+          setIsDemoInitializing(false);
+          setIsSeedingDemo(false);
+          console.error('[BetaDemoSeeder] Failed after 3 attempts:', e?.message);
+        }
+      }
+    };
+    seed();
+  }, [user, userProfile, isTeamsLoading, teamsCount, isDemoInitializing, db, auth, setIsDemoInitializing, setIsSeedingDemo]);
+
+  return null;
+}
+
+function LayoutContent({ children }: { children: React.ReactNode }) {
+  const { user, isUserLoading, isAuthResolved } = useUser();
+  const auth = useAuth();
+  const { teams, isTeamsLoading, isSeedingDemo, setIsSeedingDemo, user: userProfile, activeTeam, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isParent, isSuperAdmin } = useTeam();
+  const router = useRouter();
+  const pathname = usePathname();
+  const searchParams = useSearchParams();
+  
+  const [mounted, setMounted] = useState(false);
+  const [isDemoInitializing, setIsDemoInitializing] = useState(false);
+  const [isSyncingPlan, setIsSyncingPlan] = useState(false);
+  const syncAttempted = useRef(false);
+  const [timeLeft, setTimeLeft] = useState<number | null>(null);
+  const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
+  // Hard timeout: if loading lasts more than LOADING_HARD_TIMEOUT_MS, force-unblock so the
+  // UI never gets permanently stuck (e.g. Firestore listener never fires on a bad network).
+  const [loadingTimedOut, setLoadingTimedOut] = useState(false);
+  const hardTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  useEffect(() => {
+    setMounted(true);
+    hardTimeoutRef.current = setTimeout(() => {
+      setLoadingTimedOut(true);
+    }, LOADING_HARD_TIMEOUT_MS);
+    return () => {
+      // NOTE: Do NOT clear 'squad_seeding_lock' here — doing so would abort an in-progress
+      // seed when React re-mounts this layout (e.g. during Suspense boundary resolution).
+      if (hardTimeoutRef.current) clearTimeout(hardTimeoutRef.current);
+    };
+  }, []);
+
+  const routeDecision = userProfile && isAuthResolved
+    ? authorizeDashboardRoute(pathname, { ...userProfile, isPrimaryClubAuthority }, isSuperAdmin ? 'superadmin' : undefined)
+    : null;
+  const deniedRoute = routeDecision && !routeDecision.allowed ? routeDecision.redirectTo : null;
+
+  useEffect(() => {
+    if (mounted && !isUserLoading && deniedRoute) router.replace(deniedRoute);
+  }, [mounted, isUserLoading, deniedRoute, pathname, router]);
+
+  useEffect(() => {
+    if (!mounted || !isAuthResolved || isDemoInitializing) return;
+    if (!user && !pathname.includes('seed_demo')) {
+      const query = searchParams.toString();
+      const returnPath = `${pathname}${query ? `?${query}` : ''}`;
+      sessionStorage.setItem('squad_return_path', safeReturnPath(returnPath));
+      router.push('/login');
+    }
+
+    // Automatic Redirect to Institutional Hub on first login per session
+    // School Admins → School Hub (/club rendered as school view)
+    // Elite Club Organizers → Elite Club Hub (/club rendered as elite view)
+    // Each role uses its own session key so they don't block each other.
+    if (pathname === '/dashboard' && !isStoreDistribution && userProfile?.role === 'league_creator') {
+      router.replace('/competition');
+      return;
+    }
+    if (pathname === '/dashboard' && !isTeamsLoading && teams.length > 0) {
+      // Institution mode: school admin with no squad selected (or school hub record active)
+      const isSchoolInstitutionMode = isSchoolMode && schoolInstitutionLandingAllowed(activeTeam, isPrimaryClubAuthority, user?.uid, userProfile, isSuperAdmin ? 'superadmin' : undefined);
+      // Hub mode: elite club organizer with no squad selected
+      const isEliteHubMode = isEliteClubMode && !activeTeam;
+
+      if (!isStoreDistribution && (isSchoolInstitutionMode || isEliteHubMode)) {
+        // No squad selected — send AD to their institutional hub
+        router.replace('/club');
+      } else if (shouldRedirectParentFromDashboard({
+        isParent,
+        isDemo: userProfile?.isDemo === true,
+        seedLock: localStorage.getItem('squad_seeding_lock'),
+      })) {
+        router.push('/family');
+
+      }
+    }
+
+    // Module Visibility Guard against Side-Gating
+    if (activeTeam && isTeamModuleRouteDisabled(pathname, activeTeam.features)) {
+        toast({ title: 'Access Denied', description: 'This module has been disabled by your squad administrator.', variant: 'destructive' });
+        router.replace('/dashboard');
+        return;
+    }
+  }, [user, userProfile, isAuthResolved, router, mounted, isDemoInitializing, pathname, searchParams, isPrimaryClubAuthority, isSuperAdmin, isSchoolMode, isEliteClubMode, isParent, activeTeam, isTeamsLoading, teams.length]);
+
+  useEffect(() => {
+    // Wait for both the profile and team hydration before deciding that the
+    // account needs onboarding. School/club demos can authenticate before
+    // their server-seeded profile is visible to the client; redirecting during
+    // that gap incorrectly sends an authorized administrator to /teams/join.
+    if (!mounted || isSeedingDemo || isTeamsLoading || !user || !userProfile || isDemoInitializing) return;
+    const isSetupPage = pathname === '/dashboard' ||
+                        pathname === '/dashboard/billing' ||
+                        pathname === '/subscriptions' ||
+                        pathname === '/teams/new' || 
+                        pathname === '/teams/join' || 
+                        pathname === '/family' || 
+                        pathname === '/settings' || 
+                        pathname === '/pricing' ||
+                        pathname === '/how-to' ||
+                        pathname === '/leagues' ||
+                        pathname === '/competition' ||
+                        pathname === '/club' ||
+                        pathname === '/manage-tournaments' ||
+                        pathname === '/facilities' ||
+                        pathname === '/coaches-corner' ||
+                        pathname === '/equipment' ||
+                        pathname === '/playbook' ||
+                        pathname === '/drills' ||
+                        pathname === '/feed' ||
+                        pathname === '/events' ||
+                        pathname === '/games' ||
+                        pathname === '/calendar' ||
+                        pathname === '/volunteers' ||
+                        pathname === '/fundraising' ||
+                        pathname === '/chats' ||
+                        pathname === '/roster' ||
+                        pathname === '/files' ||
+                        pathname.startsWith('/tournaments/') ||
+                        pathname.startsWith('/leagues/') ||
+                        pathname.startsWith('/register/league/');
+    
+    const isStaffLocal = userProfile?.role === 'admin' || userProfile?.role === 'superadmin' || userProfile?.role === 'league_creator';
+    
+    if (teams.length === 0 && !isSetupPage && !isStaffLocal) {
+      router.replace('/dashboard');
+    }
+  }, [user, userProfile, teams, isTeamsLoading, isSeedingDemo, pathname, router, mounted, isDemoInitializing]);
+
+  useEffect(() => {
+    if (!mounted || isDemoInitializing || isSeedingDemo || !userProfile?.isDemo || !user) return;
+    let expirySubmitted = false;
+    let startTime = sessionStorage.getItem(DEMO_START_KEY);
+    if (!startTime) {
+      startTime = Date.now().toString();
+      sessionStorage.setItem(DEMO_START_KEY, startTime);
+    }
+    const checkSession = () => {
+      const elapsed = Date.now() - parseInt(startTime!);
+      const remaining = Math.max(0, DEMO_TIMEOUT_MS - elapsed);
+      setTimeLeft(remaining);
+      if (remaining <= 0 && !expirySubmitted) {
+        expirySubmitted = true;
+        sessionStorage.removeItem(DEMO_START_KEY);
+        markDemoExitPending();
+        void fetch('/api/demo/exit', { method: 'POST', keepalive: true })
+          .catch(() => undefined)
+          .then(() => clearBrowserSession())
+          .then(() => signOut(auth))
+          .finally(() => { window.location.href = `/login?reason=expired`; });
+      }
+    };
+    checkSession();
+    heartbeatInterval.current = setInterval(checkSession, 1000);
+    return () => { if (heartbeatInterval.current) clearInterval(heartbeatInterval.current); };
+  }, [mounted, isDemoInitializing, isSeedingDemo, userProfile?.isDemo, user, auth]);
+
+  useEffect(() => {
+    if (
+      !mounted ||
+      isDemoInitializing ||
+      isSeedingDemo ||
+      !userProfile?.isDemo ||
+      !user?.isAnonymous
+    ) return;
+
+    let cleanupSubmitted = false;
+    const handlePageHide = (event: PageTransitionEvent) => {
+      if (event.persisted || cleanupSubmitted) return;
+      cleanupSubmitted = true;
+      localStorage.setItem(DEMO_EXIT_PENDING_KEY, 'true');
+    };
+
+    window.addEventListener('pagehide', handlePageHide);
+    return () => window.removeEventListener('pagehide', handlePageHide);
+  }, [mounted, isDemoInitializing, isSeedingDemo, userProfile?.isDemo, user?.isAnonymous]);
+
+  const formatTimeLeft = (ms: number) => {
+    const totalSeconds = Math.floor(ms / 1000);
+    return `${Math.floor(totalSeconds / 60)}:${(totalSeconds % 60).toString().padStart(2, '0')}`;
+  };
+
+  useEffect(() => {
+    if (!mounted || !user?.uid) return;
+    const successParam = searchParams.get('success');
+    const stripeSuccessParam = searchParams.get('stripe_success');
+    
+    if ((successParam === 'true' || stripeSuccessParam === 'true') && !isSyncingPlan && !syncAttempted.current) {
+      syncAttempted.current = true;
+      setIsSyncingPlan(true);
+      
+      const doSync = async () => {
+        try {
+          const token = await getAuthToken(auth);
+          await fetch('/api/subscription/sync', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', ...authHeader(token) },
+            body: JSON.stringify({ userId: user.uid, operationId: crypto.randomUUID() }),
+          });
+          
+          if (auth.currentUser) {
+            await auth.currentUser.getIdToken(true);
+          }
+        } catch (e) {
+          console.error('[Plan Sync]', e);
+        } finally {
+          setIsSyncingPlan(false);
+          const url = new URL(window.location.href);
+          url.searchParams.delete('success');
+          url.searchParams.delete('stripe_success');
+          window.history.replaceState({}, '', url.pathname + url.search);
+        }
+      };
+      
+      doSync();
+    }
+  }, [mounted, user, searchParams, auth, isSyncingPlan]);
+
+  // Clear the hard timeout once we're actually done loading
+  useEffect(() => {
+    const reallyDone = mounted && isAuthResolved && !isUserLoading && !isSeedingDemo && !isDemoInitializing && !isTeamsLoading && !!userProfile && !isSyncingPlan;
+    if (reallyDone && hardTimeoutRef.current) {
+      clearTimeout(hardTimeoutRef.current);
+      hardTimeoutRef.current = null;
+      setLoadingTimedOut(false);
+    }
+  }, [mounted, isAuthResolved, isUserLoading, isSeedingDemo, isDemoInitializing, isTeamsLoading, userProfile, isSyncingPlan]);
+
+  // The loading gate logic is critical. We must ensure that we don't get trapped in a 
+  // 'Suspense Loop' where a suspending child causes this layout to remount, which resets
+  // the 'mounted' state, which triggers the loading gate, which unmounts the child, 
+  // which aborts the suspension... and repeat.
+  
+  // We consider the system 'resolved' if we have a user profile and auth is confirmed,
+  // even if 'mounted' is briefly false during a React remount cycle.
+  const isEssentiallyLoading = isUserLoading || !isAuthResolved || isSeedingDemo || isDemoInitializing || isTeamsLoading || !userProfile || isSyncingPlan;
+  
+  // We only show the full-screen gate if we aren't 'essentially loaded' OR if we haven't mounted yet.
+  // But if we HAVE a userProfile, we skip the !mounted requirement to break the Suspense Trap.
+  const isLoadingState = !loadingTimedOut && (isEssentiallyLoading || (!mounted && !userProfile));
+
+  if (isLoadingState || deniedRoute) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-background">
+        {mounted && (
+          <DemoSeedWrapper 
+            user={user} 
+            isTeamsLoading={isTeamsLoading} 
+            teamsCount={teams.length} 
+            isDemoInitializing={isDemoInitializing}
+            setIsDemoInitializing={setIsDemoInitializing}
+            setIsSeedingDemo={setIsSeedingDemo}
+          />
+        )}
+        <div className="flex flex-col items-center gap-6 animate-in fade-in duration-500">
+          <div className="bg-primary/10 p-6 rounded-[2.5rem] shadow-xl relative">
+            <Loader2 className="h-10 w-10 animate-spin text-primary" />
+            {loadingTimedOut && (
+              <div className="absolute inset-0 flex items-center justify-center bg-background/50 rounded-[2.5rem]">
+                <Timer className="h-6 w-6 text-destructive" />
+              </div>
+            )}
+          </div>
+          <div className="text-center space-y-4 max-w-md px-6">
+            <div className="space-y-1">
+              <p className="text-lg font-black uppercase tracking-widest text-primary">
+                {isSyncingPlan
+                  ? 'Synchronizing Upgraded Protocol...'
+                  : isDemoInitializing || isSeedingDemo
+                  ? 'Building Demo Environment...'
+                  : 'Synchronizing Secure Hub...'}
+              </p>
+              <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">
+                System Architecture Optimization in Progress
+              </p>
+            </div>
+
+            {/* Developer Debug Indicator - only rendered in development mode */}
+            {mounted && process.env.NODE_ENV === 'development' && (
+              <div className="flex flex-wrap justify-center gap-2 pt-4">
+                {[
+                  { label: 'Auth', val: isAuthResolved, inverse: true },
+                  { label: 'User', val: isUserLoading },
+                  { label: 'Profile', val: !!userProfile, inverse: true },
+                  { label: 'Teams', val: isTeamsLoading },
+                  { label: 'Plan', val: isSyncingPlan },
+                  { label: 'Demo', val: isDemoInitializing || isSeedingDemo }
+                ].map(f => (
+                  <div key={f.label} className={cn(
+                    "px-2 py-1 rounded text-[8px] font-black uppercase border transition-colors",
+                    (f.inverse ? !f.val : f.val) ? "bg-amber-500/10 border-amber-500/50 text-amber-600 animate-pulse" : "bg-primary/5 border-primary/10 text-primary/40"
+                  )}>
+                    {f.label}
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {(isDemoInitializing || isSeedingDemo) && (
+              <p className="text-xs text-muted-foreground bg-muted/30 p-3 rounded-xl border border-dashed">
+                Preparing sample data. This usually takes a few seconds.
+              </p>
+            )}
+
+            {mounted && (
+              <Button 
+                variant="ghost" 
+                size="sm" 
+                className="mt-6 text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-primary transition-all"
+                onClick={() => setLoadingTimedOut(true)}
+              >
+                Skip Loading
+              </Button>
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col h-dvh overflow-hidden">
+      {userProfile?.isDemo && !userProfile?.isBetaTester && (
+        <div className="w-full bg-black text-white h-9 flex items-center justify-center gap-4 z-[40] border-b border-primary/20 shrink-0 sticky top-0">
+          <Timer className="h-3.5 w-3.5 text-primary animate-pulse" />
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-black uppercase tracking-widest">Demo Mode</span>
+            <div className="h-3 w-px bg-white/20" />
+            <span className="text-[10px] font-mono font-bold text-red-400">
+              Resets In: {timeLeft !== null ? formatTimeLeft(timeLeft) : '...'}
+            </span>
+          </div>
+        </div>
+      )}
+      <div className="flex-1 flex flex-col relative min-h-0 overflow-hidden">
+        {mounted && (
+          <DemoSeedWrapper 
+            user={user} 
+            isTeamsLoading={isTeamsLoading} 
+            teamsCount={teams.length} 
+            isDemoInitializing={isDemoInitializing}
+            setIsDemoInitializing={setIsDemoInitializing}
+            setIsSeedingDemo={setIsSeedingDemo}
+          />
+        )}
+        <AlertOverlay />
+        <StripePaywall />
+        <QuotaResolutionOverlay />
+        {/* BetaNotificationBanner is now rendered inside Shell to prevent layout overlap */}
+        {/* BetaDemoSeeder runs in background to provision demo workspace for beta users */}
+        <BetaDemoSeeder
+          user={user}
+          userProfile={userProfile}
+          isTeamsLoading={isTeamsLoading}
+          teamsCount={teams.length}
+          isDemoInitializing={isDemoInitializing}
+          setIsDemoInitializing={setIsDemoInitializing}
+          setIsSeedingDemo={setIsSeedingDemo}
+        />
+        <ErrorBoundary>
+          <Shell>{children}</Shell>
+        </ErrorBoundary>
+      </div>
+    </div>
+  );
+}
+
+export default function DashboardLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <Suspense fallback={null}>
+      <LayoutContent>{children}</LayoutContent>
+    </Suspense>
+  );
+}

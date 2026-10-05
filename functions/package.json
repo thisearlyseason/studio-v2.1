@@ -1,0 +1,41 @@
+{
+  "name": "functions",
+  "scripts": {
+    "build": "tsc",
+    "test": "node --test tests/*.test.cjs",
+    "serve": "npm run build && firebase emulators:start --only functions",
+    "shell": "npm run build && firebase functions:shell",
+    "start": "npm run shell",
+    "deploy": "firebase deploy --only functions",
+    "logs": "firebase functions:log"
+  },
+  "engines": {
+    "node": "22"
+  },
+  "main": "lib/index.js",
+  "dependencies": {
+    "firebase-admin": "^13.10.0",
+    "firebase-functions": "^7.3.2",
+    "web-push": "^3.6.7"
+  },
+  "devDependencies": {
+    "@types/web-push": "^3.6.4",
+    "typescript": "^5.0.0"
+  },
+  "overrides": {
+    "websocket-driver": "0.7.5",
+    "brace-expansion": "2.1.4",
+    "retry-request": "8.0.4",
+    "teeny-request": {
+      ".": "10.1.4",
+      "uuid": "11.1.1"
+    },
+    "gaxios": {
+      "uuid": "11.1.1"
+    },
+    "google-gax": {
+      "uuid": "11.1.1"
+    }
+  },
+  "private": true
+}

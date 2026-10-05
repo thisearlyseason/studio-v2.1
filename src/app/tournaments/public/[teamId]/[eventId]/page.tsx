@@ -1,0 +1,128 @@
+
+"use client";
+
+import React, { useState, useEffect } from 'react';
+import { useParams } from 'next/navigation';
+import { usePublicPortal } from '@/hooks/use-public-portal';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { Trophy, CalendarDays, MapPin, Clock, Loader2, CheckCircle2, Shield } from 'lucide-react';
+import BrandLogo from '@/components/BrandLogo';
+import { format, parseISO } from 'date-fns';
+import { PortalStatus } from '@/components/public/PortalStatus';
+import { calculateTournamentStandings } from '@/lib/tournament-standings';
+import TournamentBracket from '@/components/TournamentBracket';
+import CompetitionController from '@/components/tournaments/CompetitionController';
+
+export default function PublicSpectatorHub() {
+  const { teamId, eventId } = useParams();
+  const portalUrl = teamId && eventId ? `/api/public/portals?kind=tournament&teamId=${encodeURIComponent(teamId as string)}&eventId=${encodeURIComponent(eventId as string)}` : null;
+  const { data: event, isLoading: loading, error, status, retry } = usePublicPortal<any>(portalUrl);
+
+  if (loading) return <div className="min-h-screen flex items-center justify-center bg-muted/30"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
+
+  if (!event || !event.isTournament) return <PortalStatus status={status ?? (event ? 404 : null)} message={error} onRetry={retry} title={status === 404 || event ? 'Hub Not Active' : undefined} />;
+
+  if (event.workspaceVersion === 2) return <CompetitionController teamId={String(teamId)} eventId={String(eventId)} publicView readOnly />;
+
+  const standingTeams = event.tournamentTeamsData?.length
+    ? event.tournamentTeamsData
+    : (event.tournamentTeams || []).map((name: string) => ({ id: name, name }));
+  const standings = event.standings || calculateTournamentStandings(standingTeams, event.tournamentGames || []);
+  const playoffDivisions = event.tieredPlayoffs?.playoffs?.status !== 'pending'
+    ? (event.tieredPlayoffs?.divisions?.definitions || []).map((division: any) => ({
+        ...division,
+        games: (event.tournamentGames || []).filter((game: any) => game.phase === 'playoff' && game.playoffDivisionId === division.id),
+      })).filter((division: any) => division.games.length)
+    : [];
+  const groupedGames = event.tournamentGames?.reduce((acc: any, game: any) => {
+    if (!acc[game.date]) acc[game.date] = [];
+    acc[game.date].push(game);
+    return acc;
+  }, {}) || {};
+
+  return (
+    <div className="min-h-screen bg-muted/30 pb-20">
+      <nav className="bg-black text-white p-6 sticky top-0 z-50 shadow-xl">
+        <div className="container mx-auto flex items-center justify-between">
+          <BrandLogo variant="dark-background" className="h-8 w-32" />
+          <Badge className="bg-primary text-white border-none font-black uppercase text-[10px] tracking-widest px-4 h-7">Live Hub</Badge>
+        </div>
+      </nav>
+
+      <div className="container mx-auto px-4 mt-10 space-y-10">
+        <header className="space-y-4">
+          <div className="space-y-1">
+            <h1 className="text-4xl md:text-6xl font-black tracking-tighter uppercase leading-none">{event.title}</h1>
+            <p className="text-muted-foreground font-black uppercase tracking-[0.2em] text-xs">Official Spectator Hub</p>
+          </div>
+          <div className="flex flex-wrap gap-4 pt-2">
+            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl shadow-sm border font-bold text-sm"><CalendarDays className="h-4 w-4 text-primary" /> {format(parseISO(String(event.date).split('T')[0]), 'MMM dd, yyyy')}</div>
+            <div className="flex items-center gap-2 bg-white px-4 py-2 rounded-xl shadow-sm border font-bold text-sm"><MapPin className="h-4 w-4 text-primary" /> {event.location}</div>
+          </div>
+        </header>
+
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-10">
+            <section className="space-y-6">
+              <h2 className="text-2xl font-black uppercase tracking-tight flex items-center gap-3"><Trophy className="h-6 w-6 text-primary" /> Match Schedule</h2>
+              <div className="space-y-12">
+                {Object.entries(groupedGames).map(([date, games]: [any, any]) => (
+                  <div key={date} className="space-y-6">
+                    <div className="flex items-center gap-4"><Badge className="bg-black text-white font-black uppercase text-[10px] px-4 h-7">{format(parseISO(String(date).split('T')[0]), 'EEEE, MMM d')}</Badge><div className="h-px bg-muted flex-1" /></div>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {games.map((game: any) => (
+                        <Card key={game.id} className="rounded-3xl border-none shadow-md overflow-hidden bg-white ring-1 ring-black/5">
+                          <div className="p-5 space-y-4">
+                            <div className="flex justify-between items-center gap-2"><div className="flex gap-2"><Badge variant="outline" className="text-[10px] font-black uppercase border-black/10 px-2 h-5">{game.time}</Badge>{game.playoffDivisionName && <Badge className="text-[9px] font-black uppercase h-5 bg-primary/10 text-primary">{game.playoffDivisionName}</Badge>}</div>{game.isCompleted && <Badge className="text-[10px] font-black uppercase h-5 px-2 bg-black text-white">Final</Badge>}</div>
+                            <div className="grid grid-cols-7 items-center gap-4">
+                              <div className="col-span-3 text-right">
+                                <div className="flex items-center justify-end gap-2 mb-1"><p className="font-black text-xs uppercase truncate">{game.team1}</p>{game.winnerId === game.team1 && <CheckCircle2 className="h-4 w-4 text-green-600" />}</div>
+                                <p className="text-3xl font-black text-primary leading-none">{game.score1}</p>
+                              </div>
+                              <div className="col-span-1 flex items-center justify-center opacity-20 font-black text-[10px]">VS</div>
+                              <div className="col-span-3">
+                                <div className="flex items-center gap-2 mb-1">{game.winnerId === game.team2 && <CheckCircle2 className="h-4 w-4 text-green-600" />}<p className="font-black text-xs uppercase truncate">{game.team2}</p></div>
+                                <p className="text-3xl font-black text-primary leading-none">{game.score2}</p>
+                              </div>
+                            </div>
+                          </div>
+                        </Card>
+                      ))}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </section>
+            {playoffDivisions.length > 0 && <section className="space-y-8" data-testid="tiered-public-brackets">
+              <h2 className="text-2xl font-black uppercase tracking-tight">Division Playoff Brackets</h2>
+              {playoffDivisions.map((division: any) => <Card key={division.id} className="rounded-3xl overflow-hidden border-none shadow-xl">
+                <CardHeader><CardTitle className="uppercase">{division.name}</CardTitle><CardDescription>Independent single-elimination championship</CardDescription></CardHeader>
+                <CardContent className="overflow-x-auto pb-8"><TournamentBracket games={division.games} standalone tournamentName={division.name} /></CardContent>
+              </Card>)}
+            </section>}
+          </div>
+
+          <aside className="space-y-8">
+            <section className="space-y-4">
+              <h2 className="text-xl font-black uppercase tracking-tight">Leaderboard</h2>
+              <Card className="rounded-[2rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
+                <CardContent className="p-0">
+                  {standings.map((team: any, i: number) => (
+                    <div key={team.name} className="flex justify-between items-center px-6 py-5 border-b last:border-0 hover:bg-primary/5 transition-colors">
+                      <div className="flex items-center gap-4">
+                        <span className="text-xs font-black text-primary w-4">{i + 1}</span>
+                        <span className="text-sm font-black uppercase tracking-tight">{team.name}</span>
+                      </div>
+                      <Badge className="bg-primary text-white border-none font-black text-[10px] px-3 h-6">{team.tournamentPoints ?? team.points} PTS</Badge>
+                    </div>
+                  ))}
+                </CardContent>
+              </Card>
+            </section>
+          </aside>
+        </div>
+      </div>
+    </div>
+  );
+}

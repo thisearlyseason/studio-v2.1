@@ -1,0 +1,399 @@
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import test from 'node:test';
+
+import { CERTIFICATION_SCENARIOS } from '../scripts/qa/certification/scenario-catalog.mjs';
+import { OPERATIONS_SCENARIO_IDS } from '../scripts/qa/certification/local/selection.mjs';
+import { operationActorAliases, assertOperationActorAliases } from '../scripts/qa/certification/local/operation-actors.mjs';
+import {
+  assertOperationsHandlerExactness,
+  handlers,
+  LOCAL_OPERATIONS_CASE_REQUIREMENTS,
+  assertCaseOwnedOperationArtifacts,
+  runOperationsBatch,
+  selectCaseOwnedOperationAssertions,
+} from '../scripts/qa/certification/local/batches/operations.mjs';
+
+test('named operation actors derive from the exact execution and every request actor', () => {
+  const execution={actor:'qa-coach-owner-a+qa-team-assistant',requests:[{actorAlias:'qa-coach-owner-a'},{actorAlias:'qa-team-assistant'}]};
+  assert.deepEqual(operationActorAliases(execution),['qa-coach-owner-a','qa-team-assistant']);
+  assert.doesNotThrow(()=>assertOperationActorAliases(['qa-coach-owner-a','qa-team-assistant'],execution));
+  for(const aliases of [['catalog-scenario-actor','qa-public-submitter'],['qa-coach-owner-a'],['qa-coach-owner-b','qa-team-assistant']]) assert.throws(()=>assertOperationActorAliases(aliases,execution),/actor/);
+  assert.throws(()=>operationActorAliases({...execution,requests:[{actorAlias:'qa-coach-owner-a'}]}),/actor/);
+  assert.throws(()=>operationActorAliases({...execution,actor:'catalog-scenario-actor'}),/actor/);
+  const source=readFileSync(new URL('../scripts/qa/run-phase2-emulator-audit.mjs',import.meta.url),'utf8');
+  assert.match(source,/actorAliases: operationActorAliases\(operationExecution\)/);
+});
+
+test('operations handler registry is an exact immutable match for the frozen Task 5 assignment', () => {
+  assert.doesNotThrow(() => assertOperationsHandlerExactness(handlers));
+  assert.deepEqual(Object.keys(handlers), OPERATIONS_SCENARIO_IDS);
+  assert.ok(Object.isFrozen(handlers));
+});
+
+test('operations handler registry rejects missing, duplicate, and adjacent handlers before any lifecycle starts', () => {
+  const missing = Object.fromEntries(Object.entries(handlers).slice(1));
+  assert.throws(() => assertOperationsHandlerExactness(missing), /missing handler/);
+  const extra = { ...handlers, 'billing-pricing-checkout-trial': async () => undefined };
+  assert.throws(() => assertOperationsHandlerExactness(extra), /unexpected handler/);
+  assert.throws(() => assertOperationsHandlerExactness({ ...handlers, 'events-event-crud-recurrence': 'not-a-handler' }), /must be a function/);
+});
+
+test('newly assigned local gaps execute without inventing observed evidence', async () => {
+  const gapIds = [
+    'games-team-score-create-edit-reset',
+    'leagues-divisions-teams-filters-forms',
+    'volunteers-opportunity-public-signup',
+    'sports-hub-rss-refresh-admin-publish',
+    'public-portals-embed-panels',
+    'administration-entitlement-account-control-plans',
+    'administration-beta-bugs-embeds-newsletter-sports-hub',
+  ];
+  const scenarios = gapIds.map(id => CERTIFICATION_SCENARIOS.find(scenario => scenario.id === id));
+  const output = await runOperationsBatch({
+    commit: '0123456789abcdef0123456789abcdef01234567',
+    browserEnabled: true,
+    now: () => '2026-09-07T12:00:00.000Z',
+    certificationObservation: {
+      code: 0,
+      startedAt: '2026-09-07T12:00:00.000Z',
+      completedAt: '2026-09-07T12:00:01.000Z',
+      stdout: '',
+    },
+    operations: { execute: ({ handler, ...input }) => handler(input) },
+  }, scenarios);
+  assert.deepEqual(output.results.map(result => result.scenarioId), gapIds);
+  assert.deepEqual(output.runErrors, []);
+  for (const result of output.results) {
+    assert.equal(result.outcome, 'BLOCKED_PRECONDITION');
+    assert.deepEqual(result.missingDimensions, ['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive']);
+    for (const dimension of Object.values(result.dimensions)) assert.equal(dimension.state, 'BLOCKED_PRECONDITION');
+  }
+});
+
+test('every operations scenario has an explicit case contract for every local dimension', () => {
+  const dimensions = ['happyPath', 'negativePath', 'permission', 'persistence', 'console', 'network', 'responsive'];
+  assert.deepEqual(Object.keys(LOCAL_OPERATIONS_CASE_REQUIREMENTS), OPERATIONS_SCENARIO_IDS);
+  for (const scenarioId of OPERATIONS_SCENARIO_IDS) {
+    assert.deepEqual(Object.keys(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId]), dimensions);
+    for (const dimension of dimensions) {
+      assert.ok(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId][dimension].length >= 1);
+    }
+  }
+});
+
+test('all frozen Task 5 schedule case IDs are present exactly once across their scenario dimensions', () => {
+  const expected = {
+    'attendance-practice-event-member-attendance': ['att-staff-record', 'att-member-readonly', 'att-duplicate', 'att-race', 'att-removed', 'att-tenant-b', 'att-responsive'],
+    'events-event-crud-recurrence': ['evt-crud', 'evt-series', 'evt-dst-spring', 'evt-dst-fall', 'evt-midnight', 'evt-invalid', 'evt-conflict', 'evt-double', 'evt-member-deny', 'evt-assistant-own', 'evt-team-b-deny', 'evt-responsive'],
+    'events-rsvp-attendance-details': ['rsvp-self', 'rsvp-parent-child', 'rsvp-staff', 'rsvp-forged-uid', 'rsvp-replay', 'rsvp-race', 'rsvp-cancelled', 'rsvp-removed', 'rsvp-tenant-b', 'rsvp-responsive'],
+    'calendar-team-family-views-and-filters': ['cal-team-a-b', 'cal-family-a-c', 'cal-filters', 'cal-empty', 'cal-invalid', 'cal-midnight', 'cal-dst-spring', 'cal-dst-fall', 'cal-rapid-switch', 'cal-outsider', 'cal-responsive'],
+    'calendar-ics-create-fetch-revoke': ['ics-user', 'ics-team', 'ics-multi', 'ics-rfc', 'ics-invalid-type', 'ics-foreign-team', 'ics-too-many', 'ics-invalid-token', 'ics-inactive-token', 'ics-membership-revoke', 'ics-rotate', 'ics-secret'],
+    'reminders-same-day-fcm-scheduler': ['rem-eligible', 'rem-time-boundary', 'rem-duplicate-run', 'rem-invalid-time', 'rem-no-token', 'rem-pref-off', 'rem-removed', 'rem-sender', 'rem-retry', 'rem-redaction'],
+  };
+  for (const [scenarioId, caseIds] of Object.entries(expected)) {
+    const actual = Object.values(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId]).flat();
+    for (const caseId of caseIds) assert.equal(actual.filter(value => value === caseId).length, 1, `${scenarioId}/${caseId}`);
+  }
+});
+
+test('all frozen Task 5 practice case IDs are present exactly once across their scenario dimensions', () => {
+  const expected = {
+    'practice-practice-plans-templates': ['plan-create-edit', 'plan-assign', 'plan-empty-invalid', 'plan-delete-free', 'plan-delete-in-use', 'plan-member-deny', 'plan-team-b-deny', 'plan-entitlement', 'plan-responsive'],
+    'practice-drill-playbook-crud-search': ['drill-crud', 'drill-reorder', 'drill-search', 'drill-link-valid', 'drill-link-invalid', 'drill-duplicate-empty', 'drill-member-deny', 'drill-team-b-deny', 'drill-responsive'],
+    'practice-film-upload-coach-marks-watch': ['film-upload', 'film-photo', 'film-type', 'film-size', 'film-url', 'film-mark', 'film-time-invalid', 'film-progress-own', 'film-progress-forge', 'film-mark-player', 'film-team-b', 'film-delete', 'film-responsive'],
+  };
+  for (const [scenarioId, caseIds] of Object.entries(expected)) {
+    const actual = Object.values(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId]).flat();
+    for (const caseId of caseIds) assert.equal(actual.filter(value => value === caseId).length, 1, `${scenarioId}/${caseId}`);
+  }
+});
+
+test('all frozen Task 5 Chat case IDs are present exactly once across their scenario dimensions', () => {
+  const expected = [
+    'chat-create', 'chat-sync', 'chat-unread', 'chat-duplicate', 'chat-offline',
+    'chat-deleted', 'chat-audience', 'chat-sender', 'chat-removed', 'chat-team-b',
+    'chat-module-off', 'chat-console', 'chat-network', 'chat-responsive',
+  ];
+  const actual = Object.values(LOCAL_OPERATIONS_CASE_REQUIREMENTS['chat-channel-message-unread']).flat();
+  assert.deepEqual(actual.sort(), expected.sort());
+  for (const caseId of expected) assert.equal(actual.filter(value => value === caseId).length, 1, caseId);
+});
+
+test('Chat simultaneous actors use isolated contexts in one owned browser session', () => {
+  const audit = readFileSync(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
+  assert.match(audit, /browserLoginPeerContext\(owner, memberAlias, '\/dashboard', 'qaChatMember'/);
+  assert.match(audit, /browserLoginPeerContext\(owner, 'qa-multi-org', '\/dashboard', 'qaChatMulti'/);
+  assert.doesNotMatch(audit, /browserLogin\(memberAlias, '\/dashboard', `chat-member-/);
+  assert.doesNotMatch(audit, /browserLogin\('qa-multi-org', '\/dashboard', `chat-multi-/);
+  const peerHarness = audit.slice(
+    audit.indexOf('async function browserLoginPeerContext'),
+    audit.indexOf('async function browserLoginCredentials'),
+  );
+  const chatHarness = audit.slice(audit.indexOf('function browserCreateChatChannel'), audit.indexOf('function sportsHubStorageKey'));
+  const contextProbe = audit.slice(audit.indexOf('async function runChatContextProbeAudit'), audit.indexOf('function browserScheduleAppAudit'));
+  for (const source of [peerHarness, chatHarness, contextProbe]) {
+    assert.doesNotMatch(source, /new URL\(/, 'Playwright run-code sandbox has no URL global');
+  }
+  assert.match(chatHarness, /alert\.waitFor\(\{state:'visible',timeout:1800\}\)/);
+  assert.doesNotMatch(chatHarness, /if\(!await alert\.isVisible\(\)\.catch\(\(\)=>false\)\)break/);
+  assert.match(chatHarness, /browserChatParkOnList\(owner,\{teamId:team\.id,chatId\}\);[\s\S]*?browserChatSend\(owner,\{teamId:team\.id,chatId,marker,pageProperty:'qaChatMember'\}\)/);
+  assert.match(chatHarness, /const markReadPending=page\.waitForResponse\([\s\S]*?method\(\)==='PATCH'[\s\S]*?await card\(\)\.click\(\);[\s\S]*?const markReadStatus=\(await markReadPending\)\.status\(\);/);
+  assert.match(chatHarness, /Authorized multi-team chat directory did not render both exact channels/);
+  assert.match(chatHarness, /const priorityAlert=page\.getByRole\('dialog',\{name:'High Priority Team Alert'\}\);[\s\S]*?priorityAlert\.getByRole\('button',\{name:'Got It',exact:true\}\)\.click\(\);[\s\S]*?const a=page\.locator/);
+  assert.match(chatHarness, /chatDirectoryStatuses/);
+  assert.match(chatHarness, /legacy-multi-org-member/);
+  assert.match(chatHarness, /legacyBackfill/);
+  assert.match(chatHarness, /directoryProjection/);
+  assert.match(chatHarness, /privateFieldCount/);
+  assert.match(chatHarness, /dismissedPriorityAlerts/);
+  assert.match(chatHarness, /Team A chat marker did not render for its authorized tenant/);
+  assert.match(chatHarness, /Team B chat marker did not render for its authorized tenant/);
+  assert.doesNotMatch(chatHarness, /await Promise\.all\(\[a\.waitFor\(\{state:'visible',timeout:15000\}\),b\.waitFor\(\{state:'visible',timeout:15000\}\)\]\)/);
+  assert.match(chatHarness, /aMarker:[\s\S]*?aForeignMarker:[\s\S]*?bMarker:[\s\S]*?bForeignMarker:/);
+  assert.match(chatHarness, /permissionWarnings/);
+  const qualityHarness = audit.slice(
+    audit.indexOf('function browserChatQualityEvidence'),
+    audit.indexOf('function browserChatRevoked'),
+  );
+  assert.match(qualityHarness, /await page\.getByRole\('heading',\{name:'Coordination Hub',exact:true\}\)\.waitFor[\s\S]*?const priorityAlert=page\.getByRole\('dialog',\{name:'High Priority Team Alert'\}\);[\s\S]*?priorityAlert\.getByRole\('button',\{name:'Got It',exact:true\}\)\.click\(\);[\s\S]*?const link=page\.locator/);
+  assert.match(qualityHarness, /dismissedPriorityAlerts\.push\(\{actor:[\s\S]*?caseId,viewport\}\)/);
+  assert.doesNotMatch(qualityHarness, /getByRole\('dialog'\)\.first\(\)/);
+});
+
+test('all frozen Task 5 waiver case IDs are present exactly once across their scenario dimensions', () => {
+  const expected = {
+    'waivers-team-global-waiver-lifecycle': [
+      'waiver-team-crud', 'waiver-global-deploy', 'waiver-version',
+      'waiver-partial', 'waiver-duplicate', 'waiver-empty',
+      'waiver-staff', 'waiver-delegate', 'waiver-team-b',
+      'waiver-archive', 'waiver-console', 'waiver-network', 'waiver-responsive',
+    ],
+    'waivers-parent-player-coach-signature': [
+      'sign-parent-child', 'sign-adult', 'sign-youth', 'sign-coach',
+      'sign-replay', 'sign-new-version', 'sign-wrong-date', 'sign-wrong-child',
+      'sign-wrong-event', 'sign-parent-b', 'sign-team-b', 'sign-removed',
+      'sign-text-immutable', 'sign-console', 'sign-network', 'sign-responsive',
+    ],
+  };
+  for (const [scenarioId, caseIds] of Object.entries(expected)) {
+    const actual = Object.values(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenarioId]).flat();
+    assert.deepEqual(actual.sort(), caseIds.sort(), scenarioId);
+    for (const caseId of caseIds) assert.equal(actual.filter(value => value === caseId).length, 1, `${scenarioId}/${caseId}`);
+  }
+});
+
+test('public registration uses the canonical Firestore rules-denial status without accepting leaked fields', () => {
+  const audit = readFileSync(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
+  assert.match(audit, /const assertFirestoreDenied=.*result\.status,403[\s\S]*?result\.body\?\.error\?\.status,'PERMISSION_DENIED'[\s\S]*?Boolean\(result\.body\?\.fields\),false/);
+  assert.match(audit, /assertFirestoreDenied\('portal-ledger-private',anonymousLedger,'anonymous Firestore REST read is denied by rules'\)/);
+});
+
+test('tournament registration uses canonical Firestore rules-denial responses for private reads and writes', () => {
+  const audit = readFileSync(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
+  const start = audit.indexOf("const anonymousLedger=await firestore('tourn-ledger-private'");
+  const end = audit.indexOf("check('tourn-persistence'", start);
+  assert.ok(start >= 0 && end > start, 'tournament privacy probes must exist');
+  const probes = audit.slice(start, end);
+  assert.match(probes, /assertFirestoreDenied\('tourn-ledger-private',anonymousLedger/);
+  assert.match(probes, /assertFirestoreDenied\('tourn-anonymous-direct-write',anonymousWrite/);
+});
+
+test('tournament waiver denial is recorded under the exact frozen case ID', () => {
+  const audit = readFileSync(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
+  assert.match(audit, /check\('tourn-waiver-wrong-child'/);
+  assert.doesNotMatch(audit, /check\('tourn-wrong-child'/);
+});
+
+test('public registration discovers join sessions as exact cleanup roots without mutating in the obligation', () => {
+  const audit = readFileSync(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
+  const start = audit.indexOf('async function runPublicRegistrationAudit');
+  const end = audit.indexOf('async function runIncidentWorkflowAudit', start);
+  const registration = audit.slice(start, end);
+  assert.match(registration, /registerScheduleDiscovery\(\{registry:activeOperationResourceRegistry,scopeId:`public-join-sessions-/);
+  assert.match(registration, /registerRoot:documentPath=>registerRoot\(documentPath,'public-join-session-'/);
+  assert.doesNotMatch(registration, /kind:'obligation'[\s\S]*?recursiveDelete\(session\.ref\)/);
+});
+
+test('operations evidence assigns an assertion to only its declared exact case', () => {
+  const assertions = [
+    { label: 'owner event create persists after reload' },
+    { label: 'member cannot edit team event' },
+    { label: 'owner event create console errors' },
+    { label: 'weekly recurrence controls fit the mobile viewport' },
+  ];
+  const selected = selectCaseOwnedOperationAssertions(assertions, [/owner event create persists after reload/]);
+  assert.deepEqual(selected, [assertions[0]]);
+  assert.deepEqual(
+    selectCaseOwnedOperationAssertions(assertions, [/weekly recurrence controls fit the mobile viewport/]),
+    [assertions[3]],
+  );
+  assert.throws(
+    () => selectCaseOwnedOperationAssertions(assertions, [/missing schedule assertion/]),
+    /Missing required operation assertion/,
+  );
+});
+
+test('operations evidence rejects reused assertion IDs and incomplete named-case records', () => {
+  const complete = (caseId, assertionId) => ({
+    caseId,
+    assertions: [{ id: assertionId, label: `${caseId} exact assertion` }],
+    execution: {
+      actor: 'qa-coach-owner-a',
+      operation: 'POST /api/test',
+      requests: [{ evidenceId: `request-${caseId}`, method: 'POST', pathname: '/api/test', status: 200, actorAlias: 'qa-coach-owner-a' }],
+      reconciliation: 'exact emulator record',
+      observer: 'authenticated API response and emulator read',
+      timeBound: '20s request deadline',
+      cleanupReference: `cleanup-${caseId}`,
+    },
+  });
+  assert.doesNotThrow(() => assertCaseOwnedOperationArtifacts([
+    complete('one', 'assertion-one'),
+    complete('two', 'assertion-two'),
+  ]));
+  assert.throws(() => assertCaseOwnedOperationArtifacts([
+    complete('one', 'shared-assertion'),
+    complete('two', 'shared-assertion'),
+  ]), /shared assertion ID/i);
+  const missingRequest = complete('three', 'assertion-three');
+  delete missingRequest.execution.requests;
+  assert.throws(() => assertCaseOwnedOperationArtifacts([missingRequest]), /requests/i);
+});
+
+test('operations evidence rejects synthesized request records and requires the exact fixture actor', () => {
+  const complete = request => ({
+    caseId: 'synthetic-request',
+    assertions: [{ id: 'synthetic-request-assertion', label: 'exact assertion' }],
+    execution: {
+      actor: 'qa-coach-owner-a',
+      operation: 'observed browser action',
+      requests: [{ evidenceId: 'request-synthetic', ...request }],
+      reconciliation: 'exact emulator record',
+      observer: 'authenticated API response and emulator read',
+      timeBound: '20s request deadline',
+      cleanupReference: 'cleanup-synthetic-request',
+    },
+  });
+
+  for (const synthetic of [
+    { method: 'BROWSER', pathname: '/calendar', status: 200, actorAlias: 'qa-coach-owner-a' },
+    { method: 'POST', pathname: 'POST RSVP', status: 200, actorAlias: 'qa-coach-owner-a' },
+    { method: 'POST', pathname: '/api/rsvp', status: 'observed', actorAlias: 'qa-coach-owner-a' },
+    { method: 'POST', pathname: '/api/rsvp', status: 200, actorAlias: 'catalog-scenario-actor' },
+  ]) {
+    assert.throws(
+      () => assertCaseOwnedOperationArtifacts([complete(synthetic)]),
+      /actual same-origin HTTP request evidence|exact actor alias/i,
+    );
+  }
+
+  assert.throws(
+    () => assertCaseOwnedOperationArtifacts([complete({
+      method: 'POST', pathname: '/api/rsvp', status: 200, actorAlias: 'qa-team-member',
+    })]),
+    /does not match the case actor/i,
+  );
+});
+
+test('operations evidence accepts only an observed injected reminder-core invocation with exact actor provenance', () => {
+  const complete = (caseId, request) => ({
+    caseId,
+    assertions: [{ id: `${caseId}-assertion`, label: `${caseId} exact assertion` }],
+    execution: {
+      actor: 'qa-parent-a',
+      operation: 'injected reminder scheduler core',
+      requests: [request],
+      reconciliation: 'durable reminder ledger',
+      observer: 'injected local scheduler core and emulator read',
+      timeBound: 'fixed injected clock',
+      cleanupReference: `cleanup-${caseId}`,
+    },
+  });
+  const observed = {
+    evidenceId: 'invocation-rem-eligible-parent-a',
+    method: 'INVOKE',
+    pathname: '/__local/reminder-core',
+    status: 200,
+    actorAlias: 'qa-parent-a',
+    invocationType: 'injected-reminder-core',
+    invocationId: 'rem-eligible-core-1',
+  };
+
+  assert.doesNotThrow(() => assertCaseOwnedOperationArtifacts([complete('rem-eligible', observed)]));
+  for (const synthetic of [
+    { ...observed, pathname: '/api/reminders' },
+    { ...observed, invocationType: 'loopback-http' },
+    { ...observed, invocationId: '' },
+    { ...observed, method: 'POST', pathname: '/api/reminders' },
+  ]) {
+    assert.throws(
+      () => assertCaseOwnedOperationArtifacts([complete('rem-eligible', synthetic)]),
+      /actual injected reminder-core invocation evidence/i,
+    );
+  }
+  assert.throws(
+    () => assertCaseOwnedOperationArtifacts([
+      complete('rem-one', observed),
+      complete('rem-two', { ...observed, actorAlias: 'qa-parent-a' }),
+    ]),
+    /reuses request evidence/i,
+  );
+});
+
+test('ICS rotation audit issues and rotates the same owner-scoped feed token', () => {
+  const audit = readFileSync(new URL('../scripts/qa/run-phase2-emulator-audit.mjs', import.meta.url), 'utf8');
+  assert.match(audit, /const ownerRotationToken = await issue\(\{ caseId: 'ics-rotate', actorAlias: 'qa-coach-owner-a', token: ownerToken,/);
+  assert.match(audit, /token: ownerRotationToken \}\);/);
+});
+
+test('fully observed operation dimensions describe completion instead of missing cases', async () => {
+  const scenario = CERTIFICATION_SCENARIOS.find(item => item.id === 'reminders-same-day-fcm-scheduler');
+  const events = Object.entries(LOCAL_OPERATIONS_CASE_REQUIREMENTS[scenario.id]).flatMap(([dimension, caseIds]) =>
+    caseIds.map(caseId => ({
+      type: 'case', scenarioId: scenario.id, caseId, dimension, state: 'OBSERVED',
+      startedAt: '2026-09-06T04:00:00.000Z', completedAt: '2026-09-06T04:00:01.000Z', artifacts: [],
+    }))
+  );
+  const output = await runOperationsBatch({
+    commit: '0123456789abcdef0123456789abcdef01234567',
+    browserEnabled: true,
+    now: () => '2026-09-06T04:00:02.000Z',
+    certificationObservation: {
+      code: 0,
+      startedAt: '2026-09-06T04:00:00.000Z', completedAt: '2026-09-06T04:00:02.000Z',
+      stdout: events.map(event => `CERTIFICATION_EVENT ${JSON.stringify(event)}`).join('\n'),
+    },
+    operations: { execute: ({ handler, ...input }) => handler(input) },
+  }, [scenario]);
+  assert.equal(output.runErrors.length, 0);
+  for (const dimension of Object.values(output.results[0].dimensions)) {
+    assert.equal(dimension.state, 'OBSERVED');
+    assert.equal(dimension.note, 'All exact operational cases observed locally.');
+  }
+});
+
+test('operations preserves selected-row runtime errors and a failed child exit despite NOT_OBSERVED cases', async () => {
+  const scenario = CERTIFICATION_SCENARIOS.find(item => item.id === 'events-event-crud-recurrence');
+  const output = await runOperationsBatch({
+    now: () => '2026-09-06T04:00:00.000Z',
+    certificationObservation: { code: 1, stderr: 'private diagnostic', stdout: 'CERTIFICATION_EVENT ' + JSON.stringify({
+      type: 'scenario-error', scenarioId: scenario.id, stage: 'operations-runtime', diagnostic: 'Event member visibility timeout',
+    }) },
+    redact: value => value.replace('private diagnostic', 'sanitized child diagnostic'),
+    operations: { execute: async () => ({ scenarioId: scenario.id, outcome: 'BLOCKED_PRECONDITION' }) },
+  }, [scenario]);
+  assert.ok(output.runErrors.some(error => error.scenarioId === scenario.id && error.diagnostic === 'Event member visibility timeout'));
+  assert.ok(output.runErrors.some(error => error.stage === 'operations-child' && error.diagnostic === 'sanitized child diagnostic'));
+});
+
+for (const observation of [undefined, { code: 1 }, { code: null, signal: 'SIGTERM' }, { code: 0, signal: 'SIGTERM' }]) {
+  test(`operations rejects missing/unsuccessful child evidence (${JSON.stringify(observation)})`, async () => {
+    const result = await runOperationsBatch({
+      now: () => '2026-09-06T04:00:00.000Z', certificationObservation: observation,
+      operations: { execute: async () => ({ outcome: 'BLOCKED_PRECONDITION' }) },
+    }, [CERTIFICATION_SCENARIOS.find(item => item.id === 'events-event-crud-recurrence')]);
+    assert.equal(result.runErrors[0]?.stage, 'operations-child');
+    assert.ok(result.runErrors[0]?.diagnostic);
+  });
+}
