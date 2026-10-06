@@ -12,11 +12,14 @@ export function findSavedFilmMark(viewer, text) {
 export async function dismissFilmTeamAlert(page) {
   const alert = page.getByRole('dialog', {name: 'High Priority Team Alert', exact: true});
   for (let dismissed = 0; dismissed <= 4; dismissed += 1) {
-    try { await alert.waitFor({state: 'visible', timeout: 1500}); }
+    try { await alert.waitFor({state: 'visible', timeout: dismissed === 0 ? 5000 : 1500}); }
     catch (error) { if (error.name === 'TimeoutError') return; throw error; }
     if (dismissed === 4) throw new Error('Film alert queue exceeded the four-alert fixture bound.');
-    await alert.getByRole('button', {name: 'Close', exact: true}).click();
-    await alert.waitFor({state: 'hidden', timeout: 5000});
+    const acknowledgedText=await alert.innerText();
+    const committed = page.waitForEvent('console', { predicate: message => message.text().startsWith('DEBUG: markAlertAsSeen Firestore write successful for ID:'), timeout: 15000 });
+    await alert.getByRole('button', {name: 'Got It', exact: true}).click();
+    await committed;
+    try { await alert.waitFor({state:'hidden',timeout:5000}); } catch(error) { if(error.name!=='TimeoutError'||await alert.innerText()===acknowledgedText)throw error; }
   }
 }
 

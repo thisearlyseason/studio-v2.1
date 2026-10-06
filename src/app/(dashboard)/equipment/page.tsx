@@ -689,7 +689,7 @@ function AuthorizedEquipmentPage() {
                 <SelectTrigger className="h-14 rounded-xl border-2 font-bold"><SelectValue placeholder="Select player..." /></SelectTrigger>
                 <SelectContent className="rounded-xl">
                   {members.map(m => (
-                    <SelectItem key={m.userId} value={m.userId} className="font-bold">{m.name} ({m.position})</SelectItem>
+                    <SelectItem key={m.id} value={m.userId} className="font-bold">{m.name} ({m.position})</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

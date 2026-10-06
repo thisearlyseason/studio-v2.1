@@ -636,7 +636,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
           setIsSeedingDemo={setIsSeedingDemo}
         />
         <ErrorBoundary>
-          <Shell>{children}</Shell>
+          <Shell>{activeTeam && isTeamModuleRouteDisabled(pathname, activeTeam.features) ? null : children}</Shell>
         </ErrorBoundary>
       </div>
     </div>

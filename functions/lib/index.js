@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.sendUpcomingEventReminders = exports.cleanupAnonymousUsers = exports.purgeExpiredDeletionRequests = exports.getCalendarFeed = exports.redeemLeagueInvite = exports.onTeamMemberDeleted = exports.onTeamMemberCreated = exports.onLeagueDeleted = exports.onLeagueAccessChanged = exports.onLeagueCreated = void 0;
+exports.sendUpcomingEventReminders = exports.cleanupAnonymousUsers = exports.purgeExpiredDeletionRequests = exports.getCalendarFeed = exports.redeemLeagueInvite = exports.onTeamMemberDeleted = exports.onTeamMemberCreated = exports.onLeagueTenantDeleted = exports.onLeagueTenantEntitlementChanged = exports.onLeagueOwnerDeleted = exports.onLeagueOwnerEntitlementChanged = exports.onLeagueDeleted = exports.onLeagueAccessChanged = exports.onLeagueCreated = void 0;
 const firestore_1 = require("firebase-functions/v2/firestore");
 const https_1 = require("firebase-functions/v2/https");
 const scheduler_1 = require("firebase-functions/v2/scheduler");
@@ -42,7 +42,11 @@ const webpush = __importStar(require("web-push"));
 const account_deletion_1 = require("./account-deletion");
 const event_reminders_1 = require("./event-reminders");
 const reminder_delivery_1 = require("./reminder-delivery");
+const reminder_deep_link_1 = require("./reminder-deep-link");
 const calendar_feed_1 = require("./calendar-feed");
+const calendar_feed_public_boundary_1 = require("./calendar-feed-public-boundary");
+const event_reminder_runner_1 = require("./event-reminder-runner");
+const league_public_projection_1 = require("./league-public-projection");
 admin.initializeApp();
 const db = admin.firestore();
 function reminderWebPushConfiguration() {
@@ -53,7 +57,7 @@ function reminderWebPushConfiguration() {
         return null;
     return { subject, publicKey, privateKey };
 }
-async function sendReminderWebPush(subscriptions, title, body) {
+async function sendReminderWebPush(subscriptions, title, body, reminderUrl) {
     if (!subscriptions.length)
         return { successCount: 0, failureCount: 0 };
     if (process.env.AUDIT_OUTBOUND_PROVIDER_MODE === "block") {
@@ -63,7 +67,7 @@ async function sendReminderWebPush(subscriptions, title, body) {
     if (!configuration)
         return { successCount: 0, failureCount: subscriptions.length };
     webpush.setVapidDetails(configuration.subject, configuration.publicKey, configuration.privateKey);
-    const payload = JSON.stringify({ webPush: { title, body, url: "/calendar" } });
+    const payload = JSON.stringify({ webPush: { title, body, url: reminderUrl } });
     const results = await Promise.allSettled(subscriptions.map(subscription => webpush.sendNotification(subscription, payload, { TTL: 3_600, urgency: "high" })));
     return {
         successCount: results.filter(result => result.status === "fulfilled").length,
@@ -109,51 +113,51 @@ async function syncLeaguesForTeam(teamId) {
         .get();
     await Promise.all(leagues.docs.map((league) => syncLeagueMemberUsers(league.id)));
 }
-/** Publishes only spectator-safe league fields; private league records stay private. */
-async function syncPublicLeagueView(leagueId) {
-    const leagueSnap = await db.collection("leagues").doc(leagueId).get();
-    const publicRef = db.collection("publicLeagueViews").doc(leagueId);
-    if (!leagueSnap.exists) {
-        await publicRef.delete();
-        return;
+const leagueProjectionStore = {
+    runTransaction: operation => db.runTransaction(async (transaction) => operation({
+        read: async (collection, id) => {
+            const snapshot = await transaction.get(db.collection(collection).doc(id));
+            return {
+                exists: snapshot.exists,
+                data: snapshot.data() || {},
+                version: snapshot.updateTime?.toMillis() || 0,
+            };
+        },
+        write: async (collection, id, data) => { transaction.set(db.collection(collection).doc(id), data); },
+        delete: async (collection, id) => { transaction.delete(db.collection(collection).doc(id)); },
+    })),
+};
+/** Publishes only the shared spectator DTO and converges retries transactionally. */
+async function syncPublicLeagueView(leagueId, expectedVersion) {
+    return (0, league_public_projection_1.syncPublicLeagueView)(leagueId, expectedVersion, leagueProjectionStore);
+}
+function eventVersion(snapshot) {
+    return snapshot?.updateTime?.toMillis();
+}
+function leaguePage(field, value) {
+    return async (cursor) => {
+        let query = db.collection("leagues")
+            .where(field, "==", value)
+            .orderBy(admin.firestore.FieldPath.documentId())
+            .limit(100);
+        if (cursor)
+            query = query.startAfter(cursor);
+        const snapshot = await query.get();
+        return {
+            ids: snapshot.docs.map(document => document.id),
+            nextCursor: snapshot.size === 100 ? snapshot.docs[snapshot.docs.length - 1]?.id : undefined,
+        };
+    };
+}
+async function syncLeaguePages(loaders, expectedVersion) {
+    for (const loadPage of loaders) {
+        await (0, league_public_projection_1.syncPublicLeagueViewPages)(loadPage, expectedVersion, syncPublicLeagueView);
     }
-    const league = leagueSnap.data() || {};
-    const teams = Object.fromEntries(Object.entries(league.teams || {}).map(([teamId, team]) => [teamId, {
-            teamName: team.teamName || "",
-            teamLogoUrl: team.teamLogoUrl || "",
-            wins: Number(team.wins || 0),
-            losses: Number(team.losses || 0),
-            ties: Number(team.ties || 0),
-            points: Number(team.points || 0),
-        }]));
-    const schedule = Array.isArray(league.schedule) ? league.schedule.map((game) => ({
-        id: game.id || "",
-        team1: game.team1 || "",
-        team1Id: game.team1Id || "",
-        team2: game.team2 || "",
-        team2Id: game.team2Id || "",
-        date: game.date || "",
-        time: game.time || "",
-        location: game.location || "",
-        status: game.status || "scheduled",
-        isCompleted: Boolean(game.isCompleted),
-        score1: Number(game.score1 || 0),
-        score2: Number(game.score2 || 0),
-    })) : [];
-    await publicRef.set({
-        id: leagueId,
-        name: league.name || "",
-        sport: league.sport || "",
-        divisionTitle: league.divisionTitle || "",
-        teams,
-        schedule,
-        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-    });
 }
 exports.onLeagueCreated = (0, firestore_1.onDocumentCreated)("leagues/{leagueId}", async (event) => {
     await Promise.all([
         syncLeagueMemberUsers(event.params.leagueId),
-        syncPublicLeagueView(event.params.leagueId),
+        syncPublicLeagueView(event.params.leagueId, eventVersion(event.data)),
     ]);
 });
 exports.onLeagueAccessChanged = (0, firestore_1.onDocumentUpdated)("leagues/{leagueId}", async (event) => {
@@ -161,13 +165,31 @@ exports.onLeagueAccessChanged = (0, firestore_1.onDocumentUpdated)("leagues/{lea
     const after = event.data?.after.data();
     if (!before || !after)
         return;
-    await syncPublicLeagueView(event.params.leagueId);
+    await syncPublicLeagueView(event.params.leagueId, eventVersion(event.data?.after));
     if (before.creatorId !== after.creatorId || JSON.stringify(before.memberTeamIds || []) !== JSON.stringify(after.memberTeamIds || [])) {
         await syncLeagueMemberUsers(event.params.leagueId);
     }
 });
 exports.onLeagueDeleted = (0, firestore_1.onDocumentDeleted)("leagues/{leagueId}", async (event) => {
-    await db.collection("publicLeagueViews").doc(event.params.leagueId).delete();
+    await syncPublicLeagueView(event.params.leagueId, eventVersion(event.data));
+});
+exports.onLeagueOwnerEntitlementChanged = (0, firestore_1.onDocumentUpdated)("users/{userId}", async (event) => {
+    await syncLeaguePages([
+        leaguePage("billingOwnerUserId", event.params.userId),
+        leaguePage("creatorId", event.params.userId),
+    ], eventVersion(event.data?.after));
+});
+exports.onLeagueOwnerDeleted = (0, firestore_1.onDocumentDeleted)("users/{userId}", async (event) => {
+    await syncLeaguePages([
+        leaguePage("billingOwnerUserId", event.params.userId),
+        leaguePage("creatorId", event.params.userId),
+    ], eventVersion(event.data));
+});
+exports.onLeagueTenantEntitlementChanged = (0, firestore_1.onDocumentUpdated)("teams/{teamId}", async (event) => {
+    await syncLeaguePages([leaguePage("tenantId", event.params.teamId)], eventVersion(event.data?.after));
+});
+exports.onLeagueTenantDeleted = (0, firestore_1.onDocumentDeleted)("teams/{teamId}", async (event) => {
+    await syncLeaguePages([leaguePage("tenantId", event.params.teamId)], eventVersion(event.data));
 });
 exports.onTeamMemberCreated = (0, firestore_1.onDocumentCreated)("teams/{teamId}/members/{memberId}", async (event) => {
     await syncLeaguesForTeam(event.params.teamId);
@@ -273,7 +295,8 @@ exports.getCalendarFeed = (0, https_1.onRequest)({ cors: true }, async (req, res
     const pathToken = req.path.split('/').filter(Boolean).pop();
     const token = typeof queryToken === "string" ? queryToken : pathToken;
     if (!token || !/^[a-f0-9]{64}$/.test(token)) {
-        res.status(400).send("Command Invalid: Mission Critical Token Missing.");
+        const failure = (0, calendar_feed_public_boundary_1.publicCalendarFeedFailure)("malformed");
+        res.status(failure.status).send(failure.body);
         return;
     }
     try {
@@ -282,18 +305,21 @@ exports.getCalendarFeed = (0, https_1.onRequest)({ cors: true }, async (req, res
         if (!feedSnap.exists ||
             feedSnap.data()?.active !== true ||
             feedSnap.data()?.serverIssued !== true) {
-            res.status(403).send("Tactical Error: Feed Token Denied or Decommissioned.");
+            const failure = (0, calendar_feed_public_boundary_1.publicCalendarFeedFailure)("inactive");
+            res.status(failure.status).send(failure.body);
             return;
         }
         const { type, userId, teamId, teamIds } = feedSnap.data();
         if (typeof userId !== "string" || !userId) {
-            res.status(403).send("Tactical Error: Feed Owner Invalid.");
+            const failure = (0, calendar_feed_public_boundary_1.publicCalendarFeedFailure)("invalid-scope");
+            res.status(failure.status).send(failure.body);
             return;
         }
         let resolvedTeamIds = [];
         if (type === "team") {
             if (typeof teamId !== "string" || !(await hasCurrentCalendarTeamAccess(teamId, userId))) {
-                res.status(403).send("Tactical Error: Squad Access Revoked.");
+                const failure = (0, calendar_feed_public_boundary_1.publicCalendarFeedFailure)("unauthorized");
+                res.status(failure.status).send(failure.body);
                 return;
             }
             resolvedTeamIds = [teamId];
@@ -303,12 +329,14 @@ exports.getCalendarFeed = (0, https_1.onRequest)({ cors: true }, async (req, res
                 teamIds.length < 1 ||
                 teamIds.length > 25 ||
                 teamIds.some(value => typeof value !== "string")) {
-                res.status(403).send("Tactical Error: Feed Scope Invalid.");
+                const failure = (0, calendar_feed_public_boundary_1.publicCalendarFeedFailure)("invalid-scope");
+                res.status(failure.status).send(failure.body);
                 return;
             }
             const access = await Promise.all(teamIds.map(id => hasCurrentCalendarTeamAccess(id, userId)));
             if (access.some(allowed => !allowed)) {
-                res.status(403).send("Tactical Error: Squad Access Revoked.");
+                const failure = (0, calendar_feed_public_boundary_1.publicCalendarFeedFailure)("unauthorized");
+                res.status(failure.status).send(failure.body);
                 return;
             }
             resolvedTeamIds = teamIds;
@@ -317,7 +345,8 @@ exports.getCalendarFeed = (0, https_1.onRequest)({ cors: true }, async (req, res
             resolvedTeamIds = await getCurrentCalendarTeamIds(userId);
         }
         else {
-            res.status(403).send("Tactical Error: Feed Type Invalid.");
+            const failure = (0, calendar_feed_public_boundary_1.publicCalendarFeedFailure)("invalid-scope");
+            res.status(failure.status).send(failure.body);
             return;
         }
         let events = [];
@@ -378,7 +407,9 @@ exports.getCalendarFeed = (0, https_1.onRequest)({ cors: true }, async (req, res
         const calendarName = type === "multi"
             ? "Squad Family Schedule"
             : (type === "team" ? teamMap[resolvedTeamIds[0]]?.name : "Master Schedule") || "Master Schedule";
-        const calendar = (0, calendar_feed_1.buildCalendarFeed)(uniqueEvents, teamMap, calendarName);
+        const calendar = (0, calendar_feed_1.buildCalendarFeed)(uniqueEvents.map(event => (0, calendar_feed_public_boundary_1.redactCalendarFeedPublicResponse)(event)), teamMap, calendarName)
+            // Defense in depth for values introduced by calendar serialization itself.
+            .replace(/\b[a-f0-9]{64}\b/gi, "[redacted]");
         // 5. Return Deployment Payload
         res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
         res.setHeader('Content-Disposition', 'attachment; filename="family_feed.ics"');
@@ -405,10 +436,30 @@ exports.purgeExpiredDeletionRequests = (0, scheduler_1.onSchedule)({
         .where('purgeAt', '<=', now)
         .limit(100)
         .get();
+    if (requests.empty) {
+        console.log('[account-deletion] No expired account deletion requests.');
+        return;
+    }
+    const requestedUids = new Set(requests.docs.map(request => request.id));
+    const userMapScan = await (0, account_deletion_1.loadUserMapDocumentsByUid)(account_deletion_1.USER_MAP_TARGETS, requestedUids, async (target, cursor) => {
+        let query = db.collectionGroup(target.collectionGroup)
+            .orderBy(admin.firestore.FieldPath.documentId())
+            .limit(500);
+        if (cursor)
+            query = query.startAfter(cursor);
+        const snapshot = await query.get();
+        return {
+            documents: snapshot.docs,
+            nextCursor: snapshot.size === 500 ? snapshot.docs[snapshot.docs.length - 1] : undefined,
+        };
+    });
     let purged = 0;
     for (const request of requests.docs) {
         const uid = request.id;
         try {
+            if (userMapScan.failedTargets.length > 0) {
+                throw new Error(`dynamic-map scan failed for ${userMapScan.failedTargets.join(', ')}`);
+            }
             const [user, ownedTeams, ownedLeagues] = await Promise.all([
                 db.collection('users').doc(uid).get(),
                 db.collection('teams').where('ownerUserId', '==', uid).limit(1).get(),
@@ -468,10 +519,10 @@ exports.purgeExpiredDeletionRequests = (0, scheduler_1.onSchedule)({
             }
             for (const target of account_deletion_1.USER_MAP_TARGETS) {
                 const userEntry = new admin.firestore.FieldPath(target.mapField, uid);
-                const snapshot = await db.collectionGroup(target.collectionGroup)
-                    .where(userEntry, '!=', null)
-                    .get();
-                await Promise.all(snapshot.docs.map(async (document) => {
+                const matchingDocuments = userMapScan.documentsByTarget
+                    .get(`${target.collectionGroup}:${target.mapField}`)
+                    ?.get(uid) || [];
+                await Promise.all(matchingDocuments.map(async (document) => {
                     const entry = document.data()?.[target.mapField]?.[uid];
                     if (target.restoreQuantityField && Number(entry?.quantity) > 0) {
                         await document.ref.update(userEntry, admin.firestore.FieldValue.delete(), target.restoreQuantityField, admin.firestore.FieldValue.increment(Number(entry.quantity)));
@@ -496,6 +547,8 @@ exports.purgeExpiredDeletionRequests = (0, scheduler_1.onSchedule)({
                 refs.slice(start, start + 450).forEach((documentRef) => batch.delete(documentRef));
                 await batch.commit();
             }
+            // Block preferences are private account data outside the users tree.
+            await db.recursiveDelete(db.collection('userSafety').doc(uid));
             if (user.exists)
                 await db.recursiveDelete(user.ref);
             try {
@@ -577,6 +630,7 @@ exports.cleanupAnonymousUsers = (0, scheduler_1.onSchedule)({
                             if (facility.data().isDemo === true)
                                 await db.recursiveDelete(facility.ref);
                         }
+                        await db.recursiveDelete(db.collection('userSafety').doc(uid));
                         await db.recursiveDelete(db.collection('users').doc(uid));
                         try {
                             await auth.deleteUser(uid);
@@ -602,7 +656,7 @@ exports.cleanupAnonymousUsers = (0, scheduler_1.onSchedule)({
     }
 });
 /**
- * Sends one same-day reminder to player and parent accounts for each upcoming
+ * Sends one same-day reminder to opted-in active members for each upcoming
  * team event. Delivery claims prevent overlapping scheduler runs from sending
  * the same reminder more than once.
  */
@@ -611,111 +665,73 @@ exports.sendUpcomingEventReminders = (0, scheduler_1.onSchedule)({
     region: 'us-central1',
     timeoutSeconds: 540,
     memory: '512MiB',
+    secrets: ['WEB_PUSH_VAPID_SUBJECT', 'NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY', 'WEB_PUSH_VAPID_PRIVATE_KEY'],
 }, async () => {
     const now = new Date();
-    const eventSnaps = await db.collectionGroup("events")
-        .where("date", "in", (0, event_reminders_1.candidateDateKeys)(now))
-        .get();
     const teamCache = new Map();
-    let sentCount = 0;
-    for (const eventSnap of eventSnaps.docs) {
-        const teamRef = eventSnap.ref.parent.parent;
-        if (!teamRef)
-            continue;
-        const teamId = teamRef.id;
-        let teamSnap = teamCache.get(teamId);
-        if (!teamSnap) {
-            teamSnap = await teamRef.get();
-            teamCache.set(teamId, teamSnap);
-        }
-        if (!teamSnap.exists)
-            continue;
-        const eventData = eventSnap.data();
-        const teamData = teamSnap.data() || {};
-        const timeZone = typeof eventData.timeZone === "string"
-            ? eventData.timeZone
-            : (typeof teamData.timeZone === "string" ? teamData.timeZone : "America/Edmonton");
-        if (!(0, event_reminders_1.shouldSendSameDayReminder)(eventData, now, timeZone))
-            continue;
-        const members = await teamRef.collection("members").get();
-        const userIds = [...new Set(members.docs
-                .filter((member) => member.data().status !== "removed" && member.data().isDeleted !== true)
-                .map((member) => member.data().userId)
-                .filter((userId) => typeof userId === "string" && !!userId))];
-        if (!userIds.length)
-            continue;
-        const users = await Promise.all(userIds.map((userId) => db.collection("users").doc(userId).get()));
-        for (const userSnap of users) {
-            if (!userSnap.exists)
-                continue;
-            const user = userSnap.data() || {};
-            const targets = (0, reminder_delivery_1.selectReminderDeliveryTargets)(user);
-            if (!targets.fcmTokens.length && !targets.webPushSubscriptions.length)
-                continue;
-            const deliveryRef = db.collection("eventReminderDeliveries")
-                .doc(`${teamId}_${eventSnap.id}_${userSnap.id}`);
-            const claimed = await db.runTransaction(async (transaction) => {
-                const delivery = await transaction.get(deliveryRef);
-                const data = delivery.data() || {};
+    const result = await (0, event_reminder_runner_1.runUpcomingEventReminderCore)({
+        now,
+        listEvents: async () => {
+            const eventSnaps = await db.collectionGroup("events").where("date", "in", (0, event_reminders_1.candidateDateKeys)(now)).get();
+            return eventSnaps.docs.flatMap(snapshot => {
+                const teamRef = snapshot.ref.parent.parent;
+                return teamRef ? [{ teamId: teamRef.id, eventId: snapshot.id, event: snapshot.data() }] : [];
+            });
+        },
+        getTeam: async (teamId) => {
+            let snapshot = teamCache.get(teamId);
+            if (!snapshot) {
+                snapshot = await db.collection("teams").doc(teamId).get();
+                teamCache.set(teamId, snapshot);
+            }
+            return snapshot.exists ? snapshot.data() || {} : null;
+        },
+        listMembers: async (teamId) => (await db.collection("teams").doc(teamId).collection("members").get()).docs.map(item => item.data()),
+        getUser: async (userId) => {
+            const snapshot = await db.collection("users").doc(userId).get();
+            return snapshot.exists ? snapshot.data() || {} : null;
+        },
+        claim: async (entry) => {
+            const ref = db.collection("eventReminderDeliveries").doc(`${entry.teamId}_${entry.eventId}_${entry.userId}`);
+            return db.runTransaction(async (transaction) => {
+                const snapshot = await transaction.get(ref);
+                const data = snapshot.data() || {};
                 const leaseExpiresAt = data.leaseExpiresAt?.toMillis?.() || 0;
-                if (!(0, reminder_delivery_1.canClaimReminderDelivery)({ status: data.status, leaseExpiresAt }, Date.now()))
+                if (!(0, reminder_delivery_1.canClaimReminderDelivery)({ status: data.status, leaseExpiresAt }, now.getTime()))
                     return false;
-                transaction.set(deliveryRef, {
-                    teamId,
-                    eventId: eventSnap.id,
-                    userId: userSnap.id,
-                    status: "processing",
-                    attempts: Number(data.attempts || 0) + 1,
-                    leaseExpiresAt: admin.firestore.Timestamp.fromMillis(Date.now() + (5 * 60 * 1000)),
+                transaction.set(ref, {
+                    ...entry, status: "processing", attempts: Number(data.attempts || 0) + 1,
+                    leaseExpiresAt: admin.firestore.Timestamp.fromMillis(now.getTime() + (5 * 60 * 1000)),
                     updatedAt: admin.firestore.FieldValue.serverTimestamp(),
                 }, { merge: true });
                 return true;
             });
-            if (!claimed)
-                continue;
-            try {
-                const title = `Upcoming ${(0, event_reminders_1.normalizeEventKind)(eventData).replace(/^./, (letter) => letter.toUpperCase())}`;
-                const body = (0, event_reminders_1.buildUpcomingEventMessage)(eventData);
-                const [fcm, webPush] = await Promise.all([
-                    targets.fcmTokens.length
-                        ? admin.messaging().sendEachForMulticast({
-                            tokens: targets.fcmTokens,
-                            notification: { title, body },
-                            webpush: {
-                                notification: {
-                                    icon: "/favicon-192.png",
-                                    badge: "/favicon-192.png",
-                                },
-                                fcmOptions: { link: "/calendar" },
-                            },
-                        })
-                        : Promise.resolve({ successCount: 0, failureCount: 0 }),
-                    sendReminderWebPush(targets.webPushSubscriptions, title, body),
-                ]);
-                const successCount = fcm.successCount + webPush.successCount;
-                const failureCount = fcm.failureCount + webPush.failureCount;
-                if (successCount < 1)
-                    throw new Error("No registered device accepted the reminder.");
-                await deliveryRef.set({
-                    status: "sent",
-                    successCount,
-                    failureCount,
-                    sentAt: admin.firestore.FieldValue.serverTimestamp(),
-                    leaseExpiresAt: admin.firestore.FieldValue.delete(),
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                }, { merge: true });
-                sentCount += 1;
-            }
-            catch (error) {
-                await deliveryRef.set({
-                    status: "failed",
-                    error: error instanceof Error ? error.message : "Reminder delivery failed.",
-                    leaseExpiresAt: admin.firestore.FieldValue.delete(),
-                    updatedAt: admin.firestore.FieldValue.serverTimestamp(),
-                }, { merge: true });
-            }
-        }
-    }
-    console.log(`[event-reminders] Sent ${sentCount} same-day player/parent reminder(s).`);
+        },
+        markSent: async (entry) => {
+            await db.collection("eventReminderDeliveries").doc(`${entry.teamId}_${entry.eventId}_${entry.userId}`).set({
+                status: "sent", successCount: entry.successCount, failureCount: entry.failureCount,
+                sentAt: admin.firestore.FieldValue.serverTimestamp(), leaseExpiresAt: admin.firestore.FieldValue.delete(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            }, { merge: true });
+        },
+        markFailed: async (entry) => {
+            await db.collection("eventReminderDeliveries").doc(`${entry.teamId}_${entry.eventId}_${entry.userId}`).set({
+                status: "failed", error: entry.diagnostic, leaseExpiresAt: admin.firestore.FieldValue.delete(),
+                updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+            }, { merge: true });
+        },
+        deliver: async ({ entry, targets, title, body }) => {
+            const reminderUrl = (0, reminder_deep_link_1.buildReminderDeepLink)(entry);
+            const [fcm, webPush] = await Promise.all([
+                targets.fcmTokens.length ? admin.messaging().sendEachForMulticast({
+                    tokens: targets.fcmTokens, notification: { title, body },
+                    webpush: { notification: { icon: "/favicon-192.png", badge: "/favicon-192.png" }, fcmOptions: { link: reminderUrl } },
+                }) : Promise.resolve({ successCount: 0, failureCount: 0 }),
+                sendReminderWebPush(targets.webPushSubscriptions, title, body, reminderUrl),
+            ]);
+            return { successCount: fcm.successCount + webPush.successCount, failureCount: fcm.failureCount + webPush.failureCount };
+        },
+    });
+    console.log(`[event-reminders] Sent ${result.sentCount} same-day active-member reminder(s); ${result.failedCount} failed for retry.`);
 });
 //# sourceMappingURL=index.js.map

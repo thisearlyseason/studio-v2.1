@@ -24,7 +24,7 @@ before(async () => {
   const injected = {
     'firebase-admin': `export function auth(){return {getUser:async()=>({metadata:{creationTime:new Date().toISOString()}})}}`,
     '@/lib/firebase-admin': `export const adminDb={collection:()=>({doc:()=>({get:async()=>({exists:true,data:()=>globalThis.${boundary}.user}),update:async()=>{}})})};`,
-    '@/lib/stripe-client': `export function getStripe(){return globalThis.${boundary}.stripe}`,
+    '@/lib/stripe-client': `export function getStripe(){globalThis.${boundary}.providerAccesses++;return globalThis.${boundary}.stripe}`,
     '@/lib/api-auth': `import {NextResponse} from 'next/server'; export async function verifyFirebaseToken(){return {uid:${JSON.stringify(uid)}}} export function assertNonAnonymous(){return null} export function assertOwner(auth,id){return auth.uid===id?null:NextResponse.json({error:'Forbidden'},{status:403})}`,
     '@/lib/server-request-guards': `export class RequestBodyError extends Error{}; export async function readJsonBodyWithLimit(req){return req.json()} export async function enforceUserRateLimit(){return null}`,
     '@/lib/server-subscription-mutation-lock': `export class SubscriptionMutationInProgressError extends Error{}; export async function claimSubscriptionMutation(){globalThis.${boundary}.claims++} export async function releaseSubscriptionMutation(){globalThis.${boundary}.releases++}`,
@@ -39,7 +39,7 @@ after(async () => {delete globalThis[boundary];await rm(directory,{recursive:tru
 
 function reset(overrides={}) {
   const subscription={id:'sub_local',customer:'cus_local',currency:'usd',status:'active',cancel_at_period_end:false,items:{data:[{id:'si_base',price:{id:monthly},quantity:1}]},...overrides};
-  state={user:{email:'fixture@example.test',stripe_customer_id:'cus_local',stripe_subscription_id:'sub_local'},subscription,updates:[],reconciliations:[],checkouts:[],claims:0,releases:0};
+  state={user:{email:'fixture@example.test',stripe_customer_id:'cus_local',stripe_subscription_id:'sub_local'},subscription,updates:[],reconciliations:[],checkouts:[],claims:0,releases:0,providerAccesses:0};
   state.stripe={customers:{retrieve:async()=>({id:'cus_local',metadata:{firebase_uid:uid}})},subscriptions:{retrieve:async()=>subscription,list:async()=>({data:[]}),update:async(id,params,options)=>{state.updates.push({id,params,options});return state.updated??{...subscription,items:{data:params.items.map(i=>({id:i.id,price:{id:i.price},quantity:i.quantity??1}))}};}}};
   globalThis[boundary]=state;
 }
@@ -56,8 +56,24 @@ test('provider non-entitled update never grants paid capacity',async()=>{reset()
 test('repeated upgrade operation keeps its provider idempotency scope stable',async()=>{reset();await upgrade();await upgrade();assert.equal(state.updates.length,2);assert.equal(state.updates[0].options.idempotencyKey,state.updates[1].options.idempotencyKey);assert.equal(state.claims,state.releases);});
 
 for (const priceId of prices.ACTIVE_PLAN_PRICE_IDS) {
-  test(`checkout ${prices.PLAN_PRICE_MAP[priceId].id}/${prices.PRICE_BILLING_CYCLE[priceId]} uses USD and matching addon`,async()=>{reset();delete state.user.stripe_subscription_id;const cycle=prices.PRICE_BILLING_CYCLE[priceId];const response=await routes.checkout(request({userId:uid,priceId,billingCycle:cycle,extraTeamQty:2}));assert.equal(response.status,200);const params=state.checkouts[0].params;assert.equal(params.currency,'usd');assert.equal(params.adaptive_pricing.enabled,false);assert.deepEqual(params.line_items,[{price:priceId,quantity:1},{price:prices.EXTRA_TEAM_PRICE_IDS[cycle],quantity:2}]);assert.equal(params.metadata.firebase_uid,uid);assert.equal(params.subscription_data.trial_period_days,5);});
+  test(`checkout ${prices.PLAN_PRICE_MAP[priceId].id}/${prices.PRICE_BILLING_CYCLE[priceId]} uses USD and matching addon`,async()=>{reset();delete state.user.stripe_subscription_id;const cycle=prices.PRICE_BILLING_CYCLE[priceId];const response=await routes.checkout(request({userId:uid,priceId,billingCycle:cycle,extraTeamQty:2,...(prices.PLAN_PRICE_MAP[priceId].id === 'school' ? {organizationDeclaration:'school'} : {})}));assert.equal(response.status,200);const params=state.checkouts[0].params;assert.equal(params.currency,'usd');assert.equal(params.adaptive_pricing.enabled,false);assert.deepEqual(params.line_items,[{price:priceId,quantity:1},{price:prices.EXTRA_TEAM_PRICE_IDS[cycle],quantity:2}]);assert.equal(params.metadata.firebase_uid,uid);assert.equal(params.subscription_data.trial_period_days,5);});
 }
 test('checkout rejects recognized CAD price and mismatched interval before session creation',async()=>{for(const input of [{priceId:legacy,billingCycle:'monthly'},{priceId:monthly,billingCycle:'annual'}]){reset();const r=await routes.checkout(request({userId:uid,...input}));assert.equal(r.status,400);assert.equal(state.checkouts.length,0);}});
 
 test('new canonical checkout explicitly opts out of Managed Payments',async()=>{reset();state.user.stripe_subscription_id=null;const response=await routes.checkout(request({userId:uid,priceId:monthly}));assert.equal(response.status,200);assert.deepEqual(state.checkouts[0].params.managed_payments,{enabled:false});});
+
+// School eligibility is evaluated by the real route/helper before provider access.
+for (const priceId of prices.ACTIVE_PLAN_PRICE_IDS) {
+  if (prices.PLAN_PRICE_MAP[priceId].id !== 'school') continue;
+  test(`undeclared school/${prices.PRICE_BILLING_CYCLE[priceId]} checkout is denied before provider access`, async () => {
+    reset();
+    delete state.user.stripe_subscription_id;
+    const response = await routes.checkout(request({userId:uid,priceId,billingCycle:prices.PRICE_BILLING_CYCLE[priceId],extraTeamQty:2}));
+    assert.equal(response.status,403);
+    assert.match((await response.json()).error,/Schools plan is for schools and nonprofits/);
+    assert.equal(state.providerAccesses,0);
+    assert.equal(state.checkouts.length,0);
+    assert.equal(state.reconciliations.length,0);
+    assert.equal(state.claims,0);
+  });
+}

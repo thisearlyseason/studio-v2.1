@@ -68,3 +68,5 @@ test('Drill deletion response wait accepts only the actual exact document delete
   assert.equal(predicate(response([])),false);
   assert.equal(predicate(response([{delete:'teams/a/drills/owned'}],'POST','https://example.com')),false);
 });
+
+test('Practice recognizes JSON-string-wrapped application writes without accepting handshakes',()=>{const page=new EventEmitter();const observer=practice.createPracticeBrowserObserver(page,{baseUrl:'http://127.0.0.1:3100',prefix:'plan'});observer.start(['plan-create-edit']);const request={url:()=> 'http://127.0.0.1:8080/google.firestore.v1.Firestore/Write/channel',method:()=> 'POST',postData:()=> 'req0___data__='+encodeURIComponent(JSON.stringify(JSON.stringify({writes:[{update:{name:'private'}}]})))};page.emit('request',request);page.emit('response',{request:()=>request,status:()=>200});const result=observer.finish();assert.equal(practice.requirePracticeResponses(result.observedResponses,'plan-create-edit',{mutation:true}).length,1);assert.equal(JSON.stringify(result).includes('private'),false);});

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { fetchAndParseRSSFeed, shouldRejectItem } from '@/lib/rss-parser';
 import { verifyFirebaseToken } from '@/lib/api-auth';
@@ -38,32 +39,25 @@ export async function POST(req: NextRequest) {
     // Apply content filters
     const filteredItems = rawItems.filter((item) => !shouldRejectItem(item));
 
-    // In production: save articles to Firestore sports_hub_rss_articles collection
-    // const db = getFirestore();
-    // const batch = db.batch();
-    // for (const item of filteredItems) {
-    //   const docRef = db.collection('sports_hub_rss_articles').doc();
-    //   batch.set(docRef, {
-    //     feedId,
-    //     title: item.title,
-    //     url: item.url,
-    //     excerpt: item.excerpt,
-    //     imageUrl: item.imageUrl || null,
-    //     source: item.source,
-    //     publishedAt: item.publishedAt,
-    //     category: config.category || 'General',
-    //     importedAt: new Date().toISOString(),
-    //     isDuplicate: false,
-    //   });
-    // }
-    // await batch.commit();
-    //
-    // Update feed lastSyncAt
-    // await db.collection('sports_hub_rss_feeds').doc(feedId).update({
-    //   lastSyncAt: new Date().toISOString(),
-    //   lastSyncStatus: 'success',
-    //   articleCount: filteredItems.length,
-    // });
+    const importedAt = new Date().toISOString();
+    // A stable feed/link identity makes repeated refreshes safe.
+    for (let offset = 0; offset < filteredItems.length; offset += 400) {
+      const batch = adminDb.batch();
+      for (const item of filteredItems.slice(offset, offset + 400)) {
+        const articleId = createHash('sha256').update(`${feedId}\n${item.url}`).digest('hex');
+        batch.set(adminDb.collection('sports_hub_rss_articles').doc(articleId), {
+          feedId, title: item.title, url: item.url, excerpt: item.excerpt,
+          imageUrl: item.imageUrl || null, source: item.source,
+          publishedAt: item.publishedAt, category: config.category || 'General',
+          importedAt, isDuplicate: false,
+        }, { merge: true });
+      }
+      await batch.commit();
+    }
+    await adminDb.collection('sports_hub_rss_feeds').doc(feedId).set({
+      lastSyncAt: importedAt, lastSyncStatus: 'success',
+      articleCount: filteredItems.length,
+    }, { merge: true });
 
     return NextResponse.json({
       success: true,

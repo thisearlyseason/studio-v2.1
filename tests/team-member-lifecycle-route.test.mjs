@@ -97,6 +97,6 @@ test('registered users cannot write their server-owned team access projection', 
 test('stale legacy projections fail closed when canonical team access is denied', () => {
   const provider = fs.readFileSync(new URL('../src/components/providers/team-provider.tsx', import.meta.url), 'utf8');
   assert.match(provider, /const \{ data: activeTeamDoc, isLoading: isActiveTeamDocLoading \} = useDoc<Team>\(activeTeamDocRef\)/);
-  assert.match(provider, /if \(!isActiveTeamDocLoading && !activeTeamDoc\) return null;/);
+  assert.match(provider, /if \(isActiveTeamDocLoading \|\| !activeTeamDoc\) return null;/);
   assert.match(provider, /return activeTeamDoc\?\.isPro === true;/);
 });
