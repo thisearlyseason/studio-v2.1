@@ -8,10 +8,10 @@ import {mediaBucket} from '@/lib/server-media-storage';
 import {mediaResumableOptions,cancelMediaUpload,mediaUploadAbortAdapter} from '@/lib/media-resumable';
 import {mediaActor,mediaAuthorityState,mediaFailure,mediaHeaders} from '@/lib/server-media';
 import {canManageMedia,canReadMedia} from '@/lib/media-authority';
-import {consumeMediaBytes,MediaInputError,mediaByteLimit,mediaStorageMetadata,parseMediaPath,parseMediaRange,validateMediaSignature} from '@/lib/media-policy';
+import {consumeMediaBytes,MediaInputError,mediaByteLimit,mediaStorageMetadata,parseMediaPath,parseMediaRequestTarget,parseMediaRange,validateMediaSignature} from '@/lib/media-policy';
 import {enforceUserRateLimit} from '@/lib/server-request-guards';
 
-function targetFor(req:NextRequest){const params=new URL(req.url).searchParams;if([...params.keys()].some(key=>key!=='path')||params.getAll('path').length!==1)throw new MediaInputError('Invalid media request.');return parseMediaPath(params.get('path')||'');}
+function targetFor(req:NextRequest){return parseMediaRequestTarget(req.url,req.method);}
 export async function POST(req:NextRequest){
   try{
     const actor=await mediaActor(req,true);if(actor instanceof NextResponse)return actor;

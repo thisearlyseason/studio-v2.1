@@ -1316,11 +1316,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { data: activeTeamDoc, isLoading: isActiveTeamDocLoading } = useDoc<Team>(activeTeamDocRef);
 
   const activeTeam = useMemo(() => {
+    if (!isAuthResolved || !firebaseUser?.uid || userProfile?.id !== firebaseUser.uid || isTeamsLoading) return null;
     if (!activeTeamMembership) return null;
     // Membership projections are only a discovery index. A removed member may
     // still have a legacy projection created before lifecycle cleanup became
     // server-owned, so fail closed once canonical team access is denied.
-    if (!isActiveTeamDocLoading && !activeTeamDoc) return null;
+    if (isActiveTeamDocLoading || !activeTeamDoc) return null;
+    if (activeTeamDoc.id !== activeTeamMembership.id) return null;
     const combined = { ...activeTeamMembership, ...activeTeamDoc };
     // Use the same shared fallback — NEVER 'SF' + slice which was inconsistent
     const storedCode = (combined.code || combined.teamCode || combined.inviteCode || '').toString().trim().toUpperCase();
@@ -1331,7 +1333,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       teamCode: finalCode,
       inviteCode: finalCode
     } as Team;
-  }, [activeTeamMembership, activeTeamDoc, isActiveTeamDocLoading, generateTeamCode]);
+  }, [isAuthResolved, firebaseUser, userProfile?.id, isTeamsLoading, activeTeamMembership, activeTeamDoc, isActiveTeamDocLoading, generateTeamCode]);
 
   const membersQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'members')) : null, [isAuthResolved, activeTeam?.id, db]);
   const { data: membersData, isLoading: isMembersInitialLoading } = useCollection<Member>(membersQuery);
@@ -3165,7 +3167,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const updateLeagueTeamDetails = useCallback(async (leagueId: string, teamId: string, updates: any) => {
     const publicFields = Object.fromEntries(
-      ['origin', 'teamName', 'wins', 'losses', 'ties', 'points']
+      ['origin', 'teamName', 'wins', 'losses', 'ties', 'points', 'division']
         .filter(key => updates[key] !== undefined)
         .map(key => [key, ['wins', 'losses', 'ties', 'points'].includes(key) ? parseInt(updates[key].toString()) : updates[key]])
     );

@@ -5,6 +5,14 @@ export type MediaTarget={kind:'user'|'player'|'team';subjectId:string;category:'
 // Existing uploads used the original filename (including spaces). Preserve
 // those exact identities while still forbidding separators/control bytes.
 const identifier='[A-Za-z0-9_-]{1,200}',filename='(?!\\.{1,2}$)[^/\\\\\\x00-\\x1f\\x7f]{1,240}';
+export function parseMediaRequestTarget(requestUrl:string,method='GET'):MediaTarget{
+  const params=new URL(requestUrl).searchParams;
+  const readOnly=method==='GET'||method==='HEAD';
+  if([...params.keys()].some(key=>key!=='path'&&!(readOnly&&key==='v'))||params.getAll('path').length!==1||params.getAll('v').length>1)throw new MediaInputError('Invalid media request.');
+  const version=params.get('v');
+  if(version!==null&&!/^(0|[1-9]\d{0,15})$/.test(version))throw new MediaInputError('Invalid media request.');
+  return parseMediaPath(params.get('path')||'');
+}
 export function parseMediaPath(path:string):MediaTarget{
   let match=new RegExp(`^users/(${identifier})/avatar\\.jpg$`).exec(path);
   if(match)return{kind:'user',subjectId:match[1],category:'avatar',path};

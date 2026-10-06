@@ -67,6 +67,7 @@ export async function deleteAnonymousDemo(uid: string): Promise<void> {
     if (facility.data().isDemo === true) await adminDb.recursiveDelete(facility.ref);
   }
 
+  await adminDb.recursiveDelete(adminDb.collection('userSafety').doc(uid));
   await adminDb.recursiveDelete(adminDb.collection('users').doc(uid));
   try {
     await auth.deleteUser(uid);

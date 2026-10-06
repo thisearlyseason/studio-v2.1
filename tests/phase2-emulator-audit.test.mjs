@@ -1494,6 +1494,9 @@ test('local audit retries only request-identified Chat sends after a transient d
     new TypeError('fetch failed', { cause: Object.assign(new Error('closed'), { code: 'UND_ERR_SOCKET' }) }),
   ), true);
   assert.equal(auditRunner.isRetryableLocalTransportError(
+    new TypeError('fetch failed', { cause: Object.assign(new Error('broken pipe'), { code: 'EPIPE' }) }),
+  ), true);
+  assert.equal(auditRunner.isRetryableLocalTransportError(
     new TypeError('fetch failed', { cause: Object.assign(new Error('refused'), { code: 'ECONNREFUSED' }) }),
   ), false);
 });

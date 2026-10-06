@@ -79,6 +79,9 @@ export default function TeamProfilePage() {
   const [isPlanOpen, setIsPlanOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [isUpdatingLogo, setIsUpdatingLogo] = useState(false);
+  const [logoRevision, setLogoRevision] = useState(0);
+  const logoSource = activeTeam?.teamLogoUrl?.startsWith('/api/media?path=') && logoRevision
+    ? `${activeTeam.teamLogoUrl}&v=${logoRevision}` : activeTeam?.teamLogoUrl;
   const [selectedPlanId, setSelectedPlanId] = useState('');
   const [isCodeEditOpen, setIsCodeEditOpen] = useState(false);
   const [newCode, setNewCode] = useState('');
@@ -232,7 +235,7 @@ export default function TeamProfilePage() {
       setIsUpdatingLogo(true);
       try {
         const uploaded=await uploadScopedMedia(`teams/${activeTeam.id}/branding/logo`,e.target.files[0],await getAuthToken(firebaseAuth));
-        if(db){await updateDoc(doc(db,'teams',activeTeam.id),{teamLogoUrl:uploaded.url});propagateLogoToLeagues(activeTeam.id,uploaded.url);}
+        if(db){await updateDoc(doc(db,'teams',activeTeam.id),{teamLogoUrl:uploaded.url});setLogoRevision(revision=>revision+1);propagateLogoToLeagues(activeTeam.id,uploaded.url);}
         toast({ title: 'Squad Branding Updated', description: 'Identity assets synchronized across the matrix.' });
         setIsUpdatingLogo(false);
       } catch (err) {
@@ -478,7 +481,7 @@ export default function TeamProfilePage() {
           <div className="relative group">
             <input type="file" ref={logoInputRef} className="hidden" accept="image/*" onChange={handleLogoChange} />
             <Avatar className="h-40 w-40 border-0 bg-transparent shadow-none rounded-none">
-              <AvatarImage src={activeTeam.teamLogoUrl} className="object-contain" />
+              <AvatarImage key={logoRevision} src={logoSource} className="object-contain" />
               <AvatarFallback className="hero-gradient text-white text-4xl font-black rounded-3xl">{activeTeam.name ? activeTeam.name[0] : 'T'}</AvatarFallback>
             </Avatar>
             {isAdmin && (
@@ -605,7 +608,7 @@ export default function TeamProfilePage() {
                     >
                       {activeTeam.teamLogoUrl ? (
                         <>
-                          <img src={activeTeam.teamLogoUrl} className="w-full h-full object-contain p-4" alt="Squad Logo" />
+                          <img key={logoRevision} src={logoSource} className="w-full h-full object-contain p-4" alt="Squad Logo" />
                           <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white p-4 text-center">
                              <Camera className="h-8 w-8 mb-2" />
                              <p className="text-[10px] font-black uppercase tracking-wider">Replace Logo</p>

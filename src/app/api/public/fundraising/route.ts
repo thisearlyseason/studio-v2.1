@@ -33,7 +33,7 @@ function publicCampaign(data: Record<string, any>, id: string) {
 }
 
 function campaignIsOpen(data: Record<string, any>): boolean {
-  if (data.isShareable !== true) return false;
+  if (data.isShareable !== true || data.status === 'closed') return false;
   if (typeof data.deadline !== 'string' || !data.deadline) return true;
   const deadline = new Date(data.deadline);
   return !Number.isNaN(deadline.getTime()) && deadline.getTime() >= Date.now();

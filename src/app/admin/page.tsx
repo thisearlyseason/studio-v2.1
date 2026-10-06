@@ -2515,12 +2515,12 @@ export default function AdminPortalPage() {
                     </div>
                   ) : (
                     <div className="bg-white dark:bg-white/5 rounded-2xl border border-gray-200 dark:border-white/10 overflow-hidden">
-                      <div className="grid grid-cols-[2fr_1fr_1fr_auto] gap-0 text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-white/30 px-6 py-3 border-b border-gray-100 dark:border-white/10">
+                      <div className="hidden sm:grid sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-0 text-[9px] font-black uppercase tracking-widest text-gray-400 dark:text-white/30 px-6 py-3 border-b border-gray-100 dark:border-white/10">
                         <span>Feed</span><span>Category</span><span>Status</span><span>Actions</span>
                       </div>
                       <div className="divide-y divide-gray-100 dark:divide-white/10">
                         {shFeeds.map(feed => (
-                          <div key={feed.id} className="grid grid-cols-[2fr_1fr_1fr_auto] gap-0 px-6 py-4 items-center hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
+                          <div key={feed.id} className="grid grid-cols-1 sm:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_auto] gap-3 sm:gap-0 px-6 py-4 items-center hover:bg-gray-50 dark:hover:bg-white/5 transition-colors">
                             <div className="min-w-0 pr-4">
                               <p className="text-sm font-black text-gray-900 dark:text-white truncate">{feed.name}</p>
                               <p className="text-[10px] text-gray-400 dark:text-white/30 font-mono truncate">{feed.url}</p>

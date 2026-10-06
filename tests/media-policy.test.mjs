@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import {parseMediaPath,validateMediaSignature,mediaByteLimit,parseMediaRange,consumeMediaBytes} from '../src/lib/media-policy.ts';
+import {parseMediaPath,parseMediaRequestTarget,validateMediaSignature,mediaByteLimit,parseMediaRange,consumeMediaBytes} from '../src/lib/media-policy.ts';
 
 test('media path allowlist binds exact user, player category, and branding scope',()=>{
   assert.deepEqual(parseMediaPath('users/u/avatar.jpg'),{kind:'user',subjectId:'u',category:'avatar',path:'users/u/avatar.jpg'});
@@ -32,4 +32,13 @@ test('protected media byte ranges are bounded and reject malformed or multi-rang
   assert.deepEqual(parseMediaRange('bytes=7-',10),{start:7,end:9});
   assert.deepEqual(parseMediaRange('bytes=-3',10),{start:7,end:9});
   for(const value of ['bytes=10-','bytes=4-2','bytes=0-1,3-4','bad','bytes=-0'])assert.throws(()=>parseMediaRange(value,10));
+});
+
+test('media display version changes only GET/HEAD cache identity, never media authority',()=>{
+  const url='https://squad.test/api/media?path='+encodeURIComponent('teams/t/branding/logo');
+  assert.deepEqual(parseMediaRequestTarget(url+'&v=2'),parseMediaRequestTarget(url));
+  assert.deepEqual(parseMediaRequestTarget(url+'&v=2','HEAD'),parseMediaRequestTarget(url));
+  for(const suffix of ['&v=','&v=-1','&v=01','&v=not-a-version','&v=12345678901234567','&v=1&v=2','&token=secret','&path=users%2Fu%2Favatar.jpg'])assert.throws(()=>parseMediaRequestTarget(url+suffix));
+  for(const method of ['POST','DELETE','PATCH'])assert.throws(()=>parseMediaRequestTarget(url+'&v=2',method));
+  assert.throws(()=>parseMediaRequestTarget('https://squad.test/api/media?path=teams%2Ft%2Fbranding%2F..&v=2'));
 });

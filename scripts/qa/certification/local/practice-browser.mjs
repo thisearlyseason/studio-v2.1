@@ -42,8 +42,13 @@ export function createPracticeBrowserObserver(page, {baseUrl, prefix, firestoreO
   const onRequest=request=>{
     const pathname=route(request.url());
     if(pathname==='/google.firestore.v1.Firestore/Write/channel'){
-      let body='';try{body=decodeURIComponent(request.postData()||'');}catch{return;}
-      if(!/"writes"\s*:\s*\[\s*\{/.test(body))return;
+      let hasWrites=false;
+      try { for(const [key,value] of new URLSearchParams(request.postData()||'')) {
+        if(!key.endsWith('___data__'))continue;
+        let payload=JSON.parse(value);if(typeof payload==='string')payload=JSON.parse(payload);
+        if(Array.isArray(payload?.writes)&&payload.writes.some(write=>write&&typeof write==='object'))hasWrites=true;
+      } } catch { return; }
+      if(!hasWrites)return;
     }
     if(pathname&&tags.length)started.set(request,{pathname,tags:[...tags],method:request.method(),startedAt:new Date().toISOString()});
   };
