@@ -126,7 +126,9 @@ test("DST missing and ambiguous local times fail closed", () => {
     (e) => e.code === "DST_TIME",
   );
   assert.throws(
-    () => zonedInstant("2026-11-01", 90, "America/Edmonton"),
+    // Use a recorded transition: Alberta no longer falls back after spring 2026.
+    // IANA tzdb northamerica: Edmonton used Canada rules through November 2025.
+    () => zonedInstant("2025-11-02", 90, "America/Edmonton"),
     (e) => e.code === "DST_TIME",
   );
 });
