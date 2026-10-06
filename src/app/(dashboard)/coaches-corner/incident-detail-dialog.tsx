@@ -55,7 +55,7 @@ export function IncidentDetailDialog({ incident, isOpen, onOpenChange }: { incid
             <div className="space-y-8">
               <div className="space-y-3">
                 <h4 className="text-[10px] font-black uppercase tracking-[0.2em] text-primary ml-1">Factual Narrative</h4>
-                <div className="bg-muted/30 p-6 rounded-[2rem] border-2 border-dashed">
+                <div className="bg-muted/30 p-6 rounded-4xl border-2 border-dashed">
                   <p className="text-sm font-medium leading-relaxed italic text-foreground/80 leading-relaxed">"{incident.description}"</p>
                 </div>
               </div>

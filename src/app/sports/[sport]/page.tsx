@@ -103,7 +103,7 @@ export default async function SportLandingPage({ params }: PageProps) {
 
       <section className="relative flex min-h-[78vh] items-end overflow-hidden bg-black text-white">
         <Image src={landing.heroImage} alt={landing.heroAlt} fill priority className="object-cover object-[70%_center]" sizes="100vw" />
-        <div className="absolute inset-0 bg-gradient-to-r from-black/85 via-black/60 to-black/20" />
+        <div className="absolute inset-0 bg-linear-to-r from-black/85 via-black/60 to-black/20" />
         <div className="relative mx-auto w-full max-w-7xl px-5 pb-16 pt-36 sm:px-8 sm:pb-20">
           <p className="text-xs font-black uppercase text-primary">The Squad for {landing.name}</p>
           <h1 className="mt-4 max-w-5xl text-4xl font-black uppercase leading-tight tracking-normal sm:text-6xl lg:text-7xl">{landing.headline}</h1>

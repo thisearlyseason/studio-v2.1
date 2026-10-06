@@ -304,7 +304,7 @@ function SectionHeader({ badge, title, subtitle }: { badge: string; title: React
       <motion.div variants={fadeUp}>
         <Badge variant="secondary" className="bg-primary/5 text-primary border-none font-black px-4 py-1 uppercase tracking-widest text-[10px]">{badge}</Badge>
       </motion.div>
-      <motion.h2 variants={fadeUp} className="text-3xl sm:text-5xl md:text-7xl font-black tracking-tighter leading-[0.9]">{title}</motion.h2>
+      <motion.h2 variants={fadeUp} className="text-3xl sm:text-5xl md:text-7xl font-black tracking-tighter leading-[0.9] sm:leading-none md:leading-none">{title}</motion.h2>
       <motion.div variants={fadeUp} className="text-muted-foreground font-medium text-lg pt-4 leading-relaxed">{subtitle}</motion.div>
     </motion.div>
   );
@@ -646,7 +646,7 @@ export default function LandingPage() {
               onEnded={handleVideoEnded}
               className="absolute inset-0 w-full h-full object-cover"
             />
-            <div className="absolute inset-0 bg-black/55 bg-gradient-to-b from-black/50 via-black/20 to-black/80" />
+            <div className="absolute inset-0 bg-black/55 bg-linear-to-b from-black/50 via-black/20 to-black/80" />
           </motion.div>
         ))}
 
@@ -684,7 +684,7 @@ export default function LandingPage() {
           />
           {/* Diagonal line */}
           <motion.div
-            className="absolute top-1/2 left-1/2 w-[600px] h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent -translate-x-1/2 -translate-y-1/2 rotate-[-30deg]"
+            className="absolute top-1/2 left-1/2 w-[600px] h-px bg-linear-to-r from-transparent via-primary/20 to-transparent -translate-x-1/2 -translate-y-1/2 rotate-[-30deg]"
             initial={{ scaleX: 0, opacity: 0 }}
             animate={{ scaleX: 1, opacity: 1 }}
             transition={{ delay: 1.0, duration: 1.4, ease: [0.16, 1, 0.3, 1] }}
@@ -769,7 +769,7 @@ export default function LandingPage() {
             {/* DOMINATE — crashes straight down from above with extreme rotateX */}
             <div className="overflow-hidden pb-2">
               <motion.div
-                className="text-4xl sm:text-5xl md:text-9xl font-black text-white tracking-tighter leading-[0.88]"
+                className="text-4xl sm:text-5xl md:text-9xl font-black text-white tracking-tighter leading-[0.88] sm:leading-none md:leading-none"
                 initial={{ y: '-120%', rotateX: -120, opacity: 0, scale: 1.4, filter: 'blur(8px)' }}
                 animate={{ y: 0, rotateX: 0, opacity: 1, scale: 1, filter: 'blur(0px)' }}
                 transition={{ delay: 0.7, duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
@@ -782,7 +782,7 @@ export default function LandingPage() {
             {/* YOUR SEASON — side-by-side, each slams in from the sides with huge rotateY */}
             <div className="overflow-hidden pb-1 flex items-baseline justify-center gap-2 md:gap-6 flex-wrap">
               <motion.span
-                className="inline-block text-4xl sm:text-5xl md:text-9xl font-black text-white tracking-tighter leading-[0.88]"
+                className="inline-block text-4xl sm:text-5xl md:text-9xl font-black text-white tracking-tighter leading-[0.88] sm:leading-none md:leading-none"
                 initial={{ x: -200, rotateY: 90, opacity: 0, scale: 0.7, filter: 'blur(10px)' }}
                 animate={{ x: 0, rotateY: 0, opacity: 1, scale: 1, filter: 'blur(0px)' }}
                 transition={{ delay: 1.05, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
@@ -791,7 +791,7 @@ export default function LandingPage() {
                 YOUR
               </motion.span>
               <motion.span
-                className="inline-block text-4xl sm:text-5xl md:text-9xl font-black text-primary italic tracking-tighter leading-[0.88]"
+                className="inline-block text-4xl sm:text-5xl md:text-9xl font-black text-primary italic tracking-tighter leading-[0.88] sm:leading-none md:leading-none"
                 initial={{ x: 200, rotateY: -90, opacity: 0, scale: 0.5, filter: 'blur(12px)' }}
                 animate={{ x: 0, rotateY: 0, opacity: 1, scale: 1, filter: 'blur(0px)' }}
                 transition={{ delay: 1.15, duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
@@ -803,7 +803,7 @@ export default function LandingPage() {
 
             {/* Underline streak — fires after impact */}
             <motion.div
-              className="mx-auto mt-3 h-1.5 rounded-full bg-gradient-to-r from-transparent via-primary to-transparent"
+              className="mx-auto mt-3 h-1.5 rounded-full bg-linear-to-r from-transparent via-primary to-transparent"
               initial={{ width: 0, opacity: 0 }}
               animate={{ width: '70%', opacity: 1 }}
               transition={{ delay: 1.45, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
@@ -812,7 +812,7 @@ export default function LandingPage() {
 
           {/* Subtitle */}
           <motion.p
-            className="text-base md:text-xl text-white/70 max-w-2xl mx-auto font-medium leading-relaxed"
+            className="text-base md:text-xl text-white/70 max-w-2xl mx-auto font-medium leading-relaxed md:leading-7"
             initial={{ opacity: 0, filter: 'blur(12px)', y: 20 }}
             animate={{ opacity: 1, filter: 'blur(0px)', y: 0 }}
             transition={{ delay: 1.55, duration: 1.0, ease: 'easeOut' }}
@@ -869,7 +869,7 @@ export default function LandingPage() {
                       <Button 
                         key={demo.id} 
                         variant="outline" 
-                        className="h-24 rounded-[1.5rem] bg-muted/30 border-2 border-transparent hover:border-primary/20 hover:bg-white hover:text-foreground transition-all flex items-center justify-between px-6 group"
+                        className="h-24 rounded-3xl bg-muted/30 border-2 border-transparent hover:border-primary/20 hover:bg-white hover:text-foreground transition-all flex items-center justify-between px-6 group"
                         onClick={() => handleLaunchDemo(demo.id)}
                         disabled={isDemoLoading}
                         aria-label={`Open ${demo.name}: ${demo.desc}`}
@@ -897,7 +897,7 @@ export default function LandingPage() {
       {/* ══ 3D STATS MARQUEE BAR ══ */}
       <section className="relative py-8 md:py-12 bg-black overflow-hidden grid-beam">
         {/* Ambient glow behind stats */}
-        <div className="absolute inset-0 bg-gradient-to-b from-black via-black to-black pointer-events-none" />
+        <div className="absolute inset-0 bg-linear-to-b from-black via-black to-black pointer-events-none" />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-32 bg-primary/8 blur-[80px] pointer-events-none" />
         <motion.div
           className="container mx-auto px-6 relative z-10"
@@ -935,7 +935,7 @@ export default function LandingPage() {
             href="/beta"
             className="group flex flex-col items-center gap-2 bg-black text-white px-3 py-5 rounded-l-2xl shadow-2xl shadow-black/40 border border-white/10 hover:bg-primary hover:text-gray-900 hover:border-primary transition-all duration-300"
           >
-            <ChevronRight className="h-3.5 w-3.5 rotate-[-90deg] opacity-60 group-hover:opacity-100 transition-all" />
+            <ChevronRight className="h-3.5 w-3.5 -rotate-90 opacity-60 group-hover:opacity-100 transition-all" />
             <span
               className="text-[11px] font-black uppercase tracking-widest"
               style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
@@ -975,7 +975,7 @@ export default function LandingPage() {
 
                   <motion.h2
                     variants={fadeUp}
-                    className="text-5xl md:text-6xl font-black text-gray-900 tracking-tighter leading-[0.92]"
+                    className="text-5xl md:text-6xl font-black text-gray-900 tracking-tighter leading-[0.92] md:leading-none"
                   >
                     BE THE FIRST<br />TO<span className="text-primary italic"> KNOW.</span>
                   </motion.h2>
@@ -995,7 +995,7 @@ export default function LandingPage() {
                       'Zero spam — one email, that\'s it',
                     ].map((item) => (
                       <li key={item} className="flex items-center gap-3 text-sm font-bold text-gray-700">
-                        <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/15 flex items-center justify-center">
+                        <span className="shrink-0 w-5 h-5 rounded-full bg-primary/15 flex items-center justify-center">
                           <Check className="h-3 w-3 text-primary" />
                         </span>
                         {item}
@@ -1011,9 +1011,9 @@ export default function LandingPage() {
                   viewport={{ once: true, amount: 0.3 }}
                   transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1], delay: 0.15 }}
                 >
-                  <div className="bg-white rounded-[2rem] shadow-2xl shadow-black/8 p-8 md:p-10 ring-1 ring-black/5 relative overflow-hidden">
+                  <div className="bg-white rounded-4xl shadow-2xl shadow-black/8 p-8 md:p-10 ring-1 ring-black/5 relative overflow-hidden">
                     {/* Top accent bar */}
-                    <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary via-yellow-400 to-primary/60 rounded-t-[2rem]" />
+                    <div className="absolute top-0 left-0 right-0 h-1 bg-linear-to-r from-primary via-yellow-400 to-primary/60 rounded-t-4xl" />
 
                     {newsletterDone ? (
                       <motion.div
@@ -1064,7 +1064,7 @@ export default function LandingPage() {
                             placeholder="Your Name"
                             value={newsletterName}
                             onChange={(e) => setNewsletterName(e.target.value)}
-                            className="w-full h-13 px-5 py-3.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-400 font-semibold text-sm focus:outline-none focus:border-primary/50 focus:bg-white focus:ring-2 focus:ring-primary/10 transition-all"
+                            className="w-full h-auto px-5 py-3.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-400 font-semibold text-sm focus:outline-none focus:border-primary/50 focus:bg-white focus:ring-2 focus:ring-primary/10 transition-all"
                           />
                           <motion.input
                             aria-label="Newsletter email"
@@ -1074,7 +1074,7 @@ export default function LandingPage() {
                             required
                             value={newsletterEmail}
                             onChange={(e) => setNewsletterEmail(e.target.value)}
-                            className="w-full h-13 px-5 py-3.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-400 font-semibold text-sm focus:outline-none focus:border-primary/50 focus:bg-white focus:ring-2 focus:ring-primary/10 transition-all"
+                            className="w-full h-auto px-5 py-3.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-400 font-semibold text-sm focus:outline-none focus:border-primary/50 focus:bg-white focus:ring-2 focus:ring-primary/10 transition-all"
                           />
                         </div>
 
@@ -1083,7 +1083,7 @@ export default function LandingPage() {
                           disabled={newsletterLoading}
                           whileHover={{ scale: 1.02, boxShadow: '0 8px 30px rgba(234,179,8,0.35)' }}
                           whileTap={{ scale: 0.97 }}
-                          className="w-full h-13 py-3.5 rounded-xl bg-gray-900 text-white font-black uppercase tracking-widest text-sm hover:bg-black transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-60"
+                          className="w-full h-auto py-3.5 rounded-xl bg-gray-900 text-white font-black uppercase tracking-widest text-sm hover:bg-black transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-60"
                         >
                           {newsletterLoading
                             ? <Loader2 className="h-5 w-5 animate-spin" />
@@ -1171,11 +1171,11 @@ export default function LandingPage() {
                 <TiltCard strength={8} className="h-full rounded-[2.5rem] overflow-hidden">
                   <Card className="rounded-[2.5rem] border-none depth-card bg-white p-10 space-y-6 h-full group relative overflow-hidden cursor-pointer transition-colors duration-500 hover:bg-gray-950 hover:text-white">
                     {/* Accent gradient top-left */}
-                    <div className={`absolute top-0 left-0 w-64 h-64 bg-gradient-to-br ${accent} rounded-full blur-2xl pointer-events-none opacity-60 group-hover:opacity-0 transition-opacity`} />
+                    <div className={`absolute top-0 left-0 w-64 h-64 bg-linear-to-br ${accent} rounded-full blur-2xl pointer-events-none opacity-60 group-hover:opacity-0 transition-opacity`} />
                     {/* Dark mode glow */}
-                    <div className="absolute top-0 left-0 w-64 h-64 bg-gradient-to-br from-primary/20 to-transparent rounded-full blur-2xl pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <div className="absolute top-0 left-0 w-64 h-64 bg-linear-to-br from-primary/20 to-transparent rounded-full blur-2xl pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
                     {/* Shimmer */}
-                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -skew-x-12 translate-x-[-200%] group-hover:translate-x-[300%] transition-transform duration-1000 pointer-events-none" />
+                    <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/5 to-transparent -skew-x-12 translate-x-[-200%] group-hover:translate-x-[300%] transition-transform duration-1000 pointer-events-none" />
                     <div className="relative z-10 space-y-6">
                       <div className="bg-primary p-4 rounded-2xl w-fit shadow-lg shadow-primary/30 group-hover:shadow-primary/50 transition-shadow">
                         <Icon className="h-8 w-8 text-white" />
@@ -1208,7 +1208,7 @@ export default function LandingPage() {
           
           <div className="relative group">
             <div className="absolute inset-0 bg-primary/5 blur-[100px] rounded-full opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
-            <div className="relative overflow-x-auto rounded-[2rem] md:rounded-[3.5rem] border-2 shadow-2xl bg-white scrollbar-hide">
+            <div className="relative overflow-x-auto rounded-4xl md:rounded-[3.5rem] border-2 shadow-2xl bg-white scrollbar-hide">
               <div className="md:hidden flex items-center justify-center p-3 bg-muted/20 text-[8px] font-black uppercase tracking-[0.2em] text-primary space-x-2 border-b">
                 <span>Swipe to compare</span>
                 <ChevronRight className="h-3 w-3 animate-bounce-x" />
@@ -1295,7 +1295,7 @@ export default function LandingPage() {
               <motion.div variants={fadeUp}>
                 <Badge className="bg-primary text-white border-none font-black px-4 h-7 uppercase tracking-widest text-[10px]">Strategic Advantages</Badge>
               </motion.div>
-              <motion.h2 variants={fadeUp} className="text-4xl md:text-6xl font-black tracking-tight leading-none uppercase">
+              <motion.h2 variants={fadeUp} className="text-4xl md:text-6xl font-black tracking-tight leading-none uppercase md:leading-none">
                 CHAMPIONSHIP <br /> <span className="text-primary italic">OPERATIONS.</span>
               </motion.h2>
               
@@ -1351,7 +1351,7 @@ export default function LandingPage() {
               >
                 <Card className="rounded-[2.5rem] border-white/10 bg-white/5 backdrop-blur-xl p-8 lg:p-10 depth-card-dark overflow-hidden">
                   {/* Shimmer sweep on hover */}
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/4 to-transparent -skew-x-12 animate-shimmer-x pointer-events-none rounded-[2.5rem]" />
+                  <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/4 to-transparent -skew-x-12 animate-shimmer-x pointer-events-none rounded-[2.5rem]" />
                   <div className="space-y-6 relative z-10">
                     {/* Header */}
                     <div className="flex items-center justify-between">
@@ -1420,7 +1420,7 @@ export default function LandingPage() {
                       <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Active Coordination Hub</p>
                       <div className="flex -space-x-2">
                         {[...Array(4)].map((_,i) => (
-                          <div key={i} className="h-7 w-7 rounded-full border-2 border-black/60 bg-gradient-to-br from-white/20 to-white/5 float-fast" style={{animationDelay:`${i*0.4}s`}} />
+                          <div key={i} className="h-7 w-7 rounded-full border-2 border-black/60 bg-linear-to-br from-white/20 to-white/5 float-fast" style={{animationDelay:`${i*0.4}s`}} />
                         ))}
                       </div>
                     </div>
@@ -1454,8 +1454,8 @@ export default function LandingPage() {
                 <TiltCard strength={6} className="h-full rounded-[2.5rem] overflow-hidden">
                   <Card className="rounded-[2.5rem] border-none depth-card bg-white p-10 space-y-6 h-full relative overflow-hidden group cursor-pointer hover:bg-gray-950 hover:text-white transition-colors duration-500">
                     {/* Gradient top accent */}
-                    <div className={`absolute top-0 left-0 w-full h-40 bg-gradient-to-b ${color} to-transparent pointer-events-none opacity-70 group-hover:opacity-0 transition-opacity`} />
-                    <div className="absolute top-0 left-0 w-full h-40 bg-gradient-to-b from-primary/10 to-transparent pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <div className={`absolute top-0 left-0 w-full h-40 bg-linear-to-b ${color} to-transparent pointer-events-none opacity-70 group-hover:opacity-0 transition-opacity`} />
+                    <div className="absolute top-0 left-0 w-full h-40 bg-linear-to-b from-primary/10 to-transparent pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
                     {/* Number badge */}
                     <div className="absolute top-8 right-8 text-[80px] font-black text-black/4 group-hover:text-white/4 leading-none select-none transition-colors">{num}</div>
                     <div className="relative z-10 space-y-6">
@@ -1489,7 +1489,7 @@ export default function LandingPage() {
             <motion.div variants={fadeUp}>
               <Badge className="bg-primary/20 text-primary border-primary/30 font-black px-4 py-1 uppercase tracking-widest text-[10px]">Transparent Institutional Tiers</Badge>
             </motion.div>
-            <motion.h2 variants={fadeUp} className="text-4xl sm:text-5xl md:text-7xl font-black tracking-tighter leading-[0.9] text-white">
+            <motion.h2 variants={fadeUp} className="text-4xl sm:text-5xl md:text-7xl font-black tracking-tighter leading-[0.9] text-white sm:leading-none md:leading-none">
               SCALE YOUR <span className="text-primary italic">OPERATION.</span>
             </motion.h2>
             <motion.div variants={fadeUp} className="flex items-center gap-2 text-primary font-black uppercase tracking-widest text-[10px] bg-primary/10 px-4 py-2 rounded-full border border-primary/20 w-fit mx-auto">
@@ -1510,10 +1510,10 @@ export default function LandingPage() {
             transition={{ duration: 0.6, delay: 0.2 }}
             className="relative max-w-2xl mx-auto mb-12 overflow-hidden"
           >
-            <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-r from-primary/60 via-yellow-400/40 to-primary/60 opacity-60 blur-[2px]" />
+            <div className="absolute -inset-px rounded-2xl bg-linear-to-r from-primary/60 via-yellow-400/40 to-primary/60 opacity-60 blur-[2px]" />
             <div className="relative flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6 bg-black rounded-2xl px-8 py-5">
               <motion.div
-                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -skew-x-12 pointer-events-none rounded-2xl"
+                className="absolute inset-0 bg-linear-to-r from-transparent via-white/5 to-transparent -skew-x-12 pointer-events-none rounded-2xl"
                 animate={{ x: ['-100%', '200%'] }}
                 transition={{ duration: 3.5, repeat: Infinity, repeatDelay: 5, ease: 'easeInOut' }}
               />
@@ -1544,7 +1544,7 @@ export default function LandingPage() {
               {/* Starter */}
               <motion.div whileHover={{ y: -8, scale: 1.02 }} transition={{ type: 'spring', stiffness: 280, damping: 22 }} className="flex flex-col">
               <Card className="rounded-[2.5rem] border border-white/8 shadow-xl overflow-hidden flex flex-col bg-white/5 backdrop-blur-sm h-full">
-                <div className="h-px w-full bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+                <div className="h-px w-full bg-linear-to-r from-transparent via-white/20 to-transparent" />
                 <CardHeader className="p-8 pb-4 space-y-4">
                   <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 border-white/20 text-white/60 w-fit">GRASSROOTS</Badge>
                   <div className="space-y-1">
@@ -1575,11 +1575,11 @@ export default function LandingPage() {
               <motion.div whileHover={{ y: -14, scale: 1.03 }} transition={{ type: 'spring', stiffness: 280, damping: 22 }} className="flex flex-col">
               <div className="relative flex flex-col h-full">
                 {/* Animated glowing border ring */}
-                <div className="absolute -inset-[2px] rounded-[2.6rem] bg-gradient-to-br from-primary via-yellow-400/60 to-primary/40 opacity-80" />
+                <div className="absolute inset-[-2px] rounded-[2.6rem] bg-linear-to-br from-primary via-yellow-400/60 to-primary/40 opacity-80" />
                 <Card className="relative rounded-[2.5rem] border-none shadow-2xl overflow-hidden flex flex-col bg-black text-white h-full">
                   {/* Shimmer sweep */}
                   <motion.div
-                    className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -skew-x-12 pointer-events-none z-10"
+                    className="absolute inset-0 bg-linear-to-r from-transparent via-white/5 to-transparent -skew-x-12 pointer-events-none z-10"
                     animate={{ x: ['-100%', '200%'] }}
                     transition={{ duration: 3, repeat: Infinity, repeatDelay: 4, ease: 'easeInOut' }}
                   />
@@ -1620,7 +1620,7 @@ export default function LandingPage() {
               {/* Elite Teams */}
               <motion.div whileHover={{ y: -8, scale: 1.02 }} transition={{ type: 'spring', stiffness: 280, damping: 22 }} className="flex flex-col">
               <Card className="rounded-[2.5rem] border border-white/8 shadow-xl overflow-hidden flex flex-col bg-white/5 backdrop-blur-sm h-full">
-                <div className="h-px w-full bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+                <div className="h-px w-full bg-linear-to-r from-transparent via-white/20 to-transparent" />
                 <CardHeader className="p-8 pb-4 space-y-4">
                   <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 border-primary/30 text-primary w-fit">ORGANIZATION</Badge>
                   <div className="space-y-1">
@@ -1653,7 +1653,7 @@ export default function LandingPage() {
               {/* Elite League */}
               <motion.div whileHover={{ y: -8, scale: 1.02 }} transition={{ type: 'spring', stiffness: 280, damping: 22 }} className="flex flex-col">
               <Card className="rounded-[2.5rem] border border-white/8 shadow-xl overflow-hidden flex flex-col bg-white/5 backdrop-blur-sm w-full h-full">
-                <div className="h-px w-full bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
+                <div className="h-px w-full bg-linear-to-r from-transparent via-primary/40 to-transparent" />
                 <CardHeader className="p-8 pb-4 space-y-4">
                   <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 border-primary/30 text-primary w-fit">INSTITUTIONAL</Badge>
                   <div className="space-y-1">
@@ -1683,7 +1683,7 @@ export default function LandingPage() {
               {/* School District */}
               <motion.div whileHover={{ y: -8, scale: 1.02 }} transition={{ type: 'spring', stiffness: 280, damping: 22 }} className="flex flex-col">
               <Card className="rounded-[2.5rem] border border-[#10b981]/15 shadow-xl overflow-hidden flex flex-col bg-white/5 backdrop-blur-sm w-full h-full">
-                <div className="h-px w-full bg-gradient-to-r from-transparent via-[#10b981]/40 to-transparent" />
+                <div className="h-px w-full bg-linear-to-r from-transparent via-[#10b981]/40 to-transparent" />
                 <CardHeader className="p-8 pb-4 space-y-4">
                   <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 border-[#10b981]/30 text-[#10b981] w-fit">K-12 DISTRICT</Badge>
                   <div className="space-y-1">
@@ -1772,7 +1772,7 @@ export default function LandingPage() {
             <div className="mb-12 grid grid-cols-1 items-end gap-6 lg:grid-cols-[1fr_auto]">
               <div className="space-y-4">
                 <motion.p variants={fadeUp} className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Built for your organization</motion.p>
-                <motion.h2 variants={fadeUp} className="max-w-3xl text-4xl font-black uppercase leading-[0.95] tracking-tighter md:text-6xl">
+                <motion.h2 variants={fadeUp} className="max-w-3xl text-4xl font-black uppercase leading-[0.95] tracking-tighter md:text-6xl md:leading-none">
                   One platform. <span className="text-primary italic">Every level of play.</span>
                 </motion.h2>
               </div>
@@ -1805,7 +1805,7 @@ export default function LandingPage() {
                 <motion.div
                   key={item.label}
                   variants={fadeUp}
-                  className="group rounded-[2rem] border border-black/5 bg-white p-7 shadow-sm transition-all hover:-translate-y-1 hover:border-primary/20 hover:shadow-xl"
+                  className="group rounded-4xl border border-black/5 bg-white p-7 shadow-sm transition-all hover:-translate-y-1 hover:border-primary/20 hover:shadow-xl"
                 >
                   <div className="mb-8 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-white">
                     <item.icon className="h-6 w-6" />
@@ -1823,7 +1823,7 @@ export default function LandingPage() {
       <section id="newsletter" className="relative overflow-hidden bg-black py-24 text-white">
         <div className="absolute inset-0 opacity-25" style={{ backgroundImage: 'radial-gradient(circle at 15% 20%, rgba(239,68,68,0.7), transparent 34%), radial-gradient(circle at 85% 80%, rgba(255,255,255,0.18), transparent 30%)' }} />
         <div className="container relative z-10 mx-auto px-6">
-          <div className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 rounded-[3rem] border border-white/10 bg-white/[0.05] p-8 shadow-2xl backdrop-blur-sm md:p-14 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 rounded-[3rem] border border-white/10 bg-white/5 p-8 shadow-2xl backdrop-blur-sm md:p-14 lg:grid-cols-[1.1fr_0.9fr]">
             <motion.div
               initial={{ opacity: 0, y: 24 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -1833,10 +1833,10 @@ export default function LandingPage() {
               <div className="inline-flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.3em] text-primary">
                 <span className="h-2 w-2 rounded-full bg-primary" /> Stay in the game
               </div>
-              <h2 className="text-4xl font-black uppercase leading-[0.9] tracking-tighter sm:text-5xl md:text-7xl">
+              <h2 className="text-4xl font-black uppercase leading-[0.9] tracking-tighter sm:text-5xl md:text-7xl sm:leading-none md:leading-none">
                 Sign up for our <span className="text-primary italic">newsletter.</span>
               </h2>
-              <p className="max-w-xl text-base font-medium leading-relaxed text-white/60 md:text-lg">
+              <p className="max-w-xl text-base font-medium leading-relaxed text-white/60 md:text-lg md:leading-7">
                 Product updates, practical team-management ideas, and sports operations resources—delivered directly to your inbox.
               </p>
               <p className="text-[10px] font-black uppercase tracking-widest text-white/35">No spam · Unsubscribe anytime</p>
@@ -1847,7 +1847,7 @@ export default function LandingPage() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, amount: 0.3 }}
               transition={{ delay: 0.1 }}
-              className="rounded-[2rem] bg-white p-7 text-foreground shadow-2xl md:p-9"
+              className="rounded-4xl bg-white p-7 text-foreground shadow-2xl md:p-9"
             >
               {newsletterDone ? (
                 <div className="flex min-h-[260px] flex-col items-center justify-center gap-4 text-center">
@@ -1867,7 +1867,7 @@ export default function LandingPage() {
                       onChange={(event) => setNewsletterName(event.target.value)}
                       placeholder="Your name"
                       autoComplete="name"
-                      className="h-13 rounded-xl bg-muted/50"
+                      className="h-auto rounded-xl bg-muted/50"
                     />
                   </div>
                   <div className="space-y-2">
@@ -1880,7 +1880,7 @@ export default function LandingPage() {
                       onChange={(event) => setNewsletterEmail(event.target.value)}
                       placeholder="you@example.com"
                       autoComplete="email"
-                      className="h-13 rounded-xl bg-muted/50"
+                      className="h-auto rounded-xl bg-muted/50"
                     />
                   </div>
                   <Button type="submit" disabled={newsletterLoading} className="h-14 w-full rounded-xl font-black uppercase tracking-widest">

@@ -483,10 +483,10 @@ export default function PublicScoutPortalPage() {
       <main className="container mx-auto px-4 md:px-12 py-12 max-w-7xl space-y-12">
         {/* HERO */}
         <section className="relative overflow-hidden rounded-[3rem] shadow-2xl" style={{background: 'linear-gradient(135deg, #0d0d0d 0%, #1a1a2e 50%, #0d0d0d 100%)'}}>
-          <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-transparent to-transparent pointer-events-none" />
+          <div className="absolute inset-0 bg-linear-to-br from-primary/10 via-transparent to-transparent pointer-events-none" />
           <div className="absolute top-0 right-0 p-16 opacity-5 pointer-events-none"><Zap className="h-96 w-96" /></div>
           {/* Sport accent bar */}
-          <div className="h-1 bg-gradient-to-r from-primary via-primary/60 to-transparent" />
+          <div className="h-1 bg-linear-to-r from-primary via-primary/60 to-transparent" />
           <div className="flex flex-col lg:flex-row items-center gap-12 p-10 lg:p-16 relative z-10">
             <div className="relative shrink-0">
               <div className="h-48 w-48 lg:h-64 lg:w-64 rounded-[3rem] border-2 border-white/10 shadow-2xl overflow-hidden bg-white/5 flex items-center justify-center ring-1 ring-primary/20">
@@ -543,7 +543,7 @@ export default function PublicScoutPortalPage() {
                   {allPhotos.map((p: any, i: number) => (
                     <div key={i} className="aspect-square rounded-[3rem] overflow-hidden border-2 border-white/10 shadow-2xl ring-1 ring-white/5 group relative cursor-pointer bg-zinc-900" onClick={() => setSelectedPhotoUrl(p.url)}>
                       <img src={p.url} className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-1000 opacity-90 group-hover:opacity-100" alt="Tactical Capture" />
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-8">
+                      <div className="absolute inset-0 bg-linear-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity flex flex-col justify-end p-8">
                          <div className="flex items-center justify-between">
                             <span className="text-[10px] font-black uppercase tracking-[0.2em] text-white/60">{p.type} Imagery {i + 1}</span>
                             <div className="flex gap-3">
@@ -631,7 +631,7 @@ export default function PublicScoutPortalPage() {
             <section className="space-y-6">
               <div className="flex items-center gap-3 px-2"><div className="bg-primary/10 p-2 rounded-xl text-primary"><Info className="h-5 w-5" /></div><h2 className="text-xl font-black uppercase tracking-tight">Athlete Overview</h2></div>
               <Card className="rounded-[3rem] border-none shadow-xl bg-white p-10 space-y-8">
-                <div className="bg-muted/20 p-8 rounded-[2rem] border-2 border-dashed relative">
+                <div className="bg-muted/20 p-8 rounded-4xl border-2 border-dashed relative">
                   <span className="absolute -top-3 left-6 bg-white px-2 text-[8px] font-black uppercase text-primary tracking-widest">Narrative Bio</span>
                   <p className="text-base font-medium italic leading-relaxed text-foreground/80">"{profile?.bio || "No tactical narrative established."}"</p>
                 </div>

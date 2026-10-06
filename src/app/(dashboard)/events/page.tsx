@@ -123,7 +123,7 @@ function ScheduleAppBanner({ onOpen }: { onOpen: () => void }) {
               </span>
               <span className="text-[8px] font-black uppercase tracking-widest text-white/30 hidden sm:inline">Installable · Works Offline</span>
             </div>
-            <h2 className="text-base md:text-lg font-black uppercase tracking-tight text-white leading-tight">
+            <h2 className="text-base md:text-lg md:leading-7 font-black uppercase tracking-tight text-white leading-tight">
               Offline Schedule &amp; Task List
               <span className="ml-2 text-transparent bg-clip-text" style={{ backgroundImage: 'linear-gradient(90deg, #a78bfa, #60a5fa)' }}>— Always With You</span>
             </h2>
@@ -218,7 +218,7 @@ function ScheduleAppBanner({ onOpen }: { onOpen: () => void }) {
               className="group relative overflow-hidden h-14 px-8 rounded-2xl font-black text-xs uppercase tracking-widest text-white transition-all duration-200 active:scale-95 shadow-2xl"
               style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 50%, #4f46e5 100%)' }}
             >
-              <span className="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none" />
+              <span className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 bg-linear-to-r from-transparent via-white/20 to-transparent pointer-events-none" />
               <span className="relative flex items-center gap-2">
                 <Smartphone className="h-4 w-4" />
                 Open Schedule &amp; Tasks
@@ -237,7 +237,7 @@ function ScheduleAppBanner({ onOpen }: { onOpen: () => void }) {
         </div>
 
         {/* Bottom ticker */}
-        <div className="relative z-10 border-t border-white/5 bg-white/[0.02] px-6 py-3 flex items-center gap-6 overflow-hidden">
+        <div className="relative z-10 border-t border-white/5 bg-white/2 px-6 py-3 flex items-center gap-6 overflow-hidden">
           <div className="flex items-center gap-2 shrink-0">
             <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
             <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-400">Live Sync Active</span>
@@ -517,7 +517,7 @@ export default function EventsPage() {
       <ScheduleAppBanner onOpen={handleOpenScheduleApp} />
 
       {nextTournament && (
-        <div className="relative group overflow-hidden rounded-[2rem] sm:rounded-[3rem] border-2 shadow-2xl bg-black text-white p-6 sm:p-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 sm:gap-10">
+        <div className="relative group overflow-hidden rounded-4xl sm:rounded-[3rem] border-2 shadow-2xl bg-black text-white p-6 sm:p-10 flex flex-col md:flex-row items-start md:items-center justify-between gap-6 sm:gap-10">
           <div className="absolute top-0 right-0 p-12 opacity-5 -rotate-12 group-hover:scale-110 transition-transform duration-1000">
              <Trophy className="h-64 w-64" />
           </div>
@@ -536,7 +536,7 @@ export default function EventsPage() {
                </div>
              </div>
           </div>
-          <div className="relative z-10 w-full md:w-auto shrink-0 flex flex-col items-center justify-center p-6 sm:p-8 bg-white/5 backdrop-blur-xl rounded-[2rem] sm:rounded-[2.5rem] border border-white/10 ring-1 ring-white/5 space-y-4">
+          <div className="relative z-10 w-full md:w-auto shrink-0 flex flex-col items-center justify-center p-6 sm:p-8 bg-white/5 backdrop-blur-xl rounded-4xl sm:rounded-[2.5rem] border border-white/10 ring-1 ring-white/5 space-y-4">
              <div className="text-center">
                <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Squad Readiness</p>
                <p className="text-3xl font-black leading-none uppercase">Verified</p>
@@ -625,7 +625,7 @@ export default function EventsPage() {
                           {newDate ? format(new Date(newDate.replace(/-/g, '/')), "MMMM d, yyyy") : <span>Pick Date</span>}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent collisionPadding={16} className="w-auto max-w-[calc(100vw-2rem)] p-0 border-none shadow-2xl rounded-[2rem] overflow-auto bg-white" align="start">
+                      <PopoverContent collisionPadding={16} className="w-auto max-w-[calc(100vw-2rem)] p-0 border-none shadow-2xl rounded-4xl overflow-auto bg-white" align="start">
                         <Calendar
                           mode="single"
                           selected={newDate ? new Date(newDate.replace(/-/g, '/')) : undefined}
@@ -650,7 +650,7 @@ export default function EventsPage() {
                           {newEndDate ? format(new Date(newEndDate.replace(/-/g, '/')), "MMMM d, yyyy") : <span>Pick Date</span>}
                         </Button>
                       </PopoverTrigger>
-                      <PopoverContent collisionPadding={16} className="w-auto max-w-[calc(100vw-2rem)] p-0 border-none shadow-2xl rounded-[2rem] overflow-auto bg-white" align="start">
+                      <PopoverContent collisionPadding={16} className="w-auto max-w-[calc(100vw-2rem)] p-0 border-none shadow-2xl rounded-4xl overflow-auto bg-white" align="start">
                         <Calendar
                           mode="single"
                           selected={newEndDate ? new Date(newEndDate.replace(/-/g, '/')) : undefined}

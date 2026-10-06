@@ -48,7 +48,7 @@ class CompetitionSectionErrorBoundary extends Component<
   render() {
     if (this.state.hasError) {
       return (
-        <div className="rounded-[2rem] border-2 border-dashed p-12 text-center space-y-4">
+        <div className="rounded-4xl border-2 border-dashed p-12 text-center space-y-4">
           <h2 className="text-xl font-black uppercase">Competition data could not be loaded</h2>
           <p className="text-sm text-muted-foreground">Refresh this section to retry without losing your account session.</p>
           <button
@@ -82,7 +82,7 @@ export default function CompetitionHubPage() {
 
       {/* Tab switcher */}
       <Tabs value={activeTab} onValueChange={(value) => setActiveTab(value as 'leagues' | 'tournaments')} className="w-full">
-        <TabsList className="flex bg-muted/50 p-1.5 rounded-[1.5rem] border shadow-inner h-14 gap-1 w-fit mb-2">
+        <TabsList className="flex bg-muted/50 p-1.5 rounded-3xl border shadow-inner h-14 gap-1 w-fit mb-2">
           <TabsTrigger
             value="leagues"
             className="rounded-xl font-black uppercase text-[10px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-6 flex items-center gap-2"

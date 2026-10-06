@@ -1,6 +1,55 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.USER_MAP_TARGETS = exports.USER_ARRAY_TARGETS = exports.USER_DOCUMENT_TARGETS = void 0;
+exports.loadUserMapDocumentsByUid = loadUserMapDocumentsByUid;
+exports.filterUserMapDocuments = filterUserMapDocuments;
+async function loadUserMapDocumentsByUid(targets, userIds, load) {
+    const documentsByTarget = new Map();
+    const failedTargets = [];
+    await Promise.all(targets.map(async (target) => {
+        const key = `${target.collectionGroup}:${target.mapField}`;
+        const byUid = new Map();
+        try {
+            let cursor;
+            do {
+                const page = await load(target, cursor);
+                for (const document of page.documents) {
+                    const candidate = document.data()?.[target.mapField];
+                    if (candidate === null || typeof candidate !== 'object')
+                        continue;
+                    for (const uid of userIds) {
+                        if (!Object.prototype.hasOwnProperty.call(candidate, uid))
+                            continue;
+                        byUid.set(uid, [...(byUid.get(uid) || []), document]);
+                    }
+                }
+                cursor = page.nextCursor;
+            } while (cursor !== undefined);
+        }
+        catch {
+            failedTargets.push(key);
+        }
+        finally {
+            documentsByTarget.set(key, byUid);
+        }
+    }));
+    return {
+        documentsByTarget,
+        failedTargets: failedTargets.sort(),
+    };
+}
+/**
+ * Firestore cannot define one collection-group index for arbitrary dynamic map
+ * keys such as `signups.{uid}`. Account deletion therefore enumerates the
+ * collection group and selects exact own-property matches before mutating.
+ */
+function filterUserMapDocuments(documents, mapField, userId) {
+    return documents.filter((document) => {
+        const candidate = document.data()?.[mapField];
+        return candidate !== null && typeof candidate === "object" &&
+            Object.prototype.hasOwnProperty.call(candidate, userId);
+    });
+}
 /**
  * Application records owned by an account and safe to remove after the
  * seven-day retention period. Payment, subscription, Stripe webhook, and

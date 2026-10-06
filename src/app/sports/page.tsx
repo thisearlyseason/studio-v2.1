@@ -84,9 +84,9 @@ export default function SportsIndexPage() {
               const sport = SPORT_LANDINGS[slug];
               return (
                 <Link key={slug} href={`/sports/${slug}`} className="group overflow-hidden rounded-lg border bg-white shadow-sm transition hover:-translate-y-1 hover:border-primary hover:shadow-xl">
-                  <div className="relative aspect-[16/8] overflow-hidden bg-zinc-900">
+                  <div className="relative aspect-16/8 overflow-hidden bg-zinc-900">
                     <Image src={sport.heroImage} alt={sport.heroAlt} fill className="object-cover object-[70%_center] transition duration-500 group-hover:scale-105" sizes="(max-width: 768px) 100vw, 50vw" />
-                    <div className="absolute inset-0 bg-gradient-to-t from-black/75 via-black/10 to-transparent" />
+                    <div className="absolute inset-0 bg-linear-to-t from-black/75 via-black/10 to-transparent" />
                     <h2 className="absolute bottom-5 left-5 text-3xl font-black uppercase tracking-normal text-white sm:text-4xl">{sport.name}</h2>
                   </div>
                   <div className="flex items-center justify-between gap-4 p-6">

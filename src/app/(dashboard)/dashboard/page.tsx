@@ -265,23 +265,23 @@ export default function UniversalAccountDashboard() {
       </section>
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 sm:gap-6">
-        <Card className="rounded-[2rem] sm:rounded-[2.5rem] shadow-xl bg-primary text-white p-5 sm:p-8 space-y-2 relative overflow-hidden group">
+        <Card className="rounded-4xl sm:rounded-[2.5rem] shadow-xl bg-primary text-white p-5 sm:p-8 space-y-2 relative overflow-hidden group">
           <TrendingUp className="absolute -right-4 -bottom-4 h-24 w-24 opacity-10 -rotate-12 group-hover:scale-110 transition-transform duration-700" />
           <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Win Rate</p>
           <p className="text-3xl sm:text-5xl font-black">{winRate}%</p>
         </Card>
-        <Card className="rounded-[2rem] sm:rounded-[2.5rem] shadow-xl bg-black text-white p-5 sm:p-8 space-y-2 relative overflow-hidden group">
+        <Card className="rounded-4xl sm:rounded-[2.5rem] shadow-xl bg-black text-white p-5 sm:p-8 space-y-2 relative overflow-hidden group">
           <ClipboardCheck className="absolute -right-4 -bottom-4 h-24 w-24 opacity-10 -rotate-12 group-hover:scale-110 transition-transform duration-700" />
           <p className="text-[9px] sm:text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Compliance</p>
           <div className="flex items-baseline gap-1"><p className="text-3xl sm:text-5xl font-black">{pendingWaiversCount}</p><span className="text-sm font-black text-primary uppercase">Pending</span></div>
         </Card>
-        <Card className="rounded-[2rem] sm:rounded-[2.5rem] shadow-xl bg-white p-5 sm:p-8 space-y-2 ring-1 ring-black/5 relative overflow-hidden group">
+        <Card className="rounded-4xl sm:rounded-[2.5rem] shadow-xl bg-white p-5 sm:p-8 space-y-2 ring-1 ring-black/5 relative overflow-hidden group">
           <Zap className="absolute -right-4 -bottom-4 h-24 w-24 text-primary opacity-5 -rotate-12 group-hover:scale-110 transition-transform duration-700" />
           <p className="text-[9px] sm:text-[10px] font-black uppercase text-muted-foreground">Community</p>
           <div className="flex items-baseline gap-1"><p className="text-3xl sm:text-5xl font-black text-primary">{(volunteers?.length || 0) + (fundraisers?.length || 0)}</p><span className="text-sm font-black text-foreground uppercase">Open</span></div>
         </Card>
         {isYouth ? (
-          <Card className="rounded-[2rem] sm:rounded-[2.5rem] shadow-xl bg-muted/20 p-5 sm:p-8 space-y-2 relative overflow-hidden group">
+          <Card className="rounded-4xl sm:rounded-[2.5rem] shadow-xl bg-muted/20 p-5 sm:p-8 space-y-2 relative overflow-hidden group">
             <Star className="absolute -right-4 -bottom-4 h-24 w-24 text-primary opacity-5 -rotate-12 group-hover:scale-110 transition-transform duration-700" />
             <p className="text-[9px] sm:text-[10px] font-black uppercase text-muted-foreground">Portals</p>
             <div className="flex items-baseline gap-1">
@@ -290,7 +290,7 @@ export default function UniversalAccountDashboard() {
             </div>
           </Card>
         ) : (
-          <Card className="rounded-[2rem] sm:rounded-[2.5rem] shadow-xl bg-muted/20 p-5 sm:p-8 space-y-2">
+          <Card className="rounded-4xl sm:rounded-[2.5rem] shadow-xl bg-muted/20 p-5 sm:p-8 space-y-2">
             <p className="text-[9px] sm:text-[10px] font-black uppercase text-muted-foreground">Household</p>
             <p className="text-2xl sm:text-3xl font-black text-foreground">${householdBalance.toLocaleString()}</p>
             <Button variant="ghost" size="sm" className="h-6 px-2 text-[8px] font-black uppercase border mt-2 text-foreground" onClick={() => router.push('/family/payments')}>Payment Details</Button>
@@ -328,7 +328,7 @@ export default function UniversalAccountDashboard() {
                 ] : [];
 
                 return (
-                  <Card key={event.id} className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg hover:-translate-y-1 transition-all group overflow-hidden bg-white cursor-pointer" onClick={() => router.push('/calendar')}>
+                  <Card key={event.id} className="rounded-4xl border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg hover:-translate-y-1 transition-all group overflow-hidden bg-white cursor-pointer" onClick={() => router.push('/calendar')}>
                     <div className="flex items-stretch h-28">
                       <div className={cn(
                         "w-24 bg-muted/30 flex flex-col items-center justify-center border-r shrink-0 transition-colors group-hover:bg-primary/5",
@@ -425,7 +425,7 @@ export default function UniversalAccountDashboard() {
           <section className="space-y-4">
             <div className="flex items-center gap-3 px-2"><HandHelping className="h-5 w-5 text-primary" /><h3 className="text-xl font-black uppercase text-foreground">Community Opportunities</h3></div>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-              <Card className="rounded-[2rem] border-none shadow-md bg-white p-6 space-y-4">
+              <Card className="rounded-4xl border-none shadow-md bg-white p-6 space-y-4">
                 <p className="text-[10px] font-black uppercase text-foreground">Volunteer Opportunities</p>
                 {volunteers && volunteers.length > 0 ? volunteers.slice(0, 2).map((v: any) => (
                   <div key={v.id} className="flex items-center justify-between gap-4">
@@ -436,7 +436,7 @@ export default function UniversalAccountDashboard() {
                   <div className="text-center py-4 bg-muted/10 rounded-xl border border-dashed"><p className="text-[10px] font-bold text-muted-foreground uppercase">No open opportunities</p></div>
                 )}
               </Card>
-              <Card className="rounded-[2rem] border-none shadow-md bg-white p-6 space-y-4">
+              <Card className="rounded-4xl border-none shadow-md bg-white p-6 space-y-4">
                 <p className="text-[10px] font-black uppercase text-foreground">Active Fundraising</p>
                 {fundraisers && fundraisers.length > 0 ? fundraisers.slice(0, 2).map((f: any) => (
                   <div key={f.id} className="flex items-center justify-between gap-4">
@@ -452,19 +452,19 @@ export default function UniversalAccountDashboard() {
         </div>
         <aside className="space-y-8">
           {!hasLeagueMembership && (
-            <Card className="rounded-[2rem] bg-black text-white p-8 space-y-6 relative overflow-hidden group">
+            <Card className="rounded-4xl bg-black text-white p-8 space-y-6 relative overflow-hidden group">
               <ShieldCheck className="absolute top-0 right-0 p-6 opacity-10 -rotate-12 h-32 w-32 group-hover:scale-110 transition-transform duration-700" />
               <h3 className="text-2xl font-black uppercase tracking-tight">Join a League</h3>
               <p className="text-xs text-white/60 font-medium leading-relaxed">Enter the league code from your organizer to connect your account to its schedule and standings.</p>
               <Button onClick={() => router.push('/teams/join')} className="w-full h-12 rounded-xl bg-white text-black font-black uppercase text-[10px] shadow-xl">Enter League Code <ArrowRight className="ml-2 h-5 w-5" /></Button>
             </Card>
           )}
-          <Card className="rounded-[2rem] shadow-xl bg-white p-6 space-y-4 ring-1 ring-black/5"><div className="flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /><CardTitle className="text-[10px] font-black uppercase text-foreground">Waivers and Documents</CardTitle></div><p className="text-[10px] font-medium text-muted-foreground leading-relaxed">Review required liability and media-release documents before game day.</p><Button onClick={() => router.push('/files')} variant="outline" className="w-full h-10 rounded-xl font-black uppercase text-[10px] border-2">Review Documents</Button></Card>
+          <Card className="rounded-4xl shadow-xl bg-white p-6 space-y-4 ring-1 ring-black/5"><div className="flex items-center gap-2"><FileText className="h-4 w-4 text-primary" /><CardTitle className="text-[10px] font-black uppercase text-foreground">Waivers and Documents</CardTitle></div><p className="text-[10px] font-medium text-muted-foreground leading-relaxed">Review required liability and media-release documents before game day.</p><Button onClick={() => router.push('/files')} variant="outline" className="w-full h-10 rounded-xl font-black uppercase text-[10px] border-2">Review Documents</Button></Card>
         </aside>
       </div>
 
       <AlertDialog open={showWaiverModal} onOpenChange={setShowWaiverModal}>
-        <AlertDialogContent className="rounded-[2rem] border-none shadow-2xl p-8 max-w-md">
+        <AlertDialogContent className="rounded-4xl border-none shadow-2xl p-8 max-w-md">
           <AlertDialogHeader>
             <div className="mx-auto bg-red-100 p-4 rounded-full w-max mb-4">
               <ShieldCheck className="h-8 w-8 text-red-600" />

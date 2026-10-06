@@ -775,7 +775,7 @@ export default function SettingsPage() {
 
               return (
                 <div key={module.key} className={cn(
-                  "p-4 rounded-[2rem] border shadow-sm flex items-center justify-between transition-all",
+                  "p-4 rounded-4xl border shadow-sm flex items-center justify-between transition-all",
                   isEnabled ? "bg-white" : "bg-muted/50 grayscale-[0.5]"
                 )}>
                   <div className="flex items-center gap-3">
@@ -959,7 +959,7 @@ export default function SettingsPage() {
       </AlertDialog>
 
       <AlertDialog open={isNotificationConsentOpen} onOpenChange={setIsNotificationConsentOpen}>
-        <AlertDialogContent className="rounded-[2rem] border-none shadow-2xl">
+        <AlertDialogContent className="rounded-4xl border-none shadow-2xl">
           <AlertDialogHeader>
             <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <Bell className="h-7 w-7" />

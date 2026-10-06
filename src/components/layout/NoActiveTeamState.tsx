@@ -16,7 +16,7 @@ export function NoActiveTeamState({
     <Card className="mx-auto max-w-2xl overflow-hidden rounded-[2.5rem] border-none bg-white shadow-xl ring-1 ring-black/5">
       <div className="h-2 bg-primary" />
       <CardContent className="space-y-7 p-8 text-center sm:p-12">
-        <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-[2rem] bg-primary/10 text-primary">
+        <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-4xl bg-primary/10 text-primary">
           <ShieldCheck className="h-10 w-10" />
         </div>
         <div className="space-y-2">

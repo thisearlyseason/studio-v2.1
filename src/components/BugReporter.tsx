@@ -77,7 +77,7 @@ export default function BugReporter() {
             animate={{ scale: 1, opacity: 1 }}
             exit={{ scale: 0, opacity: 0 }}
             onClick={() => setIsOpen(true)}
-            className="fixed bottom-6 right-6 z-[9999] bg-primary text-white p-4 rounded-full shadow-2xl hover:bg-primary/90 hover:scale-105 active:scale-95 transition-all group border-2 border-primary/20"
+            className="fixed bottom-6 right-6 z-9999 bg-primary text-white p-4 rounded-full shadow-2xl hover:bg-primary/90 hover:scale-105 active:scale-95 transition-all group border-2 border-primary/20"
           >
             <Bug className="w-6 h-6 group-hover:rotate-12 transition-transform" />
           </motion.button>
@@ -90,7 +90,7 @@ export default function BugReporter() {
             initial={{ opacity: 0, y: 20, scale: 0.95 }}
             animate={{ opacity: 1, y: 0, scale: 1 }}
             exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            className="fixed bottom-6 right-6 z-[9999] w-[350px] bg-white border border-gray-200 rounded-2xl shadow-2xl overflow-hidden"
+            className="fixed bottom-6 right-6 z-9999 w-[350px] bg-white border border-gray-200 rounded-2xl shadow-2xl overflow-hidden"
           >
             <div className="bg-primary/10 border-b border-gray-100 p-4 flex items-center justify-between">
               <div className="flex items-center gap-2">

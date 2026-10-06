@@ -432,7 +432,7 @@ export function FundraisingManager() {
 
             <DialogFooter>
               <Button
-                className="w-full h-16 rounded-[2rem] text-lg font-black bg-black text-white hover:bg-primary transition-all shadow-xl border-none"
+                className="w-full h-16 rounded-4xl text-lg font-black bg-black text-white hover:bg-primary transition-all shadow-xl border-none"
                 onClick={handleSubmit}
                 disabled={isProcessing || !form.title || !form.goalAmount}
               >

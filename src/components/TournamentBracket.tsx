@@ -43,7 +43,7 @@ function BracketNode({ game, allGames, onGameClick }: { game: TournamentGame, al
   const isCompleted = game.isCompleted;
 
   const EmptyFeeder = () => (
-    <div className="w-40 h-[72px] bg-white/[0.02] border border-white/5 border-dashed rounded-lg flex flex-col items-center justify-center font-black uppercase text-[8px] tracking-widest relative z-20">
+    <div className="w-40 h-[72px] bg-white/2 border border-white/5 border-dashed rounded-lg flex flex-col items-center justify-center font-black uppercase text-[8px] tracking-widest relative z-20">
       <span className="text-white/30 truncate px-2">AWAITING FEEDER</span>
     </div>
   );
@@ -229,11 +229,11 @@ export default function TournamentBracket({ games, standalone = false, onGameCli
           ref={bracketRef} 
           id="bracket-root-element"
           className={cn(
-            "relative p-8 md:p-16 lg:p-24 bg-[#111] rounded-[3rem] shadow-2xl border border-white/[0.05] min-h-[600px] w-fit h-fit",
+            "relative p-8 md:p-16 lg:p-24 bg-[#111] rounded-[3rem] shadow-2xl border border-white/5 min-h-[600px] w-fit h-fit",
             standalone ? "rounded-none h-full min-h-screen border-none flex-1" : "mx-4 lg:mx-8"
           )}
         >
-          <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-black to-black pointer-events-none rounded-[3rem]" />
+          <div className="absolute inset-0 bg-linear-to-br from-primary/10 via-black to-black pointer-events-none rounded-[3rem]" />
         
         {/* Pool Play Grid (If any exist) */}
         {poolPlayGames.length > 0 && (
@@ -314,7 +314,7 @@ export default function TournamentBracket({ games, standalone = false, onGameCli
                    <div className="w-8 h-px bg-white/20 pointer-events-none" />
                    <div className="flex flex-col items-center justify-center p-4">
                       <div className="w-20 h-20 relative group-hover:scale-110 transition-transform duration-700 ease-[cubic-bezier(0.2,0.8,0.2,1)] flex items-center justify-center">
-                        <div className="absolute inset-0 bg-yellow-500/30 rounded-full blur-[40px] animate-pulse" />
+                        <div className="absolute inset-0 bg-yellow-500/30 rounded-full blur-2xl animate-pulse" />
                         <Trophy className="relative z-10 w-full h-full text-yellow-500 filter drop-shadow-[0_5px_15px_rgba(234,179,8,0.8)]" />
                       </div>
                       <h2 className="text-xl font-black uppercase tracking-tighter text-white drop-shadow-lg mt-3">Champion</h2>

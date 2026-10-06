@@ -102,7 +102,7 @@ export function LandingPwaInstallButton({ placement, isScrolled = false }: Landi
       </Button>
 
       <Dialog open={manualPlatform !== null} onOpenChange={(open) => !open && setManualPlatform(null)}>
-        <DialogContent className="max-w-sm overflow-hidden rounded-[2rem] border-none p-0 shadow-2xl">
+        <DialogContent className="max-w-sm overflow-hidden rounded-4xl border-none p-0 shadow-2xl">
           <div className="h-2 w-full bg-primary" />
           <div className="space-y-5 p-7">
             <DialogHeader>

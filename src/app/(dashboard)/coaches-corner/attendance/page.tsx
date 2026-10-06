@@ -151,7 +151,7 @@ export default function AttendanceTrackingPage() {
   if (!isStaff || !canAccessCoachesCorner) {
     return (
       <div className="flex min-h-[55vh] items-center justify-center p-6">
-        <Card className="w-full max-w-xl rounded-[2rem] border-2 border-dashed p-10 text-center">
+        <Card className="w-full max-w-xl rounded-4xl border-2 border-dashed p-10 text-center">
           <Lock className="mx-auto mb-5 h-12 w-12 text-primary" />
           <h1 className="text-2xl font-black uppercase">Pro Squad Required</h1>
           <p className="mt-3 text-sm font-semibold text-muted-foreground">
@@ -453,7 +453,7 @@ export default function AttendanceTrackingPage() {
                 <div className="absolute top-0 right-0 p-8 opacity-10 -rotate-12 pointer-events-none">
                   <HistoryIcon className="h-32 w-32" />
                 </div>
-                <Avatar className="h-20 w-20 rounded-[2rem] border-2 border-primary ring-4 ring-primary/20">
+                <Avatar className="h-20 w-20 rounded-4xl border-2 border-primary ring-4 ring-primary/20">
                   <AvatarImage src={selectedAthlete.avatar} />
                   <AvatarFallback className="text-xl font-black">{selectedAthlete.name[0]}</AvatarFallback>
                 </Avatar>
@@ -519,7 +519,7 @@ export default function AttendanceTrackingPage() {
       <div className="flex justify-center">
         <Button 
           variant="outline" 
-          className="rounded-[2rem] border-2 h-16 px-10 font-black uppercase text-xs tracking-[0.2em] shadow-xl group overflow-hidden relative"
+          className="rounded-4xl border-2 h-16 px-10 font-black uppercase text-xs tracking-[0.2em] shadow-xl group overflow-hidden relative"
           onClick={() => {
             const getCSVData = () => {
               const headers = ['Athlete', 'Jersey', 'Position', 'Attendance Rate', ...trackedEvents.map(e => `"${e.title}"`)];

@@ -322,7 +322,7 @@ export default function AdminPlansPage() {
                 </div>
 
                 <div className="flex flex-col justify-center items-center text-center space-y-6 bg-muted/20 rounded-[3rem] p-10 border-2 border-dashed border-muted-foreground/10">
-                  <div className="bg-white p-6 rounded-[2rem] shadow-xl relative">
+                  <div className="bg-white p-6 rounded-4xl shadow-xl relative">
                     <Users className="h-16 w-16 text-muted-foreground opacity-20" />
                     <Zap className="absolute -top-2 -right-2 h-8 w-8 text-amber-500 animate-pulse" />
                   </div>

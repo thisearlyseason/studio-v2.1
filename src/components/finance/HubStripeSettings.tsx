@@ -230,7 +230,7 @@ function HubConnectCard({ userId, hubTeamId }: HubConnectCardProps) {
 
   if (isLoading) {
     return (
-      <Card className="rounded-[2rem] border-none shadow-md bg-muted/30 p-6">
+      <Card className="rounded-4xl border-none shadow-md bg-muted/30 p-6">
         <div className="flex items-center gap-3">
           <Loader2 className="h-5 w-5 animate-spin text-primary/40" />
           <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
@@ -243,7 +243,7 @@ function HubConnectCard({ userId, hubTeamId }: HubConnectCardProps) {
 
   if (fetchError) {
     return (
-      <Card className="rounded-[2rem] border-none shadow-md bg-red-50 ring-1 ring-red-100 p-5">
+      <Card className="rounded-4xl border-none shadow-md bg-red-50 ring-1 ring-red-100 p-5">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <AlertCircle className="h-5 w-5 text-red-500 shrink-0" />
@@ -265,7 +265,7 @@ function HubConnectCard({ userId, hubTeamId }: HubConnectCardProps) {
   // ── Connected & charges enabled ────────────────────────────────────────────
   if (status?.connected && status.chargesEnabled) {
     return (
-      <Card className="rounded-[2rem] border-none shadow-md bg-emerald-50 ring-1 ring-emerald-100 overflow-hidden">
+      <Card className="rounded-4xl border-none shadow-md bg-emerald-50 ring-1 ring-emerald-100 overflow-hidden">
         <CardContent className="p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="bg-emerald-500 p-2.5 rounded-xl text-white shadow-sm shrink-0">
@@ -305,7 +305,7 @@ function HubConnectCard({ userId, hubTeamId }: HubConnectCardProps) {
   // ── Connected but incomplete ───────────────────────────────────────────────
   if (status?.connected && !status.chargesEnabled) {
     return (
-      <Card className="rounded-[2rem] border-none shadow-md bg-amber-50 ring-1 ring-amber-100 overflow-hidden">
+      <Card className="rounded-4xl border-none shadow-md bg-amber-50 ring-1 ring-amber-100 overflow-hidden">
         <CardContent className="p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="bg-amber-400 p-2.5 rounded-xl text-white shadow-sm shrink-0">
@@ -340,7 +340,7 @@ function HubConnectCard({ userId, hubTeamId }: HubConnectCardProps) {
 
   // ── Not connected ──────────────────────────────────────────────────────────
   return (
-    <Card className="rounded-[2rem] border-none shadow-xl bg-black text-white overflow-hidden relative group">
+    <Card className="rounded-4xl border-none shadow-xl bg-black text-white overflow-hidden relative group">
       <div className="absolute top-0 right-0 p-8 opacity-5 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700">
         <CreditCard className="h-32 w-32" />
       </div>
@@ -441,7 +441,7 @@ export function HubStripeSettings({
 
   if (isDemo) {
     return (
-      <Card className="rounded-[2rem] border-none shadow-md bg-muted/30 p-6">
+      <Card className="rounded-4xl border-none shadow-md bg-muted/30 p-6">
         <div className="flex items-start gap-3">
           <AlertCircle className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
           <div>
@@ -460,7 +460,7 @@ export function HubStripeSettings({
   return (
     <div className="flex flex-col gap-6">
       {/* ── Header ─────────────────────────────────────────────────────────── */}
-      <Card className="rounded-[2rem] border-none shadow-md overflow-hidden">
+      <Card className="rounded-4xl border-none shadow-md overflow-hidden">
         <CardHeader className="pb-0 pt-6 px-6">
           <div className="flex items-center gap-2 mb-1">
             <div className="bg-primary/10 p-2 rounded-xl text-primary">
@@ -581,7 +581,7 @@ export function HubStripeSettings({
           </div>
 
           {/* Squad status list */}
-          <Card className="rounded-[2rem] border-none shadow-md overflow-hidden">
+          <Card className="rounded-4xl border-none shadow-md overflow-hidden">
             <CardHeader className="pb-2 pt-5 px-5">
               <p className="text-[9px] font-black uppercase tracking-[0.2em] text-muted-foreground">
                 Sub-Squad Stripe Status

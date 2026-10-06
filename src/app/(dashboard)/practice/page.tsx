@@ -166,7 +166,7 @@ export default function PracticeManagementPage() {
         <Card className="max-w-md w-full rounded-[3.5rem] border-none shadow-2xl bg-white overflow-hidden ring-1 ring-black/5">
           <div className="h-2 bg-primary w-full" />
           <div className="p-10 text-center space-y-6">
-            <div className="mx-auto w-20 h-20 bg-primary/5 rounded-[2rem] flex items-center justify-center ring-1 ring-primary/10">
+            <div className="mx-auto w-20 h-20 bg-primary/5 rounded-4xl flex items-center justify-center ring-1 ring-primary/10">
               <Lock className="h-10 w-10 text-primary" />
             </div>
             <div className="space-y-2">
@@ -310,7 +310,7 @@ export default function PracticeManagementPage() {
                 members={members}
                 defaultTab="plan"
               >
-                <Card className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg hover:-translate-y-0.5 transition-all group overflow-hidden bg-white cursor-pointer">
+                <Card className="rounded-4xl border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg hover:-translate-y-0.5 transition-all group overflow-hidden bg-white cursor-pointer">
                   <div className="flex items-stretch h-28">
                     <div className="w-24 bg-black text-white flex flex-col items-center justify-center shrink-0 transition-colors group-hover:bg-primary">
                       <span className="text-[8px] font-black uppercase opacity-60 leading-none">{format(event.date.includes('T') ? parseISO(event.date) : new Date(event.date.replace(/-/g, '/')), 'MMM')}</span>
@@ -404,7 +404,7 @@ export default function PracticeManagementPage() {
                 </Badge>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto p-2 border-2 border-dashed rounded-[2rem] bg-muted/20 custom-scrollbar">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto p-2 border-2 border-dashed rounded-4xl bg-muted/20 custom-scrollbar">
                 {teamDrills && teamDrills.length > 0 ? teamDrills.map((drill: any) => {
                   const isSelected = selectedDrills.includes(drill.id);
                   return (
@@ -438,7 +438,7 @@ export default function PracticeManagementPage() {
             </div>
           </div>
 
-          <div className="p-8 bg-background border-t flex items-center justify-end gap-3 translate-y-[-1px]">
+          <div className="p-8 bg-background border-t flex items-center justify-end gap-3 -translate-y-px">
             <DialogClose asChild>
               <Button variant="outline" className="rounded-xl h-12 px-6 font-black uppercase text-[10px] border-2">Abort</Button>
             </DialogClose>

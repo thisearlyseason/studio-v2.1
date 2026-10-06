@@ -103,7 +103,7 @@ export default function PublicSpectatorHub() {
           <aside className="space-y-8">
             <section className="space-y-4">
               <h2 className="text-xl font-black uppercase tracking-tight">Leaderboard</h2>
-              <Card className="rounded-[2rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
+              <Card className="rounded-4xl border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
                 <CardContent className="p-0">
                   {standings.map((team: any, i: number) => (
                     <div key={team.name} className="flex justify-between items-center px-6 py-5 border-b last:border-0 hover:bg-primary/5 transition-colors">

@@ -40,7 +40,7 @@ export default function PublicLeagueScorekeeperHub() {
 
   if (isLoading) return <div className="min-h-screen flex items-center justify-center bg-muted/10"><Loader2 className="h-10 w-10 animate-spin text-primary" /></div>;
   if (!league) return <PortalStatus status={status} message={error} onRetry={retry} />;
-  if ((league as any).scorekeeperConfigured === false) return <div className="min-h-screen flex items-center justify-center p-6 bg-muted/10"><Card className="max-w-md text-center p-10 rounded-[2rem] border-none shadow-xl"><ShieldCheck className="h-12 w-12 mx-auto mb-4 text-primary" /><h2 className="text-xl font-black uppercase">Scorekeeper Access Not Configured</h2><p className="text-sm text-muted-foreground mt-3">The league organizer must set a scorekeeper PIN before results can be submitted.</p></Card></div>;
+  if ((league as any).scorekeeperConfigured === false) return <div className="min-h-screen flex items-center justify-center p-6 bg-muted/10"><Card className="max-w-md text-center p-10 rounded-4xl border-none shadow-xl"><ShieldCheck className="h-12 w-12 mx-auto mb-4 text-primary" /><h2 className="text-xl font-black uppercase">Scorekeeper Access Not Configured</h2><p className="text-sm text-muted-foreground mt-3">The league organizer must set a scorekeeper PIN before results can be submitted.</p></Card></div>;
 
   return (
     <div className="min-h-screen bg-muted/10 flex flex-col items-center py-12 px-6">
@@ -108,7 +108,7 @@ export default function PublicLeagueScorekeeperHub() {
                       {/* Left Time Signature */}
                       <div className={cn(
                         "w-24 shrink-0 flex flex-col items-center justify-center border-r border-dashed transition-colors",
-                        game.isCompleted ? "bg-muted/20 border-muted" : "bg-primary/[0.03] border-primary/10 group-hover:bg-primary/5"
+                        game.isCompleted ? "bg-muted/20 border-muted" : "bg-primary/3 border-primary/10 group-hover:bg-primary/5"
                       )}>
                         <Clock className="h-4 w-4 text-primary/40 mb-1" />
                         <span className="text-[10px] font-black uppercase text-primary leading-none">{game.time}</span>
@@ -168,7 +168,7 @@ export default function PublicLeagueScorekeeperHub() {
                       </div>
 
                       {/* Action Visualizer */}
-                      <div className="w-16 shrink-0 flex items-center justify-center bg-muted/5 group-hover:bg-primary/[0.02] transition-colors border-l border-muted/20">
+                      <div className="w-16 shrink-0 flex items-center justify-center bg-muted/5 group-hover:bg-primary/2 transition-colors border-l border-muted/20">
                          <ChevronRight className="h-6 w-6 text-primary scale-90 group-hover:scale-110 transition-transform opacity-20 group-hover:opacity-100" />
                       </div>
                     </div>

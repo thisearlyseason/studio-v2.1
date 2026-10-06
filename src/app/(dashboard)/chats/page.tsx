@@ -406,7 +406,7 @@ export default function ChatsPage() {
       </div>
 
       {isStaff && (
-        <Card className="overflow-hidden rounded-[2rem] border-2 border-primary/20 bg-white shadow-lg">
+        <Card className="overflow-hidden rounded-4xl border-2 border-primary/20 bg-white shadow-lg">
           <div className="h-2 bg-primary" />
           <CardContent className="p-6 md:p-8">
             <div className="mb-6 flex items-start gap-4">
@@ -478,7 +478,7 @@ export default function ChatsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         <aside className="lg:col-span-1 space-y-6">
-          <Card className="rounded-[2rem] border-none shadow-md ring-1 ring-black/5 bg-white overflow-hidden">
+          <Card className="rounded-4xl border-none shadow-md ring-1 ring-black/5 bg-white overflow-hidden">
             <CardContent className="p-6 space-y-6">
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-1">Search Channels</Label>
@@ -550,7 +550,7 @@ export default function ChatsPage() {
               </Card>
           )) : (
             <div className="text-center py-24 bg-muted/10 border-2 border-dashed rounded-[3rem] space-y-6">
-              <div className="bg-white w-20 h-20 rounded-[2rem] flex items-center justify-center mx-auto shadow-xl relative">
+              <div className="bg-white w-20 h-20 rounded-4xl flex items-center justify-center mx-auto shadow-xl relative">
                 <MessageSquare className="h-10 w-10 text-primary opacity-20" />
                 <Sparkles className="absolute -top-2 -right-2 h-8 w-8 text-amber-500 animate-pulse" />
               </div>
@@ -564,7 +564,7 @@ export default function ChatsPage() {
         </div>
       </div>
       <AlertDialog open={Boolean(pendingChatRemoval)} onOpenChange={open => { if (!open && !isRemovingChat) setPendingChatRemoval(null); }}>
-        <AlertDialogContent className="max-w-md rounded-[2rem] p-6 sm:p-8">
+        <AlertDialogContent className="max-w-md rounded-4xl p-6 sm:p-8">
           <AlertDialogHeader>
             <AlertDialogTitle>{isStaff ? 'Delete this channel?' : 'Hide this channel?'}</AlertDialogTitle>
             <AlertDialogDescription>

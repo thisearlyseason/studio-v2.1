@@ -86,7 +86,7 @@ export default function PublicScorekeeperEntryPage() {
       : 'Both teams must be resolved through bracket progression before this match can be scored.';
     return (
       <div className="min-h-screen bg-muted/10 flex items-center justify-center p-6">
-        <Card className="max-w-md w-full text-center p-10 rounded-[2rem] border-none shadow-xl bg-white">
+        <Card className="max-w-md w-full text-center p-10 rounded-4xl border-none shadow-xl bg-white">
           <AlertCircle className="h-12 w-12 mx-auto mb-5 text-primary" />
           <h1 className="text-2xl font-black uppercase tracking-tight">{title}</h1>
           <p className="text-sm text-muted-foreground mt-3 leading-relaxed">{message}</p>

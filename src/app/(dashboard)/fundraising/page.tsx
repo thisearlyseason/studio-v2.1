@@ -438,7 +438,7 @@ function AuthorizedFundraisingPage() {
     <div className="relative min-h-[calc(100vh-10rem)]">
       {!isPro && (
         <div 
-          className="absolute inset-x-[-2rem] inset-y-[-2rem] z-50 flex items-center justify-center p-6 sm:p-10 animate-in fade-in zoom-in duration-500"
+          className="absolute -inset-x-8 -inset-y-8 z-50 flex items-center justify-center p-6 sm:p-10 animate-in fade-in zoom-in duration-500"
           style={{ 
             background: 'radial-gradient(circle at center, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.8) 100%)',
             backdropFilter: 'blur(12px)'
@@ -447,7 +447,7 @@ function AuthorizedFundraisingPage() {
           <Card className="max-w-md w-full rounded-[3.5rem] border-none shadow-[0_40px_80px_-15px_rgba(0,0,0,0.15)] bg-white overflow-hidden ring-1 ring-black/5">
             <div className="h-2 bg-primary w-full" />
             <CardHeader className="p-10 lg:p-12 text-center space-y-6">
-              <div className="bg-primary/10 w-20 h-20 rounded-[2rem] flex items-center justify-center mx-auto shadow-inner ring-8 ring-primary/5">
+              <div className="bg-primary/10 w-20 h-20 rounded-4xl flex items-center justify-center mx-auto shadow-inner ring-8 ring-primary/5">
                 <LockIcon className="h-10 w-10 text-primary" />
               </div>
               <div className="space-y-2">
@@ -464,7 +464,7 @@ function AuthorizedFundraisingPage() {
             <CardFooter className="p-10 lg:p-12 pt-0">
               {!isStoreDistribution && <Button
                 onClick={purchasePro}
-                className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all bg-primary"
+                className="w-full h-16 rounded-4xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all bg-primary"
               >
                 Unlock Pro Capital Hub
               </Button>}
@@ -546,7 +546,7 @@ function AuthorizedFundraisingPage() {
               <div className={cn("h-2 w-full", isArchive ? "bg-muted" : "bg-primary")} />
               <CardContent className="p-8 lg:p-10 space-y-8 flex-1">
                 <div className="flex justify-between items-start">
-                  <div className="bg-primary/5 p-5 rounded-[1.5rem] text-primary group-hover:text-black shadow-inner transition-colors">
+                  <div className="bg-primary/5 p-5 rounded-3xl text-primary group-hover:text-black shadow-inner transition-colors">
                     <PiggyBank className="h-10 w-10" />
                   </div>
                   <div className="flex gap-1">
@@ -706,7 +706,7 @@ function AuthorizedFundraisingPage() {
                   </div>
                 )}
 
-                <div className="flex items-center justify-between p-5 bg-primary/5 rounded-[2rem] border-2 border-dashed border-primary/20 mt-4">
+                <div className="flex items-center justify-between p-5 bg-primary/5 rounded-4xl border-2 border-dashed border-primary/20 mt-4">
                   <div>
                     <p className="text-xs font-black uppercase leading-tight text-foreground">Public Enrollment</p>
                     <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-tighter mt-1">Enable unauthenticated portal links</p>
@@ -716,7 +716,7 @@ function AuthorizedFundraisingPage() {
               </div>
             </div>
             <DialogFooter>
-              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all border-none" onClick={handleAddCampaign} disabled={isProcessing || !newFund.title || !newFund.goal || !newFund.deadline || (configMethod === 'stripe' && !stripeChargesEnabled)}>
+              <Button className="w-full h-16 rounded-4xl text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all border-none" onClick={handleAddCampaign} disabled={isProcessing || !newFund.title || !newFund.goal || !newFund.deadline || (configMethod === 'stripe' && !stripeChargesEnabled)}>
                 {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Authorize Deployment"}
               </Button>
             </DialogFooter>
@@ -773,7 +773,7 @@ function AuthorizedFundraisingPage() {
                   <Textarea placeholder="Recipient email and security instructions..." value={editingFund.eTransferDetails} onChange={e => setEditingFund({...editingFund, eTransferDetails: e.target.value})} className="min-h-[80px] rounded-2xl border-2 font-medium bg-muted/10 resize-none p-4 text-foreground" />
                 </div>}
 
-                {!isStoreDistribution && <div className="flex items-center justify-between p-5 bg-primary/5 rounded-[2rem] border-2 border-dashed border-primary/20 mt-4">
+                {!isStoreDistribution && <div className="flex items-center justify-between p-5 bg-primary/5 rounded-4xl border-2 border-dashed border-primary/20 mt-4">
                   <div>
                     <p className="text-xs font-black uppercase leading-tight text-foreground">Public Enrollment</p>
                     <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-tighter mt-1">Enable unauthenticated portal links</p>
@@ -783,7 +783,7 @@ function AuthorizedFundraisingPage() {
               </div>
             )}
             <DialogFooter>
-              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all border-none" onClick={handleEditCampaign} disabled={isProcessing || !editingFund?.title}>
+              <Button className="w-full h-16 rounded-4xl text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all border-none" onClick={handleEditCampaign} disabled={isProcessing || !editingFund?.title}>
                 {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Update Strategy"}
               </Button>
             </DialogFooter>
@@ -898,7 +898,7 @@ function AuthorizedFundraisingPage() {
 
             <DialogFooter>
               <Button 
-                className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all bg-primary" 
+                className="w-full h-16 rounded-4xl text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all bg-primary"
                 onClick={handleCommitDonation} 
                 disabled={isProcessing || !commitData.amount}
               >

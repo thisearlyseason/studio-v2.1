@@ -437,7 +437,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
     <div className={cn("relative", !embedded && "min-h-[calc(100vh-10rem)]")}>
       {!isPro && (
         <div
-          className="absolute inset-x-[-2rem] inset-y-[-2rem] z-50 flex items-center justify-center p-6 sm:p-10 animate-in fade-in zoom-in duration-500"
+          className="absolute -inset-x-8 -inset-y-8 z-50 flex items-center justify-center p-6 sm:p-10 animate-in fade-in zoom-in duration-500"
           style={{
             background: 'radial-gradient(circle at center, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.8) 100%)',
             backdropFilter: 'blur(12px)'
@@ -446,7 +446,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
           <Card className="max-w-md w-full rounded-[3.5rem] border-none shadow-[0_40px_80px_-15px_rgba(0,0,0,0.15)] bg-white overflow-hidden ring-1 ring-black/5">
             <div className="h-2 bg-primary w-full" />
             <div className="p-10 text-center space-y-6">
-              <div className="mx-auto w-20 h-20 bg-primary/5 rounded-[2rem] flex items-center justify-center ring-1 ring-primary/10 animate-pulse">
+              <div className="mx-auto w-20 h-20 bg-primary/5 rounded-4xl flex items-center justify-center ring-1 ring-primary/10 animate-pulse">
                 <Lock className="h-10 w-10 text-primary" />
               </div>
               <div className="space-y-2">
@@ -466,7 +466,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
         </div>
       )}
 
-      <div className={cn("space-y-8 animate-in fade-in duration-500", embedded ? "pb-8" : "pb-20", !isPro && "blur-[8px] grayscale pointer-events-none")}>
+      <div className={cn("space-y-8 animate-in fade-in duration-500", embedded ? "pb-8" : "pb-20", !isPro && "blur-sm grayscale pointer-events-none")}>
         <div className={cn("flex flex-col md:flex-row md:items-center gap-6", embedded ? "justify-end" : "justify-between")}>
           {!embedded && (
             <div className="space-y-1">
@@ -891,7 +891,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
               <Input placeholder="e.g. Regional Finals vs Lancers" className="h-14 rounded-2xl border-2 font-black text-lg" value={newTitle ?? ""} onChange={e => setNewTitle(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase tracking-[0.1em] ml-1">Archive Category</Label>
+              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Archive Category</Label>
               <Select value={uploadCat} onValueChange={setUploadCat}>
                 <SelectTrigger className="h-14 rounded-2xl border-2 font-black uppercase text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent className="rounded-2xl">
@@ -915,7 +915,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
             </div>
           </div>
           <DialogFooter className="p-8 pt-0">
-            <Button onClick={handleAddFilm} disabled={!newTitle || (!newUrl && !fileInputRef.current?.files?.length)} className="w-full h-16 rounded-[2rem] font-black uppercase text-xs shadow-xl shadow-primary/20">Enshrine in Vault</Button>
+            <Button onClick={handleAddFilm} disabled={!newTitle || (!newUrl && !fileInputRef.current?.files?.length)} className="w-full h-16 rounded-4xl font-black uppercase text-xs shadow-xl shadow-primary/20">Enshrine in Vault</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -924,7 +924,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
         <DialogContent hideClose className="sm:max-w-[95vw] lg:max-w-7xl h-full sm:h-[90vh] p-0 border-none shadow-2xl overflow-y-auto lg:overflow-hidden bg-white text-foreground flex flex-col rounded-none sm:rounded-[3.5rem]">
           <DialogTitle className="sr-only">Tactical Viewer - {selectedDrill?.title || selectedFile?.name}</DialogTitle>
           <DialogClose asChild>
-            <Button variant="ghost" size="icon" className="absolute top-6 right-6 z-[60] h-12 w-12 rounded-full bg-black/50 hover:bg-black/70 text-white border border-white/20 backdrop-blur-md shadow-2xl transition-all">
+            <Button variant="ghost" size="icon" className="absolute top-6 right-6 z-60 h-12 w-12 rounded-full bg-black/50 hover:bg-black/70 text-white border border-white/20 backdrop-blur-md shadow-2xl transition-all">
               <X className="h-6 w-6" />
             </Button>
           </DialogClose>
@@ -1127,7 +1127,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
                             </div>
                             <div className="space-y-4">
                               {(data.comments || []).map((c: any) => (
-                                <div key={c.id} className="bg-zinc-50 p-6 rounded-[2rem] border-2 border-transparent hover:border-primary/20 hover:bg-white hover:shadow-xl transition-all cursor-pointer group" onClick={() => {
+                                <div key={c.id} className="bg-zinc-50 p-6 rounded-4xl border-2 border-transparent hover:border-primary/20 hover:bg-white hover:shadow-xl transition-all cursor-pointer group" onClick={() => {
                                   seekTo(c.timestamp);
                                   window.scrollTo({ top: 0, behavior: 'smooth' });
                                 }}>
@@ -1194,7 +1194,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
         <DialogContent className="max-w-[95vw] max-h-[90vh] p-0 border-none bg-black/90 backdrop-blur-xl overflow-hidden rounded-[2.5rem] flex items-center justify-center">
           <DialogTitle className="sr-only">Tactical Asset Preview</DialogTitle>
           <button
-            className="absolute top-6 right-6 z-[60] h-12 w-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
+            className="absolute top-6 right-6 z-60 h-12 w-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
             onClick={() => setLightboxUrl(null)}
           >
             <X className="h-6 w-6" />

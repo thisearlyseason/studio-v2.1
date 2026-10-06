@@ -120,9 +120,9 @@ function FileThumbnail({ file }: { file: any }) {
     );
   }
   if (isLink) {
-    return <div className="w-full h-36 rounded-2xl bg-gradient-to-br from-green-50 to-emerald-100 flex flex-col items-center justify-center gap-2"><LinkIcon className="h-10 w-10 text-emerald-500" /><p className="text-[10px] font-black uppercase text-emerald-600 tracking-widest">External Link</p></div>;
+    return <div className="w-full h-36 rounded-2xl bg-linear-to-br from-green-50 to-emerald-100 flex flex-col items-center justify-center gap-2"><LinkIcon className="h-10 w-10 text-emerald-500" /><p className="text-[10px] font-black uppercase text-emerald-600 tracking-widest">External Link</p></div>;
   }
-  return <div className="w-full h-36 rounded-2xl bg-gradient-to-br from-muted/30 to-muted/60 flex flex-col items-center justify-center gap-2"><FileText className="h-10 w-10 text-muted-foreground/50" /><p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">{file.category || 'Document'}</p></div>;
+  return <div className="w-full h-36 rounded-2xl bg-linear-to-br from-muted/30 to-muted/60 flex flex-col items-center justify-center gap-2"><FileText className="h-10 w-10 text-muted-foreground/50" /><p className="text-[10px] font-black uppercase text-muted-foreground tracking-widest">{file.category || 'Document'}</p></div>;
 }
 
 
@@ -298,7 +298,7 @@ export default function FilesPage() {
                     <Label className="text-[10px] font-black uppercase tracking-widest">Description (Optional)</Label>
                     <Textarea placeholder="Purpose of this file..." value={uploadDescription} onChange={e => setUploadDescription(e.target.value)} className="rounded-xl min-h-[80px] border-2 font-medium resize-none" />
                   </div>
-                  <button type="button" disabled={isUploading} className="w-full p-10 border-2 border-dashed rounded-[2rem] bg-muted/20 text-center space-y-3 cursor-pointer hover:border-primary/40 transition-all" onClick={() => fileInputRef.current?.click()}>
+                  <button type="button" disabled={isUploading} className="w-full p-10 border-2 border-dashed rounded-4xl bg-muted/20 text-center space-y-3 cursor-pointer hover:border-primary/40 transition-all" onClick={() => fileInputRef.current?.click()}>
                     <div className="bg-white w-14 h-14 rounded-2xl flex items-center justify-center mx-auto shadow-sm"><FileText className="h-7 w-7 text-primary" /></div>
                     <p className="text-sm font-black uppercase tracking-widest">{isUploading?'Uploading...':'Select File'}</p>
                     <p className="text-[10px] text-muted-foreground font-bold">PDF or raster image · Maximum 10 MiB</p>
@@ -357,7 +357,7 @@ export default function FilesPage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {pendingDocs.map(d => (
-              <Card key={d.id} className="rounded-[2rem] border-none shadow-lg ring-2 ring-red-100 bg-white overflow-hidden flex flex-col">
+              <Card key={d.id} className="rounded-4xl border-none shadow-lg ring-2 ring-red-100 bg-white overflow-hidden flex flex-col">
                 <CardHeader className="p-6 pb-3">
                   <div className="flex justify-between items-start">
                     <Badge className="bg-red-600 text-white border-none font-black text-[8px] uppercase px-2 h-5">URGENT</Badge>
@@ -400,7 +400,7 @@ export default function FilesPage() {
             <Accordion type="multiple" defaultValue={[Object.keys(waiverFolders)[0]]} className="space-y-3">
               {Object.entries(waiverFolders).map(([teamName, types]) => (
                 <AccordionItem key={teamName} value={teamName} className="border-none">
-                  <AccordionTrigger className="bg-white p-5 rounded-[1.5rem] shadow-sm hover:no-underline ring-1 ring-black/5 [&[data-state=open]]:rounded-b-none transition-all">
+                  <AccordionTrigger className="bg-white p-5 rounded-3xl shadow-sm hover:no-underline ring-1 ring-black/5 data-[state=open]:rounded-b-none transition-all">
                     <div className="flex items-center gap-3">
                       <div className="bg-primary/5 p-2.5 rounded-xl text-primary"><Users className="h-5 w-5" /></div>
                       <div className="text-left">
@@ -409,7 +409,7 @@ export default function FilesPage() {
                       </div>
                     </div>
                   </AccordionTrigger>
-                  <AccordionContent className="bg-white p-5 pt-3 rounded-b-[1.5rem] shadow-md ring-1 ring-black/5 border-t">
+                  <AccordionContent className="bg-white p-5 pt-3 rounded-b-3xl shadow-md ring-1 ring-black/5 border-t">
                     <Accordion type="single" collapsible className="space-y-2">
                       {Object.entries(types).map(([docType, files]) => (
                         <AccordionItem key={docType} value={docType} className="border-none">
@@ -568,15 +568,15 @@ export default function FilesPage() {
       </section>
 
       <Dialog open={!!viewingWaiver} onOpenChange={(open) => !open && setViewingWaiver(null)}>
-        <DialogContent className="w-[calc(100vw-2rem)] max-w-xl rounded-[2rem] p-0 overflow-hidden border-none shadow-2xl bg-white">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-xl rounded-4xl p-0 overflow-hidden border-none shadow-2xl bg-white">
           <div className="px-5 sm:px-7 pt-6 pb-4 border-b pr-14">
             <DialogHeader className="text-left space-y-2">
-              <DialogTitle className="text-xl font-black uppercase tracking-tight leading-tight break-words">{viewingWaiver?.title}</DialogTitle>
+              <DialogTitle className="text-xl font-black uppercase tracking-tight leading-tight wrap-break-word">{viewingWaiver?.title}</DialogTitle>
               <DialogDescription className="text-[10px] font-bold uppercase tracking-widest text-primary">Official waiver document</DialogDescription>
             </DialogHeader>
           </div>
           <div className="px-5 sm:px-7 py-5 max-h-[65vh] overflow-y-auto">
-            <div className="rounded-2xl border bg-muted/20 p-4 sm:p-5 whitespace-pre-wrap break-words text-sm leading-6 text-foreground/80">{viewingWaiver?.content || 'No waiver content provided.'}</div>
+            <div className="rounded-2xl border bg-muted/20 p-4 sm:p-5 whitespace-pre-wrap wrap-break-word text-sm leading-6 text-foreground/80">{viewingWaiver?.content || 'No waiver content provided.'}</div>
           </div>
           <DialogFooter className="px-5 sm:px-7 py-4 border-t bg-muted/10">
             <DialogClose asChild><Button variant="outline" className="h-11 rounded-xl font-black uppercase text-[10px]">Close</Button></DialogClose>

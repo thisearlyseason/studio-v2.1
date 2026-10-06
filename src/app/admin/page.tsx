@@ -1022,7 +1022,7 @@ export default function AdminPortalPage() {
         
         {/* ── Activity-since-last-login banner ── */}
         {loginSummary && !loginSummary.dismissed && (
-          <div className="relative flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-gradient-to-r from-violet-600 via-indigo-600 to-sky-600 text-white rounded-2xl px-6 py-4 shadow-xl shadow-indigo-500/20 animate-in slide-in-from-top-4 fade-in duration-500">
+          <div className="relative flex flex-col sm:flex-row items-start sm:items-center gap-4 bg-linear-to-r from-violet-600 via-indigo-600 to-sky-600 text-white rounded-2xl px-6 py-4 shadow-xl shadow-indigo-500/20 animate-in slide-in-from-top-4 fade-in duration-500">
             {/* pulsing ring */}
             <div className="shrink-0 relative flex h-10 w-10 items-center justify-center">
               <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white/30" />
@@ -1744,7 +1744,7 @@ export default function AdminPortalPage() {
             </div>
 
             {/* ── NOTIFY BETA USERS ── */}
-            <div className="bg-gradient-to-br from-primary/10 via-primary/5 to-transparent border border-primary/30 rounded-[2rem] p-8 space-y-6">
+            <div className="bg-linear-to-br from-primary/10 via-primary/5 to-transparent border border-primary/30 rounded-4xl p-8 space-y-6">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 rounded-2xl bg-primary/20 flex items-center justify-center">
                   <Bell className="w-5 h-5 text-primary" />
@@ -1838,7 +1838,7 @@ export default function AdminPortalPage() {
                   <div className="flex flex-col lg:flex-row">
                     
                     {/* LEFT COLUMN */}
-                    <div className="w-full lg:w-1/2 bg-gray-50/50 dark:bg-white/[0.02] p-8 md:p-12 space-y-10 lg:border-r border-gray-200 dark:border-white/10">
+                    <div className="w-full lg:w-1/2 bg-gray-50/50 dark:bg-white/2 p-8 md:p-12 space-y-10 lg:border-r border-gray-200 dark:border-white/10">
                       <DialogHeader className="mb-8">
                         <DialogTitle className="text-3xl md:text-4xl font-black uppercase tracking-tight text-gray-900 dark:text-white">Application Review</DialogTitle>
                         <p className="text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-white/40 mt-1">Reviewing {selectedBetaApp?.fullName || 'Applicant'}</p>
@@ -1932,7 +1932,7 @@ export default function AdminPortalPage() {
 
                       {/* Admin Action Box */}
                       {selectedBetaApp.status !== 'approved' && selectedBetaApp.status !== 'denied' && (
-                        <div className="mt-8 p-8 bg-white dark:bg-[#0a0a0a] border-2 border-gray-200 dark:border-white/10 rounded-[2rem] shadow-xl space-y-6 relative overflow-hidden group">
+                        <div className="mt-8 p-8 bg-white dark:bg-[#0a0a0a] border-2 border-gray-200 dark:border-white/10 rounded-4xl shadow-xl space-y-6 relative overflow-hidden group">
                           <div className="absolute top-0 right-0 p-8 opacity-5 -rotate-12 group-hover:scale-110 transition-transform duration-1000">
                              <Shield className="h-48 w-48 text-primary" />
                           </div>
@@ -1994,14 +1994,14 @@ export default function AdminPortalPage() {
                         </div>
                       )}
                       {selectedBetaApp.status === 'approved' && (
-                        <div className="mt-8 bg-emerald-500/10 border-2 border-emerald-500/20 text-emerald-600 dark:text-emerald-400 p-6 rounded-[2rem] text-center space-y-2">
+                        <div className="mt-8 bg-emerald-500/10 border-2 border-emerald-500/20 text-emerald-600 dark:text-emerald-400 p-6 rounded-4xl text-center space-y-2">
                           <CheckCircle className="w-8 h-8 mx-auto" />
                           <h4 className="font-black uppercase text-lg tracking-widest">Application Approved</h4>
                           <p className="text-sm font-medium">This beta tester's account has been created successfully.</p>
                         </div>
                       )}
                       {selectedBetaApp.status === 'denied' && (
-                        <div className="mt-8 bg-red-500/10 border-2 border-red-500/20 text-red-600 dark:text-red-400 p-6 rounded-[2rem] text-center space-y-2">
+                        <div className="mt-8 bg-red-500/10 border-2 border-red-500/20 text-red-600 dark:text-red-400 p-6 rounded-4xl text-center space-y-2">
                           <XCircle className="w-8 h-8 mx-auto" />
                           <h4 className="font-black uppercase text-lg tracking-widest">Application Denied</h4>
                           <p className="text-sm font-medium">This beta application was rejected.</p>

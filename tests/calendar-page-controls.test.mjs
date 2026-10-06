@@ -34,7 +34,7 @@ test('Calendar filter trigger retains an accessible name when its label is visua
 
 test('Calendar filter popover uses Radix available height and internal scroll containment on mobile', () => {
   const filterPopover = source.slice(source.indexOf('<PopoverContent className="w-72'), source.indexOf('</PopoverContent>', source.indexOf('<PopoverContent className="w-72')));
-  assert.match(filterPopover, /max-h-\[var\(--radix-popover-content-available-height\)\]/);
+  assert.match(filterPopover, /max-h-\(--radix-popover-content-available-height\)/);
   assert.match(filterPopover, /overflow-y-auto/);
   assert.match(filterPopover, /overscroll-contain/);
 });

@@ -42,7 +42,7 @@ export default function SafetyCenterPage() {
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-16">
-          <Card className="border-none shadow-xl rounded-[2rem] overflow-hidden">
+          <Card className="border-none shadow-xl rounded-4xl overflow-hidden">
             <CardContent className="p-8 space-y-4">
               <div className="w-12 h-12 bg-green-100 rounded-2xl flex items-center justify-center text-green-600">
                 <ShieldCheck className="h-6 w-6" />
@@ -54,7 +54,7 @@ export default function SafetyCenterPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-none shadow-xl rounded-[2rem] overflow-hidden">
+          <Card className="border-none shadow-xl rounded-4xl overflow-hidden">
             <CardContent className="p-8 space-y-4">
               <div className="w-12 h-12 bg-blue-100 rounded-2xl flex items-center justify-center text-blue-600">
                 <Users className="h-6 w-6" />
@@ -66,7 +66,7 @@ export default function SafetyCenterPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-none shadow-xl rounded-[2rem] overflow-hidden">
+          <Card className="border-none shadow-xl rounded-4xl overflow-hidden">
             <CardContent className="p-8 space-y-4">
               <div className="w-12 h-12 bg-purple-100 rounded-2xl flex items-center justify-center text-purple-600">
                 <MessageSquare className="h-6 w-6" />
@@ -78,7 +78,7 @@ export default function SafetyCenterPage() {
             </CardContent>
           </Card>
 
-          <Card className="border-none shadow-xl rounded-[2rem] overflow-hidden">
+          <Card className="border-none shadow-xl rounded-4xl overflow-hidden">
             <CardContent className="p-8 space-y-4">
               <div className="w-12 h-12 bg-amber-100 rounded-2xl flex items-center justify-center text-amber-600">
                 <AlertTriangle className="h-6 w-6" />

@@ -36,7 +36,7 @@ export function StripePaywall() {
   if (isStoreDistribution) {
     return (
       <Dialog open={isPaywallOpen} onOpenChange={setIsPaywallOpen}>
-        <DialogContent className="sm:max-w-md rounded-[2rem] bg-white">
+        <DialogContent className="sm:max-w-md rounded-4xl bg-white">
           <DialogHeader>
             <DialogTitle className="text-2xl font-black uppercase tracking-tight">Feature unavailable</DialogTitle>
             <DialogDescription>
@@ -169,7 +169,7 @@ export function StripePaywall() {
                 <div 
                   key={plan.id}
                   className={cn(
-                    "group relative rounded-[2rem] p-6 border-2 transition-all duration-300 hover:scale-[1.02] flex flex-col justify-between",
+                    "group relative rounded-4xl p-6 border-2 transition-all duration-300 hover:scale-[1.02] flex flex-col justify-between",
                     plan.highlight 
                       ? "border-primary bg-primary/5 shadow-xl shadow-primary/10" 
                       : "border-border/40 hover:border-black/20"

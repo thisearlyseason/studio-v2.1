@@ -953,7 +953,7 @@ function RegistrationForm() {
                              placeholder={isUnder18 ? "Guardian's Full Legal Name" : "Participant's Full Legal Name"} 
                              value={signature} 
                              onChange={e => setSignature(e.target.value)} 
-                             className="h-20 rounded-[2rem] border-2 font-mono italic text-center text-3xl bg-muted/5 shadow-inner focus:ring-4 focus:ring-primary/10" 
+                             className="h-20 rounded-4xl border-2 font-mono italic text-center text-3xl bg-muted/5 shadow-inner focus:ring-4 focus:ring-primary/10"
                              required 
                            />
                            <Signature className="absolute right-6 top-1/2 -translate-y-1/2 h-8 w-8 opacity-20" />

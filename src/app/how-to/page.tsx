@@ -719,7 +719,7 @@ export default function HowToGuidePage() {
                 <div className="grid gap-4 sm:grid-cols-3 lg:grid-cols-1">
                   {RECENT_WALKTHROUGHS.map((walkthrough) => (
                     <article key={walkthrough.title} className="grid min-h-40 grid-cols-[112px_1fr] overflow-hidden rounded-lg border bg-white shadow-md sm:grid-cols-1 lg:grid-cols-[112px_1fr]">
-                      <div className="relative min-h-40 bg-muted sm:aspect-[4/3] lg:aspect-auto">
+                      <div className="relative min-h-40 bg-muted sm:aspect-4/3 lg:aspect-auto">
                         <Image src={walkthrough.image} alt={walkthrough.imageAlt} fill sizes="112px" className="object-cover object-top" />
                       </div>
                       <div className="flex min-w-0 flex-col justify-center space-y-2 p-4">
@@ -787,7 +787,7 @@ export default function HowToGuidePage() {
                 </div>
               </div>
 
-              <div className="bg-muted/30 p-6 rounded-[2rem] border-2 border-dashed border-primary/20">
+              <div className="bg-muted/30 p-6 rounded-4xl border-2 border-dashed border-primary/20">
                 <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary mb-4 ml-1">Capability Matrix — Your Included Features</p>
                 <div className="flex flex-wrap gap-2">
                   {MANUAL_CONTENT[selectedType].highlights.map((h, i) => (

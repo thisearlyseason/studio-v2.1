@@ -374,7 +374,7 @@ export default function BillingDashboard() {
       )}
 
       {/* ── Current Plan Card ── */}
-      <Card className="rounded-[2rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5">
+      <Card className="rounded-4xl border-none shadow-xl overflow-hidden ring-1 ring-black/5">
         <div className="h-1.5 hero-gradient w-full" />
         <CardContent className="p-6 md:p-8">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -451,7 +451,7 @@ export default function BillingDashboard() {
                 className={cn(
                   'rounded-[1.75rem] border-2 overflow-hidden transition-all flex flex-col',
                   isCurrent
-                    ? 'border-primary bg-primary/[0.03] shadow-xl shadow-primary/10'
+                    ? 'border-primary bg-primary/3 shadow-xl shadow-primary/10'
                     : 'border-border/40 hover:border-primary/40 hover:shadow-lg cursor-pointer',
                   plan.highlight && !isCurrent && 'ring-2 ring-primary/20'
                 )}
@@ -528,7 +528,7 @@ export default function BillingDashboard() {
 
       {/* ── Extra Squads (for Pro users) ── */}
       {isPro && (
-        <Card className="rounded-[2rem] border-2 border-dashed border-primary/20 bg-primary/[0.02]">
+        <Card className="rounded-4xl border-2 border-dashed border-primary/20 bg-primary/2">
           <CardContent className="p-6 md:p-8">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
               <div className="space-y-1">
@@ -589,7 +589,7 @@ export default function BillingDashboard() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             {teams.filter(t => t.ownerUserId === userProfile.id).map(team => (
-              <Card key={team.id} className={cn('rounded-[1.75rem] border-2 overflow-hidden transition-all', team.isPro ? 'border-primary/20 bg-primary/[0.02]' : 'border-border/40')}>
+              <Card key={team.id} className={cn('rounded-[1.75rem] border-2 overflow-hidden transition-all', team.isPro ? 'border-primary/20 bg-primary/2' : 'border-border/40')}>
                 <CardContent className="p-5 space-y-3">
                   <div className="flex items-start justify-between">
                     <SquadIdentity teamId={team.id} teamName={team.name} logoUrl={team.teamLogoUrl} size="sm" />
@@ -653,7 +653,7 @@ export default function BillingDashboard() {
       )}
 
       {/* ── Danger Zone: Cancel ── */}
-      <div className="border border-red-200/60 rounded-[2rem] p-6 md:p-8 bg-red-50/30 space-y-4">
+      <div className="border border-red-200/60 rounded-4xl p-6 md:p-8 bg-red-50/30 space-y-4">
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
           <div className="space-y-1">
             <h3 className="font-black uppercase text-sm text-red-700 tracking-tight">Cancel Subscription</h3>
@@ -691,7 +691,7 @@ export default function BillingDashboard() {
                     {loading === 'cancel' ? <Loader2 className="h-4 w-4 animate-spin" /> : <><XCircle className="h-4 w-4" /> Cancel Subscription</>}
                   </Button>
                 </AlertDialogTrigger>
-                <AlertDialogContent className="rounded-[2rem]">
+                <AlertDialogContent className="rounded-4xl">
                   <AlertDialogHeader>
                     <AlertDialogTitle className="font-black uppercase">Confirm Cancellation</AlertDialogTitle>
                     <AlertDialogDescription className="font-bold text-sm">

@@ -37,7 +37,7 @@ export default function PublicScorekeeperHub() {
 
   if (isLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   if (!event || !event.isTournament) return <PortalStatus status={status} message={error} onRetry={retry} title={status === 404 ? 'Portal Inactive' : undefined} />;
-  if (event.scorekeeperConfigured === false) return <div className="min-h-screen flex items-center justify-center p-6 bg-muted/10"><Card className="max-w-md text-center p-10 rounded-[2rem] border-none shadow-xl"><Lock className="h-12 w-12 mx-auto mb-4 text-primary" /><h2 className="text-xl font-black uppercase">Scorekeeper Access Not Configured</h2><p className="text-sm text-muted-foreground mt-3">The tournament organizer must set a scorekeeper code before results can be submitted.</p></Card></div>;
+  if (event.scorekeeperConfigured === false) return <div className="min-h-screen flex items-center justify-center p-6 bg-muted/10"><Card className="max-w-md text-center p-10 rounded-4xl border-none shadow-xl"><Lock className="h-12 w-12 mx-auto mb-4 text-primary" /><h2 className="text-xl font-black uppercase">Scorekeeper Access Not Configured</h2><p className="text-sm text-muted-foreground mt-3">The tournament organizer must set a scorekeeper code before results can be submitted.</p></Card></div>;
 
   // Show code gate if event has a scoring code and user hasn't verified yet
   const hasCode = !!event.requiresCode;
@@ -120,7 +120,7 @@ export default function PublicScorekeeperHub() {
                 key={game.id}
                 aria-disabled={isUnavailable}
                 className={cn(
-                  "rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 transition-all group bg-white",
+                  "rounded-4xl border-none shadow-sm ring-1 ring-black/5 transition-all group bg-white",
                   isUnavailable ? "cursor-not-allowed opacity-50" : "cursor-pointer hover:ring-primary/20",
                   game.isCompleted && "grayscale-[0.5]"
                 )}

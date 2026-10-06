@@ -1,0 +1,353 @@
+{
+  "limit": "String changes separately reviewed as className/cn/cva literals plus two existing CSS-class object values. This confirms remaining AST structure and nonstring leaves, not a behavioral proof.",
+  "files": [
+    {
+      "file": "src/app/(dashboard)/admin/plans/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/calendar/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/chats/[chatId]/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/chats/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/club/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/coaches-corner/attendance/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/coaches-corner/incident-detail-dialog.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/coaches-corner/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/competition/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/billing/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/dashboard/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/equipment/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/events/EventDetailDialog.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/events/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/facilities/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/family/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/family/payments/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/feed/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/files/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/fundraising/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/games/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/layout.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/leagues/leagues-page-content.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/leagues/registration/[leagueId]/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/manage-tournaments/manage-tournaments-page-content.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/manage-tournaments/registration/[teamId]/[eventId]/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/practice/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/pricing/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/roster/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/settings/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/team/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/teams/join/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/(dashboard)/volunteers/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/admin/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/beta/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/events/register/[teamId]/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/how-to/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/leagues/scorekeeper/[leagueId]/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/leagues/spectator/[leagueId]/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/login/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/public/volunteer/[teamId]/[oppId]/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/recruit/player/[playerId]/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/refer-a-coach/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/register/league/[leagueId]/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/register/tournament/[teamId]/[eventId]/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/safety/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/signup/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/signup/youth/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/sports/[sport]/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/sports/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/tournaments/public/[teamId]/[eventId]/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/tournaments/referee/[teamId]/[eventId]/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/tournaments/scorekeeper/[teamId]/[eventId]/[gameId]/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/tournaments/scorekeeper/[teamId]/[eventId]/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/app/tournaments/spectator/[teamId]/[eventId]/page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/BugReporter.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/SquadIdentity.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/StripePaywall.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/TournamentBracket.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/coaches-corner/FundraisingManager.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/finance/HubStripeSettings.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/finance/MyPaymentsView.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/finance/PaymentItemsManager.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/finance/StripeConnectSetup.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/layout/AccessRestricted.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/layout/AlertOverlay.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/layout/NoActiveTeamState.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/layout/Shell.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/marketing/audience-landing-page.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/practice/PlaybookPanel.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/public/PortalStatus.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/pwa/LandingPwaInstallButton.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/team/player-self-media-controls.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/ui/LocationAutocomplete.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/ui/calendar.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/ui/chart.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/ui/dialog.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/ui/dropdown-menu.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/ui/menubar.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/ui/scroll-area.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/ui/select.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/ui/separator.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/ui/sidebar.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/ui/table.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/ui/toast.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    },
+    {
+      "file": "src/components/ui/tooltip.tsx",
+      "astStructureAndNonStringLeavesUnchanged": true
+    }
+  ]
+}

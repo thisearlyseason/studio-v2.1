@@ -117,7 +117,7 @@ export default function RefereePortalPage({ params: rawParams }: { params: Promi
   return (
     <div className="min-h-screen bg-[#f5f5f3]">
       {/* ── Header ── */}
-      <div className="bg-gradient-to-br from-blue-700 to-blue-900 text-white px-8 py-12 relative overflow-hidden">
+      <div className="bg-linear-to-br from-blue-700 to-blue-900 text-white px-8 py-12 relative overflow-hidden">
         <div className="absolute inset-0 opacity-5 pointer-events-none">
           <div className="absolute top-4 right-8"><Shield className="h-64 w-64" /></div>
         </div>
@@ -252,7 +252,7 @@ export default function RefereePortalPage({ params: rawParams }: { params: Promi
                 <div className="space-y-3">
                   {games.sort((a, b) => (a.time || '').localeCompare(b.time || '')).map(game => (
                     <Card key={game.id} className={cn(
-                      "rounded-[2rem] p-6 border-none shadow-lg bg-white space-y-4 hover:shadow-xl transition-all",
+                      "rounded-4xl p-6 border-none shadow-lg bg-white space-y-4 hover:shadow-xl transition-all",
                       game.isCompleted && "opacity-60"
                     )}>
                       {/* Teams */}

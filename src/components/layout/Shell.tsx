@@ -248,7 +248,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
       <div className={cn(
         "h-10 w-10 rounded-xl flex items-center justify-center shrink-0 font-black text-base",
         isActive
-          ? variant === 'elite' ? "bg-gradient-to-br from-amber-500 to-primary text-white" : "bg-primary text-white"
+          ? variant === 'elite' ? "bg-linear-to-br from-amber-500 to-primary text-white" : "bg-primary text-white"
           : variant === 'elite' ? "bg-amber-100 text-amber-700" : "bg-primary/15 text-primary"
       )}>
         {initial}
@@ -796,7 +796,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                             </AvatarFallback>
                           ) : isEliteHubMode ? (
                             /* Elite Club hub mode — amber/primary gradient shield */
-                            <AvatarFallback className="bg-gradient-to-br from-amber-500 to-primary text-white font-black text-xs">
+                            <AvatarFallback className="bg-linear-to-br from-amber-500 to-primary text-white font-black text-xs">
                               {(user?.clubName || user?.schoolName || 'E')[0]}
                             </AvatarFallback>
                           ) : isSchoolMode && isPrimaryClubAuthority ? (
@@ -861,7 +861,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               {(!isSchoolInstitutionMode && !isEliteHubMode) && (
                 <SidebarMenu className="space-y-6">
                   <div className="space-y-1.5">
-                    <p className="text-[9px] font-black uppercase tracking-[0.3em] text-primary px-2 mb-2">Your Main Tools</p>
+                    <p className="text-[9px] font-black uppercase tracking-[0.3em] text-primary px-2 mb-2!">Your Main Tools</p>
                     {primaryCoordTabs.map(tab => <SidebarItem key={tab.name} tab={tab} isActive={pathname === tab.href} isLocked={tab.pro && !isPro} />)}
                   </div>
                   {isStaff && (
@@ -872,7 +872,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   )}
                   {additionalCoordTabs.length > 0 && (
                     <div className="space-y-1.5">
-                      <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground/70 px-2 mb-2">More Tools</p>
+                      <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground/70 px-2 mb-2!">More Tools</p>
                       {additionalCoordTabs.map(tab => <SidebarItem key={tab.name} tab={tab} isActive={pathname === tab.href} isLocked={tab.pro && !isPro} />)}
                     </div>
                   )}

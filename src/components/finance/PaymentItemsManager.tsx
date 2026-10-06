@@ -235,7 +235,7 @@ export function PaymentItemsManager({ userId, teamId, stripeChargesEnabled }: Pa
             const meta = CATEGORY_META[item.category] ?? CATEGORY_META.other;
             const amountDollars = (item.amount / 100).toFixed(2);
             return (
-              <Card key={item.id} className="rounded-[2rem] border-none shadow-lg bg-white ring-1 ring-black/5 overflow-hidden group hover:shadow-xl transition-all">
+              <Card key={item.id} className="rounded-4xl border-none shadow-lg bg-white ring-1 ring-black/5 overflow-hidden group hover:shadow-xl transition-all">
                 <CardContent className="p-6 space-y-4">
                   {/* Category badge + amount */}
                   <div className="flex items-start justify-between">
@@ -383,7 +383,7 @@ export function PaymentItemsManager({ userId, teamId, stripeChargesEnabled }: Pa
 
             <DialogFooter>
               <Button
-                className="w-full h-14 rounded-[2rem] text-base font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all"
+                className="w-full h-14 rounded-4xl text-base font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all"
                 onClick={handleCreate}
                 disabled={isSubmitting}
               >
