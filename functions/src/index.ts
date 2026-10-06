@@ -602,6 +602,8 @@ export const purgeExpiredDeletionRequests = onSchedule({
         await batch.commit();
       }
 
+      // Block preferences are private account data outside the users tree.
+      await db.recursiveDelete(db.collection('userSafety').doc(uid));
       if (user.exists) await db.recursiveDelete(user.ref);
       try {
         await admin.auth().deleteUser(uid);
@@ -681,6 +683,7 @@ export const cleanupAnonymousUsers = onSchedule({
             for (const facility of facilitiesSnap.docs) {
               if (facility.data().isDemo === true) await db.recursiveDelete(facility.ref);
             }
+            await db.recursiveDelete(db.collection('userSafety').doc(uid));
             await db.recursiveDelete(db.collection('users').doc(uid));
 
             try {

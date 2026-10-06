@@ -1,3 +1,4 @@
+import { managedPortalAccess } from '@/lib/stripe-managed-checkout';
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { getStripe } from '@/lib/stripe-client';
@@ -22,6 +23,8 @@ export async function POST(req: NextRequest) {
     if (limited) return limited;
     const body = await readJsonBodyWithLimit<Record<string, unknown>>(req, 4_000);
     const userId = body.userId;
+    const purpose = body.purpose;
+    if (purpose !== undefined && purpose !== 'payment_method_update') return NextResponse.json({ error: 'Invalid portal purpose' }, { status: 400 });
 
     if (typeof userId !== 'string' || !userId) return NextResponse.json({ error: 'Missing userId' }, { status: 400 });
 
@@ -44,10 +47,21 @@ export async function POST(req: NextRequest) {
       }, { status: 409 });
     }
 
+    let configuration: string | undefined;
+    if (userData.stripe_subscription_id) {
+      const subscription = await stripe.subscriptions.retrieve(userData.stripe_subscription_id);
+      const access = await managedPortalAccess(stripe, subscription);
+      configuration = access.configuration;
+      if (purpose === 'payment_method_update' ? !access.paymentMethodUpdateAllowed : !access.portalAllowed) {
+        return NextResponse.json({ error: 'This portal action is unavailable. You can still cancel from billing.' }, { status: 409 });
+      }
+    }
     const origin = getTrustedAppOrigin(req);
 
     const portalSession = await stripe.billingPortal.sessions.create({
       customer: stripeCustomerId,
+      ...(configuration ? { configuration } : {}),
+      ...(purpose === 'payment_method_update' ? { flow_data: { type: 'payment_method_update' as const, after_completion: { type: 'redirect' as const, redirect: { return_url: `${origin}/dashboard/billing` } } } } : {}),
       return_url: `${origin}/dashboard/billing`,
     });
 

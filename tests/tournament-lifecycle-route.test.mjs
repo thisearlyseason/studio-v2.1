@@ -1,3 +1,4 @@
+import {createDemoCompetition} from '../src/lib/competition/demo.ts';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import { communicationDb, loadCommunicationRoute, communicationRequest } from './helpers/communication-route-harness.mjs';
@@ -32,13 +33,13 @@ async function call(db, body, uid = 'owner', routePath) {
 
 test('Starter cannot create an advanced Tournament format', async () => {
   const { db, records } = communicationDb({ ...seed, 'teams/team-a': { ownerUserId: 'owner', planId: 'starter_squad' } });
-  assert.equal((await call(db, create({ tournamentType: 'single_elimination' }))).status, 403);
+  assert.equal((await call(db, create({ tournamentType: 'double_elimination' }))).status, 403);
   assert.equal([...records.keys()].some(path => path.includes('/events/')), false);
 });
 
 test('advanced formats require the current squad Pro allocation even with a paid-looking plan label', async () => {
   const { db } = communicationDb({ ...seed, 'teams/team-a': { ownerUserId: 'owner', planId: 'elite_squad', isPro: false } });
-  assert.equal((await call(db, create({ tournamentType: 'single_elimination' }))).status, 403);
+  assert.equal((await call(db, create({ tournamentType: 'double_elimination' }))).status, 403);
 });
 
 test('Tiered Playoffs can be created as an empty draft before teams, fields, windows, or divisions exist', async () => {
@@ -367,4 +368,29 @@ test('durable notification claim selects current active recipients and concurren
     assert.equal(db.notifications.length, 1); assert.deepEqual(db.notifications[0].recipientUserIds.sort(), ['current', 'staff']);
     assert.equal(db.emails.length, 1); assert.deepEqual(db.emails[0].messages[0].to, ['current@example.test']);
   } finally { app.dispose(); }
+});
+
+ test('Starter creates Single Elimination Pool through the existing lifecycle wizard contract', async () => {
+ const {db,records}=communicationDb({...seed,'teams/team-a':{ownerUserId:'owner',planId:'starter_squad',isPro:false}});
+ const result=await call(db,create({tournamentType:'single_elimination'}));assert.equal(result.status,200,JSON.stringify(result.body));assert.equal(records.get(`teams/team-a/events/${result.body.eventId}`).tournamentType,'single_elimination');
+ });
+ test('Starter rejects every other legacy format including round robin', async()=>{
+ for(const format of ['round_robin','double_elimination','pool_play_knockout','tiered_playoffs']){
+ const {db}=communicationDb({...seed,'teams/team-a':{ownerUserId:'owner',isPro:false}});
+ const result=await call(db,create({tournamentType:format,...(format==='tiered_playoffs'?{tieredPlayoffs:tieredDraftConfig}: {})}));assert.equal(result.status,403,format+JSON.stringify(result.body));
+ }
+ });
+
+
+test('new-format roster logos remain editable without changing authoritative teams or schedules', async()=>{
+ const competition=createDemoCompetition('single_elimination');
+ const original={...blueprint,teamId:'team-a',competition,tournamentType:'single_elimination',tournamentTeamsData:competition.topology.teams,lifecycleVersion:1};
+ const {db,records}=communicationDb({...seed,'teams/team-a/events/cup':original},{enforceReadBeforeWrite:true});
+ const teams=competition.topology.teams.map((team,index)=>index===0?{...team,logoUrl:'https://example.test/logo.png'}:team);
+ const request={action:'configure',teamId:'team-a',eventId:'cup',expectedVersion:1,requestId:'v2-logo-update-001',payload:{tournamentTeamsData:teams}};
+ assert.equal((await call(db,request)).status,200);
+ assert.deepEqual(records.get('teams/team-a/events/cup').competition,competition);
+ assert.equal(records.get('teams/team-a/events/cup').tournamentTeamsData[0].logoUrl,'https://example.test/logo.png');
+ assert.equal((await call(db,{...request,expectedVersion:2,requestId:'v2-roster-identity-rejected',payload:{tournamentTeamsData:teams.map((t,i)=>i===0?{...t,name:'Changed'}:t)}})).status,409);
+ assert.equal(records.get('teams/team-a/events/cup').tournamentTeamsData[0].name,teams[0].name);
 });

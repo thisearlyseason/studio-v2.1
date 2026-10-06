@@ -12,6 +12,7 @@ import { format, parseISO } from 'date-fns';
 import { PortalStatus } from '@/components/public/PortalStatus';
 import { calculateTournamentStandings } from '@/lib/tournament-standings';
 import TournamentBracket from '@/components/TournamentBracket';
+import CompetitionController from '@/components/tournaments/CompetitionController';
 
 export default function PublicSpectatorHub() {
   const { teamId, eventId } = useParams();
@@ -21,6 +22,8 @@ export default function PublicSpectatorHub() {
   if (loading) return <div className="min-h-screen flex items-center justify-center bg-muted/30"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
 
   if (!event || !event.isTournament) return <PortalStatus status={status ?? (event ? 404 : null)} message={error} onRetry={retry} title={status === 404 || event ? 'Hub Not Active' : undefined} />;
+
+  if (event.workspaceVersion === 2) return <CompetitionController teamId={String(teamId)} eventId={String(eventId)} publicView readOnly />;
 
   const standingTeams = event.tournamentTeamsData?.length
     ? event.tournamentTeamsData

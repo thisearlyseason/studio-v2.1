@@ -1,5 +1,6 @@
 "use client";
 
+import TournamentQuickExports from '@/components/tournaments/TournamentQuickExports';
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
@@ -75,6 +76,7 @@ import { collection, query, orderBy, where, doc, updateDoc, getDoc, getDocs, col
 import { cn, compressImage } from '@/lib/utils';
 import { format, isPast, isSameDay, eachDayOfInterval, parseISO } from 'date-fns';
 import { useRouter } from 'next/navigation';
+import Link from 'next/link';
 import { toast } from '@/hooks/use-toast';
 import { DailyWindow, TeamIdentity } from '@/lib/scheduler-utils';
 import { generateIntelligentTournamentSchedule } from '@/lib/intelligent-scheduler';
@@ -82,6 +84,8 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import html2canvas from 'html2canvas';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import TournamentBracket from '@/components/TournamentBracket';
+import { tournamentCompletion } from '@/lib/tournament-completion';
+import CompetitionController from '@/components/tournaments/CompetitionController';
 import { SquadIdentity } from '@/components/SquadIdentity';
 import { getFacilityFieldName } from '@/lib/facility-rename';
 import { authHeader, getAuthToken } from '@/lib/client-auth';
@@ -154,7 +158,7 @@ interface DivisionConfig {
   tieredAvoidRematches: boolean;
 }
 
-const getDefaultDivisionConfig = (startDate = '', endDate = ''): DivisionConfig => {
+const getDefaultDivisionConfig = (startDate = '', endDate = '', starter = false): DivisionConfig => {
   let dailyWindows: DailyWindow[] = [];
   if (startDate && endDate) {
     try {
@@ -173,10 +177,10 @@ const getDefaultDivisionConfig = (startDate = '', endDate = ''): DivisionConfig 
     } catch (e) { console.error(e); }
   }
   return {
-    tournamentType: 'round_robin',
+    tournamentType: starter ? 'single_elimination' : 'round_robin',
     gameLength: '60',
     breakLength: '15',
-    gamesPerTeam: '3',
+    gamesPerTeam: starter ? '1' : '3',
     maxDailyGamesPerTeam: '3',
     poolCount: '2',
     advancePerPool: '2',
@@ -316,7 +320,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
     endDate: '',
     location: '',
     description: '',
-    tournamentType: 'round_robin' as 'round_robin' | 'single_elimination' | 'double_elimination' | 'pool_play_knockout' | 'tiered_playoffs',
+    tournamentType: (isStarter ? 'single_elimination' : 'round_robin') as 'round_robin' | 'single_elimination' | 'double_elimination' | 'pool_play_knockout' | 'tiered_playoffs',
     gameLength: '60',
     breakLength: '15',
     gamesPerTeam: '3',
@@ -420,7 +424,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
         endDate: '',
         location: '',
         description: '',
-        tournamentType: 'round_robin',
+        tournamentType: isStarter ? 'single_elimination' : 'round_robin',
         gameLength: '60',
         breakLength: '15',
         gamesPerTeam: '3',
@@ -470,9 +474,9 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
     
     for (const div of divs) {
       if (!newConfigs[div]) {
-        newConfigs[div] = getDefaultDivisionConfig(form.startDate, form.endDate);
+        newConfigs[div] = getDefaultDivisionConfig(form.startDate, form.endDate, isStarter);
       } else if (!newConfigs[div].dailyWindows || newConfigs[div].dailyWindows.length === 0) {
-        const defaultCfg = getDefaultDivisionConfig(form.startDate, form.endDate);
+        const defaultCfg = getDefaultDivisionConfig(form.startDate, form.endDate, isStarter);
         newConfigs[div].dailyWindows = defaultCfg.dailyWindows;
       }
     }
@@ -538,7 +542,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
 
   const selectedSingleConfig = () => {
     const key = form.divisionTitle.trim() || 'Default';
-    return form.divisionConfigs[key] || getDefaultDivisionConfig(form.startDate, form.endDate);
+    return form.divisionConfigs[key] || getDefaultDivisionConfig(form.startDate, form.endDate, isStarter);
   };
 
   const isCreatingTieredDraft = () => !editEvent && form.stagedDivisions.length === 0 && selectedSingleConfig().tournamentType === 'tiered_playoffs';
@@ -599,7 +603,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
         : form.teams;
 
       const divKey = divTitle || 'Default';
-      const divConfig = form.divisionConfigs[divKey] || getDefaultDivisionConfig(form.startDate, form.endDate);
+      const divConfig = form.divisionConfigs[divKey] || getDefaultDivisionConfig(form.startDate, form.endDate, isStarter);
       if (!creatingTieredDraft && filteredTeams.length < 2) {
         throw new Error(`At least two squads are required for ${divTitle || 'the tournament'}. Add squads in Phase 2 before deployment.`);
       }
@@ -741,7 +745,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
           <X className="h-5 w-5 text-white" />
           <span className="sr-only">Close</span>
         </DialogClose>
-        <div className="absolute top-0 inset-x-0 h-1 bg-linear-to-r from-red-600 via-orange-500 to-primary w-full shrink-0" />
+
         
         <div className="flex flex-1 overflow-hidden">
           {/* Left Navigation Matrix */}
@@ -988,7 +992,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
                              ))}
                            </div>
                            <Button type="button" disabled={copyDivisionTargets.length === 0} className="h-10 bg-primary text-white text-[9px] font-black uppercase" onClick={() => {
-                             const source = form.divisionConfigs[activeLogisticsDivision] || getDefaultDivisionConfig(form.startDate, form.endDate);
+                             const source = form.divisionConfigs[activeLogisticsDivision] || getDefaultDivisionConfig(form.startDate, form.endDate, isStarter);
                              setForm(current => ({
                                ...current,
                                divisionConfigs: copyDivisionTargets.reduce((configs, target) => ({ ...configs, [target]: structuredClone(source) }), current.divisionConfigs),
@@ -1102,7 +1106,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
 
                     {(() => {
                       const activeDivName = form.stagedDivisions.length > 0 ? activeLogisticsDivision : (form.divisionTitle.trim() || 'Default');
-                      const activeConfig = form.divisionConfigs[activeDivName] || getDefaultDivisionConfig(form.startDate, form.endDate);
+                      const activeConfig = form.divisionConfigs[activeDivName] || getDefaultDivisionConfig(form.startDate, form.endDate, isStarter);
                       const updateActiveConfig = (updates: Partial<DivisionConfig>) => {
                         setForm(p => ({
                           ...p,
@@ -1145,9 +1149,9 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
                                 <div className="space-y-2">
                                   <Label className="text-[9px] font-black uppercase text-white/40 ml-1">Tournament Format</Label>
                                   {isStarter ? (
-                                    <div className="h-12 rounded-xl bg-white/5 border border-white/10 px-4 flex items-center justify-between text-xs font-bold uppercase">
-                                      <span>Basic (Round Robin)</span>
-                                      <span className="flex items-center gap-1 text-[8px] font-black uppercase text-white/30"><Lock className="h-2.5 w-2.5" /> Pro Locked</span>
+                                    <div className="min-h-12 rounded-xl bg-white/5 border border-white/10 px-3 py-2 flex flex-col items-start gap-2 text-xs font-bold uppercase">
+                                      <span>Single Elimination Pool</span>
+                                      <span className="flex items-center gap-1 text-[8px] font-black uppercase text-white/30"><Lock className="h-2.5 w-2.5" /> Other formats locked</span>
                                     </div>
                                   ) : (
                                     <Select 
@@ -1572,6 +1576,8 @@ function TournamentDetailView({
   const { isStaff: isTeamStaff, activeTeam, db, user, isStarter } = useTeam();
   const firebaseAuth = useAuth();
   const isStaff = isTeamStaff || !!(event.adminEmails && user?.email && event.adminEmails.includes(user.email));
+  const versioned = (event as any).competition?.version === 2;
+  const workspace = (view:string) => <CompetitionController embedded initialTab={view} starter={isStarter} teamId={activeTeam!.id} eventId={event.id} token={async()=>{if(!firebaseAuth.currentUser)throw new Error("Sign in to manage tournaments.");return firebaseAuth.currentUser.getIdToken();}} />;
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('itinerary');
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -1941,9 +1947,21 @@ function TournamentDetailView({
   const [newRefPhone, setNewRefPhone] = useState('');
   const [newRefCert, setNewRefCert] = useState('');
   const [isSavingRef, setIsSavingRef] = useState(false);
+  const [officialError, setOfficialError] = useState('');
+  const reportOfficialError = (error: unknown) => {
+    const message = error instanceof Error ? error.message : 'Could not update officials. Please try again.';
+    setOfficialError(message.includes('overlapping match')
+      ? 'This referee already has a game at that time. Choose another referee or change the game time, then try again.'
+      : message);
+  };
 
   const handleAddReferee = async () => {
-    if (!activeTeam || !newRefName.trim() || !newRefEmail.trim()) return;
+    if (!activeTeam) return;
+    setOfficialError('');
+    if (!newRefName.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newRefEmail.trim())) {
+      setOfficialError('Enter the referee’s name and a valid email address, such as referee@example.com.');
+      return;
+    }
     setIsSavingRef(true);
     const referee: Omit<TournamentReferee, 'id'> = {
       name: newRefName.trim(),
@@ -1958,32 +1976,38 @@ function TournamentDetailView({
       });
       toast({ title: 'Official Added', description: `${referee.name} added to the pool.` });
       setNewRefName(''); setNewRefEmail(''); setNewRefPhone(''); setNewRefCert('');
-    } finally { setIsSavingRef(false); }
+    } catch (error) { reportOfficialError(error); } finally { setIsSavingRef(false); }
   };
 
   const handleRemoveReferee = async (refId: string) => {
     if (!activeTeam) return;
+    setOfficialError('');
+    try {
     await scheduleMutation({
       action: 'remove-referee', teamId: activeTeam.id, eventId: event.id,
       expectedVersion: tournamentVersion(event), expectedScheduleVersion: tournamentScheduleVersion(event), refereeId: refId,
     });
     toast({ title: 'Official Removed', description: 'Referee and all assignments cleared.' });
+    } catch (error) { reportOfficialError(error); }
   };
 
   const handleAssignReferee = async (gameId: string, referee: TournamentReferee | null) => {
     if (!activeTeam) return;
     const targetGame = (event.tournamentGames || []).find((g: TournamentGame) => g.id === gameId);
     if (!targetGame) return;
+    setOfficialError('');
+    try {
     await scheduleMutation({
       action: 'assign-referee', teamId: activeTeam.id, eventId: event.id,
       expectedVersion: tournamentVersion(event), expectedScheduleVersion: tournamentScheduleVersion(event),
       gameId, refereeId: referee?.id || '',
     });
     toast({ title: 'Assignment Updated', description: referee ? `${referee.name} assigned.` : 'Official unassigned.' });
+    } catch (error) { reportOfficialError(error); }
   };
 
   const handleGameClick = (game: TournamentGame) => {
-    if (!isStaff || game.team1.includes('TBD') || game.team2.includes('TBD')) return;
+    if (!isStaff) return;
     setSelectedGame(game);
     setScoreDialogOpen(true);
   };
@@ -2145,6 +2169,7 @@ function TournamentDetailView({
           <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full h-12 w-12 border-2 hover:bg-muted shrink-0 text-black border-black"><ChevronLeft className="h-6 w-6" /></Button>
           <div className="min-w-0 bg-primary/5 px-4 py-2 rounded-xl text-primary font-black uppercase text-[10px] tracking-widest border border-primary/10 flex items-center gap-1.5">
             <span className="wrap-break-word">Active Context: {event.title}</span>
+            {(event as any).competition?.version === 2 && <a className="ml-4 underline font-bold" href={`/manage-tournaments/builder?eventId=${event.id}`}>Edit tournament setup</a>}
             {event.divisionTitle && (
               <span className="text-muted-foreground/80">• {event.divisionTitle}</span>
             )}
@@ -2191,7 +2216,7 @@ function TournamentDetailView({
              </div>
              {isStaff && (
                <div className="flex flex-wrap gap-2 self-start">
-                 <Button onClick={() => setIsEditModalOpen(true)} className="h-12 rounded-2xl bg-white/10 hover:bg-white/20 text-white border border-white/10 font-black uppercase tracking-widest text-[10px] backdrop-blur-sm shrink-0">
+                 <Button onClick={() => versioned ? router.push(`/manage-tournaments/builder?eventId=${event.id}`) : setIsEditModalOpen(true)} className="h-12 rounded-2xl bg-white/10 hover:bg-white/20 text-white border border-white/10 font-black uppercase tracking-widest text-[10px] backdrop-blur-sm shrink-0">
                    <Edit3 className="h-4 w-4 mr-2" /> Modify Series
                  </Button>
                  <Button
@@ -2208,12 +2233,17 @@ function TournamentDetailView({
              )}
            </div>
            <div className="flex flex-wrap gap-2 pt-4 border-t border-white/10">
-             {[
+             {(versioned ? [
+               ['Setup Complete', true],
+               [(event as any).competition.topology.matches.length ? 'Bracket Ready' : 'Awaiting Teams & Deployment', (event as any).competition.topology.matches.length > 0],
+               [(event.tournamentGames || []).length ? 'Schedule Generated' : 'Schedule Pending', (event.tournamentGames || []).length > 0],
+               [(event as any).competition.status === 'published' ? 'Published' : 'Draft — Not Published', (event as any).competition.status === 'published'],
+             ] : [
                ['Setup Complete', event.setupStatus === 'complete' || event.isTournament === true],
                ['Bracket Ready', event.bracketStatus === 'ready' || (event.tournamentGames || []).length > 0],
                ['Schedule Ready', event.scheduleStatus === 'ready' || (event.tournamentGames || []).length > 0],
                ['Deployed', event.deploymentStatus === 'deployed' || (event.tournamentGames || []).length > 0],
-             ].map(([label, ready]) => (
+             ]).map(([label, ready]) => (
                <Badge key={String(label)} className={ready ? "bg-emerald-500/20 text-emerald-300 border border-emerald-400/20" : "bg-amber-500/15 text-amber-300 border border-amber-400/20"}>
                  {ready ? <CheckCircle2 className="h-3 w-3 mr-1.5" /> : <Clock className="h-3 w-3 mr-1.5" />}{label}
                </Badge>
@@ -2222,8 +2252,8 @@ function TournamentDetailView({
            <div className="grid grid-cols-2 sm:grid-cols-4 gap-8 pt-8 border-t border-white/10">
               <div className="space-y-1"><p className="text-[10px] font-black opacity-40 uppercase tracking-widest">Squads</p><p className="text-3xl font-black">{(event.tournamentTeamsData || []).length}</p></div>
               <div className="space-y-1"><p className="text-[10px] font-black opacity-40 uppercase tracking-widest">Matches</p><p className="text-3xl font-black">{(event.tournamentGames || []).length}</p></div>
-              <div className="space-y-1"><p className="text-[10px] font-black opacity-40 uppercase tracking-widest">Completion</p><p className="text-3xl font-black">{Math.round(((event.tournamentGames || []).filter(g => g.isCompleted).length / Math.max(1, (event.tournamentGames || []).length)) * 100)}%</p></div>
-              <div className="space-y-1"><p className="text-[10px] font-black opacity-40 uppercase tracking-widest">Timeline</p><p className="text-xl font-bold uppercase">{format(new Date(event.date), 'MMMM d')} - {format(new Date(event.endDate || event.date), 'MMMM d, yyyy')}</p></div>
+              <div className="space-y-1"><p className="text-[10px] font-black opacity-40 uppercase tracking-widest">Completion</p><p className="text-3xl font-black">{tournamentCompletion(event.tournamentGames || [])}%</p></div>
+              <div className="space-y-1"><p className="text-[10px] font-black opacity-40 uppercase tracking-widest">Timeline</p><p className="text-xl font-bold uppercase">{format(parseISO(event.date), 'MMMM d')} - {format(parseISO(event.endDate || event.date), 'MMMM d, yyyy')}</p></div>
            </div>
             {/* ── Quick Access ── */}
             <div className="flex flex-wrap items-center gap-2 pt-5 border-t border-white/10">
@@ -2245,6 +2275,7 @@ function TournamentDetailView({
                      <Share2 className="h-3 w-3 mr-1.5" /> Registration
                   </Button>
                </>)}
+               {event.competition?.version === 2 && activeTeam && <TournamentQuickExports document={{...event.competition, officialAssignments: Object.fromEntries((event.tournamentGames || []).filter(g => g.refereeId).map(g => [g.id, {refereeId:g.refereeId!, refereeName:g.refereeName || ""}]))}} teamId={activeTeam.id} eventId={event.id} />}
                {isStarter && (
                  <span className="text-[9px] font-black uppercase tracking-widest text-white/30 flex items-center gap-1.5">
                    <Lock className="h-3 w-3" /> Upgrade to Pro to unlock portals
@@ -2257,13 +2288,10 @@ function TournamentDetailView({
       <TournamentEditDialog event={event} isOpen={isEditModalOpen} onOpenChange={setIsEditModalOpen} />
 
       <Dialog open={scoreDialogOpen} onOpenChange={setScoreDialogOpen}>
-        <DialogContent className="sm:max-w-[440px] bg-white rounded-[3rem] p-10 border-2 shadow-2xl">
+        <DialogContent className="sm:max-w-[520px] max-h-[85dvh] overflow-y-auto overflow-x-hidden bg-white rounded-4xl p-6 sm:p-8 border-2 shadow-2xl">
           <DialogHeader>
-            <DialogTitle className="text-3xl font-black uppercase tracking-tighter">Match Result</DialogTitle>
-            <DialogDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Secure Node Submission</DialogDescription>
-            <DialogClose className="absolute right-8 top-8 opacity-70 transition-opacity hover:opacity-100">
-              <X className="h-6 w-6" />
-            </DialogClose>
+            <DialogTitle className="text-3xl font-black uppercase tracking-tighter">Edit Match</DialogTitle>
+            <DialogDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Changes update the tournament bracket, schedule and standings.</DialogDescription>
           </DialogHeader>
           
           {selectedGame && (
@@ -2274,7 +2302,8 @@ function TournamentDetailView({
               const formData = new FormData(e.currentTarget);
               const rawScore1 = parseInt(formData.get('score1') as string, 10);
               const rawScore2 = parseInt(formData.get('score2') as string, 10);
-              const roundName = formData.get('roundName') as string;
+              const roundName = selectedGame.round;
+              const saveResult = selectedGame.isDisputed || (e.nativeEvent as SubmitEvent).submitter?.getAttribute('value') === 'result';
               const explicitWinner = formData.get('explicitWinner') as string;
 
               // ── Explicit winner override: swap scores so advanceBracketMatch
@@ -2293,10 +2322,10 @@ function TournamentDetailView({
 
               try {
                 await scoringMutation({
-                  action: selectedGame.isDisputed ? 'resolve-dispute' : 'score', teamId: activeTeam.id, eventId: event.id, gameId: selectedGame.id,
+                  action: selectedGame.isDisputed ? 'resolve-dispute' : 'edit-match', teamId: activeTeam.id, eventId: event.id, gameId: selectedGame.id,
                   ...(selectedGame.isDisputed
                     ? { resolution: 'correct', reason: resolutionReason.trim(), correctedScore: { home: rawScore1, away: rawScore2 } }
-                    : { score1: rawScore1, score2: rawScore2, explicitWinner: explicitWinner === 'team1' || explicitWinner === 'team2' ? explicitWinner : undefined }),
+                    : { matchDetails: { team1Name: String(formData.get('team1Name') || selectedGame.team1), team2Name: String(formData.get('team2Name') || selectedGame.team2), location: String(formData.get('location') || selectedGame.location) }, recordScore: saveResult, score1: rawScore1, score2: rawScore2, explicitWinner: explicitWinner === 'team1' || explicitWinner === 'team2' ? explicitWinner : undefined }),
                   expectedLifecycleVersion: tournamentVersion(event), expectedScheduleVersion: tournamentScheduleVersion(event),
                   expectedGameVersion: selectedGame.gameVersion || 0, expectedCredentialVersion: tournamentCredentialVersion(event),
                 });
@@ -2304,39 +2333,46 @@ function TournamentDetailView({
                 // 4. Championship celebration for the ultimate final
                 const rLower = (roundName || selectedGame.round || '').toLowerCase();
                 const isUltimateFinal = rLower === 'championship' || rLower === 'grand final' || rLower === 'championship decider';
-                if (isUltimateFinal) {
-                  const winnerName = effectiveScore1 > effectiveScore2 ? selectedGame.team1 : selectedGame.team2;
+                if (saveResult && isUltimateFinal && !selectedGame.isCompleted) {
+                  const winnerName = effectiveScore1 > effectiveScore2 ? String(formData.get('team1Name') || selectedGame.team1) : String(formData.get('team2Name') || selectedGame.team2);
                   setCelebrationWinner(winnerName);
                 }
 
-                toast({ title: "Score Synchronized", description: "Match progression pushed to bracket architecture." });
+                toast({ title: "Match updated", description: "Your changes are shared across this tournament." });
+                setScoreDialogOpen(false);
               } catch (err) {
                 console.error(err);
-                toast({ title: "Sync Failed", variant: "destructive" });
-              } finally {
-                setScoreDialogOpen(false);
+                toast({ title: "Unable to save match", description: err instanceof Error ? err.message : "Please try again.", variant: "destructive" });
               }
-            }} className="space-y-8 pt-4">
+            }} className="min-w-0 space-y-5 pt-4">
                <div className="space-y-3 pb-4 border-b border-muted/20">
                  <Label className="text-[10px] font-black uppercase tracking-widest text-muted-foreground ml-2">Match Round / Phase</Label>
-                 <Input name="roundName" defaultValue={selectedGame.round || ''} className="h-14 font-black uppercase tracking-widest text-sm bg-slate-50 border-2 rounded-2xl focus:bg-white transition-all shadow-inner" />
+                 <Input name="roundName" aria-label="Match round" readOnly defaultValue={selectedGame.round || ''} className="h-14 font-black uppercase tracking-widest text-sm bg-slate-50 border-2 rounded-2xl focus:bg-white transition-all shadow-inner" />
                </div>
                
-               <div className="flex items-center gap-6 justify-between">
-                  <div className="space-y-3 flex-1 flex flex-col items-center">
-                    <Label className="text-[11px] font-black uppercase tracking-widest text-center truncate max-w-[140px] px-2">{selectedGame.team1}</Label>
-                    <Input name="score1" type="number" defaultValue={selectedGame.score1 || 0} required className="h-20 w-full text-4xl font-black text-center rounded-4xl bg-slate-50 border-2 border-slate-200 focus:bg-white focus:border-primary transition-all shadow-inner" />
+               {!selectedGame.isDisputed && <div className="space-y-4">
+                 <p className="text-sm text-muted-foreground">Team names update everywhere in this tournament. A location change applies to this match.</p>
+                 {(['team1', 'team2'] as const).map(slot => <div key={slot} className="space-y-2">
+                   <Label htmlFor={`${slot}Name`}>{slot === 'team1' ? 'First team name' : 'Second team name'}</Label>
+                   <Input id={`${slot}Name`} name={`${slot}Name`} defaultValue={selectedGame[slot]} maxLength={100} required disabled={!event.tournamentTeamsData?.some(team => team.id === selectedGame[`${slot}Id`])} />
+                 </div>)}
+                 <div className="space-y-2"><Label htmlFor="matchLocation">Match location</Label><Input id="matchLocation" name="location" defaultValue={selectedGame.location} maxLength={240} required /></div>
+               </div>}
+               <div className="flex min-w-0 items-center gap-3 justify-between">
+                  <div className="min-w-0 space-y-3 flex-1 flex flex-col items-center">
+                    <Label className="text-[11px] font-black uppercase tracking-widest text-center truncate max-w-full px-2">{selectedGame.team1}</Label>
+                    <Input name="score1" aria-label="First team score" type="number" min={0} max={999} step={1} defaultValue={selectedGame.score1 || 0} required className="h-20 w-full text-4xl font-black text-center rounded-4xl bg-slate-50 border-2 border-slate-200 focus:bg-white focus:border-primary transition-all shadow-inner" />
                   </div>
                   <div className="text-xl font-black opacity-10 pt-8 italic tracking-tighter">VS</div>
-                  <div className="space-y-3 flex-1 flex flex-col items-center">
-                    <Label className="text-[11px] font-black uppercase tracking-widest text-center truncate max-w-[140px] px-2">{selectedGame.team2}</Label>
-                    <Input name="score2" type="number" defaultValue={selectedGame.score2 || 0} required className="h-20 w-full text-4xl font-black text-center rounded-4xl bg-slate-50 border-2 border-slate-200 focus:bg-white focus:border-primary transition-all shadow-inner" />
+                  <div className="min-w-0 space-y-3 flex-1 flex flex-col items-center">
+                    <Label className="text-[11px] font-black uppercase tracking-widest text-center truncate max-w-full px-2">{selectedGame.team2}</Label>
+                    <Input name="score2" aria-label="Second team score" type="number" min={0} max={999} step={1} defaultValue={selectedGame.score2 || 0} required className="h-20 w-full text-4xl font-black text-center rounded-4xl bg-slate-50 border-2 border-slate-200 focus:bg-white focus:border-primary transition-all shadow-inner" />
                   </div>
                </div>
                
                <div className="space-y-3 pt-4 border-t border-muted/20">
                  <Label className="text-[10px] font-black uppercase tracking-widest text-primary ml-2 flex items-center gap-2"><Trophy className="h-3 w-3" /> Assign Winner (Overrides Score)</Label>
-                 <select name="explicitWinner" className="w-full h-14 bg-slate-50 border-2 border-slate-200 rounded-2xl px-6 font-black uppercase tracking-widest text-xs focus:ring-primary focus:border-primary">
+                 <select name="explicitWinner" aria-label="Match winner" defaultValue={(selectedGame as TournamentGame & { explicitWinner?: string }).explicitWinner || "auto"} className="w-full h-14 bg-slate-50 border-2 border-slate-200 rounded-2xl px-6 font-black uppercase tracking-widest text-xs focus:ring-primary focus:border-primary">
                     <option value="auto">Auto-detect from Score</option>
                     <option value="team1" className="text-emerald-700">{selectedGame.team1} Advances</option>
                     <option value="team2" className="text-emerald-700">{selectedGame.team2} Advances</option>
@@ -2352,9 +2388,10 @@ function TournamentDetailView({
                   </div>
                 </div>
               )}
-              <DialogFooter className="gap-3 sm:gap-0">
+              <DialogFooter className="gap-3 sm:gap-2 flex-wrap">
                  <Button type="button" variant="outline" onClick={() => setScoreDialogOpen(false)} className="rounded-full h-14 px-8 border-2 font-black uppercase tracking-widest text-[10px]">Cancel</Button>
-                 <Button type="submit" disabled={selectedGame.isDisputed && !resolutionReason.trim()} className="rounded-full h-14 px-10 font-black uppercase tracking-widest text-[10px] bg-primary text-white">{selectedGame.isDisputed ? 'Correct Result' : 'Commit Score'}</Button>
+                 {!selectedGame.isDisputed && <Button type="submit" value="details" variant="outline" className="rounded-full h-12">Save details</Button>}
+                 <Button type="submit" value="result" disabled={selectedGame.isDisputed && !resolutionReason.trim()} className="rounded-full h-14 px-10 font-black uppercase tracking-widest text-[10px] bg-primary text-white">{selectedGame.isDisputed ? 'Correct Result' : 'Save result'}</Button>
               </DialogFooter>
             </form>
           )}
@@ -2408,14 +2445,14 @@ function TournamentDetailView({
                 )}
               </TabsTrigger>
               {isStaff && <TabsTrigger value="safety" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-red-600 data-[state=active]:text-white">Safety</TabsTrigger>}
-              {!isStarter && <TabsTrigger value="architecture" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-orange-600 data-[state=active]:text-white">Architecture</TabsTrigger>}
+              {!isStarter && <TabsTrigger value="architecture" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-orange-600 data-[state=active]:text-white">Registration & Access</TabsTrigger>}
             </TabsList>
           </div>
           <div className="p-8 lg:p-14">
              <TabsContent value="architecture" className="mt-0 space-y-6">
                 {/* ── Registration Architect (moved to top) ── */}
                 <div className="bg-[#050505] rounded-[3rem] border border-white/10 overflow-hidden">
-                  <div className="h-0.5 bg-linear-to-r from-white/20 via-white/5 to-transparent w-full" />
+
                   <div className="p-10">
                     <div className="flex items-center justify-between gap-6">
                       <div className="flex items-center gap-4">
@@ -2438,7 +2475,7 @@ function TournamentDetailView({
 
                 {/* ── Scorekeeper Code ── */}
                 <div className="bg-[#050505] rounded-[3rem] border border-white/10 overflow-hidden">
-                  <div className="h-0.5 bg-linear-to-r from-primary via-orange-500 to-transparent w-full" />
+
                   <div className="p-10 space-y-6">
                     <div className="flex items-center gap-4">
                       <div className="border border-white/20 p-3 rounded-xl text-white shadow-[0_0_15px_rgba(255,255,255,0.05)]"><Lock className="h-5 w-5" /></div>
@@ -2462,7 +2499,7 @@ function TournamentDetailView({
                     onSubmit={configurePlayoffDivisions}
                   />
                   <div className="bg-white rounded-[3rem] border-2 border-primary/30 overflow-hidden text-black" data-testid="tiered-playoffs-operations">
-                    <div className="h-1 bg-primary" />
+
                     <div className="p-6 sm:p-10 space-y-6">
                       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
                         <div>
@@ -2510,7 +2547,7 @@ function TournamentDetailView({
 
                 {/* ── DARK SYSTEM: Bracket Telemetry ── */}
                 <div className="bg-[#050505] rounded-[3rem] border border-white/10 overflow-hidden">
-                  <div className="h-0.5 bg-linear-to-r from-primary via-orange-500 to-transparent w-full" />
+
                   <div className="p-10 space-y-8">
                     <div className="flex items-center gap-4">
                       <div className="border border-white/20 p-3 rounded-xl text-white shadow-[0_0_15px_rgba(255,255,255,0.05)]"><Zap className="h-5 w-5" /></div>
@@ -2522,7 +2559,7 @@ function TournamentDetailView({
                     </div>
 
                     <div className={cn("grid grid-cols-1 gap-6", event.tournamentType === 'pool_play_knockout' && "md:grid-cols-2")}>
-                      {event.tournamentType === 'pool_play_knockout' && (
+                      {!versioned && event.tournamentType === 'pool_play_knockout' && (
                       <div className="bg-[#0a0a0a] p-8 rounded-4xl border border-white/5 space-y-6">
                         <div className="space-y-2">
                           <Badge className="bg-primary/20 text-primary border border-primary/30 font-black text-[8px] uppercase tracking-widest">Pro Tool</Badge>
@@ -2553,6 +2590,8 @@ function TournamentDetailView({
 
               {/* ── OFFICIALS TAB ── */}
               <TabsContent value="officials" className="mt-0 space-y-8">
+                {officialError && <div role="alert" className="rounded-2xl border border-red-300 bg-red-50 p-4 text-red-900">{officialError}</div>}
+                <p className="text-sm text-muted-foreground">You can add or assign officials before or after deployment. New officials are automatically assigned to available upcoming games; use the game selectors to adjust assignments.</p>
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-start">
                   {/* Pool */}
                   <div className="space-y-6">
@@ -2686,7 +2725,7 @@ function TournamentDetailView({
                 </div>
               </TabsContent>
 
-              <TabsContent value="roster" className="mt-0 space-y-10">
+              <TabsContent value="roster" className="mt-0 space-y-10">{versioned&&isStaff&&<div className="rounded-2xl border-2 p-5"><p>Edit draft teams in tournament setup. Registration signups appear here automatically.</p><Button onClick={()=>router.push(`/manage-tournaments/builder?eventId=${event.id}`)}>Edit tournament teams</Button></div>}
                   <div className="bg-white rounded-[4rem] shadow-2xl border-2 border-black/5 overflow-hidden">
                     <div className="p-10 border-b bg-muted/5 flex items-center justify-between">
                       <div className="flex items-center gap-6">
@@ -2712,7 +2751,7 @@ function TournamentDetailView({
                         </Badge>
                       </div>
                     </div>
-                    {isStaff && (event.tournamentGames || []).length === 0 && (
+                    {isStaff && !versioned && (event.tournamentGames || []).length === 0 && (
                       <div className="p-10 bg-muted/5 border-b space-y-6 text-left">
                         <h4 className="font-black text-sm uppercase tracking-widest text-primary">Add Team to Division</h4>
                         <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
@@ -2787,7 +2826,7 @@ function TournamentDetailView({
                               </div>
                             </div>
                             <div className="flex items-center gap-2 px-4">
-                              {isStaff && (event.tournamentGames || []).length === 0 && (
+                              {isStaff && !versioned && (event.tournamentGames || []).length === 0 && (
                                 <Button
                                   variant="ghost"
                                   onClick={() => handleRemoveTeamDirectly(team.id, team.name)}
@@ -2818,7 +2857,7 @@ function TournamentDetailView({
                  {/* Logo Edit Dialog */}
                  <Dialog open={!!logoEditState} onOpenChange={(o) => !o && setLogoEditState(null)}>
                    <DialogContent className="rounded-[3rem] sm:max-w-md p-0 overflow-hidden border-none shadow-2xl bg-white">
-                     <div className="h-2 bg-primary w-full" />
+
                      <div className="p-8 space-y-6">
                        <DialogHeader>
                          <DialogTitle className="text-2xl font-black uppercase tracking-tight">Set Squad Logo</DialogTitle>
@@ -2876,6 +2915,8 @@ function TournamentDetailView({
               </TabsContent>
 
              <TabsContent value="itinerary" className="mt-0 space-y-12">
+{versioned ? workspace("schedule") : <>
+
                {(event.tournamentGames || []).length > 0 ? (
                  <>
                    {isStaff && (
@@ -2998,22 +3039,26 @@ function TournamentDetailView({
                     </Button>
                   </div>
                 )}
-             </TabsContent>
+
+</>}
+</TabsContent>
              <TabsContent value="bracket" className="mt-0">
+{versioned ? workspace("bracket") : <>
+
                {event.tournamentType === 'tiered_playoffs' && event.tieredPlayoffs ? (
                  (event.tournamentGames || []).some(game => game.phase === 'playoff') ? <div className="space-y-10">
                    {event.tieredPlayoffs.divisions.definitions.map(division => {
                      const games = (event.tournamentGames || []).filter(game => game.phase === 'playoff' && game.playoffDivisionId === division.id);
                      return games.length ? <Card key={division.id} className="rounded-[2.5rem] overflow-hidden border-none shadow-xl">
                        <CardHeader><CardTitle className="uppercase">{division.name}</CardTitle><CardDescription>Independent single-elimination championship bracket</CardDescription></CardHeader>
-                       <CardContent className="overflow-x-auto"><TournamentBracket games={games} onGameClick={handleGameClick} tournamentName={`${event.title} · ${division.name}`} /></CardContent>
+                       <CardContent className="overflow-x-auto"><TournamentBracket games={games} onGameClick={isStaff ? handleGameClick : undefined} tournamentName={`${event.title} · ${division.name}`} /></CardContent>
                      </Card> : null;
                    })}
                  </div> : <div className="text-center py-20 border-4 border-dashed rounded-[3rem] bg-muted/5"><h3 className="text-2xl font-black uppercase">Playoff Seeding Pending</h3><p className="text-xs text-muted-foreground mt-3">Complete preliminary results, review placement, then generate division brackets.</p></div>
                ) : (event.tournamentGames || []).length > 0 ? (
                  <TournamentBracket 
                    games={event.tournamentGames || []} 
-                   onGameClick={handleGameClick} 
+                   onGameClick={isStaff ? handleGameClick : undefined}
                    tournamentName={event.title}
                  />
                ) : (
@@ -3027,8 +3072,12 @@ function TournamentDetailView({
                    </p>
                  </div>
                )}
-             </TabsContent>
+
+</>}
+</TabsContent>
              <TabsContent value="standings" className="mt-0 space-y-8">
+{versioned ? workspace("pools") : <>
+
                 {(!event.tournamentGames || event.tournamentGames.length === 0) ? (
                   <div className="text-center py-20 border-4 border-dashed rounded-[3rem] bg-muted/5 flex flex-col items-center max-w-2xl mx-auto space-y-6">
                     <div className="bg-primary/10 p-6 rounded-4xl text-primary shadow-inner">
@@ -3107,7 +3156,9 @@ function TournamentDetailView({
                     </table>
                   </Card>
                 )}
-             </TabsContent>
+
+</>}
+</TabsContent>
           </div>
         </Tabs>
       </div>
@@ -3119,6 +3170,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
   const { activeTeam, db, firebaseUser: user, isStaff, isPrimaryClubAuthority, isStarter } = useTeam();
   const firebaseAuth = useAuth();
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
+  useEffect(() => { setSelectedEventId(new URLSearchParams(window.location.search).get("eventId")); }, []);
   const [isWizardOpen, setIsWizardOpen] = useState(false);
   const [showArchived, setShowArchived] = useState(false);
   const [duplicateTitle, setDuplicateTitle] = useState('');
@@ -3182,6 +3234,8 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
     }
   };
 
+
+
   if (activeEvent) {
     return (
       <div className="p-8 lg:p-14">
@@ -3205,11 +3259,12 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
             <h1 className="text-4xl md:text-7xl font-black uppercase tracking-tighter leading-none italic">Manage Tournaments</h1>
             <p className="text-sm font-medium text-muted-foreground leading-relaxed italic max-w-2xl">
               {isStarter
-                ? 'Create basic tournaments with manual team entry. Upgrade to Pro for advanced formats, portals, and officiating tools.'
+                ? 'Create Single Elimination Pool tournaments with manual team entry. Upgrade to Pro for advanced formats, portals, and officiating tools.'
                 : 'Elite-level institutional Series Architect for managing multi-field tournaments, synchronized officiating, and live bracket telemetry.'}
             </p>
           </div>
           <div className="flex flex-col gap-4">
+
             <div className="flex gap-2 justify-end">
               {hasArchived && (
                 <Button variant="ghost" onClick={() => setShowArchived(!showArchived)} className="h-14 px-6 rounded-2xl border-2 font-black uppercase text-[10px] tracking-widest text-[#050505] bg-white hover:bg-muted flex items-center gap-2">
@@ -3218,8 +3273,8 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
                 </Button>
               )}
               {(isStaff || isPrimaryClubAuthority) && (
-                <Button onClick={() => setIsWizardOpen(true)} className="h-14 px-8 rounded-2xl bg-black hover:bg-black/90 text-white font-black uppercase text-xs shadow-2xl transition-all active:scale-95 shrink-0 flex items-center">
-                  {isStarter ? 'Create Basic Tournament' : 'Assemble Elite Series'} <Plus className="ml-3 h-4 w-4" />
+                <Button onClick={() => window.location.assign("/manage-tournaments/builder")} className="h-14 px-8 rounded-2xl bg-black hover:bg-black/90 text-white font-black uppercase text-xs shadow-2xl transition-all active:scale-95 shrink-0 flex items-center">
+                  {isStarter ? 'Create Basic Tournament' : 'Create Tournament'} <Plus className="ml-3 h-4 w-4" />
                 </Button>
               )}
             </div>
@@ -3234,13 +3289,26 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
             </Button>
           )}
           {(isStaff || isPrimaryClubAuthority) && (
-            <Button onClick={() => setIsWizardOpen(true)} className="h-11 px-6 rounded-2xl bg-black hover:bg-black/90 text-white font-black uppercase text-xs shadow-2xl flex items-center">
-              {isStarter ? 'Create Basic Tournament' : 'Assemble Elite Series'} <Plus className="ml-2 h-4 w-4" />
+            <Button onClick={() => window.location.assign("/manage-tournaments/builder")} className="h-11 px-6 rounded-2xl bg-black hover:bg-black/90 text-white font-black uppercase text-xs shadow-2xl flex items-center">
+              {isStarter ? 'Create Basic Tournament' : 'Create Tournament'} <Plus className="ml-2 h-4 w-4" />
             </Button>
           )}
         </div>
       )}
 
+      {user?.isDemo && (
+        <div className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border p-6">
+          <div>
+            <h2 className="font-black">Explore tournament formats</h2>
+            <p className="text-sm text-muted-foreground">Try all 13 formats with sample teams, scores, brackets and schedules.</p>
+          </div>
+          <Button asChild variant="outline" className="rounded-2xl font-bold">
+            <Link href="/tournaments/preview">Try tournament examples</Link>
+          </Button>
+        </div>
+      )}
+
+      {(isStaff || isPrimaryClubAuthority) && <div className="flex justify-end mb-4"><Button variant="outline" className="rounded-2xl font-black uppercase text-xs" onClick={()=>setIsWizardOpen(true)}>Original division setup</Button></div>}
       <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6 lg:gap-8">
         {groupedEvents.map((group) => {
           const hasDivisions = group.items.length > 1 || group.items.some(e => e.divisionTitle);
@@ -3265,8 +3333,8 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
                        <CalendarDays className="h-4 w-4" />
                        <span className="text-[10px] font-black uppercase tracking-widest">
                          {event.endDate && event.endDate !== event.date 
-                           ? `${format(new Date(event.date), 'MMMM d')} - ${format(new Date(event.endDate), 'd, yyyy')}`
-                           : format(new Date(event.date), 'MMMM d, yyyy')}
+                           ? `${format(parseISO(event.date), 'MMMM d')} - ${format(parseISO(event.endDate), 'd, yyyy')}`
+                           : format(parseISO(event.date), 'MMMM d, yyyy')}
                        </span>
                     </div>
                     <div className="flex items-center gap-3 text-muted-foreground"><MapPin className="h-4 w-4" /><span className="text-[10px] font-black uppercase tracking-widest truncate">{event.location}</span></div>
@@ -3303,7 +3371,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
               key={group.name} 
               className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white flex flex-col group transition-all col-span-1 sm:col-span-2 xl:col-span-3 border border-black/5"
             >
-              <div className="h-2 bg-linear-to-r from-primary to-orange-500 w-full" />
+
               <CardContent className="p-6 sm:p-8 lg:p-10 space-y-8 flex-1">
                 <div className="flex justify-between items-start">
                   <div className="space-y-3 text-left">
@@ -3397,7 +3465,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
             <div className="bg-primary/10 p-10 rounded-[3rem] text-primary mb-8 shadow-inner animate-pulse"><Trophy className="h-20 w-20" /></div>
             <h2 className="text-4xl font-black uppercase tracking-tighter mb-4 italic">The Arena is Empty</h2>
             <p className="text-muted-foreground uppercase text-xs font-black tracking-widest mb-10 italic">No elite series deployed in the current sector.</p>
-            <Button onClick={() => setIsWizardOpen(true)} className="h-16 px-12 rounded-2xl font-black uppercase shadow-xl">Deploy First Series</Button>
+            <Button onClick={() => window.location.assign("/manage-tournaments/builder")} className="h-16 px-12 rounded-2xl font-black uppercase shadow-xl">Deploy First Series</Button>
           </div>
         )}
       </div>
@@ -3406,7 +3474,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
 
       <Dialog open={isDuplicateOpen} onOpenChange={setIsDuplicateOpen}>
         <DialogContent className="rounded-[4rem] sm:max-w-md p-0 overflow-hidden bg-black text-white border-none shadow-[0_0_100px_rgba(0,0,0,0.5)]">
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-4 sm:p-12 space-y-10">
             <DialogHeader>
               <div className="flex items-center gap-4 mb-2">
@@ -3430,7 +3498,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
               </div>
               <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest leading-relaxed italic px-2">
                 Replicating clones all logistical metadata, locations, and registration protocols. 
-                Participating squads and match history will be purged for the new iteration.
+                Participating squads and match history will be cleared. New-format tournaments retain empty team slots to preserve the bracket structure; replace these in setup.
               </p>
             </div>
             <DialogFooter>
@@ -3461,9 +3529,9 @@ function ScorekeeperCodeEditor({ event }: { event: any }) {
   const [saving, setSaving] = useState(false);
   const pendingRequest = useRef<{ key: string; body: string } | null>(null);
 
-  const handleSave = async () => {
+  const handleSave = async (revoke = false) => {
     if (!event.teamId) return;
-    const normalizedCode = code.trim();
+    const normalizedCode = revoke ? "revoke-access" : code.trim();
     if (normalizedCode.length < 4) {
       toast({ title: 'Code Required', description: 'Use at least 4 characters for scorekeeper access.', variant: 'destructive' });
       return;
@@ -3471,11 +3539,11 @@ function ScorekeeperCodeEditor({ event }: { event: any }) {
     setSaving(true);
     try {
       const token = await getAuthToken(auth);
-      const requestKey = JSON.stringify([event.teamId, event.id, normalizedCode]);
+      const requestKey = JSON.stringify([event.teamId, event.id, normalizedCode, revoke]);
       if (!pendingRequest.current || pendingRequest.current.key !== requestKey) {
         pendingRequest.current = {
           key: requestKey,
-          body: JSON.stringify({ requestId: crypto.randomUUID(), teamId: event.teamId, eventId: event.id, scoringCode: normalizedCode, expectedLifecycleVersion: Number(event.lifecycleVersion || 0), expectedCredentialVersion: Number(event.credentialVersion || 0) }),
+          body: JSON.stringify({ requestId: crypto.randomUUID(), teamId: event.teamId, eventId: event.id, scoringCode: normalizedCode, revoke, expectedLifecycleVersion: Number(event.lifecycleVersion || 0), expectedCredentialVersion: Number(event.credentialVersion || 0) }),
         };
       }
       const requestBody = pendingRequest.current.body;
@@ -3486,7 +3554,8 @@ function ScorekeeperCodeEditor({ event }: { event: any }) {
         throw new Error(payload?.error || 'Tournament credential could not be saved.');
       }
       if (pendingRequest.current?.body === requestBody) pendingRequest.current = null;
-      toast({ title: 'Scorekeeper Code Updated', description: 'Score submissions now require this code.' });
+      setCode("");
+      toast({ title: revoke ? "Scorekeeper Access Disabled" : "Scorekeeper Code Updated", description: revoke ? "The previous code no longer allows score submissions." : "Score submissions now require the new code." });
     } catch {
       toast({ title: 'Update Failed', variant: 'destructive' });
     } finally {
@@ -3508,15 +3577,16 @@ function ScorekeeperCodeEditor({ event }: { event: any }) {
           />
         </div>
         <Button
-          onClick={handleSave}
+          onClick={() => void handleSave()}
           disabled={saving}
           className="h-14 px-8 rounded-2xl bg-primary text-white font-black uppercase text-xs tracking-widest shadow-xl"
         >
           {saving ? <Loader2 className="h-4 w-4 animate-spin" /> : 'Save'}
         </Button>
       </div>
+      {event.scorekeeperConfigured && <Button variant="outline" className="rounded-2xl text-black font-black uppercase text-xs" disabled={saving} onClick={()=>void handleSave(true)}>Disable scorekeeper access</Button>}
       <p className="text-[9px] font-bold text-white/25 uppercase tracking-widest pl-1">
-        Scorekeepers must enter this code to submit match results. Leave blank for open access.
+        Scorekeepers must enter this code to submit match results. Use Disable scorekeeper access to revoke the current code.
       </p>
     </div>
   );

@@ -1,3 +1,4 @@
+import { ParentCompanyBrand } from '@/components/ParentCompanyBrand';
 import Link from 'next/link';
 import BrandLogo from '@/components/BrandLogo';
 
@@ -16,6 +17,7 @@ export function SquadFooter() {
         </nav>
         <p className="text-xs">© {new Date().getFullYear()} The Squad. All rights reserved.</p>
       </div>
+      <div className="mt-6 flex justify-center"><ParentCompanyBrand /></div>
     </footer>
   );
 }

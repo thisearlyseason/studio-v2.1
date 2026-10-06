@@ -1,5 +1,6 @@
+import { teamEventRequestFingerprint } from '@/lib/team-event-request';
 import { NextRequest, NextResponse } from 'next/server';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, createHash } from 'node:crypto';
 import { adminDb } from '@/lib/firebase-admin';
 import { verifyFirebaseToken } from '@/lib/api-auth';
 import { isActiveTeamMembership } from '@/lib/team-membership-security';
@@ -120,9 +121,17 @@ async function teamAccess(teamId: string, uid: string, role?: string) {
     teamRef.collection('members').doc(uid).get(),
   ]);
   if (!team.exists) return null;
-  const member = membership.data() || {};
-  const isActiveMember = membership.exists && isActiveTeamMembership(member);
+  const directMember = membership.data();
   const isOwner = team.data()?.ownerUserId === uid;
+  // Existing roster rows may predate login and use a generated document ID.
+  // Their linked userId is the identity; removal still revokes that linkage.
+  const linkedMembers = !isOwner && !isActiveTeamMembership(directMember)
+    ? await teamRef.collection('members').where('userId', '==', uid).limit(10).get()
+    : null;
+  const member = isActiveTeamMembership(directMember)
+    ? directMember
+    : linkedMembers?.docs.find(candidate => isActiveTeamMembership(candidate.data()))?.data();
+  const isActiveMember = isActiveTeamMembership(member);
   const isStaff = isOwner || (isActiveMember && hasStaffRole(member));
   return { teamRef, teamData: team.data() || {}, isMember: isActiveMember || isOwner, isStaff };
 }
@@ -149,6 +158,10 @@ export async function POST(req: NextRequest) {
 
     const submittedTournament = body.event && typeof body.event === 'object' && ((body.event as Record<string, unknown>).isTournament === true || (body.event as Record<string, unknown>).eventType === 'tournament');
     if (submittedTournament) return NextResponse.json({ error: 'Use /api/tournaments/lifecycle with requestId and expectedVersion.' }, { status: 410 });
+    const requestId = body.requestId;
+    if (requestId !== undefined && (typeof requestId !== 'string' || !/^[A-Za-z0-9_-]{16,100}$/.test(requestId))) {
+      return NextResponse.json({ error: 'Invalid event request identity.' }, { status: 400 });
+    }
     const access = await teamAccess(teamId, auth.uid, auth.role);
     if (!access?.isMember) return NextResponse.json({ error: 'Squad membership required.' }, { status: 403 });
     const eventRef = needsGeneratedId
@@ -158,9 +171,30 @@ export async function POST(req: NextRequest) {
       : access.teamRef.collection('events').doc(requestedEventId);
     const eventId = eventRef.id;
 
+    const receiptUserId = auth.uid;
+    const receiptRef = typeof requestId === 'string' && (action === 'create' || action === 'create-series')
+      ? adminDb.collection('teamEventMutationReceipts').doc(createHash('sha256').update(teamEventRequestFingerprint([teamId, auth.uid, requestId])).digest('hex'))
+      : null;
+    const requestHash = receiptRef
+      ? createHash('sha256').update(teamEventRequestFingerprint({ action, teamId, eventId: requestedCreateId, event: safeEventData(body.event), ...(action === 'create-series' ? { recurrence: body.recurrence } : {}) })).digest('hex')
+      : null;
+    async function recoverCreateReceipt() {
+      if (!receiptRef) return null;
+      const snapshot = await receiptRef.get();
+      if (!snapshot.exists) return null;
+      const receipt = snapshot.data() || {};
+      if (receipt.teamId !== teamId || receipt.userId !== receiptUserId || receipt.requestHash !== requestHash) throw new EventMutationError('This event request was already used with different details.', 409);
+      return receipt;
+    }
+    function writeCreateReceipt(batch: FirebaseFirestore.WriteBatch, eventIds: string[]) {
+      if (receiptRef) batch.set(receiptRef, { teamId, userId: receiptUserId, action, requestHash, eventIds, createdAt: new Date().toISOString() });
+    }
+
     if (action === 'create-series') {
       if (!access.isStaff) return NextResponse.json({ error: 'Squad staff access required.' }, { status: 403 });
       const result = await withScheduleMutationLock(async () => {
+        const receipt = await recoverCreateReceipt();
+        if (receipt) return { eventIds: receipt.eventIds as string[], replayed: true };
         const submitted = safeEventData(body.event);
         const recurrence = recurrenceInput(body.recurrence);
         const recurrenceStartDate = cleanDate(submitted.date);
@@ -206,10 +240,12 @@ export async function POST(req: NextRequest) {
               buildTeamEventBooking({ bookingId: eventBookingId(teamId, occurrence.ref.id), teamId, eventId: occurrence.ref.id, event: occurrence.event, interval: occurrence.interval, now }));
           }
         }
+        const eventIds = prepared.map(occurrence => occurrence.ref.id);
+        writeCreateReceipt(batch, eventIds);
         await batch.commit();
-        return { eventIds: prepared.map(occurrence => occurrence.ref.id) };
+        return { eventIds, replayed: false };
       });
-      return NextResponse.json({ success: true, eventIds: result.eventIds });
+      return NextResponse.json({ success: true, eventIds: result.eventIds, replayed: result.replayed });
     }
 
     if (action === 'update-series' || action === 'delete-series') {
@@ -261,6 +297,10 @@ export async function POST(req: NextRequest) {
     if (action === 'create' || action === 'update' || action === 'delete') {
       if (!access.isStaff) return NextResponse.json({ error: 'Squad staff access required.' }, { status: 403 });
       const result = await withScheduleMutationLock(async () => {
+        if (action === 'create') {
+          const receipt = await recoverCreateReceipt();
+          if (receipt) return { status: 'replayed' as const, eventId: (receipt.eventIds as string[])[0] };
+        }
         const existing = await eventRef.get();
         if (action !== 'create' && !existing.exists) return { status: 'missing' as const };
         if (action === 'create' && existing.exists) return { status: 'conflict' as const };
@@ -341,9 +381,11 @@ export async function POST(req: NextRequest) {
         } else {
           batch.delete(bookingRef);
         }
+        if (action === 'create') writeCreateReceipt(batch, [eventId]);
         await batch.commit();
         return { status: action === 'create' ? 'created' as const : 'updated' as const, eventId };
       });
+      if (result.status === 'replayed') return NextResponse.json({ success: true, eventId: result.eventId, replayed: true });
       if (result.status === 'missing') return NextResponse.json({ error: 'Event not found.' }, { status: 404 });
       if (result.status === 'conflict') return NextResponse.json({ error: 'Event request already exists.' }, { status: 409 });
       if (result.status === 'managed') {

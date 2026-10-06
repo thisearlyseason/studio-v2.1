@@ -1,6 +1,7 @@
 
 "use client";
 
+import OrganizerGuide from '@/components/guidance/OrganizerGuide';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Camera, 
@@ -308,6 +309,7 @@ export default function TeamProfilePage() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
+      <OrganizerGuide kind="team" />
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-muted/20 p-6 rounded-[2.5rem] border border-black/5">
         <div>
           <h2 className="text-xs font-black uppercase tracking-[0.3em] text-muted-foreground mb-3 ml-1">Squad Management</h2>
@@ -753,7 +755,7 @@ export default function TeamProfilePage() {
           <Dialog open={isCodeEditOpen} onOpenChange={setIsCodeEditOpen}>
             <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl p-0 overflow-hidden text-foreground">
               <DialogTitle className="sr-only">Customize Squad Identity</DialogTitle>
-              <div className="h-2 bg-primary w-full" />
+
               <div className="p-8 space-y-8">
                 <DialogHeader>
                   <DialogTitle className="text-2xl font-black uppercase tracking-tight text-foreground">Finalize Identity</DialogTitle>

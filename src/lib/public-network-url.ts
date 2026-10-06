@@ -17,11 +17,17 @@ export function isPrivateIp(address: string): boolean {
       a >= 224;
   }
   if (isIP(normalized) === 6) {
-    if (normalized === '::' || normalized === '::1') return true;
-    if (normalized.startsWith('fc') || normalized.startsWith('fd')) return true;
-    if (/^fe[89ab]/.test(normalized)) return true;
-    const mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
-    return mapped ? isPrivateIp(mapped[1]) : false;
+    // DNS may return mapped IPv4 in dotted, hexadecimal, or expanded IPv6
+    // notation. Canonicalize before checking the embedded IPv4 address.
+    const canonical = new URL(`http://[${normalized}]/`).hostname.slice(1, -1);
+    if (canonical === '::' || canonical === '::1') return true;
+    if (canonical.startsWith('fc') || canonical.startsWith('fd')) return true;
+    if (/^fe[89ab]/.test(canonical)) return true;
+    const mapped = canonical.match(/^::ffff:([0-9a-f]+):([0-9a-f]+)$/);
+    if (!mapped) return false;
+    const high = Number.parseInt(mapped[1], 16);
+    const low = Number.parseInt(mapped[2], 16);
+    return isPrivateIp(`${high >> 8}.${high & 255}.${low >> 8}.${low & 255}`);
   }
   return true;
 }

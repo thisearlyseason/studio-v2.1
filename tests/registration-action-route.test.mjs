@@ -1,3 +1,4 @@
+import {createCompetition} from "../src/lib/competition/document.ts";
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {communicationDb,loadCommunicationRoute} from './helpers/communication-route-harness.mjs';
@@ -79,7 +80,7 @@ test('legacy league PIN migrates only on a correct score in the same transaction
 test('tournament scoring verifies private HMAC and migrates a valid legacy code atomically',async()=>{
   const game={id:'g',team1:'A',team1Id:'a',team2:'B',team2Id:'b',score1:0,score2:0,isCompleted:false,stage:'Pool'};
   const root={isTournament:true,teamId:'t',tournamentType:'round_robin',tournamentGames:[game]};
-  const privateSeed={'teams/t':{ownerUserId:'owner',planId:'elite'},'teams/t/events/e':root,'teams/t/events/e/private/scoring':{scorekeeperCodeHash:hashTournamentScorekeeperCode('t','e','AbC9')}};
+  const privateSeed={'teams/t':{ownerUserId:'owner',planId:'elite',isPro:true},'teams/t/events/e':root,'teams/t/events/e/private/scoring':{scorekeeperCodeHash:hashTournamentScorekeeperCode('t','e','AbC9')}};
   const first=communicationDb(privateSeed,{serializeTransactions:true}),privateApp=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',first.db,{});
   try{
     const base={kind:'tournament',action:'score',teamId:'t',eventId:'e',gameId:'g',requestId:'registration-seam-score-1',expectedLifecycleVersion:0,expectedScheduleVersion:0,expectedGameVersion:0,expectedCredentialVersion:0,score1:2,score2:1};
@@ -87,7 +88,7 @@ test('tournament scoring verifies private HMAC and migrates a valid legacy code 
     assert.equal(first.records.get('teams/t/events/e').tournamentGames[0].isCompleted,false);
     assert.equal((await privateApp.route.POST(request({...base,code:'abc9'}))).status,200);
   }finally{privateApp.dispose();}
-  const legacy=communicationDb({'teams/t':{ownerUserId:'owner',planId:'elite'},'teams/t/events/e':{...root,scoringCode:'1357'}},{serializeTransactions:true}),legacyApp=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',legacy.db,{});
+  const legacy=communicationDb({'teams/t':{ownerUserId:'owner',planId:'elite',isPro:true},'teams/t/events/e':{...root,scoringCode:'1357'}},{serializeTransactions:true}),legacyApp=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',legacy.db,{});
   try{
     assert.equal((await legacyApp.route.POST(request({kind:'tournament',action:'verify',teamId:'t',eventId:'e',code:'1357'}))).status,200);
     assert.equal(legacy.records.get('teams/t/events/e').scoringCode,'1357');
@@ -237,4 +238,12 @@ test('legacy tournament deletion uses the server path without inventing a curren
   const seed={'teams/a':{ownerUserId:'owner',planId:'team'},'teams/a/events/e':{isTournament:true,isArchived:false,tournamentGames:[],tournamentTeams:['Legacy'],tournamentTeamsData:[{id:'p_legacy',name:'Legacy'}],teamAgreements:{}},'teams/a/registrationEntries/legacy':{event_id:'e',answers:{teamName:'Legacy'}}};
   const {db,records}=communicationDb(seed,{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{uid:'owner'});
   try{const response=await app.route.POST(request({kind:'tournament',action:'delete-registration',teamId:'a',eventId:'e',entryId:'legacy',legacy:true}));assert.equal(response.status,200);assert.equal(records.has('teams/a/registrationEntries/legacy'),false);assert.equal('registrationEntryCount' in records.get('teams/a/events/e'),false);}finally{app.dispose();}
+});
+
+test('new-format draft registration atomically updates entrants and bracket topology without publishing draft games',async()=>{
+ const competition=createCompetition({title:'Open registration cup',teams:[{id:'a',name:'Alpha'},{id:'b',name:'Beta'}],rules:{version:2,format:'single_elimination',timezone:'America/Edmonton'},options:{resources:[{id:'court',name:'Court'}],windows:[{date:'2099-01-01',startTime:'08:00',endTime:'20:00'}],duration:30,rest:5,turnaround:0,maxGamesPerDay:5}});
+ const config=teamConfig({});const {db,records}=communicationDb({'teams/t':{planId:'elite',isPro:true},'teams/t/events/e':{isTournament:true,teamId:'t',registrationOpen:true,competition,tournamentTeamsData:competition.topology.teams,tournamentGames:[]},'teams/t/events/e/registration/team_config':config},{enforceReadBeforeWrite:true});
+ const app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
+ try{const body={kind:'tournament',action:'register',teamId:'t',eventId:'e',protocolId:'team_config',requestId:'versioned-registration-001',formVersion:1,formHash:config.config_hash,answers:{teamName:'Gamma',name:'Coach',email:'coach@example.test'}};const response=await app.route.POST(request(body));assert.equal(response.status,200,JSON.stringify(await response.json()));const event=records.get('teams/t/events/e');assert.equal(event.competition.topology.teams.length,3);assert.equal(event.competition.status,'draft');assert.equal(event.competition.schedule.length,0);assert.equal(event.tournamentTeamsData.length,3);assert.equal((await app.route.POST(request(body))).status,200);assert.equal(records.get('teams/t/events/e').competition.topology.teams.length,3);}finally{app.dispose();}
+ const portal=await loadCommunicationRoute('../../src/app/api/public/portals/route.ts',db,{});try{const req=new Request('http://localhost/api/public/portals?kind=tournament-registration&teamId=t&eventId=e');req.nextUrl=new URL(req.url);const response=await portal.route.GET(req);assert.equal(response.status,200);const dto=await response.json();assert.deepEqual(dto.data.event.tournamentGames,[]);assert.equal(dto.data.event.competition,undefined);}finally{portal.dispose();}
 });

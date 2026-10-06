@@ -136,10 +136,10 @@ test('anonymous demo leagues are server-seeded and edited only through lifecycle
 });
 
 test('live deletion immediately revokes access and purges on a short schedule', async () => {
-  const route = await readSource('../src/app/api/account/deletion-request/route.ts');
+  const route = await readSource('../src/lib/server-account-deletion.ts');
   const functions = await readSource('../functions/src/index.ts');
-  assert.match(route, /revokeRefreshTokens\(auth\.uid\)/);
-  assert.match(route, /updateUser\(auth\.uid, \{ disabled: true \}\)/);
+  assert.match(route, /revokeRefreshTokens\(uid\)/);
+  assert.match(route, /updateUser\(uid, \{ disabled: true \}\)/);
   assert.match(functions, /purgeExpiredDeletionRequests = onSchedule\(\{[\s\S]*?schedule: 'every 15 minutes',[\s\S]*?region: 'us-central1'/);
 });
 

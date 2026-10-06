@@ -1,5 +1,6 @@
 "use client";
 
+import { ContentSafety, BlockedUsers, useBlockedAuthors } from '@/components/content-safety';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import Link from 'next/link';
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
@@ -67,13 +68,14 @@ import { deleteFeedPostOptimistically } from '@/lib/feed-delete';
 
 function CommentList({ postId, teamId, isAdmin, currentUserId, onDeleteComment }: { postId: string, teamId: string, isAdmin: boolean, currentUserId: string, onDeleteComment: (postId: string, commentId: string) => Promise<void> }) {
   const { data: comments, isLoading } = useFeedRead(teamId,postId);
+  const { isBlocked, isLoading: blocksLoading } = useBlockedAuthors();
 
-  if (isLoading) return <div className="p-2 text-[10px] text-muted-foreground animate-pulse">Loading comments...</div>;
+  if (isLoading || blocksLoading) return <div className="p-2 text-[10px] text-muted-foreground animate-pulse">Loading comments...</div>;
   if (!comments || comments.length === 0) return null;
 
   return (
     <div className="space-y-3 mt-4 w-full">
-      {comments.map((comment) => (
+      {comments.filter(comment => !isBlocked(comment.authorId)).map((comment) => (
         <div key={comment.id} className="flex gap-3 items-start animate-in fade-in slide-in-from-left-2 duration-300 group">
           <Avatar className="h-7 w-7 shrink-0 border border-muted">
             <AvatarFallback className="text-[10px] font-bold">{comment.authorName?.[0] || '?'}</AvatarFallback>
@@ -83,6 +85,7 @@ function CommentList({ postId, teamId, isAdmin, currentUserId, onDeleteComment }
               <span className="text-[10px] font-black tracking-tight truncate max-w-[120px]">{comment.authorName}</span>
               <div className="flex items-center gap-2">
                 <span className="text-[9px] text-muted-foreground whitespace-nowrap">{formatFeedDistance(comment.createdAt)}</span>
+                <ContentSafety target={{ teamId, kind: 'comment', parentId: postId, contentId: comment.id }} authorId={comment.authorId} authorName={comment.authorName || 'Squad member'} />
                 {(isAdmin || comment.authorId === currentUserId) && (
                   <Tooltip>
                     <TooltipTrigger asChild>
@@ -107,6 +110,7 @@ export default function FeedPage() {
   const { activeTeam, user, updateTeamHero, isSuperAdmin, purchasePro, hasFeature, isStaff, isParent, isPlayer } = useTeam();
   const firebaseAuth = useAuth();
   const db = useFirestore();
+  const { isBlocked, isLoading: blocksLoading } = useBlockedAuthors();
   const router = useRouter();
   const { toast } = useToast();
 
@@ -323,6 +327,7 @@ export default function FeedPage() {
     <div className="space-y-10 pb-20">
       {feedReadError && <p role="alert">{feedReadError}</p>}
       <div className="space-y-6 lg:space-y-8 max-w-4xl mx-auto w-full">
+        <BlockedUsers />
         {/* Team Hero Section */}
         <section className="relative h-48 sm:h-64 lg:h-80 rounded-3xl lg:rounded-[2.5rem] overflow-hidden shadow-xl lg:shadow-2xl group ring-1 ring-black/5">
           <img src={activeTeam.heroImageUrl || "https://picsum.photos/seed/squadhero/1200/400"} alt="Team Hero" className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105" />
@@ -417,7 +422,7 @@ export default function FeedPage() {
 
         {/* Feed Posts */}
         <div className="space-y-6 lg:space-y-8">
-          {posts?.filter(post => !hiddenPostIds.has(post.id)).map((post) => (
+          {!blocksLoading && posts?.filter(post => !hiddenPostIds.has(post.id) && !isBlocked(post.authorId)).map((post) => (
             <Card key={post.id} className={cn("rounded-3xl lg:rounded-2xl border-none shadow-md overflow-hidden ring-1 ring-black/5 group", post.type === 'system' ? 'bg-muted/30 ring-primary/10' : '')}>
               <CardHeader className="flex flex-row items-center gap-4 lg:gap-5 pb-4 pt-6 lg:pt-8 px-6 lg:px-8">
                 <Avatar className="h-10 w-10 lg:h-12 lg:w-12 border-2 border-background shadow-md">
@@ -430,6 +435,7 @@ export default function FeedPage() {
                     {formatFeedDistance(post.createdAt)}
                   </div>
                 </div>
+                <ContentSafety target={{ teamId: activeTeam.id, kind: 'post', contentId: post.id }} authorId={post.authorId} authorName={post.author?.name || 'Squad member'} />
                 {(isAdmin || post.authorId === user?.id) && (
                   <Tooltip>
                     <TooltipTrigger asChild>

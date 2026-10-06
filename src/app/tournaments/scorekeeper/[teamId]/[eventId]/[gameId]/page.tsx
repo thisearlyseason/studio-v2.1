@@ -195,7 +195,7 @@ export default function PublicScorekeeperEntryPage() {
         </Button>
 
         <Card className="rounded-[3rem] border-none shadow-2xl overflow-hidden bg-white ring-1 ring-black/5">
-          <div className="h-2 bg-primary w-full" />
+
           <CardHeader className="p-8 lg:p-10 pb-4">
             <div className="flex items-center gap-4 mb-4">
               <div className="bg-primary/10 p-3 rounded-2xl text-primary">
@@ -353,7 +353,7 @@ export default function PublicScorekeeperEntryPage() {
 
       <Dialog open={isDisputeOpen} onOpenChange={setIsDisputeOpen}>
         <DialogContent className="rounded-[2.5rem] p-0 border-none shadow-2xl overflow-hidden sm:max-w-md">
-          <div className="h-2 bg-red-600 w-full" />
+
           <div className="p-8 space-y-6">
             <DialogHeader>
               <div className="flex items-center gap-3 mb-2">

@@ -84,8 +84,21 @@ export default function TournamentRegistrationAdminPage() {
   const [isManualAddOpen, setIsManualAddOpen] = useState(false);
   const [manualForm, setManualForm] = useState({ teamName: '', coachName: '', email: '' });
   const [isManualProcessing, setIsManualProcessing] = useState(false);
+  const [manualAnswers, setManualAnswers] = useState<Record<string, string | string[]>>({});
+  const [manualSignature, setManualSignature] = useState('');
+  const [manualAgreement, setManualAgreement] = useState(false);
+  const [manualError, setManualError] = useState('');
   const [isSaving, setIsSaving] = useState(false);
   const [hasSaved, setHasSaved] = useState(false);
+  const [scorekeeperCodeDraft, setScorekeeperCodeDraft] = useState('');
+  const [scorekeeperCodeSaved, setScorekeeperCodeSaved] = useState(false);
+  const [configSaveError, setConfigSaveError] = useState('');
+  const configDirty = useRef(false);
+  const editRevision = useRef(0);
+  const latestConfig = useRef<Partial<LeagueRegistrationConfig> | null>(null);
+  const saveQueue = useRef<Promise<void>>(Promise.resolve());
+  const loadedConfigKey = useRef('');
+  const credentialVersionRef = useRef<number | null>(null);
   const [isGeneratingRegistrationCode, setIsGeneratingRegistrationCode] = useState(false);
   const pendingCredentialRequest = useRef<{ key: string; body: string } | null>(null);
   // Multi-form state
@@ -101,16 +114,6 @@ export default function TournamentRegistrationAdminPage() {
     url.searchParams.set('protocol', id);
     router.replace(url.pathname + url.search);
   };
-
-  // Division field — always prepended, non-removable system field
-  const DIVISION_FIELD: RegistrationFormField = {
-    id: 'f_sys_division',
-    label: 'Division',
-    type: 'dropdown',
-    required: false,
-    step: 'identity',
-    options: ['Unassigned'],
-  } as any;
 
   // Fetch all forms in the registration subcollection
   useEffect(() => {
@@ -140,7 +143,7 @@ export default function TournamentRegistrationAdminPage() {
       type: 'team',
       title: newFormName.trim(),
       is_active: false,
-      form_schema: [DIVISION_FIELD],
+      form_schema: [],
       form_version: 1,
     };
     const token = await getAuthToken(auth);
@@ -253,17 +256,23 @@ export default function TournamentRegistrationAdminPage() {
   const teamWaivers = useMemo(() => (teamWaiversData || []).filter(d => d.type === 'waiver'), [teamWaiversData]);
 
   useEffect(() => {
-    // Don't overwrite optimistic local state while a save is in flight
-    if (isSaving) return;
+    const key = `${teamId}/${eventId}/${configId}`;
+    if (loadedConfigKey.current !== key) {
+      loadedConfigKey.current = key;
+      configDirty.current = false;
+      latestConfig.current = null;
+      credentialVersionRef.current = null;
+      setScorekeeperCodeDraft('');
+      setScorekeeperCodeSaved(false);
+      setConfigSaveError('');
+      if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
+    }
+    // Snapshots and event updates must never replace pending or failed edits.
+    if (isSaving || configDirty.current) return;
     if (config) {
-      // Ensure Division field is always first in the schema
-      const existing = config.form_schema || [];
-      const hasDivision = existing.some(f => f.id === 'f_sys_division');
-      if (!hasDivision) {
-        setLocalConfig({ ...config, form_schema: [DIVISION_FIELD, ...existing] });
-      } else {
-        setLocalConfig(config);
-      }
+      if (Number(config.form_version || 0) < Number(latestConfig.current?.form_version || 0)) return;
+      latestConfig.current = config;
+      setLocalConfig(config);
     } else if (!isConfigLoading) {
       // Init default if missing
       setLocalConfig({
@@ -272,15 +281,15 @@ export default function TournamentRegistrationAdminPage() {
         title: event?.title ? `${event.title} Registration` : 'Tournament Registration',
         description: event?.description || '',
         is_active: false,
-        form_schema: [DIVISION_FIELD],
+        form_schema: [],
         form_version: 0
       });
     }
-  }, [config, isConfigLoading, event, isSaving]);
+  }, [config, configId, teamId, eventId, isConfigLoading, event, isSaving]);
 
   const handleUpdateConfig = (updates: Partial<LeagueRegistrationConfig>, immediate = false) => {
     if (!teamId || !eventId || !configRef) return;
-    const base = localConfig || config || { id: configId, type: 'team', title: '', is_active: false, form_schema: [], form_version: 0 };
+    const base = latestConfig.current || localConfig || config || { id: configId, type: 'team', title: '', is_active: false, form_schema: [], form_version: 0 };
     const updated = { ...base, ...updates } as LeagueRegistrationConfig;
     setHasSaved(false);
 
@@ -294,10 +303,22 @@ export default function TournamentRegistrationAdminPage() {
       updated.team_waivers_content = contents;
     }
 
+    latestConfig.current = updated;
+    configDirty.current = true;
+    editRevision.current += 1;
+    setConfigSaveError('');
     setLocalConfig(updated);
     if (syncTimeoutRef.current) clearTimeout(syncTimeoutRef.current);
     
+    // Keep incomplete payment edits locally until both fee and instructions are ready.
+    if (Number(updated.registration_cost) > 0 && updated.payment_method !== 'stripe' && !updated.offline_payment_instructions?.trim()) return;
+
+    const saveKey = loadedConfigKey.current;
     const performSync = async () => {
+      if (saveKey !== loadedConfigKey.current) return;
+      const updated = (latestConfig.current || base) as LeagueRegistrationConfig;
+      const revision = editRevision.current;
+      if (Number(updated.registration_cost) > 0 && updated.payment_method !== 'stripe' && !updated.offline_payment_instructions?.trim()) return;
       if (!configRef) {
         toast({ title: 'Auth Not Ready', description: 'Please wait and try again.', variant: 'destructive' });
         return;
@@ -314,7 +335,7 @@ export default function TournamentRegistrationAdminPage() {
           if (!pendingCredentialRequest.current || pendingCredentialRequest.current.key !== requestKey) {
             pendingCredentialRequest.current = {
               key: requestKey,
-              body: JSON.stringify({ ...requestPayload, requestId: crypto.randomUUID(), expectedLifecycleVersion: Number(event?.lifecycleVersion || 0), expectedCredentialVersion: Number(event?.credentialVersion || 0) }),
+              body: JSON.stringify({ ...requestPayload, requestId: crypto.randomUUID(), expectedLifecycleVersion: Number(event?.lifecycleVersion || 0), expectedCredentialVersion: credentialVersionRef.current ?? Number(event?.credentialVersion || 0) }),
             };
           }
           requestBody = pendingCredentialRequest.current.body;
@@ -326,9 +347,22 @@ export default function TournamentRegistrationAdminPage() {
           throw new Error(payload?.error || 'Registration form could not be saved.');
         }
         if (pendingCredentialRequest.current?.body === requestBody) pendingCredentialRequest.current = null;
+        if (saveKey !== loadedConfigKey.current) return;
+        if (typeof payload.credentialVersion === 'number') credentialVersionRef.current = payload.credentialVersion;
         const savedConfig = { ...updated, ...payload.config, id: configId } as LeagueRegistrationConfig & { scoringCode?: string };
         if (scoringCode !== undefined) delete savedConfig.scoringCode;
-        setLocalConfig(savedConfig);
+        const unchanged = revision === editRevision.current;
+        const nextConfig = unchanged ? savedConfig : { ...latestConfig.current, form_version: savedConfig.form_version, config_hash: savedConfig.config_hash };
+        if (scoringCode !== undefined) {
+          // Never echo a saved secret; newer typed input remains untouched.
+          if ((nextConfig as any).scoringCode === rawScoringCode) delete (nextConfig as any).scoringCode;
+          setScorekeeperCodeDraft(current => current.trim() === scoringCode ? '' : current);
+          setScorekeeperCodeSaved(true);
+        }
+        latestConfig.current = nextConfig;
+        configDirty.current = !unchanged;
+        setLocalConfig(nextConfig);
+        setConfigSaveError('');
         // Confirm activation/deactivation explicitly
         if (updates.is_active !== undefined) {
           toast({
@@ -338,10 +372,12 @@ export default function TournamentRegistrationAdminPage() {
               : 'Registration is now closed.',
           });
         }
-        setHasSaved(true);
+        setHasSaved(unchanged);
       } catch (err: any) {
-        // Revert the optimistic update so UI matches actual Firestore state
-        setLocalConfig(config || null);
+        if (saveKey !== loadedConfigKey.current) return;
+        // Preserve the full local draft so validation or network errors cannot erase setup.
+        configDirty.current = true;
+        setConfigSaveError(err?.message || 'Could not save. Your edits are still here. Please retry.');
         toast({
           title: 'Save Failed',
           description: err?.message || 'Could not sync to server. Please retry.',
@@ -352,7 +388,8 @@ export default function TournamentRegistrationAdminPage() {
       }
     };
     
-    if (immediate) performSync(); else syncTimeoutRef.current = setTimeout(performSync, 1500);
+    const enqueueSave = () => { saveQueue.current = saveQueue.current.then(performSync, performSync); };
+    if (immediate) enqueueSave(); else syncTimeoutRef.current = setTimeout(enqueueSave, 1500);
   };
 
   const handleAddField = () => {
@@ -363,14 +400,36 @@ export default function TournamentRegistrationAdminPage() {
     setEditingField(null);
   };
 
+  const manualConfig = localConfig || config;
+  const manualFields = (manualConfig?.form_schema || []).filter(field =>
+    !['f_core_sq', 'f_core_co', 'f_core_em'].includes(field.id) &&
+    ![/^team name$/i, /^(authorized contact|head coach).*name$/i, /^email( address)?$/i].some(pattern => pattern.test(field.label.trim()))
+  );
+  const manualWaivers = [
+    manualConfig?.require_default_waiver ? (manualConfig.default_waiver_text || TOURNAMENT_DEFAULT_WAIVER) : '',
+    manualConfig?.custom_waiver_text || '',
+    ...(manualConfig?.team_waivers_content || []).map(waiver => waiver.content || ''),
+  ].filter(Boolean);
   const handleManualAdd = async () => {
-    if (!manualForm.teamName || !manualForm.coachName || !manualForm.email || !teamId || !eventId) return;
+    setManualError('');
+    if (!manualForm.teamName.trim() || !manualForm.coachName.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(manualForm.email) || !teamId || !eventId) {
+      setManualError('Enter the team name, contact name and a valid email address.'); return;
+    }
+    if (manualFields.some(field => field.required && !['header', 'information_box'].includes(field.type) && !manualAnswers[field.id]?.length)) {
+      setManualError('Complete every required registration question.'); return;
+    }
+    if (manualWaivers.length && (!manualAgreement || !manualSignature.trim())) {
+      setManualError('The team representative must accept and sign the required agreements.'); return;
+    }
     setIsManualProcessing(true);
     try {
-      await submitRegistrationEntry(teamId as string, 'team_config', { teamName: manualForm.teamName, name: manualForm.coachName, email: manualForm.email, manual_enrollment: true }, 0, undefined, 'teams', eventId as string);
+      await submitRegistrationEntry(teamId as string, configId, { ...manualAnswers, teamName: manualForm.teamName.trim(), name: manualForm.coachName.trim(), email: manualForm.email.trim(), manual_enrollment: true }, manualConfig?.form_version || 0, manualSignature.trim() || undefined, 'teams', eventId as string);
       setIsManualAddOpen(false);
       setManualForm({ teamName: '', coachName: '', email: '' });
-      toast({ title: "Team Added" });
+      setManualAnswers({}); setManualSignature(''); setManualAgreement(false);
+      toast({ title: 'Registration Added', description: Number(manualConfig?.registration_cost || 0) > 0 ? 'Confirm payment before this team is enrolled.' : 'The team is enrolled in the tournament draft.' });
+    } catch (error) {
+      setManualError(error instanceof Error ? error.message : 'Unable to add this registration. Please try again.');
     } finally { setIsManualProcessing(false); }
   };
 
@@ -448,7 +507,7 @@ export default function TournamentRegistrationAdminPage() {
           {/* Create Form Dialog */}
           <Dialog open={isCreatingForm} onOpenChange={setIsCreatingForm}>
             <DialogContent className="rounded-[2.5rem] sm:max-w-sm p-0 overflow-hidden border-none shadow-2xl bg-white">
-              <div className="h-2 bg-primary w-full" />
+
               <div className="p-8 space-y-6">
                 <DialogHeader>
                   <DialogTitle className="text-2xl font-black uppercase">New Registration Form</DialogTitle>
@@ -464,7 +523,7 @@ export default function TournamentRegistrationAdminPage() {
                     className="h-12 rounded-xl border-2 font-bold"
                     autoFocus
                   />
-                  <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-widest">A Division field is automatically added to every form.</p>
+                  <p className="text-[9px] text-muted-foreground font-bold uppercase tracking-widest">Add a Division question only when this tournament uses divisions.</p>
                 </div>
                 <DialogFooter><Button className="w-full h-12 rounded-2xl font-black" onClick={handleCreateForm} disabled={!newFormName.trim()}>Create Form</Button></DialogFooter>
               </div>
@@ -522,7 +581,7 @@ export default function TournamentRegistrationAdminPage() {
                               <Dialog>
                                 <DialogTrigger asChild><Button variant="ghost" size="icon" aria-label={`View registration for ${entry.answers?.teamName || entry.answers?.name || 'team'}`} className="h-10 w-10 rounded-xl border-2 bg-white hover:bg-primary hover:text-white"><Terminal className="h-5 w-5" /></Button></DialogTrigger>
                                 <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden max-w-sm">
-                                  <div className="h-2 bg-primary w-full" />
+
                                   <div className="p-8 lg:p-10 space-y-6">
                                     <DialogHeader>
                                       <DialogTitle className="text-2xl font-black uppercase tracking-tight">Response Details</DialogTitle>
@@ -532,7 +591,7 @@ export default function TournamentRegistrationAdminPage() {
                                       <div className="space-y-4">{Object.entries(entry.answers || {}).map(([key, val]) => (<div key={key} className="space-y-1"><p className="text-[8px] font-black uppercase opacity-40">{getAnswerLabel(key)}</p><p className="text-xs font-bold leading-relaxed">{Array.isArray(val) ? val.join(', ') : val?.toString() || '--'}</p></div>))}</div>
                                     </ScrollArea>
                                     <div className="flex flex-col gap-2">
-                                       <Button className="h-12 rounded-xl font-black uppercase text-[10px]" onClick={() => void mutateRegistrationEntry(entry,'update-registration','accepted').catch(error=>toast({title:'Update Failed',description:error instanceof Error?error.message:'Registration could not be updated.',variant:'destructive'}))}>Accept Registration</Button>
+                                       <Button className="h-12 rounded-xl font-black uppercase text-[10px]" onClick={() => void mutateRegistrationEntry(entry,'update-registration','accepted').catch(error=>toast({title:'Update Failed',description:error instanceof Error?error.message:'Registration could not be updated.',variant:'destructive'}))}>{Number((entry as any).payment?.amount || 0)>0 && (entry as any).payment?.mode!=='stripe' ? 'Confirm offline payment & accept' : 'Accept Registration'}</Button>
                                        <Button variant="outline" className="h-12 rounded-xl font-black uppercase text-[10px]" onClick={() => void mutateRegistrationEntry(entry,'update-registration','pending').catch(error=>toast({title:'Update Failed',description:error instanceof Error?error.message:'Registration could not be updated.',variant:'destructive'}))}>Revert to Pending</Button>
                                     </div>
                                   </div>
@@ -562,7 +621,8 @@ export default function TournamentRegistrationAdminPage() {
                 <div className="flex items-center gap-3">
                   {isSaving && <span className="text-[9px] font-black uppercase text-muted-foreground flex items-center gap-1"><Loader2 className="h-4 w-4 animate-spin text-primary" /> Saving</span>}
                   {!isSaving && hasSaved && <span className="text-[9px] font-black uppercase text-green-600 flex items-center gap-1"><CheckCircle2 className="h-4 w-4" /> Saved</span>}
-                  <Switch 
+                  <Switch
+                    aria-label="Registration open"
                     checked={localConfig?.is_active || false} 
                     onCheckedChange={(v) => handleUpdateConfig({ is_active: v }, true)} 
                     disabled={isSaving}
@@ -573,17 +633,24 @@ export default function TournamentRegistrationAdminPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
                   <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Form Title</Label><Input value={localConfig?.title || ''} onChange={e => handleUpdateConfig({ title: e.target.value })} className="h-14 rounded-2xl border-2 font-black" /></div>
                   <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Entry Fee ($)</Label><Input type="number" value={localConfig?.registration_cost || '0'} onChange={e => handleUpdateConfig({ registration_cost: e.target.value })} className="h-14 rounded-2xl border-2 font-black text-primary" /></div>
+                  <div className="space-y-2 sm:col-span-2"><Label htmlFor="registration-payment-method">Payment method</Label><select id="registration-payment-method" className="w-full h-14 rounded-2xl border-2 px-4 font-bold" value={localConfig?.payment_method || 'offline'} onChange={e=>handleUpdateConfig({payment_method:e.target.value as 'offline'|'stripe'},true)}><option value="offline">Offline — organizer confirms payment</option><option value="stripe" disabled={event?.competition?.version !== 2 || localConfig?.type !== "team"}>Stripe — automatically enroll after payment</option></select><p className="text-sm text-muted-foreground">Stripe requires the organizer’s connected payout account. Demo workspaces never create real charges.</p></div>
                   <div className="space-y-2 sm:col-span-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Scorekeeper Code <span className="text-muted-foreground font-medium normal-case tracking-normal">(required for real score submissions)</span></Label>
-                    <Input 
-                      value={(localConfig as any)?.scoringCode || ''} 
-                      onChange={e => handleUpdateConfig({ scoringCode: e.target.value } as any)} 
-                      placeholder="Set a 4+ character access code..."
-                      className="h-14 rounded-2xl border-2 font-black uppercase tracking-widest" 
+                    <Input
+                      aria-label="New scorekeeper code"
+                      value={scorekeeperCodeDraft}
+                      onChange={e => { setScorekeeperCodeDraft(e.target.value); setScorekeeperCodeSaved(false); }}
+                      maxLength={128}
+                      autoComplete="off"
+                      placeholder={event?.scorekeeperConfigured ? "Enter a replacement code..." : "Set a 4+ character access code..."}
+                      className="h-14 rounded-2xl border-2 font-black tracking-widest"
                     />
+                    <Button type="button" disabled={isSaving || scorekeeperCodeDraft.trim().length < 4} onClick={() => handleUpdateConfig({ scoringCode: scorekeeperCodeDraft.trim() } as any, true)}>Save scorekeeper code</Button>
+                    <p className="text-sm" role="status">{scorekeeperCodeSaved ? 'Scorekeeper code saved. Share the code you entered with your scorekeepers.' : scorekeeperCodeDraft.trim().length > 0 && scorekeeperCodeDraft.trim().length < 4 ? 'Use at least 4 characters. Your code is not saved until you select Save scorekeeper code.' : event?.scorekeeperConfigured ? 'A scorekeeper code is already configured. Enter a new code only to replace it.' : 'Enter 4–128 characters, then select Save scorekeeper code.'}</p>
                     <p className="text-[10px] text-muted-foreground ml-1">Share this code with scorekeepers only. Guests must enter it before accessing match entry.</p>
                   </div>
                 </div>
+                {configSaveError && <div role="alert" className="rounded-2xl border border-destructive p-4 text-sm"><p>{configSaveError} Your unsaved setup has been kept.</p><Button type="button" variant="outline" disabled={isSaving} onClick={() => handleUpdateConfig({}, true)}>Retry saving</Button></div>}
                 <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Registration Description</Label><Textarea value={localConfig?.description || ''} onChange={e => handleUpdateConfig({ description: e.target.value })} className="rounded-3xl min-h-[150px] border-2 font-medium" placeholder="Add the tournament details registrants need to know..." /></div>
                 
                 <div className="bg-amber-50 rounded-[2.5rem] border-2 border-amber-200 p-8 lg:p-10 space-y-6 shadow-sm">
@@ -596,20 +663,24 @@ export default function TournamentRegistrationAdminPage() {
                   </div>
                   <div className="space-y-4">
                     <div className="space-y-2">
-                       <Label className="text-[10px] font-black uppercase tracking-widest ml-1 text-amber-900">Offline Payment Instructions (e-Transfer / Cheque)</Label>
+                       <Label htmlFor="offline-payment-instructions" className="text-[10px] font-black uppercase tracking-widest ml-1 text-amber-900">Offline Payment Instructions (e-Transfer / Cheque)</Label>
                        <Textarea 
+                         id="offline-payment-instructions"
+                         maxLength={2000}
+                         aria-describedby="offline-payment-help"
                          value={localConfig?.offline_payment_instructions || ''} 
                          onChange={e => handleUpdateConfig({ offline_payment_instructions: e.target.value })} 
                          className="rounded-3xl min-h-[100px] border-2 font-medium border-amber-200 bg-white" 
                          placeholder="e.g., Please send e-transfer to accounting@organization.com. Include team name in notes." 
                        />
+                       <p id="offline-payment-help" className="text-sm font-medium text-amber-900">{Number(localConfig?.registration_cost) > 0 && localConfig?.payment_method !== 'stripe' && !localConfig?.offline_payment_instructions?.trim() ? 'Not saved yet — add payment instructions to save this paid registration form.' : 'Required for paid offline registrations. Maximum 2,000 characters.'}</p>
                     </div>
                   </div>
                   <div className="bg-white/60 p-6 rounded-2xl border-2 border-amber-100/50 space-y-4">
                      <div className="flex items-center justify-between"><p className="text-[10px] font-black uppercase tracking-widest text-amber-600">Registrant View</p><Badge variant="outline" className="text-[8px] font-black uppercase border-amber-200 text-amber-700">Preview</Badge></div>
                      <p className="text-[11px] font-medium leading-relaxed text-amber-900/80 italic">"{localConfig?.offline_payment_instructions || 'Contact the tournament organizer for payment instructions.'}"</p>
                   </div>
-                  <div className="flex items-center gap-2 text-[9px] font-black uppercase text-amber-700 tracking-[0.2em] opacity-60 px-1"><Sparkles className="h-3 w-3" /> Stripe Integration Pending</div>
+                  <div className="flex items-center gap-2 text-[9px] font-black uppercase text-amber-700 tracking-[0.2em] opacity-60 px-1"><Sparkles className="h-3 w-3" /> Stripe available when connected</div>
                 </div>
 
                 <div className="bg-rose-50 rounded-[2.5rem] border-2 border-rose-200 p-8 lg:p-10 space-y-6 shadow-sm">
@@ -816,30 +887,12 @@ export default function TournamentRegistrationAdminPage() {
               </CardHeader>
               <CardContent className="p-0 divide-y">
                 {((localConfig?.form_schema || config?.form_schema) || []).map((field, i) => {
-                  const isSystemField = field.id === 'f_sys_division';
                   const stepLabels: Record<string, string> = {
                     identity: 'Registrant Details',
                     guardian: 'Parent or Guardian',
                     team_code: 'Team Assignment',
                     additional: 'Additional Questions'
                   };
-                  if (isSystemField) return (
-                    <div key={field.id} className="p-8 flex items-center justify-between bg-primary/5 border-l-4 border-primary">
-                      <div className="flex items-center gap-6">
-                        <div className="text-[10px] font-black text-primary w-8 text-center opacity-60">{i + 1}</div>
-                        <div className="space-y-1">
-                          <p className="font-black text-base uppercase tracking-tight text-primary">{field.label}</p>
-                          <div className="flex items-center gap-2">
-                            <Badge className="bg-primary text-white border-none text-[8px] font-black uppercase h-5 px-2">Division</Badge>
-                            <Badge variant="outline" className="text-[7px] font-black uppercase opacity-60">Always Included</Badge>
-                          </div>
-                        </div>
-                      </div>
-                      <div className="text-[9px] font-black uppercase tracking-widest text-primary/40 flex items-center gap-1">
-                        <CheckCircle2 className="h-3 w-3" /> Included Automatically
-                      </div>
-                    </div>
-                  );
                   return (
                     <div key={field.id} className={cn(
                       "p-8 flex items-center justify-between group hover:bg-muted/10 transition-colors",
@@ -867,7 +920,7 @@ export default function TournamentRegistrationAdminPage() {
                           </div>
                         </div>
                       </div>
-                      <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl text-destructive opacity-0 group-hover:opacity-100 transition-opacity" onClick={() => handleUpdateConfig({ form_schema: (localConfig?.form_schema || []).filter(f => f.id !== field.id && f.id !== 'f_sys_division') }, true)}><Trash2 className="h-5 w-5" /></Button>
+                      <Button variant="ghost" size="icon" aria-label={`Remove ${field.label} question`} className="h-10 w-10 rounded-xl text-destructive" onClick={() => handleUpdateConfig({ form_schema: (localConfig?.form_schema || config?.form_schema || []).filter(f => f.id !== field.id), ...(field.id === "f_sys_division" ? {require_division_selection: false} : {}) }, true)}><Trash2 className="h-5 w-5" /></Button>
                     </div>
                   );
                 })}
@@ -899,8 +952,8 @@ export default function TournamentRegistrationAdminPage() {
       )}
 
       <Dialog open={isManualAddOpen} onOpenChange={setIsManualAddOpen}>
-        <DialogContent className="rounded-[2.5rem] sm:max-w-md bg-white">
-          <div className="h-2 bg-primary w-full" />
+        <DialogContent className="rounded-[2.5rem] sm:max-w-xl max-h-[90vh] overflow-y-auto bg-white">
+
           <div className="p-8 lg:p-10 space-y-8">
             <DialogHeader>
               <DialogTitle className="text-2xl font-black uppercase">Add Team Registration</DialogTitle>
@@ -910,6 +963,32 @@ export default function TournamentRegistrationAdminPage() {
               <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Name</Label><Input placeholder="e.g. Metro Tigers" value={manualForm.teamName} onChange={e => setManualForm({...manualForm, teamName: e.target.value})} className="h-12 rounded-xl border-2 font-bold" /></div>
               <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Authorized Contact</Label><Input placeholder="Full Name" value={manualForm.coachName} onChange={e => setManualForm({...manualForm, coachName: e.target.value})} className="h-12 rounded-xl border-2 font-bold" /></div>
               <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contact Email</Label><Input type="email" placeholder="coach@org.com" value={manualForm.email} onChange={e => setManualForm({...manualForm, email: e.target.value})} className="h-12 rounded-xl border-2 font-bold" /></div>
+            </div>
+            <div className="space-y-5">
+              {manualFields.map(field => {
+                const id = `manual-question-${field.id}`;
+                const value = manualAnswers[field.id] || '';
+                const update = (answer: string | string[]) => setManualAnswers(previous => ({ ...previous, [field.id]: answer }));
+                if (field.type === 'header') return <h3 key={field.id} className="font-black text-lg">{field.label}</h3>;
+                if (field.type === 'information_box') return <div key={field.id}><strong>{field.label}</strong><p>{field.infoContent}</p></div>;
+                return <div key={field.id} className="space-y-2">
+                  <Label id={`${id}-label`} htmlFor={id}>{field.label}{field.required ? ' *' : ''}</Label>
+                  {field.type === 'long_text' ? <Textarea id={id} value={String(value)} onChange={e => update(e.target.value)} /> :
+                    field.type === 'dropdown' ? <select id={id} value={String(value)} onChange={e => update(e.target.value)} className="w-full h-12 rounded-xl border-2 px-3"><option value="">Select an option</option>{field.options?.map(option => <option key={option}>{option}</option>)}</select> :
+                    field.type === 'radio' || field.type === 'checkbox' ? <div role="group" aria-labelledby={`${id}-label`} className="space-y-2">{field.options?.map((option, index) => <label key={option} className="flex gap-3 items-center"><input type={field.type === 'radio' ? 'radio' : 'checkbox'} name={id} value={option} checked={field.type === 'radio' ? value === option : Array.isArray(value) && value.includes(option)} onChange={e => update(field.type === 'radio' ? option : e.target.checked ? [...(Array.isArray(value) ? value : []), option] : (Array.isArray(value) ? value : []).filter(item => item !== option))} />{option}</label>)}</div> :
+                    <Input id={id} value={String(value)} onChange={e => update(e.target.value)} placeholder={field.type === 'signature' ? "Type the signer's full legal name" : undefined} />}
+                </div>;
+              })}
+              {manualWaivers.length > 0 && <section className="space-y-3" aria-label="Required agreements">
+                <h3 className="font-black">Required agreements</h3>
+                {manualWaivers.map((text, index) => <p key={index} className="whitespace-pre-wrap text-sm rounded-xl border p-4">{text}</p>)}
+                <label className="flex gap-3 items-start"><input type="checkbox" checked={manualAgreement} onChange={e => setManualAgreement(e.target.checked)} />The team representative has reviewed and accepts these agreements.</label>
+                <Label htmlFor="manual-signature">Team representative signature</Label>
+                <Input id="manual-signature" value={manualSignature} onChange={e => setManualSignature(e.target.value)} placeholder="Representative's full legal name" />
+                <p className="text-sm text-muted-foreground">Have the representative sign here, or send them the public registration link.</p>
+              </section>}
+              {Number(manualConfig?.registration_cost || 0) > 0 && <p className="text-sm">This registration stays pending until payment is confirmed.</p>}
+              {manualError && <p role="alert" className="text-destructive font-semibold">{manualError}</p>}
             </div>
             <DialogFooter><Button className="w-full h-14 rounded-2xl text-lg font-black shadow-xl" onClick={handleManualAdd} disabled={isManualProcessing}>{isManualProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : "Add Team"}</Button></DialogFooter>
           </div>

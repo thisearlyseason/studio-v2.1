@@ -1,4 +1,7 @@
 "use client";
+import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
+import { schoolInstitutionLandingAllowed } from '@/lib/dashboard-institution-context';
+import Link from 'next/link';
 
 import Shell from '@/components/layout/Shell';
 import { ErrorBoundary } from '@/components/layout/ErrorBoundary';
@@ -277,7 +280,7 @@ function BetaDemoSeeder({
 function LayoutContent({ children }: { children: React.ReactNode }) {
   const { user, isUserLoading, isAuthResolved } = useUser();
   const auth = useAuth();
-  const { teams, isTeamsLoading, isSeedingDemo, setIsSeedingDemo, user: userProfile, activeTeam, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isParent } = useTeam();
+  const { teams, isTeamsLoading, isSeedingDemo, setIsSeedingDemo, user: userProfile, activeTeam, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isParent, isSuperAdmin } = useTeam();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -305,6 +308,15 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
+  const routeDecision = userProfile && isAuthResolved
+    ? authorizeDashboardRoute(pathname, { ...userProfile, isPrimaryClubAuthority }, isSuperAdmin ? 'superadmin' : undefined)
+    : null;
+  const deniedRoute = routeDecision && !routeDecision.allowed ? routeDecision.redirectTo : null;
+
+  useEffect(() => {
+    if (mounted && !isUserLoading && deniedRoute) router.replace(deniedRoute);
+  }, [mounted, isUserLoading, deniedRoute, pathname, router]);
+
   useEffect(() => {
     if (!mounted || !isAuthResolved || isDemoInitializing) return;
     if (!user && !pathname.includes('seed_demo')) {
@@ -318,9 +330,13 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     // School Admins → School Hub (/club rendered as school view)
     // Elite Club Organizers → Elite Club Hub (/club rendered as elite view)
     // Each role uses its own session key so they don't block each other.
-    if (pathname === '/dashboard') {
+    if (pathname === '/dashboard' && !isStoreDistribution && userProfile?.role === 'league_creator') {
+      router.replace('/competition');
+      return;
+    }
+    if (pathname === '/dashboard' && !isTeamsLoading && teams.length > 0) {
       // Institution mode: school admin with no squad selected (or school hub record active)
-      const isSchoolInstitutionMode = isSchoolMode && isPrimaryClubAuthority && (!activeTeam || activeTeam?.type === 'school');
+      const isSchoolInstitutionMode = isSchoolMode && schoolInstitutionLandingAllowed(activeTeam, isPrimaryClubAuthority, user?.uid, userProfile, isSuperAdmin ? 'superadmin' : undefined);
       // Hub mode: elite club organizer with no squad selected
       const isEliteHubMode = isEliteClubMode && !activeTeam;
 
@@ -333,8 +349,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         seedLock: localStorage.getItem('squad_seeding_lock'),
       })) {
         router.push('/family');
-      } else if (!isStoreDistribution && userProfile?.role === 'league_creator') {
-        router.push('/competition');
+
       }
     }
 
@@ -344,7 +359,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         router.replace('/dashboard');
         return;
     }
-  }, [user, userProfile?.isDemo, userProfile?.role, isAuthResolved, router, mounted, isDemoInitializing, pathname, searchParams, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isParent, activeTeam]);
+  }, [user, userProfile, isAuthResolved, router, mounted, isDemoInitializing, pathname, searchParams, isPrimaryClubAuthority, isSuperAdmin, isSchoolMode, isEliteClubMode, isParent, activeTeam, isTeamsLoading, teams.length]);
 
   useEffect(() => {
     // Wait for both the profile and team hydration before deciding that the
@@ -354,6 +369,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     if (!mounted || isSeedingDemo || isTeamsLoading || !user || !userProfile || isDemoInitializing) return;
     const isSetupPage = pathname === '/dashboard' ||
                         pathname === '/dashboard/billing' ||
+                        pathname === '/subscriptions' ||
                         pathname === '/teams/new' || 
                         pathname === '/teams/join' || 
                         pathname === '/family' || 
@@ -385,8 +401,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     const isStaffLocal = userProfile?.role === 'admin' || userProfile?.role === 'superadmin' || userProfile?.role === 'league_creator';
     
     if (teams.length === 0 && !isSetupPage && !isStaffLocal) {
-      if (userProfile?.role === 'coach') router.push('/teams/new');
-      else router.push('/teams/join');
+      router.replace('/dashboard');
     }
   }, [user, userProfile, teams, isTeamsLoading, isSeedingDemo, pathname, router, mounted, isDemoInitializing]);
 
@@ -502,7 +517,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   // But if we HAVE a userProfile, we skip the !mounted requirement to break the Suspense Trap.
   const isLoadingState = !loadingTimedOut && (isEssentiallyLoading || (!mounted && !userProfile));
 
-  if (isLoadingState) {
+  if (isLoadingState || deniedRoute) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background">
         {mounted && (
@@ -582,14 +597,14 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="flex flex-col h-screen overflow-hidden">
+    <div className="flex flex-col h-dvh overflow-hidden">
       {userProfile?.isDemo && !userProfile?.isBetaTester && (
         <div className="w-full bg-black text-white h-9 flex items-center justify-center gap-4 z-40 border-b border-primary/20 shrink-0 sticky top-0">
           <Timer className="h-3.5 w-3.5 text-primary animate-pulse" />
           <div className="flex items-center gap-3">
             <span className="text-[10px] font-black uppercase tracking-widest">Demo Mode</span>
             <div className="h-3 w-px bg-white/20" />
-            <span className="text-[10px] font-mono font-bold text-primary">
+            <span className="text-[10px] font-mono font-bold text-red-400">
               Resets In: {timeLeft !== null ? formatTimeLeft(timeLeft) : '...'}
             </span>
           </div>

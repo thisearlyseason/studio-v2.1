@@ -1,3 +1,4 @@
+import { hasBlockBetween } from '@/lib/server-moderation';
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { verifyFirebaseToken } from '@/lib/api-auth';
@@ -466,6 +467,10 @@ export async function POST(req: NextRequest) {
     const allowed = new Set(context?.recipients.map(recipient => recipient.userId) || []);
     if (!context || memberIds.some(id => !allowed.has(id))) {
       return NextResponse.json({ error: 'One or more recipients are outside your approved chat scope.' }, { status: 403 });
+    }
+
+    if ((await Promise.all(memberIds.map(id => hasBlockBetween(auth.uid, id)))).some(Boolean)) {
+      return NextResponse.json({ error: 'A selected recipient is unavailable because of a user block.' }, { status: 403 });
     }
 
     const selected = memberIds.map(id => context.recipients.find(recipient => recipient.userId === id)!);

@@ -429,7 +429,7 @@ function AuthorizedEquipmentPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {filteredEq.map((item) => (
               <Card key={item.id} className="rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col group">
-                <div className={cn("h-2 w-full", item.availableQuantity === 0 ? "bg-red-500" : "bg-primary")} />
+
                 <CardHeader className="p-8 pb-4 space-y-4">
                   <div className="flex justify-between items-start">
                     <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest border-primary/20 text-primary">{item.category}</Badge>
@@ -538,7 +538,7 @@ function AuthorizedEquipmentPage() {
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
         <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white">
           <DialogTitle className="sr-only">Enroll Equipment Asset</DialogTitle>
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-8 lg:p-12 space-y-10">
             <DialogHeader>
               <div className="flex items-center gap-4 mb-2">
@@ -608,7 +608,7 @@ function AuthorizedEquipmentPage() {
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white">
           <DialogTitle className="sr-only">Edit Equipment Asset</DialogTitle>
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-8 lg:p-12 space-y-10">
             <DialogHeader>
               <div className="flex items-center gap-4 mb-2">

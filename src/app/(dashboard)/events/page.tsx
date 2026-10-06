@@ -589,7 +589,7 @@ export default function EventsPage() {
           </DialogClose>
           <div data-testid="launch-activity-scroll-region" className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
           <div className="flex flex-col xl:flex-row">
-            <div className="w-full xl:w-5/12 bg-muted/30 p-4 sm:p-6 xl:p-10 space-y-4 sm:space-y-6 xl:border-r">
+            <div className="w-full min-w-0 xl:w-5/12 bg-muted/30 p-4 sm:p-6 xl:p-10 space-y-4 sm:space-y-6 xl:border-r">
               <DialogHeader><DialogTitle className="text-2xl sm:text-3xl font-black uppercase tracking-tight pr-10">{editingEvent ? editingSeries ? "Update Weekly Series" : "Update" : "Launch"} Activity</DialogTitle></DialogHeader>
               <div className="space-y-4 sm:space-y-6">
                 <div className="space-y-1.5">
@@ -662,7 +662,7 @@ export default function EventsPage() {
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Start Time *</Label><Input type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="h-12 rounded-xl border-2 font-black px-4 pr-10" />
+                  <Label htmlFor="activity-start-time" className="text-[10px] font-black uppercase tracking-widest ml-1">Start Time *</Label><Input id="activity-start-time" type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="h-12 min-w-0 max-w-full appearance-none rounded-xl border-2 font-black px-4 [&::-webkit-date-and-time-value]:min-w-0 [&::-webkit-date-and-time-value]:text-left" />
                 </div>
                 {!editingEvent && (
                   <div className="space-y-1.5">
@@ -681,7 +681,7 @@ export default function EventsPage() {
                 )}
               </div>
             </div>
-            <div className="flex-1 p-4 sm:p-6 xl:p-10 space-y-5 sm:space-y-6 bg-white">
+            <div className="min-w-0 flex-1 p-4 sm:p-6 xl:p-10 space-y-5 sm:space-y-6 bg-white">
               <div className="space-y-1.5"><Label className="text-[10px] font-black uppercase ml-1">Location</Label><LocationAutocomplete
                 value={newLocation}
                 onChange={setNewLocation}

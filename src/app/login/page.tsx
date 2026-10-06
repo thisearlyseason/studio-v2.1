@@ -17,6 +17,8 @@ import Image from 'next/image';
 import { Trophy, Users, Zap, Loader2, User, Baby, ChevronRight, ChevronLeft, ShieldAlert, GraduationCap, Eye, EyeOff } from 'lucide-react';
 import { bootstrapDemoWorkspace, clearBrowserSession, establishBrowserSession } from '@/lib/client-auth';
 import { APP_DISTRIBUTION, isStoreDistribution, safeReturnPath } from '@/lib/app-distribution';
+import { NativeProviderLogin } from '@/components/native-auth/NativeProviderLogin';
+import { nativeBrowserAuthGate } from '@/lib/native-auth/browser-gate';
 
 function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: string): Promise<T> {
   return Promise.race([
@@ -38,6 +40,8 @@ export default function LoginPage() {
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotSent, setForgotSent] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
+  const nativeBusy = React.useSyncExternalStore(nativeBrowserAuthGate.subscribe, nativeBrowserAuthGate.busy, () => false);
+  const nativeSessionVerified = React.useRef(false);
 
   // ── BETA FLAG: set to false to re-enable Google sign-in ──────────────────
   const BETA_MODE = false;
@@ -56,7 +60,10 @@ export default function LoginPage() {
   }, []);
 
   React.useEffect(() => {
-    if (isDemoLoading) return;
+    if (isDemoLoading || nativeBrowserAuthGate.busy()) return;
+    // Firebase may notify React before the native handoff has verified the
+    // cookie, or after cancellation has already cleared its current user.
+    if (isStoreDistribution && user && auth.currentUser?.uid !== user.uid) return;
     if (!isUserLoading && user) {
       const fetchRole = async () => {
         if (!user.isAnonymous && !user.emailVerified) {
@@ -65,7 +72,7 @@ export default function LoginPage() {
           return;
         }
         try {
-          await establishBrowserSession(user);
+          if (!nativeSessionVerified.current) await establishBrowserSession(user);
         } catch {
           await clearBrowserSession();
           await signOut(auth).catch(() => undefined);
@@ -98,8 +105,7 @@ export default function LoginPage() {
             const tokenResult = await user.getIdTokenResult();
             if (tokenResult.claims.role === 'superadmin') {
               router.push('/admin');
-            } else if (!isStoreDistribution && (data.role === 'admin' || data.isSchoolAdmin)) {
-              router.push('/club');
+
             } else {
               router.push('/dashboard');
             }
@@ -114,10 +120,11 @@ export default function LoginPage() {
       };
       fetchRole();
     }
-  }, [user, isUserLoading, db, router, auth, isDemoLoading]);
+  }, [user, isUserLoading, db, router, auth, isDemoLoading, nativeBusy]);
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (nativeBrowserAuthGate.busy()) return;
     setIsLoading(true);
     try {
       await withTimeout(
@@ -193,6 +200,7 @@ export default function LoginPage() {
   };
 
   const handleLaunchDemo = async (planId: string) => {
+    if (nativeBrowserAuthGate.busy()) return;
     setIsDemoLoading(true);
     try {
       // Clear current session first to prevent state pollution
@@ -247,13 +255,13 @@ export default function LoginPage() {
       </div>
       <div className="absolute inset-0 bg-linear-to-b from-black/60 via-transparent to-black/80" />
       
-      <div className="relative z-30 w-full max-w-5xl flex items-start pt-4 mb-2">
+      {!isStoreDistribution && (<div className="relative z-30 w-full max-w-5xl flex items-start pt-4 mb-2">
         <Link href="/">
           <Button variant="ghost" className="text-white hover:bg-white/10 font-black uppercase text-[10px] tracking-widest h-10 px-4 rounded-full border border-white/10 backdrop-blur-sm">
             <ChevronLeft className="mr-2 h-4 w-4" /> Back to Home
           </Button>
         </Link>
-      </div>
+      </div>)}
 
       <div className="relative z-20 mb-8 flex flex-col items-center gap-2 animate-in fade-in slide-in-from-top-4 duration-1000">
         <BrandLogo variant="dark-background" className="h-16 w-48 drop-shadow-2xl" priority />
@@ -316,7 +324,9 @@ export default function LoginPage() {
           <form onSubmit={handleLogin}>
             <CardContent className="space-y-6 px-6 sm:px-10">
               
-              {BETA_MODE || isStoreDistribution ? (
+              {isStoreDistribution && process.env.NEXT_PUBLIC_NATIVE_AUTH_ENABLED === 'true' ? (
+                <NativeProviderLogin disabled={isLoading || isDemoLoading} onVerified={() => { nativeSessionVerified.current = true; }} />
+              ) : BETA_MODE || isStoreDistribution ? (
                 <div className="w-full h-14 rounded-2xl bg-muted/50 border border-dashed border-muted-foreground/20 flex items-center justify-center gap-3 text-muted-foreground cursor-not-allowed opacity-60" title={isStoreDistribution ? 'Google Sign-In requires the later native authentication package. Please use email and password.' : 'Google Sign-In temporarily unavailable during private beta. Please use email & password.'}>
                   <svg viewBox="0 0 24 24" className="h-5 w-5 opacity-40" aria-hidden="true">
                     <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/>
@@ -369,6 +379,7 @@ export default function LoginPage() {
                   placeholder="name@organization.com" 
                   required 
                   value={email}
+                  disabled={nativeBusy}
                   onChange={(e) => setEmail(e.target.value)}
                   className="h-14 rounded-2xl bg-muted/50 border-2 border-transparent focus:border-primary/20 focus:bg-white transition-all text-base font-bold"
                 />
@@ -376,7 +387,7 @@ export default function LoginPage() {
               <div className="space-y-2">
                 <div className="flex justify-between items-center px-1">
                   <Label htmlFor="password" className="font-black text-[10px] uppercase tracking-widest ml-1 text-muted-foreground">Password</Label>
-                  <button type="button" onClick={() => { setForgotMode(true); setForgotEmail(email); }} className="text-[10px] font-black text-primary uppercase hover:underline tracking-widest">Forgot?</button>
+                  <button type="button" disabled={nativeBusy} onClick={() => { setForgotMode(true); setForgotEmail(email); }} className="text-[10px] font-black text-primary uppercase hover:underline tracking-widest">Forgot?</button>
                 </div>
                 <div className="relative">
                   <Input 
@@ -385,6 +396,7 @@ export default function LoginPage() {
                     autoComplete="current-password"
                     required 
                     value={password}
+                    disabled={nativeBusy}
                     onChange={(e) => setPassword(e.target.value)}
                     className="h-14 rounded-2xl bg-muted/50 border-2 border-transparent focus:border-primary/20 focus:bg-white transition-all text-base font-bold pr-12"
                   />
@@ -401,7 +413,7 @@ export default function LoginPage() {
               </div>
             </CardContent>
             <CardFooter className="flex flex-col space-y-6 pb-10 sm:pb-12 px-6 sm:px-10 pt-4">
-              <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" type="submit" disabled={isLoading || isDemoLoading}>
+              <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" type="submit" disabled={isLoading || isDemoLoading || nativeBusy}>
                 {isLoading ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Sign In"}
               </Button>
               <div className="text-center space-y-2">
@@ -420,7 +432,7 @@ export default function LoginPage() {
               <ShieldAlert className="h-48 w-48" />
             </div>
             <div className="relative z-10 space-y-4">
-              <Badge className="bg-white/20 text-white border-none font-black uppercase tracking-widest text-[10px] px-3 h-6">Interactive Demos</Badge>
+              <Badge className="bg-black/20 text-white border-none font-black uppercase tracking-widest text-[10px] px-3 h-6">Interactive Demos</Badge>
               <h3 className="text-4xl font-black tracking-tighter leading-none uppercase">Explore Demo <br />Workspaces</h3>
               <p className="text-white/80 font-medium text-sm leading-relaxed max-w-xs">
                 Open a ready-to-use sample workspace for the role you want to explore.
@@ -435,7 +447,7 @@ export default function LoginPage() {
                 variant="outline" 
                 className="h-24 rounded-4xl bg-white/5 border-white/10 text-white hover:bg-white/10 hover:border-white/20 transition-all flex items-center justify-between px-8 backdrop-blur-md group"
                 onClick={() => handleLaunchDemo(demo.id)}
-                disabled={isLoading || isDemoLoading}
+                disabled={isLoading || isDemoLoading || nativeBusy}
                 aria-label={`Open ${demo.name}: ${demo.desc}`}
               >
                 <div className="flex items-center gap-6">

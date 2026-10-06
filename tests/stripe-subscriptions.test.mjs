@@ -12,6 +12,33 @@ const {
 } = portalCustomerModule;
 const { resolveSubscriptionEntitlements, selectSubscriptionForSync } = entitlementModule;
 
+test('CAD subscription history still resolves without admitting CAD to new checkout', () => {
+  const legacyBase = 'price_1TkoThKBufuw6n64Sog2etTW';
+  const legacyAddon = 'price_1TkoTgKBufuw6n64twN6yAq3';
+  assert.equal(priceMapModule.ACTIVE_PLAN_PRICE_IDS.has(legacyBase), false);
+  assert.equal(priceMapModule.isExtraTeamPriceId(legacyAddon), true);
+  assert.deepEqual(resolveSubscriptionEntitlements({
+    id: 'sub_legacy_cad',
+    status: 'active',
+    items: { data: [
+      { price: { id: legacyBase }, quantity: 1 },
+      { price: { id: legacyAddon }, quantity: 2 },
+    ] },
+  }), {
+    planType: 'team', teamLimit: 3, extraTeams: 2,
+    subscriptionStatus: 'active', isEntitled: true,
+  });
+});
+
+test('new checkout catalog contains exactly the eight approved USD plan prices', () => {
+  assert.deepEqual([...priceMapModule.ACTIVE_PLAN_PRICE_IDS].sort(), [
+    'price_1UGfFuKBufuw6n64PyvRIpCN', 'price_1UGfGdKBufuw6n64uU4o6BvH',
+    'price_1UGfI9KBufuw6n64VVUH8sJz', 'price_1UGfIMKBufuw6n64o7Zj0Ldy',
+    'price_1UGfJdKBufuw6n649i1aozYQ', 'price_1UGfOQKBufuw6n645TRvzBuJ',
+    'price_1UGfKIKBufuw6n64riJUjIMm', 'price_1UGfKYKBufuw6n64tGfjDO0q',
+  ].sort());
+});
+
 const expectedPlans = new Map([
   ['team', 1],
   ['elite', 8],

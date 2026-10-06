@@ -88,6 +88,13 @@ test('elite demo bootstrap server-seeds tournament events for every protected sq
       assert.equal(event?.eventType, 'tournament');
       assert.ok(event?.tournamentTeamsData?.length >= 2);
       assert.ok(event?.tournamentGames?.length >= 1);
+      assert.equal(event.competition?.version,2);
+      assert.equal(event.competition?.status,'published');
+      assert.equal(event.tournamentType,'pool_play_knockout');
+      const bookings=[...records.values()].filter(value=>value.sourceId===`tournament:${teamId}:${event.id}`);
+      assert.equal(bookings.length,event.competition.schedule.length);
+      assert.ok(bookings.every(booking=>booking.venueKey && booking.travelMinutes===30));
+      assert.ok(bookings.every(booking=>booking.hostTeamId===teamId&&booking.startMs<booking.endMs));
       assert.equal(records.get(`teams/${teamId}/feedPosts/demo_feed_1_${teamId}`)?.isDemo, true);
       assert.equal(records.get(`teams/${teamId}/incidents/demo_incident_${teamId}`)?.isDemo, true);
       assert.equal(records.get(`teams/${teamId}/files/demo_file_${teamId}`)?.isDemo, true);
@@ -222,4 +229,9 @@ test('demo blueprint ignores no client fixture authority and derives teams and s
   } finally {
     app.dispose();
   }
+});
+
+test('starter demo keeps its free Single Elimination Pool while adopting the versioned workspace',async()=>{
+ const {db,records}=communicationDb({});const app=await loadCommunicationRoute(routePath,db,{uid:'starter-tournament-demo',signInProvider:'anonymous'});
+ try{const response=await app.route.POST(request({planId:'starter_squad'}));assert.equal(response.status,200);const body=await response.json();const teamId=body.primaryTeamId;assert.equal(records.get(`teams/${teamId}`).isPro,false);const event=records.get(`teams/${teamId}/events/tourn_${teamId}`);assert.equal(event.competition.version,2);assert.equal(event.tournamentType,'single_elimination');assert.equal(event.competition.status,'published');}finally{app.dispose();}
 });

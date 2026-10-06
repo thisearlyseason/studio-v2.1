@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
       if (!league) return NextResponse.json({ error: 'League portal not found.' }, { status: 404 });
       const billingOwnerId = leagueBillingOwnerUserId(league.data() || {});
       const creator = billingOwnerId ? await adminDb.collection('users').doc(billingOwnerId).get() : null;
-      if (!creator?.exists || !permitsLegacyOrPaidPortals(creator.data()?.plan_type)) {
+      if (!creator?.exists || !permitsLegacyOrPaidPortals(creator.data()?.planId, creator.data()?.plan_type, creator.data()?.subscriptionPlanId)) {
         return NextResponse.json({ error: 'This subscription does not include public portals.' }, { status: 403 });
       }
       const publicLeagueData = publicLeague(league.id, league.data());
@@ -73,7 +73,9 @@ export async function GET(req: NextRequest) {
       if (!permitsLegacyOrPaidPortals(team.data()?.planId, team.data()?.plan_type, team.data()?.subscriptionPlanId)) {
         return NextResponse.json({ error: 'This subscription does not include public portals.' }, { status: 403 });
       }
-      const publicEvent = publicTournament(event.id, event.data());
+      // Registration must open before schedule publication. Never expose draft games here.
+      const registrationEvent = event.data()!;
+      const publicEvent = publicTournament(event.id, registrationEvent.competition?.version === 2 ? {...registrationEvent,competition:undefined,tournamentGames:[]} : registrationEvent);
       if (!publicEvent.isActive) return NextResponse.json({ error: 'Tournament portal is inactive.' }, { status: 404 });
       if (!config.exists || config.data()?.is_active !== true) return NextResponse.json({ error: 'Registration portal is inactive.' }, { status: 404 });
       return NextResponse.json({ data: { event: publicEvent, config: publicRegistrationConfig(config.id, config.data()) } });

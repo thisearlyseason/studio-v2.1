@@ -28,7 +28,7 @@ import {
   signupSteps,
 } from '@/lib/store-signup-policy';
 
-type RegTarget = 'self' | 'child' | 'coach' | 'league_creator' | 'school_ad' | null;
+type RegTarget = 'self' | 'child' | 'coach' | 'league_creator' | 'school_ad' | 'nonprofit_manager' | null;
 type PlanChoice = 'starter' | 'pro_team' | 'elite_teams' | 'elite_league' | 'school' | null;
 type SignupStep = 'target' | 'plan' | 'join_team' | 'account';
 type BillingCycle = 'monthly' | 'annual';
@@ -63,6 +63,13 @@ const SIGNUP_OPTIONS: { id: RegTarget; icon: any; label: string; desc: string; b
     badge: 'School Hub',
   },
   {
+    id: 'nonprofit_manager',
+    icon: GraduationCap,
+    label: 'Nonprofit / Program Manager',
+    desc: 'I manage a nonprofit sports program',
+    badge: 'Nonprofit Hub',
+  },
+  {
     id: 'league_creator',
     icon: Medal,
     label: 'League / Tournament Organizer',
@@ -91,7 +98,7 @@ const PLAN_DEFS: Record<string, {
   },
   pro_team: {
     id: 'pro_team', label: 'Pro Team',
-    monthlyPrice: '$19.99/mo', annualPrice: '$199/yr',
+    monthlyPrice: '$19.99 USD /mo', annualPrice: '$199 USD /yr',
     monthlyPriceId: PRICING_CONFIG.find(p => p.id === 'team')?.monthlyPriceId || '',
     annualPriceId:  PRICING_CONFIG.find(p => p.id === 'team')?.annualPriceId  || '',
     desc: 'Championship tools for one competitive team',
@@ -100,7 +107,7 @@ const PLAN_DEFS: Record<string, {
   },
   elite_teams: {
     id: 'elite_teams', label: 'Elite Teams',
-    monthlyPrice: '$119/mo', annualPrice: '$1,119/yr',
+    monthlyPrice: '$119 USD /mo', annualPrice: '$1,119 USD /yr',
     monthlyPriceId: PRICING_CONFIG.find(p => p.id === 'elite')?.monthlyPriceId || '',
     annualPriceId:  PRICING_CONFIG.find(p => p.id === 'elite')?.annualPriceId  || '',
     desc: 'Multi-squad management for growing clubs',
@@ -109,7 +116,7 @@ const PLAN_DEFS: Record<string, {
   },
   elite_league: {
     id: 'elite_league', label: 'Elite League',
-    monthlyPrice: '$279/mo', annualPrice: '$2,790/yr',
+    monthlyPrice: '$279 USD /mo', annualPrice: '$2,790 USD /yr',
     monthlyPriceId: PRICING_CONFIG.find(p => p.id === 'league')?.monthlyPriceId || '',
     annualPriceId:  PRICING_CONFIG.find(p => p.id === 'league')?.annualPriceId  || '',
     desc: 'Institutional scale for series and leagues',
@@ -118,7 +125,7 @@ const PLAN_DEFS: Record<string, {
   },
   school: {
     id: 'school', label: 'Schools Plan',
-    monthlyPrice: '$175/mo', annualPrice: '$1,750/yr',
+    monthlyPrice: '$175 USD /mo', annualPrice: '$1,750 USD /yr',
     monthlyPriceId: PRICING_CONFIG.find(p => p.id === 'school')?.monthlyPriceId || '',
     annualPriceId:  PRICING_CONFIG.find(p => p.id === 'school')?.annualPriceId  || '',
     desc: '15 squads included · add more anytime at the lowest per-squad rate on the platform',
@@ -131,6 +138,7 @@ const PLAN_DEFS: Record<string, {
 const ROLE_PLANS: Record<string, PlanChoice[]> = {
   coach:          ['starter', 'pro_team'],
   school_ad:      ['school'],
+  nonprofit_manager: ['school'],
   league_creator: ['starter', 'elite_teams', 'elite_league'],
 };
 
@@ -215,6 +223,7 @@ export default function SignupPage() {
         child: 'parent',
         coach: 'coach',
         school_ad: 'admin',
+        nonprofit_manager: 'admin',
         league_creator: 'league_creator',
       };
       const role = roleMap[regTarget as string] || 'adult_player';
@@ -234,6 +243,8 @@ export default function SignupPage() {
         fullName: cleanName,
         email: cleanEmail,
         role,
+        ...(regTarget === 'school_ad' || regTarget === 'nonprofit_manager'
+          ? { organizationType: regTarget === 'school_ad' ? 'school' : 'nonprofit' } : {}),
         notificationsEnabled: false,
         upcomingEventNotificationsEnabled: false,
         createdAt: new Date().toISOString(),
@@ -254,6 +265,11 @@ export default function SignupPage() {
         });
       }
       await profileBatch.commit();
+      // Notification failure must never roll back a successfully created account.
+      try {
+        const token = await user.getIdToken();
+        await fetch('/api/admin/signup-alerts', {method:'POST',headers:{Authorization:`Bearer ${token}`}});
+      } catch { /* The first verified session retries delivery. */ }
       toast({ title: "Verify Your Email", description: "We sent a verification link before account access is enabled." });
       router.push('/verify-email');
     } catch (error: any) {
@@ -313,10 +329,10 @@ export default function SignupPage() {
             <span className={cn(
               'text-[9px] font-black uppercase tracking-widest px-2.5 py-1 rounded-full transition-all',
               step === s
-                ? 'bg-primary text-black'
+                ? 'bg-primary text-white'
                 : activeSteps.indexOf(step) > i
                   ? 'bg-white/20 text-white/80'
-                  : 'bg-white/5 text-white/30'
+                  : 'bg-white/5 text-white/70'
             )} aria-current={step === s ? 'step' : undefined}>
               {stepLabels[s]}
             </span>
@@ -331,7 +347,7 @@ export default function SignupPage() {
         <h1 className="sr-only">Create your The Squad account</h1>
         <div className="rounded-[2.5rem] bg-white/95 backdrop-blur-md shadow-2xl overflow-hidden">
           {/* Brand accent bar */}
-          <div className="h-1.5 hero-gradient w-full" />
+
 
           {/* ── STEP 1: WHO'S JOINING ── */}
           {step === 'target' && (
@@ -344,7 +360,7 @@ export default function SignupPage() {
               </div>
 
               <div className="space-y-2.5" role="radiogroup" aria-labelledby="signup-role-heading">
-                {SIGNUP_OPTIONS.map((opt) => {
+                {SIGNUP_OPTIONS.map((opt, optionIndex) => {
                   const Icon = opt.icon;
                   const isSelected = regTarget === opt.id;
                   return (
@@ -353,6 +369,17 @@ export default function SignupPage() {
                       key={opt.id as string}
                       onClick={() => setRegTarget(opt.id)}
                       role="radio"
+                      tabIndex={isSelected || (!regTarget && optionIndex === 0) ? 0 : -1}
+                      onKeyDown={(event) => {
+                        const keys = ['ArrowDown', 'ArrowRight', 'ArrowUp', 'ArrowLeft', 'Home', 'End'];
+                        if (!keys.includes(event.key)) return;
+                        event.preventDefault();
+                        const direction = event.key === 'ArrowUp' || event.key === 'ArrowLeft' ? -1 : 1;
+                        const next = event.key === 'Home' ? 0 : event.key === 'End' ? SIGNUP_OPTIONS.length - 1
+                          : (optionIndex + direction + SIGNUP_OPTIONS.length) % SIGNUP_OPTIONS.length;
+                        setRegTarget(SIGNUP_OPTIONS[next].id);
+                        event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="radio"]')[next]?.focus();
+                      }}
                       aria-checked={isSelected}
                       aria-label={`${opt.label}: ${opt.desc}`}
                       className={cn(
@@ -397,7 +424,7 @@ export default function SignupPage() {
 
               <p className="text-center text-[10px] font-semibold text-muted-foreground">
                 Already have an account?{' '}
-                <Link href="/login" className="text-primary font-black hover:underline">Log In</Link>
+                <Link href="/login" className="text-red-800 font-black hover:underline">Log In</Link>
               </p>
             </div>
           )}
@@ -482,7 +509,7 @@ export default function SignupPage() {
                   </span>
                 )}
                 {/* Trial badge for paid roles */}
-                {(regTarget === 'coach' || regTarget === 'school_ad' || regTarget === 'league_creator') && (
+                {(regTarget === 'coach' || (regTarget === 'school_ad' || regTarget === 'nonprofit_manager') || regTarget === 'league_creator') && (
                   <div className="flex items-center justify-center gap-1.5 bg-green-50 border border-green-200 rounded-full py-1.5 px-3 w-fit mx-auto">
                     <Clock className="h-3 w-3 text-green-600" />
                     <span className="text-[10px] font-black uppercase tracking-widest text-green-700">5-Day Free Trial on All Paid Plans</span>
@@ -610,7 +637,7 @@ export default function SignupPage() {
               </div>
 
               {/* School AD: always goes to payment — show clear CTA */}
-              {regTarget === 'school_ad' && planChoice && (
+              {(regTarget === 'school_ad' || regTarget === 'nonprofit_manager') && planChoice && (
                 <div className="flex items-start gap-2.5 bg-blue-50 border border-blue-200 rounded-2xl p-4">
                   <ShieldCheck className="h-4 w-4 text-blue-600 shrink-0 mt-0.5" />
                   <p className="text-[10px] font-medium leading-relaxed text-blue-800">
@@ -749,7 +776,7 @@ export default function SignupPage() {
                 <ShieldCheck className="h-4 w-4 text-primary shrink-0 mt-0.5" />
                 <p className="text-[10px] font-medium leading-relaxed text-muted-foreground">
                   {isStoreDistribution
-                    ? regTarget === 'school_ad' || regTarget === 'league_creator'
+                    ? (regTarget === 'school_ad' || regTarget === 'nonprofit_manager') || regTarget === 'league_creator'
                       ? 'This creates a free account only. Organization access comes from an existing team or administrator invitation; choosing this role does not grant paid organization privileges.'
                       : 'This creates a free account with no trial, card, or payment details. You can join an existing team after verifying your email.'
                     : planChoice && planChoice !== 'starter'

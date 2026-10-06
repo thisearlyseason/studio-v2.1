@@ -27,7 +27,7 @@ export function IncidentDetailDialog({ incident, isOpen, onOpenChange }: { incid
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="rounded-[3.5rem] p-0 border-none shadow-2xl overflow-hidden sm:max-w-3xl bg-white text-foreground">
         <DialogTitle className="sr-only">Incident Audit: {incident.title}</DialogTitle>
-        <div className="h-2 bg-primary w-full" />
+
         <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar text-foreground">
           <DialogHeader>
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">

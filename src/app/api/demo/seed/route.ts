@@ -1,3 +1,8 @@
+import { venueKey, surfaceLabel } from '@/lib/competition/venues';
+import { createDemoCompetition } from '@/lib/competition/demo';
+import { tournamentGames, activeReservations } from '@/lib/competition/document';
+import { reachability } from '@/lib/competition/reachability';
+import { minutes } from '@/lib/competition/schedule';
 import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
 import { verifyFirebaseToken } from '@/lib/api-auth';
@@ -31,42 +36,29 @@ function ownsDemoTeam(data: Record<string, unknown>, uid: string, planId: string
   return data.isDemo === true && data.demoSessionOwnerId === uid && data.demoPlanId === planId;
 }
 
-function demoTournamentBlueprint(teamId: string, teamName: string, timestamp: string) {
-  const start = new Date();
-  start.setUTCHours(12, 0, 0, 0);
-  start.setUTCDate(start.getUTCDate() + 1);
-  const end = new Date(start.getTime() + (2 * 86400000));
-  const teams = [
-    { id: teamId, name: teamName, source: 'demo', complianceStatus: 'verified' },
-    { id: `demo_tournament_thunder_${teamId}`, name: 'Thunder', source: 'demo', complianceStatus: 'verified' },
-    { id: `demo_tournament_storm_${teamId}`, name: 'Storm', source: 'demo', complianceStatus: 'pending' },
-    { id: `demo_tournament_shadows_${teamId}`, name: 'Shadows', source: 'demo', complianceStatus: 'verified' },
-  ];
-  const games = [
-    { id: `demo_tournament_game_1_${teamId}`, team1Id: teams[0].id, team1: teams[0].name, team2Id: teams[1].id, team2: teams[1].name, score1: 5, score2: 2, isCompleted: true, status: 'completed', date: start.toISOString(), time: '10:00', location: 'Main Arena', matchTeamIds: [teams[0].id, teams[1].id] },
-    { id: `demo_tournament_game_2_${teamId}`, team1Id: teams[2].id, team1: teams[2].name, team2Id: teams[3].id, team2: teams[3].name, score1: 4, score2: 6, isCompleted: true, status: 'completed', date: start.toISOString(), time: '12:00', location: 'Court B', matchTeamIds: [teams[2].id, teams[3].id] },
-    { id: `demo_tournament_game_3_${teamId}`, team1Id: teams[0].id, team1: teams[0].name, team2Id: teams[3].id, team2: teams[3].name, score1: 0, score2: 0, isCompleted: false, status: 'scheduled', date: end.toISOString(), time: '14:00', location: 'Main Arena', matchTeamIds: [teams[0].id, teams[3].id] },
-  ];
+function demoTournamentBlueprint(teamId: string, teamName: string, timestamp: string, advanced: boolean) {
+  const competition = createDemoCompetition(advanced ? 'pool_play_knockout' : 'single_elimination', {
+    namespace: teamId, hostTeamId: teamId, teamName, count: 4,
+  });
+  competition.title = `${teamName} Championship Tournament`;
+  const teams = competition.topology.teams;
   return {
-    id: `tourn_${teamId}`,
-    teamId,
-    title: `${teamName} Championship Tournament`,
-    sport: 'Multi-Sport',
-    eventType: 'tournament',
-    isTournament: true,
-    isDemo: true,
-    date: start.toISOString(),
-    endDate: end.toISOString(),
-    location: 'Apex Performance Center',
-    description: 'A three-day championship event for the live demo workspace.',
-    tournamentTeams: teams.map(team => team.name),
-    tournamentTeamsData: teams,
-    tournamentGames: games,
-    status: 'active',
-    lifecycleVersion: 0,
-    credentialVersion: 0,
-    createdAt: timestamp,
-    updatedAt: timestamp,
+    id: `tourn_${teamId}`, teamId, title: competition.title,
+    sport: 'Multi-Sport', eventType: 'tournament', isTournament: true, isDemo: true,
+    competition: JSON.parse(JSON.stringify(competition)) as typeof competition,
+    tournamentType: competition.topology.rules.format,
+    date: competition.options.windows[0].date,
+    endDate: competition.options.windows.at(-1)!.date,
+    location: competition.options.resources.map(surfaceLabel).join(', '),
+    description: 'Fictional sample tournament using the complete tournament workspace.',
+    tournamentTeams: teams.map(team => team.name), tournamentTeamsData: teams,
+    tournamentGames: JSON.parse(JSON.stringify(tournamentGames(competition))),
+    gameLength: competition.options.duration, breakLength: competition.options.rest,
+    maxDailyGamesPerTeam: competition.options.maxGamesPerDay,
+    selectedFields: competition.options.resources.map(resource => resource.id),
+    dailyWindows: competition.options.windows,
+    scheduleStatus: 'ready', deploymentStatus: 'deployed', status: 'active',
+    lifecycleVersion: 0, credentialVersion: 0, createdAt: timestamp, updatedAt: timestamp,
   };
 }
 
@@ -423,8 +415,28 @@ export async function POST(req: NextRequest) {
         });
       }
       if (shell.type !== 'school') {
-        const tournament = demoTournamentBlueprint(shell.id, shell.name, messageTimestamp);
+        const tournament = demoTournamentBlueprint(shell.id, shell.name, messageTimestamp, plan.isPro);
         batch.set(teamRef.collection('events').doc(tournament.id), tournament, { merge: true });
+        const sourceId = `tournament:${shell.id}:${tournament.id}`;
+        const paths = reachability(tournament.competition.topology);
+        for (const game of activeReservations(tournament.competition)) {
+          const id = `competition_${createHash('sha256').update(`${sourceId}:${game.id}`).digest('hex').slice(0, 40)}`;
+          const options = tournament.competition.options;
+          batch.set(adminDb.collection('scheduleBookings').doc(id), {
+            id, sourceType: 'tournament', sourceId, sourceGameId: game.id,
+            hostTeamId: shell.id, eventId: tournament.id, isDemo: true,
+            teamIds: [...paths.get(game.matchId)!.keys()], resourceId: game.resourceId,
+            location: options.resources.find(resource => resource.id === game.resourceId)!.name,
+            date: game.date, startMinute: minutes(game.time),
+            endMinute: minutes(game.time) + options.duration,
+            startMs: game.start, endMs: game.end,
+            timezone: tournament.competition.topology.rules.timezone,
+            restMinutes: options.rest, turnaroundMinutes: options.turnaround,
+            venueKey: venueKey(options.resources.find(resource => resource.id === game.resourceId)), travelMinutes: options.travel || 0,
+            updatedAt: messageTimestamp,
+          });
+        }
+
       }
     }
 

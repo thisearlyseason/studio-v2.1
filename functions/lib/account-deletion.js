@@ -57,6 +57,9 @@ function filterUserMapDocuments(documents, mapField, userId) {
  * business's financial-record retention policy.
  */
 exports.USER_DOCUMENT_TARGETS = [
+    { scope: "collection", collection: "moderationReports", field: "reporterId" },
+    { scope: "collection", collection: "moderationReports", field: "authorId" },
+    { scope: "collectionGroup", collection: "blocks", field: "authorId" },
     { scope: "collection", collection: "calendarFeeds", field: "userId" },
     { scope: "collection", collection: "calendarSync", field: "userId" },
     { scope: "collection", collection: "alerts", field: "createdBy" },

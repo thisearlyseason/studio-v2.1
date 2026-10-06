@@ -23,10 +23,26 @@ test('SSRF guard blocks loopback, local IPv6, and private host suffixes', () => 
   assert.equal(isObviouslyPrivateHostname('www.espn.com'), false);
 });
 
+test('SSRF guard checks private IPv4 addresses in every IPv6 mapped notation', () => {
+  for (const address of [
+    '::ffff:127.0.0.1', '::ffff:7f00:1', '0:0:0:0:0:ffff:7f00:1',
+    '::FFFF:A9FE:A9FE', '::ffff:a00:1', '::ffff:c0a8:101',
+    '::ffff:ac10:1', '::ffff:6440:1',
+  ]) {
+    assert.equal(isPrivateIp(address), true, address);
+  }
+  for (const address of ['::ffff:8.8.8.8', '::ffff:808:808', '2001:4860:4860::8888']) {
+    assert.equal(isPrivateIp(address), false, address);
+  }
+});
+
 test('notification links stay on the app origin or use relative paths', () => {
   assert.equal(validNotificationUrl('/dashboard/team'), true);
   assert.equal(validNotificationUrl('https://www.thesquad.pro/admin'), true);
   assert.equal(validNotificationUrl('//evil.example/path'), false);
+  assert.equal(validNotificationUrl('/\\evil.example/path'), false);
+  assert.equal(validNotificationUrl('/\n/evil.example/path'), false);
+  assert.equal(validNotificationUrl('https://www.thesquad.pro:4444/phish'), false);
   assert.equal(validNotificationUrl('https://evil.thesquad.pro/phish'), false);
   assert.equal(validNotificationUrl('javascript:alert(1)'), false);
 });

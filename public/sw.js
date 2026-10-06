@@ -29,6 +29,8 @@ self.addEventListener('activate', (event) => {
 self.addEventListener('fetch', (event) => {
   if (event.request.method !== 'GET') return;
   const requestedUrl = new URL(event.request.url);
+  // Development chunk URLs are reused between builds; cached copies hide local changes.
+  if (['localhost', '127.0.0.1', '[::1]'].includes(requestedUrl.hostname) && requestedUrl.pathname.startsWith('/_next/')) return;
   if (requestedUrl.origin === self.location.origin && requestedUrl.pathname.startsWith('/_next/static/')) {
     event.respondWith(
       caches.open(CACHE_NAME).then(async (cache) => {
@@ -60,13 +62,27 @@ self.addEventListener('fetch', (event) => {
   }
 });
 
+function notificationTarget(value) {
+  if (typeof value !== 'string' || !value) return '/dashboard';
+  try {
+    const url = new URL(value, self.location.origin);
+    // A normalized path beginning with // would become an external URL when
+    // passed to clients.navigate/openWindow without its already-checked origin.
+    return url.origin === self.location.origin && !url.pathname.startsWith('//')
+      ? `${url.pathname}${url.search}${url.hash}`
+      : '/dashboard';
+  } catch {
+    return '/dashboard';
+  }
+}
+
 function showSquadNotification({ title, body, imageUrl, url, tag }) {
   return self.registration.showNotification(title || 'The Squad', {
     body: body || '',
     icon: '/app-icon-192-v5.png',
     badge: '/notification-badge.png',
     image: imageUrl || undefined,
-    data: { url: typeof url === 'string' && url.startsWith('/') ? url : '/dashboard' },
+    data: { url: notificationTarget(url) },
     tag: tag || 'squad-notification',
     renotify: true,
     requireInteraction: false,
@@ -139,7 +155,7 @@ self.addEventListener('push', (event) => {
 });
 
 self.addEventListener('notificationclick', (event) => {
-  const targetUrl = event.notification.data?.url || '/dashboard';
+  const targetUrl = notificationTarget(event.notification.data?.url);
 
   event.waitUntil(
     Promise.all([withNotificationPresentationLock(async () => {

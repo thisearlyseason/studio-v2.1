@@ -1,9 +1,11 @@
+import { assertManagedSubscriptionChange, assertManagedReceipt, ManagedCheckoutUnavailable, ManagedCoverageUnavailable } from '@/lib/stripe-managed-checkout';
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { getStripe } from '@/lib/stripe-client';
 import { assertNonAnonymous, verifyFirebaseToken, assertOwner } from '@/lib/api-auth';
 import {
   EXTRA_TEAM_PRICE_IDS,
+  isExtraTeamPriceId,
   PLAN_PRICE_MAP,
   PRICE_BILLING_CYCLE,
 } from '@/lib/stripe-price-map';
@@ -88,6 +90,12 @@ export async function POST(req: NextRequest) {
 
     const stripe = getStripe();
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
+    if (subscription.currency !== 'usd') {
+      return NextResponse.json(
+        { error: 'This subscription uses a previous currency. Contact support before changing its plan or seats.' },
+        { status: 409 }
+      );
+    }
     if (hasPendingSubscriptionUpdate(subscription.pending_update)) {
       return NextResponse.json(
         {
@@ -103,6 +111,8 @@ export async function POST(req: NextRequest) {
         { status: 409 }
       );
     }
+    await assertManagedSubscriptionChange(stripe, subscription);
+
     const basePlanItem = subscription.items.data.find(item => PLAN_PRICE_MAP[item.price.id]);
     const billingCycle = basePlanItem
       ? PRICE_BILLING_CYCLE[basePlanItem.price.id]
@@ -117,8 +127,7 @@ export async function POST(req: NextRequest) {
     // Check if add-on item already exists
     const addonItem = subscription.items.data.find(
       item =>
-        item.price.id === EXTRA_TEAM_PRICE_IDS.monthly ||
-        item.price.id === EXTRA_TEAM_PRICE_IDS.annual
+        isExtraTeamPriceId(item.price.id)
     );
 
     const items: any[] = [];
@@ -169,6 +178,8 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    if (isEntitledSubscriptionStatus(updatedSubscription.status)) await assertManagedReceipt(stripe, updatedSubscription);
+
     const updatedBaseItem = updatedSubscription.items.data.find(
       item => PLAN_PRICE_MAP[item.price.id]
     );
@@ -184,8 +195,7 @@ export async function POST(req: NextRequest) {
     const hasPaidEntitlement = isEntitledSubscriptionStatus(updatedSubscription.status);
     const confirmedExtraTeams = updatedSubscription.items.data.reduce((total, item) => {
       if (
-        item.price.id === EXTRA_TEAM_PRICE_IDS.monthly ||
-        item.price.id === EXTRA_TEAM_PRICE_IDS.annual
+        isExtraTeamPriceId(item.price.id)
       ) {
         return total + (item.quantity || 0);
       }
@@ -215,6 +225,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, subscription: updatedSubscription });
   } catch (err: any) {
+    if (err instanceof ManagedCheckoutUnavailable || err instanceof ManagedCoverageUnavailable) return NextResponse.json({ error: err.message }, { status: 409 });
     if (err instanceof SubscriptionMutationInProgressError) {
       return NextResponse.json(
         { error: 'Another subscription change is already being processed.' },

@@ -1,4 +1,5 @@
 "use client";
+import { schoolInstitutionLandingAllowed } from '@/lib/dashboard-institution-context';
 
 import React, { useMemo, useEffect, useState } from 'react';
 import { useTeam } from '@/components/providers/team-provider';
@@ -28,6 +29,7 @@ import {
   Dumbbell,
   User
 } from 'lucide-react';
+import { isStoreDistribution } from '@/lib/app-distribution';
 import { useRouter } from 'next/navigation';
 import { format, isSameDay, isSameMonth, isValid, parseISO } from 'date-fns';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
@@ -60,8 +62,8 @@ export default function UniversalAccountDashboard() {
     user, activeTeam, activeTeamEvents, 
     householdBalance, isYouth, isParent, isPlayer,
     householdEvents, householdGames, myChildren, teams,
-    isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isStaff,
-    alerts, seenAlertIds
+    isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isStaff, isSuperAdmin,
+    alerts, seenAlertIds, isTeamsLoading
   } = useTeam();
   const router = useRouter();
   const db = useFirestore();
@@ -72,17 +74,21 @@ export default function UniversalAccountDashboard() {
 
   useEffect(() => { setMounted(true); }, []);
 
-  // Safety net: only redirect when the AD is in hub/institution mode (no squad selected)
-  // When a specific squad IS selected, the dashboard is valid for that squad.
+  // League creators use competition even before creating a squad.
+  // Institution admins redirect only in hub mode; a selected squad keeps its dashboard.
   useEffect(() => {
-    const isSchoolInstitutionMode = isSchoolMode && isPrimaryClubAuthority && (!activeTeam || activeTeam?.type === 'school');
+    if (isStoreDistribution) return;
+    if (user?.role === 'league_creator') {
+      router.replace('/competition');
+      return;
+    }
+    if (isTeamsLoading || teams.length === 0) return;
+    const isSchoolInstitutionMode = isSchoolMode && schoolInstitutionLandingAllowed(activeTeam, isPrimaryClubAuthority, user?.id, user, isSuperAdmin ? 'superadmin' : undefined);
     const isEliteHubMode = isEliteClubMode && !activeTeam;
     if (isSchoolInstitutionMode || isEliteHubMode) {
       router.replace('/club');
-    } else if (user?.role === 'league_creator') {
-      router.replace('/competition');
     }
-  }, [isSchoolMode, isPrimaryClubAuthority, isEliteClubMode, activeTeam, user?.role, router]);
+  }, [isSchoolMode, isPrimaryClubAuthority, isSuperAdmin, isEliteClubMode, activeTeam, user, router, isTeamsLoading, teams.length]);
 
   const gamesQuery = useMemoFirebase(() => {
     if (!db || !activeTeam?.id) return null;

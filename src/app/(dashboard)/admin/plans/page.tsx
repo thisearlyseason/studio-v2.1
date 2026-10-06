@@ -117,7 +117,7 @@ export default function AdminPlansPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {plans.map((plan) => (
               <Card key={plan.id} className={cn("rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 transition-all", editingPlan?.id === plan.id ? "ring-4 ring-primary scale-[1.02]" : "hover:scale-[1.01]")}>
-                <div className={cn("h-2 w-full", plan.billingType === 'free' ? "bg-muted" : "bg-primary")} />
+
                 <CardHeader className="p-8 pb-4">
                   <div className="flex justify-between items-start">
                     <div>

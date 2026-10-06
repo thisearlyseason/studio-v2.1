@@ -1,6 +1,10 @@
 "use client";
+import { BillingCountryDeclaration } from '@/components/billing-country-declaration';
+import { SchoolPlanDeclaration } from '@/components/school-plan-declaration';
+import { schoolOrganizationDeclaration, schoolPlanEligibilityError, type SchoolOrganizationDeclaration } from '@/lib/school-plan-eligibility';
+import { NativeSubscriptions } from '@/components/native-billing/NativeSubscriptions';
 
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -30,19 +34,23 @@ import { isStoreDistribution } from '@/lib/app-distribution';
 export function StripePaywall() {
   const { isPaywallOpen, setIsPaywallOpen, user, activeTeam, isPro } = useTeam();
   const auth = useAuth();
+  const [billingCountry, setBillingCountry] = useState('');
+  const [billingCountryRequired, setBillingCountryRequired] = useState(false);
+  useEffect(() => { setBillingCountry(''); setBillingCountryRequired(false); }, [user?.id]);
+  const [organizationDeclaration, setOrganizationDeclaration] = useState<SchoolOrganizationDeclaration | ''>('');
+  const declaredOrganization = organizationDeclaration || schoolOrganizationDeclaration((user as any)?.organizationType) || '';
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
   const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
 
   if (isStoreDistribution) {
     return (
       <Dialog open={isPaywallOpen} onOpenChange={setIsPaywallOpen}>
-        <DialogContent className="sm:max-w-md rounded-4xl bg-white">
+        <DialogContent className="sm:max-w-2xl max-h-[90dvh] overflow-y-auto rounded-4xl bg-white">
           <DialogHeader>
-            <DialogTitle className="text-2xl font-black uppercase tracking-tight">Feature unavailable</DialogTitle>
-            <DialogDescription>
-              This account does not currently include this feature. Existing team access remains available, and your organization administrator can help with access questions.
-            </DialogDescription>
+            <DialogTitle>Upgrade your team</DialogTitle>
+            <DialogDescription>Choose a subscription or restore an existing purchase.</DialogDescription>
           </DialogHeader>
+          <NativeSubscriptions />
           <Button onClick={() => setIsPaywallOpen(false)} className="h-12 rounded-2xl font-black uppercase">
             Return to team
           </Button>
@@ -57,6 +65,8 @@ export function StripePaywall() {
       return;
     }
 
+    const eligibilityError = schoolPlanEligibilityError(plan.id, user || {}, declaredOrganization);
+    if (eligibilityError) { toast({ title: 'Organization declaration required', description: eligibilityError, variant: 'destructive' }); return; }
     const priceId = billingCycle === 'annual' ? plan.annualPriceId : plan.monthlyPriceId;
     setLoadingPlanId(plan.id);
 
@@ -81,9 +91,10 @@ export function StripePaywall() {
       const res = await fetch('/api/stripe/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ priceId, userId: user.id, teamId: activeTeam?.id, billingCycle, extraTeamQty: 0 }),
+        body: JSON.stringify({ priceId, userId: user.id, teamId: activeTeam?.id, billingCycle, extraTeamQty: 0, organizationDeclaration: declaredOrganization, ...(billingCountry ? { billingCountry } : {}) }),
       });
       const data = await res.json();
+      if (data.code === 'BILLING_COUNTRY_REQUIRED') setBillingCountryRequired(true);
       if (data.url) {
         window.location.href = data.url;
         return;
@@ -164,6 +175,12 @@ export function StripePaywall() {
               </div>
             </div>
 
+            <p className="text-sm text-muted-foreground">
+              Annual plans for Elite Teams, Elite League and Schools are available on this website. Choose Annual above to view yearly pricing.
+            </p>
+
+            {billingCountryRequired && <BillingCountryDeclaration value={billingCountry} onChange={setBillingCountry} />}
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
               {PRICING_CONFIG.map((plan) => (
                 <div 
@@ -192,7 +209,7 @@ export function StripePaywall() {
                       <span className="text-3xl font-black tracking-tighter">
                         {billingCycle === 'annual' ? plan.annualPrice : plan.monthlyPrice}
                       </span>
-                      <span className="text-[10px] font-black uppercase opacity-40">/{billingCycle === 'annual' ? 'yr' : 'mo'}</span>
+                      <span className="text-[10px] font-black uppercase opacity-40">USD /{billingCycle === 'annual' ? 'yr' : 'mo'}</span>
                     </div>
 
                     <ul className="space-y-2">
@@ -205,6 +222,7 @@ export function StripePaywall() {
                     </ul>
                   </div>
 
+                  {plan.id === 'school' && user?.plan_type !== 'school' && <SchoolPlanDeclaration value={declaredOrganization} onChange={setOrganizationDeclaration} />}
                   <Button 
                     onClick={() => handleSelectPlan(plan)}
                     disabled={loadingPlanId !== null}

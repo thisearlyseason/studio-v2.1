@@ -199,6 +199,7 @@ export async function POST(req: NextRequest) {
           payment_item_category: category,
           ...(isHubAccount && squadName ? { squad_name: squadName } : {}),
         },
+        payment_intent_data: { metadata: productMetadata },
         invoice_creation: { enabled: true },
       },
       { stripeAccount: connectAccountId, idempotencyKey: `payment-item:${operationId}:link` }

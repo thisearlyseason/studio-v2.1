@@ -1,3 +1,7 @@
+import { prepareCheckoutBillingCountry, BillingCountryDeclarationError } from '@/lib/checkout-billing-country';
+import { schoolPlanEligibilityError } from '@/lib/school-plan-eligibility';
+import { PLAN_PRICE_MAP as SCHOOL_PLAN_PRICE_MAP } from '@/lib/stripe-price-map';
+import { platformSaasCheckoutParameters, managedSaasMetadata, managedSaasEnabled, ManagedCheckoutUnavailable, ManagedCoverageUnavailable } from '@/lib/stripe-managed-checkout';
 /**
  * /api/checkout — Legacy checkout route.
  * Delegates to the canonical /api/stripe/create-checkout logic.
@@ -10,7 +14,7 @@ import { getStripe } from '@/lib/stripe-client';
 import { assertNonAnonymous, verifyFirebaseToken, assertOwner } from '@/lib/api-auth';
 import {
   EXTRA_TEAM_PRICE_IDS,
-  PLAN_PRICE_MAP,
+  ACTIVE_PLAN_PRICE_IDS,
   priceMatchesBillingCycle,
 } from '@/lib/stripe-price-map';
 import {
@@ -23,11 +27,7 @@ import {
   calculateSignupTrialDays,
   hasBlockingSubscription,
 } from '@/lib/checkout-policy';
-import {
-  claimCheckoutLock,
-  finalizeCheckoutLock,
-  releaseCheckoutLock,
-} from '@/lib/server-checkout-lock';
+import { CheckoutLifecycleError, createCheckoutSessionWithLock } from '@/lib/server-checkout-lock';
 import {
   buildStripeCustomerIdempotencyKey,
   resolvePortalCustomerId,
@@ -41,20 +41,20 @@ export async function POST(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
   const anonymousCheck = assertNonAnonymous(auth);
   if (anonymousCheck) return anonymousCheck;
-  let claimedLock: {
-    userRef: FirebaseFirestore.DocumentReference;
-    key: string;
-  } | null = null;
 
   try {
     const {
       priceId,
+      organizationDeclaration,
+      billingCountry,
       userId,
       billingCycle = 'monthly',
       extraTeams = 0,
       newUser = false,
     } = await readJsonBodyWithLimit<{
       priceId?: unknown;
+      organizationDeclaration?: unknown;
+      billingCountry?: unknown;
       userId?: unknown;
       billingCycle?: unknown;
       extraTeams?: unknown;
@@ -76,7 +76,7 @@ export async function POST(req: NextRequest) {
     if (rateLimit) return rateLimit;
 
     // Validate inputs
-    if (!PLAN_PRICE_MAP[priceId]) {
+    if (!ACTIVE_PLAN_PRICE_IDS.has(priceId)) {
       return NextResponse.json({ error: 'Invalid priceId.' }, { status: 400 });
     }
     if (billingCycle !== 'monthly' && billingCycle !== 'annual') {
@@ -97,6 +97,8 @@ export async function POST(req: NextRequest) {
     if (!userSnap.exists) return NextResponse.json({ error: 'User not found' }, { status: 404 });
 
     const userData = userSnap.data()!;
+    const eligibilityError = schoolPlanEligibilityError(SCHOOL_PLAN_PRICE_MAP[priceId as string]?.id || '', userData, organizationDeclaration);
+    if (eligibilityError) return NextResponse.json({ error: eligibilityError }, { status: 403 });
     if (userData.isDemo === true) {
       return NextResponse.json(
         { error: 'Billing is unavailable in demo workspaces.' },
@@ -109,11 +111,14 @@ export async function POST(req: NextRequest) {
       : null;
     let stripeCustomerId = await resolvePortalCustomerId(stripe, userId, userData);
 
+    const countryPreparation = await prepareCheckoutBillingCountry({ enabled: managedSaasEnabled(), stripe, customerId: stripeCustomerId, userId, billingCountry });
+
     if (!stripeCustomerId) {
       const customer = await stripe.customers.create({
         email: userData.email,
         name: userData.fullName || userData.name,
         metadata: { firebase_uid: userId },
+        ...(countryPreparation.newAddress ? { address: countryPreparation.newAddress } : {}),
       }, {
         idempotencyKey: buildStripeCustomerIdempotencyKey(userId, previousCustomerId),
       });
@@ -150,6 +155,10 @@ export async function POST(req: NextRequest) {
       priorSubscriptionCount: priorSubscriptions.data.length,
     });
 
+    if (countryPreparation.existingAddress) {
+      await stripe.customers.update(stripeCustomerId, { address: countryPreparation.existingAddress });
+    }
+
     const successUrl = `${origin}/dashboard?success=true${newUser === true ? '&newUser=true' : ''}`;
     const idempotencyKey = buildCheckoutIdempotencyKey({
       route: 'legacy-checkout',
@@ -160,67 +169,27 @@ export async function POST(req: NextRequest) {
       customerId: stripeCustomerId,
       now: Date.now(),
     });
-    let lockClaim = await claimCheckoutLock(userRef, idempotencyKey);
-    if (!lockClaim.claimed) {
-      return NextResponse.json(
-        { error: 'Another checkout is being prepared. Please wait a moment.' },
-        { status: 409 }
-      );
-    }
-    if (lockClaim.existingSessionId) {
-      const existingSession = await stripe.checkout.sessions.retrieve(
-        lockClaim.existingSessionId
-      );
-      if (existingSession.status === 'open' && existingSession.url) {
-        return NextResponse.json({ url: existingSession.url });
-      }
-      await releaseCheckoutLock(userRef, idempotencyKey);
-      lockClaim = await claimCheckoutLock(userRef, idempotencyKey);
-      if (!lockClaim.claimed) {
-        return NextResponse.json(
-          { error: 'Another checkout is being prepared. Please wait a moment.' },
-          { status: 409 }
-        );
-      }
-    }
-    claimedLock = { userRef, key: idempotencyKey };
-    const openSessions = await stripe.checkout.sessions.list({
-      customer: stripeCustomerId,
-      status: 'open',
-      limit: 10,
-    });
-    for (const openSession of openSessions.data) {
-      await stripe.checkout.sessions.expire(openSession.id);
-    }
-
-    const session = await stripe.checkout.sessions.create({
+    const session = await createCheckoutSessionWithLock(userRef, idempotencyKey, {
       customer: stripeCustomerId,
       mode: 'subscription',
+      ...platformSaasCheckoutParameters(),
+      currency: 'usd',
       line_items: lineItems,
       success_url: successUrl,
       cancel_url: `${origin}/pricing?canceled=true`,
-      metadata: { firebase_uid: userId },
+      metadata: { ...managedSaasMetadata(), firebase_uid: userId },
       subscription_data: {
-        metadata: { firebase_uid: userId },
+        metadata: { ...managedSaasMetadata(), firebase_uid: userId },
         ...(serverTrialDays > 0 ? { trial_period_days: serverTrialDays } : {}),
       },
       allow_promotion_codes: true,
-    }, {
-      idempotencyKey,
-    });
-    await finalizeCheckoutLock(
-      userRef,
-      idempotencyKey,
-      session.id,
-      session.expires_at * 1000
-    );
-    claimedLock = null;
+    }, stripe);
 
     return NextResponse.json({ url: session.url });
   } catch (err: any) {
-    if (claimedLock) {
-      await releaseCheckoutLock(claimedLock.userRef, claimedLock.key).catch(() => {});
-    }
+    if (err instanceof BillingCountryDeclarationError) return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
+    if (err instanceof ManagedCheckoutUnavailable || err instanceof ManagedCoverageUnavailable) return NextResponse.json({ error: err.message }, { status: 409 });
+    if (err instanceof CheckoutLifecycleError) return NextResponse.json({ error: err.message }, { status: err.status });
     if (err instanceof RequestBodyError) {
       return NextResponse.json({ error: err.message }, { status: err.status });
     }

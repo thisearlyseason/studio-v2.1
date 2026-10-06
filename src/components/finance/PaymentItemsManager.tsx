@@ -299,7 +299,7 @@ export function PaymentItemsManager({ userId, teamId, stripeChargesEnabled }: Pa
       {/* Create Dialog */}
       {!isStoreDistribution && <Dialog open={isDialogOpen} onOpenChange={o => { if (!isSubmitting) { setIsDialogOpen(o); if (!o) resetForm(); } }}>
         <DialogContent className="rounded-[3rem] sm:max-w-lg p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-8 space-y-6">
             <DialogHeader>
               <div className="flex items-center gap-3">

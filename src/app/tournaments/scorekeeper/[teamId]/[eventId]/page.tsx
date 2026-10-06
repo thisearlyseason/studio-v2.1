@@ -1,5 +1,6 @@
 "use client";
 
+import CompetitionController from '@/components/tournaments/CompetitionController';
 import React, { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { TeamEvent } from '@/components/providers/team-provider';
@@ -33,10 +34,11 @@ export default function PublicScorekeeperHub() {
   }, [sessionKey]);
 
   const portalUrl = teamId && eventId ? `/api/public/portals?kind=tournament&purpose=scorekeeper&teamId=${encodeURIComponent(teamId as string)}&eventId=${encodeURIComponent(eventId as string)}` : null;
-  const { data: event, isLoading, error, status, retry } = usePublicPortal<TeamEvent & { requiresCode?: boolean; scorekeeperConfigured?: boolean }>(portalUrl);
+  const { data: event, isLoading, error, status, retry } = usePublicPortal<TeamEvent & { workspaceVersion?: number; requiresCode?: boolean; scorekeeperConfigured?: boolean }>(portalUrl);
 
   if (isLoading) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="h-8 w-8 animate-spin text-primary" /></div>;
   if (!event || !event.isTournament) return <PortalStatus status={status} message={error} onRetry={retry} title={status === 404 ? 'Portal Inactive' : undefined} />;
+  if (event.workspaceVersion === 2) return <CompetitionController teamId={teamId as string} eventId={eventId as string} publicView scorekeeperPortal initialTab="schedule" />;
   if (event.scorekeeperConfigured === false) return <div className="min-h-screen flex items-center justify-center p-6 bg-muted/10"><Card className="max-w-md text-center p-10 rounded-4xl border-none shadow-xl"><Lock className="h-12 w-12 mx-auto mb-4 text-primary" /><h2 className="text-xl font-black uppercase">Scorekeeper Access Not Configured</h2><p className="text-sm text-muted-foreground mt-3">The tournament organizer must set a scorekeeper code before results can be submitted.</p></Card></div>;
 
   // Show code gate if event has a scoring code and user hasn't verified yet
@@ -59,7 +61,7 @@ export default function PublicScorekeeperHub() {
       <div className="min-h-screen bg-muted/10 flex flex-col items-center justify-center py-12 px-6">
         <BrandLogo variant="light-background" className="h-10 w-40 mb-10" />
         <Card className="max-w-sm w-full rounded-[3rem] border-none shadow-2xl overflow-hidden bg-white">
-          <div className="h-2 bg-primary w-full" />
+
           <CardContent className="p-10 space-y-8">
             <div className="flex items-center gap-4">
               <div className="bg-primary/10 p-3 rounded-2xl text-primary"><KeyRound className="h-6 w-6" /></div>

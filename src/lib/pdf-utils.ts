@@ -1,6 +1,7 @@
 import { jsPDF } from 'jspdf';
 import { format } from 'date-fns';
 import html2canvas from 'html2canvas';
+import { PDF_LOGO } from './pdf-brand-assets';
 
 export interface PDFBrandingOptions {
   title: string;
@@ -104,80 +105,39 @@ export const exportImageToPDF = async (element: HTMLElement, options: PDFBrandin
   }
 };
 
-export const addSquadBranding = (doc: jsPDF, title: string, subtitle?: string, lightMode?: boolean, compact?: boolean) => {
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const headerY = compact ? 25 : 45;
-  const fitText = (text: string, maxWidth: number, preferredSize: number, minimumSize: number) => {
-    let size = preferredSize;
-    doc.setFontSize(size);
-    while (size > minimumSize && doc.getTextWidth(text) > maxWidth) {
-      size -= 0.5;
-      doc.setFontSize(size);
-    }
-    return size;
-  };
-  
-  // Header Bar
-  doc.setFillColor(lightMode ? 255 : 15, lightMode ? 255 : 15, lightMode ? 255 : 20); 
-  doc.rect(0, 0, pageWidth, headerY, 'F');
-  
-  // Accent Line
-  doc.setFillColor(220, 38, 38); 
-  doc.rect(0, headerY - 2, pageWidth, 2, 'F');
-
-  doc.setTextColor(lightMode ? 0 : 255, lightMode ? 0 : 255, lightMode ? 0 : 255);
-  
-  if (compact) {
-    // Elegant Compact Header
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(10);
-    doc.text("SQUAD INTELLIGENCE", 15, 12);
-    
-    const compactTitle = title.toUpperCase();
-    fitText(compactTitle, pageWidth - 30, 14, 8);
-    doc.text(compactTitle, 15, 20);
-    
-    doc.setFontSize(7);
+export const addSquadBranding = (doc: jsPDF, title: string, subtitle?: string, _lightMode?: boolean, compact?: boolean) => {
+  const width = doc.internal.pageSize.getWidth();
+  doc.setFillColor(255, 255, 255);
+  doc.rect(0, 0, width, compact ? 27 : 46, 'F');
+  doc.addImage(PDF_LOGO, 'PNG', 20, 8, compact ? 25 : 32, compact ? 9 : 11.5);
+  doc.setFont('helvetica', 'bold');
+  doc.setFontSize(8);
+  doc.setTextColor(193, 24, 29);
+  doc.text('THE SQUAD / OFFICIAL DOCUMENT', width - 20, 13, { align: 'right' });
+  let size = compact ? 13 : 23;
+  doc.setFontSize(size);
+  while (size > 10 && doc.getTextWidth(title.toUpperCase()) > width - 40) doc.setFontSize(--size);
+  doc.setTextColor(18, 18, 18);
+  doc.text(title.toUpperCase(), 20, compact ? 24 : 31);
+  if (!compact) {
     doc.setFont('helvetica', 'normal');
-    doc.setTextColor(lightMode ? 120 : 180);
-    const dateText = subtitle || `SCHEDULED: ${format(new Date(), 'PPPP')}`;
-    doc.text(dateText.toUpperCase(), pageWidth - 15, 18, { align: 'right' });
-  } else {
-    // Full Institutional Header
-    doc.setFont('helvetica', 'bold');
-    doc.setFontSize(14);
-    doc.text("SQUAD", 20, 18);
-    doc.setFont('helvetica', 'normal');
-    doc.text("INTELLIGENCE", 20, 24);
-    doc.setDrawColor(lightMode ? 200 : 255);
-    doc.setLineWidth(0.1);
-    doc.line(75, 12, 75, 30);
-    const fullTitle = title.toUpperCase();
-    doc.setFont('helvetica', 'bold');
-    fitText(fullTitle, pageWidth - 102, 22, 10);
-    doc.text(fullTitle, 82, 24);
     doc.setFontSize(8);
-    doc.setFont('helvetica', 'normal');
-    doc.setTextColor(lightMode ? 100 : 180);
-    doc.text(subtitle || "OFFICIAL AUDIT RECORD", 20, 35);
-    doc.setFontSize(7);
-    doc.text(`CERTIFIED: ${format(new Date(), 'PPPP p').toUpperCase()}`, 20, 40);
+    doc.setTextColor(90, 90, 90);
+    const lines = doc.splitTextToSize(subtitle || `Generated ${format(new Date(), 'MMM d, yyyy')}`, width - 40);
+    doc.text(lines.slice(0, 2), 20, 38);
   }
 };
 
-export const addSquadFooter = (doc: jsPDF, footerText?: string, businessName?: string, lightMode?: boolean) => {
-  const pageWidth = doc.internal.pageSize.getWidth();
-  const pageHeight = doc.internal.pageSize.getHeight();
-  doc.setFillColor(lightMode ? 252 : 248, lightMode ? 252 : 250, lightMode ? 252 : 252); 
-  doc.rect(0, pageHeight - 30, pageWidth, 30, 'F');
-  doc.setFontSize(9);
+export const addSquadFooter = (doc: jsPDF, footerText?: string, businessName?: string, _lightMode?: boolean) => {
+  const width = doc.internal.pageSize.getWidth();
+  const height = doc.internal.pageSize.getHeight();
   doc.setFont('helvetica', 'bold');
-  doc.setTextColor(71, 85, 105);
-  doc.text(footerText || `SQUAD INTELLIGENCE • PREMIUM AUDIT LOG`, 20, pageHeight - 15);
-  doc.setFontSize(8);
+  doc.setFontSize(7);
+  doc.setTextColor(90, 90, 90);
+  const label = footerText || businessName || 'THE SQUAD · COMPETITION MANAGEMENT';
+  doc.text(doc.splitTextToSize(label, width - 75).slice(0, 2), 20, height - 13);
   doc.setFont('helvetica', 'normal');
-  doc.setTextColor(148, 163, 184);
-  doc.text("Verified by Squad Intelligence Mobile Architecture", pageWidth - 20, pageHeight - 15, { align: 'right' });
+  doc.text(`${doc.getCurrentPageInfo().pageNumber} / ${doc.getNumberOfPages()}`, width - 20, height - 13, { align: 'right' });
 };
 
 export const generateBrandedPDF = (options: PDFBrandingOptions, contentCallback: (doc: jsPDF, startY: number) => number) => {

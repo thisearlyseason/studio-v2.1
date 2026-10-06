@@ -35,19 +35,19 @@ test('rendered League spectator distinguishes disputed context from official com
     const page = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
     const disputed = renderToStaticMarkup(React.createElement(page.default));
     assert.match(disputed, /Disputed/);
-    assert.doesNotMatch(disputed, /Archive Log|text-primary scale-110/);
+    assert.doesNotMatch(disputed, /Completed|text-primary scale-110/);
     assert.equal((disputed.match(/data-icon="Trophy"/g) || []).length, 2); // Header and leaderboard only.
     assert.match(disputed, />4<.*>2</);
     game.isDisputed = false;
     const official = renderToStaticMarkup(React.createElement(page.default));
-    assert.match(official, /Archive Log/);
+    assert.match(official, /Completed/);
     assert.match(official, /text-primary scale-110/);
     assert.equal((official.match(/data-icon="Trophy"/g) || []).length, 3);
     assert.doesNotMatch(official, /Disputed/);
     Object.assign(game, { isDisputed: true, score1: 2, score2: 4 });
     const disputedAwayLead = renderToStaticMarkup(React.createElement(page.default));
     assert.match(disputedAwayLead, /Disputed/);
-    assert.doesNotMatch(disputedAwayLead, /Archive Log|text-primary scale-110/);
+    assert.doesNotMatch(disputedAwayLead, /Completed|text-primary scale-110/);
     assert.equal((disputedAwayLead.match(/data-icon="Trophy"/g) || []).length, 2);
   } finally { delete globalThis[key]; }
 });

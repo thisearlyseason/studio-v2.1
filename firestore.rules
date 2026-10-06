@@ -230,13 +230,21 @@ service cloud.firestore {
     }
 
     // ─── Users ──────────────────────────────────────────────────────────────
+    match /userSafety/{userId}/blocks/{blockedId} {
+      allow read: if isSignedIn() && request.auth.uid == userId;
+      allow write: if false;
+    }
+    match /moderationReports/{reportId} {
+      allow read, write: if false;
+    }
+
     match /users/{userId} {
       allow read: if isSuperAdmin() || (isSignedIn() && isOwner(userId));
       // Profile fields are user-editable; authorization, billing, and organization
       // authority remain server-owned and are never accepted from the browser.
       allow create: if isSuperAdmin() || (isAuthenticated() && isOwner(userId) &&
         request.resource.data.role in ['parent', 'adult_player', 'youth_player', 'coach', 'admin', 'league_creator'] &&
-        !request.resource.data.keys().hasAny(['plan_type', 'team_limit', 'extra_teams', 'subscription_status', 'stripe_customer_id', 'stripe_subscription_id', 'isPrimaryClubAuthority', 'isStaff', 'isBetaTester', 'activePlanId', 'proTeamLimit', 'planSource', 'linkedPlayerId', 'parentId', 'guardianIds'])
+        !request.resource.data.keys().hasAny(['native_subscription', 'native_subscription_synced_at', 'stripe_seat_grant', 'billing_provider', 'plan_type', 'team_limit', 'extra_teams', 'subscription_status', 'subscriptionStatus', 'stripe_subscription_status', 'stripe_customer_id', 'stripe_subscription_id', 'stripeSubscriptionId', 'isPrimaryClubAuthority', 'isStaff', 'isBetaTester', 'activePlanId', 'proTeamLimit', 'planSource', 'linkedPlayerId', 'parentId', 'guardianIds', 'pendingCheckout', 'subscriptionMutation', 'deletionStatus', 'deletionRequestedAt', 'deletionPurgeAt', 'accountStatus'])
       );
       allow update: if isSuperAdmin() || (isSignedIn() && isOwner(userId) &&
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
@@ -378,21 +386,21 @@ service cloud.firestore {
         allow read: if isSuperAdmin() || (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)));
         // Timed calendar events are server-mediated so schedule reservations and
         // the event document are committed under the same scheduling lock.
-        allow create: if request.resource.data.get('isTournament', false) != true && request.resource.data.get('eventType', '') != 'tournament' && (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) && (
+        allow create: if !request.resource.data.keys().hasAny(['competition']) && request.resource.data.get('isTournament', false) != true && request.resource.data.get('eventType', '') != 'tournament' && (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) && (
           get(/databases/$(database)/documents/teams/$(teamId)).data.get('isDemo', false) == true ||
           (
             request.resource.data.get('startTime', '') == '' &&
             request.resource.data.get('time', '') == ''
           )
         )));
-        allow delete: if resource.data.get('isTournament', false) != true && resource.data.get('eventType', '') != 'tournament' && (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) &&
+        allow delete: if !resource.data.keys().hasAny(['competition']) && resource.data.get('isTournament', false) != true && resource.data.get('eventType', '') != 'tournament' && (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) &&
           resource.data.get('startTime', '') == '' &&
           resource.data.get('time', '') == '' &&
           resource.data.get('sourceType', '') == ''
         ));
         // Published tournament brackets, progression, scores, and assignments
         // are written only by authenticated server actions.
-        allow update: if tournamentLifecycleUnchanged() && (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) &&
+        allow update: if !resource.data.keys().hasAny(['competition']) && !request.resource.data.keys().hasAny(['competition']) && tournamentLifecycleUnchanged() && (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) &&
           resource.data.get('sourceType', '') == '' &&
           (
             (
@@ -500,7 +508,10 @@ allow create, update: if false; // Authenticated incident service only.
       }
 
       match /alerts/{alertId} {
-        allow read: if isSuperAdmin() || (isSignedIn() && (
+        // The browser may fetch an individual alert only when its audience and
+        // target match. Collection history is resolved by the authenticated
+        // server route because Firestore rules are not row-level query filters.
+        allow get: if isSuperAdmin() || (isSignedIn() && (
           isTeamOwner(teamId) ||
           (
             isTeamMember(teamId) &&
@@ -520,6 +531,7 @@ allow create, update: if false; // Authenticated incident service only.
             )
           )
         ));
+        allow list: if isSuperAdmin();
         allow create, update, delete: if isSuperAdmin() ||
           (isSignedIn() && isTeamStaff(teamId));
       }
@@ -1117,8 +1129,7 @@ allow create, update: if false; // Authenticated incident service only.
     match /{path=**}/signatures/{sigId} {
       allow read: if isSuperAdmin() || (isSignedIn() && (
         resource.data.userId == request.auth.uid ||
-        resource.data.ownerUserId == request.auth.uid ||
-        (resource.data.teamId != null && (isTeamOwner(resource.data.teamId) || isTeamMember(resource.data.teamId)))
+        resource.data.ownerUserId == request.auth.uid
       ));
     }
 

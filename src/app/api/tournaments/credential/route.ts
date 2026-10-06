@@ -15,7 +15,7 @@ export async function POST(request: NextRequest) {
     const auth = await verifyFirebaseToken(request);
     if (auth instanceof NextResponse) return auth;
     const body = await readJsonBodyWithLimit<Record<string, unknown>>(request, 8 * 1024);
-    const allowedFields = new Set(['requestId', 'teamId', 'eventId', 'scoringCode', 'expectedLifecycleVersion', 'expectedCredentialVersion']);
+    const allowedFields = new Set(['requestId', 'teamId', 'eventId', 'scoringCode', 'expectedLifecycleVersion', 'expectedCredentialVersion', 'revoke']);
     if (Object.keys(body).some(key => !allowedFields.has(key))) return fail('Unsupported Tournament credential field.', 400);
     if (!id(body.teamId) || !id(body.eventId)) return fail('Invalid Tournament credential target.', 400);
     const code = typeof body.scoringCode === 'string' ? body.scoringCode.trim() : '';
@@ -45,9 +45,9 @@ export async function POST(request: NextRequest) {
       if (lifecycleVersion !== expectedLifecycleVersion) throw Object.assign(new Error('Tournament changed. Reload before saving the scorekeeper code.'), { status: 409 });
       if (eventCredentialVersion !== privateCredentialVersion || privateCredentialVersion !== expectedCredentialVersion) throw Object.assign(new Error('Scorekeeper credential changed. Reload before saving.'), { status: 409 });
       const credentialVersion = privateCredentialVersion + 1;
-      transaction.set(credentialRef, { teamId: body.teamId, eventId: body.eventId, scorekeeperCodeHash: hash, credentialVersion, updatedAt: new Date().toISOString(), updatedBy: auth.uid });
-      transaction.update(eventRef, { credentialVersion, scorekeeperConfigured: true, scoringCode: FieldValue.delete(), scoringCodeHash: FieldValue.delete() });
-      return { success: true, scorekeeperConfigured: true, lifecycleVersion, credentialVersion };
+      transaction.set(credentialRef, { revoked: body.revoke === true, teamId: body.teamId, eventId: body.eventId, scorekeeperCodeHash: body.revoke === true ? '' : hash, credentialVersion, updatedAt: new Date().toISOString(), updatedBy: auth.uid });
+      transaction.update(eventRef, { credentialVersion, scorekeeperConfigured: body.revoke !== true, scoringCode: FieldValue.delete(), scoringCodeHash: FieldValue.delete() });
+      return { success: true, scorekeeperConfigured: body.revoke !== true, lifecycleVersion, credentialVersion };
     });
     return NextResponse.json(result, { headers: { 'Cache-Control': 'private, no-store' } });
   } catch (error) {

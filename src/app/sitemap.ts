@@ -25,6 +25,8 @@ const staticPages: Array<{
   { path: '/sports-hub/playbook', changeFrequency: 'weekly', priority: 0.8 },
   { path: '/sports-hub/templates', changeFrequency: 'weekly', priority: 0.8 },
   { path: '/sports-hub/featured', changeFrequency: 'weekly', priority: 0.7 },
+  { path: '/cookies', changeFrequency: 'yearly', priority: 0.3 },
+  { path: '/refunds', changeFrequency: 'yearly', priority: 0.3 },
   { path: '/privacy', changeFrequency: 'yearly', priority: 0.3 },
   { path: '/terms', changeFrequency: 'yearly', priority: 0.3 },
   { path: '/safety', changeFrequency: 'yearly', priority: 0.3 },

@@ -1,6 +1,7 @@
 
 "use client";
 
+import { ParentCompanyBrand } from '@/components/ParentCompanyBrand';
 import React from 'react';
 import Link from 'next/link';
 import { ChevronLeft, ShieldCheck, Users, MessageSquare, AlertTriangle } from 'lucide-react';
@@ -123,6 +124,7 @@ export default function SafetyCenterPage() {
             </p>
           </div>
         </div>
+        <div className="mt-6 flex justify-center"><ParentCompanyBrand /></div>
       </footer>
     </div>
   );

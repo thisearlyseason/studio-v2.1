@@ -570,7 +570,10 @@ export async function PUT(req: NextRequest) {
         inviteSentAt: admin.firestore.FieldValue.delete(),
         inviteExpiresAt: admin.firestore.FieldValue.delete(),
       });
-      for (const { binding, memberData, team } of boundMemberships) {
+      // Legacy rosters may contain several active rows for one child in a squad.
+      // Every binding above is revalidated, but the new account gets one projection per squad.
+      const membershipsByTeam = new Map(boundMemberships.map(membership => [membership.binding.teamId, membership]));
+      for (const { binding, memberData, team } of membershipsByTeam.values()) {
         transaction.create(
           adminDb.collection('teams').doc(binding.teamId).collection('members').doc(userRecord.uid),
           {

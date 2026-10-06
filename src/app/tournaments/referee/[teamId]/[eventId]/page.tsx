@@ -12,6 +12,7 @@ import {
   UserCheck, Calendar, MapPin, Clock, 
   Trophy, Shield, Loader2, LogIn, RefreshCw
 } from 'lucide-react';
+import { downloadFile } from '@/lib/competition/export';
 import { cn } from '@/lib/utils';
 import { PortalStatus } from '@/components/public/PortalStatus';
 
@@ -217,6 +218,15 @@ export default function RefereePortalPage({ params: rawParams }: { params: Promi
               </Badge>
             </Card>
 
+            <div className="flex flex-wrap gap-3">
+              <Button onClick={() => {
+                const cell=(value: unknown) => '"'+String(value ?? '').replace(/^[=+@-]/, "'$&").replace(/"/g,'""')+'"';
+                const rows=[['Date','Time','Venue / Field','Home','Away','Round','Referee'],...myGames.map(g=>[g.date,g.time,g.location,g.team1,g.team2,g.round,activeRef.name])];
+                downloadFile('my-referee-assignments.csv', rows.map(r=>r.map(cell).join(',')).join('\r\n'), 'text/csv');
+              }}>Download my assignments</Button>
+              <Button variant="outline" onClick={() => window.print()}>Print / Save as PDF</Button>
+              <Button variant="outline" onClick={retry}>Refresh assignments</Button>
+            </div>
             {/* ── No Assignments ── */}
             {myGames.length === 0 && (
               <Card className="rounded-[2.5rem] p-12 border-none shadow-xl bg-white text-center space-y-4">

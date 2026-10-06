@@ -81,7 +81,7 @@ export default function YouthSportsPage() {
             <motion.div key={article.slug} initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} transition={{ delay: index * 0.03 }}>
               <Link href={`/sports-hub/articles/${article.slug}`} className="group block h-full">
                 <article className="depth-card h-full overflow-hidden rounded-lg border bg-card transition-all duration-300 hover:-translate-y-0.5 hover:border-primary/30 hover:shadow-xl">
-                  <div className="hero-gradient h-1.5" />
+
                   <div className="p-6">
                     <Badge variant="outline" className="mb-3 border-primary/20 bg-primary/5 text-[9px] font-black uppercase text-primary">{getSubCategory(article)}</Badge>
                     <h2 className="mb-2 line-clamp-2 text-base font-black leading-snug tracking-normal transition-colors group-hover:text-primary">{article.title}</h2>

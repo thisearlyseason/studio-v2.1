@@ -11,9 +11,10 @@ import { leagueBillingOwnerUserId, permitsLegacyOrPaidPortals, scorekeeperLeague
 import { publicLeagueGameProjection, recalculatePublicLeagueStandings, leagueGameVersionFloor } from '@/lib/public-league-scoring';
 import { scorekeeperTournament } from '@/lib/public-portal-data';
 import { BracketProgressionError, hasCompletedBracketDescendant, recordTournamentScore, validateBracketScoreSubmission } from '@/lib/scheduler-utils';
-import { TournamentScheduleDeploymentError, withTournamentScheduleMutationLock } from '@/lib/server-tournament-schedule-deployment';
+import { tournamentTimeMinutes, TournamentScheduleDeploymentError, withTournamentScheduleMutationLock } from '@/lib/server-tournament-schedule-deployment';
 import type { TournamentGame } from '@/components/providers/team-provider';
 import { reconcileTieredAfterPlayoffMutation, reconcileTieredAfterPreliminaryMutation } from '@/lib/tiered-playoffs/lifecycle';
+import { editTournamentMatchDetails, type TournamentMatchDetails } from '@/lib/tournament-match-edit';
 import type { TieredPlayoffsConfig } from '@/lib/tiered-playoffs/types';
 
 type Data = Record<string, any>;
@@ -221,9 +222,11 @@ export type TournamentScoringCommand = {
   reason?: unknown;
   resolution?: unknown;
   correctedScore?: { home: unknown; away: unknown };
+  matchDetails?: unknown;
+  recordScore?: unknown;
 };
 
-type TournamentScoringAction = 'score' | 'dispute' | 'resolve-dispute';
+type TournamentScoringAction = 'score' | 'dispute' | 'resolve-dispute' | 'edit-match';
 
 function tournamentFail(code: string, message: string, status = 409): never {
   throw new TournamentScheduleDeploymentError(code, message, status);
@@ -273,6 +276,7 @@ export function tournamentScoringInput(body: Record<string, unknown>, actor?: To
     expectedGameVersion: body.expectedGameVersion as number, expectedCredentialVersion: body.expectedCredentialVersion as number,
     actor, credential: typeof body.code === 'string' ? body.code : '', score: { home: body.score1, away: body.score2 }, explicitWinner: body.explicitWinner,
     notes: body.notes, reason: body.reason, resolution: body.resolution,
+    matchDetails: body.matchDetails, recordScore: body.recordScore,
     correctedScore: corrected ? { home: corrected.home, away: corrected.away } : undefined,
   };
 }
@@ -286,11 +290,27 @@ export async function runTournamentScoringCommand(input: TournamentScoringComman
   const reason = action === 'resolve-dispute' ? requiredTournamentText(input.reason, 'Resolution reason') : null;
   const resolution = action === 'resolve-dispute' ? input.resolution : null;
   if (action === 'resolve-dispute' && !['uphold', 'correct', 'void'].includes(String(resolution))) tournamentFail('INVALID_RESOLUTION', 'Choose uphold, correct, or void.', 400);
-  const score = action === 'score' ? input.score : resolution === 'correct' ? input.correctedScore : null;
-  const explicitWinner = action === 'score' && (input.explicitWinner === 'team1' || input.explicitWinner === 'team2') ? input.explicitWinner : undefined;
-  if (action === 'score' && input.explicitWinner !== undefined && !explicitWinner) tournamentFail('INVALID_WINNER', 'Choose a valid Tournament winner.', 400);
+  const isEdit = action === 'edit-match';
+  if (isEdit && !input.actor) tournamentFail('FORBIDDEN', 'Sign in as a Tournament organizer to edit matches.', 403);
+  let details: TournamentMatchDetails | undefined;
+  if (isEdit) {
+    const raw = input.matchDetails;
+    if (!raw || typeof raw !== 'object' || Array.isArray(raw)) tournamentFail('INVALID_DETAILS', 'Match details are required.', 400);
+    const data = raw as Record<string, unknown>;
+    if (Object.keys(data).some(key => !['team1Name', 'team2Name', 'location'].includes(key)) || typeof input.recordScore !== 'boolean') tournamentFail('INVALID_DETAILS', 'Invalid match details.', 400);
+    for (const key of ['team1Name', 'team2Name', 'location']) {
+      const value = data[key];
+      if (value === undefined && key !== 'location') continue;
+      if (typeof value !== 'string' || !value.trim() || value.trim().length > (key === 'location' ? 240 : 100)) tournamentFail('INVALID_DETAILS', 'Enter a team name (up to 100 characters) and location (up to 240 characters).', 400);
+    }
+    details = Object.fromEntries(Object.entries(data).map(([key, value]) => [key, (value as string).trim()])) as TournamentMatchDetails;
+  }
+  const writesScore = action === 'score' || (isEdit && input.recordScore === true);
+  const score = writesScore ? input.score : resolution === 'correct' ? input.correctedScore : null;
+  const explicitWinner = writesScore && (input.explicitWinner === 'team1' || input.explicitWinner === 'team2') ? input.explicitWinner : undefined;
+  if (writesScore && input.explicitWinner !== undefined && !explicitWinner) tournamentFail('INVALID_WINNER', 'Choose a valid Tournament winner.', 400);
   if (score && (!tournamentScore(score.home) || !tournamentScore(score.away))) tournamentFail('INVALID_SCORE', 'Scores must be whole numbers from 0 to 999.', 400);
-  if ((action === 'score' || resolution === 'correct') && !score) tournamentFail('INVALID_SCORE', 'A valid score is required.', 400);
+  if ((writesScore || resolution === 'correct') && !score) tournamentFail('INVALID_SCORE', 'A valid score is required.', 400);
 
   const teamRef = adminDb.collection('teams').doc(input.teamId);
   const eventRef = teamRef.collection('events').doc(input.eventId);
@@ -307,6 +327,7 @@ export async function runTournamentScoringCommand(input: TournamentScoringComman
     if (!teamSnapshot.exists || !eventSnapshot.exists) tournamentFail('TOURNAMENT_NOT_FOUND', 'Tournament not found.', 404);
     const team = teamSnapshot.data() || {};
     const event = eventSnapshot.data() || {};
+    if (event.competition?.version === 2) tournamentFail('VERSIONED_WORKSPACE', 'Use this tournament’s live workspace to record scores.', 409);
     if (!isActiveCompetitionTeam(team)) tournamentFail('TOURNAMENT_TENANT_INACTIVE', 'The Tournament squad is inactive.', 403);
     if (!input.actor && !permitsLegacyOrPaidPortals(team.planId, team.plan_type, team.subscriptionPlanId)) tournamentFail('TOURNAMENT_ENTITLEMENT_REQUIRED', 'This subscription does not include Tournament scoring.', 403);
     if (event.isTournament !== true || event.teamId !== input.teamId || event.isArchived === true || event.isDeleted === true || event.is_active === false || event.isActive === false || event.status === 'cancelled') {
@@ -314,7 +335,7 @@ export async function runTournamentScoringCommand(input: TournamentScoringComman
     }
     const authorityActor = input.actor?.uid || String(team.ownerUserId || '');
     const authority = await resolveCompetitionAuthority({ transaction, actorUid: authorityActor, actorRole: input.actor?.role, teamId: input.teamId, domain: 'tournament' });
-    if (event.tournamentType !== 'round_robin' && team.isPro !== true) tournamentFail('ADVANCED_TOURNAMENT_ENTITLEMENT_REQUIRED', 'This plan does not include advanced Tournament scoring.', 403);
+    if (event.tournamentType !== 'single_elimination' && team.isPro !== true) tournamentFail('ADVANCED_TOURNAMENT_ENTITLEMENT_REQUIRED', 'This plan does not include advanced Tournament scoring.', 403);
     const privateCredential = credentialSnapshot.data() || {};
     const eventCredentialVersion = Number(event.credentialVersion || 0);
     const privateCredentialVersion = Number(privateCredential.credentialVersion || 0);
@@ -345,6 +366,7 @@ export async function runTournamentScoringCommand(input: TournamentScoringComman
   const payload = { action, teamId: input.teamId, eventId: input.eventId, gameId: input.gameId,
     expectedLifecycleVersion: input.expectedLifecycleVersion, expectedScheduleVersion: input.expectedScheduleVersion,
     expectedGameVersion: input.expectedGameVersion, expectedCredentialVersion: input.expectedCredentialVersion,
+    ...(details ? { matchDetails: details, recordScore: input.recordScore } : {}),
     score, ...(explicitWinner ? { explicitWinner } : {}), notes, reason, resolution };
   const identity = canonicalCompetitionRequest({ requestId: input.requestId, tenantId: preflight.tenantId, kind: 'tournament-scoring', payload });
 
@@ -367,8 +389,8 @@ export async function runTournamentScoringCommand(input: TournamentScoringComman
     if (index < 0) tournamentFail('GAME_NOT_FOUND', 'Tournament match not found.', 404);
     const game = games[index];
     if (Number(game.gameVersion || 0) !== input.expectedGameVersion) tournamentFail('GAME_VERSION_CONFLICT', 'The match changed. Refresh before retrying.', 409);
-    if (hasCompletedBracketDescendant(games, game.id)) tournamentFail('DOWNSTREAM_COMPLETE', 'A dependent bracket result is already complete.', 409);
-    if (action === 'score' && game.isDisputed === true) tournamentFail('DISPUTE_OPEN', 'Resolve the open dispute before changing this score.', 409);
+    if (!isEdit && hasCompletedBracketDescendant(games, game.id)) tournamentFail('DOWNSTREAM_COMPLETE', 'A dependent bracket result is already complete.', 409);
+    if (writesScore && game.isDisputed === true) tournamentFail('DISPUTE_OPEN', 'Resolve the open dispute before changing this score.', 409);
     if (action === 'dispute' && (game.isCompleted !== true || game.isDisputed === true)) tournamentFail('INVALID_DISPUTE', 'Only an undisputed completed result can be disputed.', 409);
     if (action === 'dispute') {
       const validation = validateBracketScoreSubmission(games, game.id, Number(game.score1), Number(game.score2));
@@ -381,16 +403,24 @@ export async function runTournamentScoringCommand(input: TournamentScoringComman
     const priorScore = { home: Number(game.score1 || 0), away: Number(game.score2 || 0) };
     const priorGames = games.map(candidate => ({ ...candidate }));
     try {
-      if (action === 'score' || resolution === 'correct') {
+      if (writesScore || resolution === 'correct') {
         const validation = validateBracketScoreSubmission(games, game.id, score!.home as number, score!.away as number);
-        if (!validation.valid) tournamentFail(validation.code, validation.message, validation.code === 'MATCH_NOT_FOUND' ? 404 : validation.code === 'INVALID_SCORE' ? 400 : 409);
-        games = recordTournamentScore(games, game.id, score!.home as number, score!.away as number, action === 'score' ? explicitWinner : undefined);
+        const priorWinner = (game as Data).winnerId || (game.score1 > game.score2 ? game.team1Id : game.score2 > game.score1 ? game.team2Id : null);
+        const nextWinner = explicitWinner ? game[`${explicitWinner}Id`] : Number(score!.home) > Number(score!.away) ? game.team1Id : Number(score!.away) > Number(score!.home) ? game.team2Id : null;
+        const preserveProgression = isEdit && game.isCompleted && !game.isDisputed && priorWinner === nextWinner && hasCompletedBracketDescendant(games, game.id);
+        const acceptedTie = validation.valid === false && validation.code === 'ELIMINATION_TIE' && !!explicitWinner;
+        const acceptedDescendants = validation.valid === false && validation.code === 'DOWNSTREAM_COMPLETE' && preserveProgression;
+        if (!validation.valid && !acceptedTie && !acceptedDescendants) tournamentFail(validation.code, validation.message, validation.code === 'MATCH_NOT_FOUND' ? 404 : validation.code === 'INVALID_SCORE' ? 400 : 409);
+        if (isEdit && !preserveProgression && hasCompletedBracketDescendant(games, game.id)) tournamentFail('DOWNSTREAM_COMPLETE', 'Changing the winner would invalidate an already-played later match. Resolve those later results first.', 409);
+        games = preserveProgression ? games.map(candidate => candidate.id === game.id ? {
+          ...candidate, score1: score!.home as number, score2: score!.away as number, winnerId: nextWinner, explicitWinner: explicitWinner || null,
+        } as TournamentGame : candidate) : recordTournamentScore(games, game.id, score!.home as number, score!.away as number, writesScore ? explicitWinner : undefined);
       } else if (action === 'dispute') {
         games = clearTournamentProgression(games, game);
         games[index] = { ...games[index], isDisputed: true };
       } else if (resolution === 'uphold') {
         games = recordTournamentScore(games, game.id, priorScore.home, priorScore.away);
-      } else {
+      } else if (!isEdit) {
         games = clearTournamentProgression(games, game);
         games[index] = { ...games[index], score1: 0, score2: 0, isCompleted: false, isDisputed: false, winnerId: null } as TournamentGame;
       }
@@ -398,6 +428,35 @@ export async function runTournamentScoringCommand(input: TournamentScoringComman
       if (error instanceof TournamentScheduleDeploymentError) throw error;
       if (error instanceof BracketProgressionError) tournamentFail(error.code, error.message, 409);
       throw error;
+    }
+    let editedParticipants = currentEvent.tournamentTeamsData;
+    let editedTiered = currentEvent.tieredPlayoffs;
+    if (details) {
+      try {
+        const edited = editTournamentMatchDetails(games, currentEvent.tournamentTeamsData || [], game.id, details, currentEvent.tieredPlayoffs);
+        games = edited.games; editedParticipants = edited.teams; editedTiered = edited.tieredPlayoffs;
+      } catch (error) { tournamentFail('INVALID_DETAILS', error instanceof Error ? error.message : 'Invalid match details.', 400); }
+    }
+    const changedLocation = details && details.location !== game.location;
+    const locationBookings = changedLocation ? await transaction.get(adminDb.collection('scheduleBookings').where('date', '==', game.date)) : null;
+    const sourceId = `tournament:${input.teamId}:${input.eventId}`;
+    const ownedBookings = locationBookings?.docs.filter(document => document.data().sourceId === sourceId && document.data().sourceGameId === game.id) || [];
+    if (changedLocation) {
+      const target = games[index];
+      const start = tournamentTimeMinutes(game.time);
+      const duration = Number((game as Data).durationMinutes || currentEvent.gameLength || 60);
+      if (start === null || !Number.isFinite(duration) || duration <= 0) tournamentFail('INVALID_MATCH_TIME', 'Set a valid match time before changing its location.', 409);
+      const end = start + duration;
+      for (const other of locationBookings!.docs) {
+        const right = other.data();
+        if (right.sourceId === sourceId && right.sourceGameId === game.id) continue;
+        if ((right.resourceId === target.resourceId || String(right.location || '').toLowerCase() === String(target.location || '').toLowerCase()) && start < right.endMinute && right.startMinute < end) tournamentFail('LOCATION_CONFLICT', 'That location is already booked at this match time.', 409);
+      }
+      for (const other of games) {
+        if (other.id === game.id || other.date !== game.date) continue;
+        const otherStart = tournamentTimeMinutes(other.time);
+        if (otherStart !== null && (other.resourceId === target.resourceId || String(other.location || '').toLowerCase() === String(target.location || '').toLowerCase()) && start < otherStart + Number((other as Data).durationMinutes || currentEvent.gameLength || 60) && otherStart < end) tournamentFail('LOCATION_CONFLICT', 'Another tournament match uses that location at this time.', 409);
+      }
     }
     const now = new Date().toISOString();
     games = games.map((candidate, candidateIndex) => {
@@ -408,37 +467,44 @@ export async function runTournamentScoringCommand(input: TournamentScoringComman
       Object.entries(candidate).filter(([, value]) => value !== undefined),
     ) as TournamentGame);
     const updatedGame = games.find(candidate => candidate.id === input.gameId)!;
-    const nextTieredPlayoffs = currentEvent.tournamentType === 'tiered_playoffs' && currentEvent.tieredPlayoffs
+    const nextTieredPlayoffs = (!isEdit || writesScore) && currentEvent.tournamentType === 'tiered_playoffs' && currentEvent.tieredPlayoffs
       ? game.phase === 'playoff'
-        ? reconcileTieredAfterPlayoffMutation(currentEvent.tieredPlayoffs as TieredPlayoffsConfig, games)
-        : reconcileTieredAfterPreliminaryMutation(currentEvent.tieredPlayoffs as TieredPlayoffsConfig, games)
-      : currentEvent.tieredPlayoffs;
+        ? reconcileTieredAfterPlayoffMutation(editedTiered as TieredPlayoffsConfig, games)
+        : reconcileTieredAfterPreliminaryMutation(editedTiered as TieredPlayoffsConfig, games)
+      : editedTiered;
     const nextScheduleVersion = input.expectedScheduleVersion + 1;
+    const nextLifecycleVersion = input.expectedLifecycleVersion + (details ? 1 : 0);
     const resultingScore = updatedGame.isCompleted ? { home: Number(updatedGame.score1 || 0), away: Number(updatedGame.score2 || 0) } : null;
     transaction.update(eventRef, {
-      tournamentGames: games, scheduleVersion: nextScheduleVersion, scheduleUpdatedAt: now, scheduleUpdatedBy: preflight.actorUid,
+      ...(details ? { tournamentTeamsData: editedParticipants, tournamentTeams: editedParticipants.map((team: Data) => team.name) } : {}),
+      tournamentGames: games, lifecycleVersion: nextLifecycleVersion, scheduleVersion: nextScheduleVersion, scheduleUpdatedAt: now, scheduleUpdatedBy: preflight.actorUid,
+      ...(changedLocation && games[index].resourceId ? { selectedFields: [...new Set([...(currentEvent.selectedFields || []), games[index].resourceId])] } : {}),
       ...(nextTieredPlayoffs ? { tieredPlayoffs: nextTieredPlayoffs } : {}),
       ...(migratedHash ? { credentialVersion: migratedCredentialVersion, scorekeeperConfigured: true, scoringCode: FieldValue.delete(), scoringCodeHash: FieldValue.delete() } : {}),
     });
+    for (const booking of ownedBookings) transaction.update(booking.ref, { location: games[index].location, resourceId: games[index].resourceId, updatedAt: now });
     if (migratedHash) transaction.set(credentialRef, { ...currentCredential, teamId: input.teamId, eventId: input.eventId, scorekeeperCodeHash: migratedHash, credentialVersion: migratedCredentialVersion, updatedAt: now, migratedFromLegacy: true });
     transaction.create(eventRef.collection('scoreAudit').doc(identity.operationId), {
       operationId: identity.operationId, requestId: identity.requestId, action, gameId: input.gameId, actorUid: preflight.actorUid,
       lifecycleVersion: input.expectedLifecycleVersion, scheduleVersion: nextScheduleVersion, priorScore, resultingScore,
       priorState: { isCompleted: game.isCompleted === true, isDisputed: game.isDisputed === true, gameVersion: input.expectedGameVersion },
       resultingState: { isCompleted: updatedGame.isCompleted === true, isDisputed: updatedGame.isDisputed === true, gameVersion: updatedGame.gameVersion },
+      ...(details ? { priorDetails: { team1: game.team1, team2: game.team2, location: game.location || '' }, resultingDetails: details } : {}),
       notes, reason, resolution, bracketImpact: games.filter((candidate, candidateIndex) => JSON.stringify(candidate) !== JSON.stringify(priorGames[candidateIndex])).map(candidate => candidate.id),
       createdAt: now,
     });
     queueExternalEffect({ effectId: 'spectator-refresh', kind: 'tournament-spectator-refresh', payload: { teamId: input.teamId, eventId: input.eventId, scheduleVersion: nextScheduleVersion } });
     const tournament = JSON.parse(JSON.stringify(scorekeeperTournament(input.eventId, {
       ...currentEvent,
+      ...(details ? { tournamentTeamsData: editedParticipants, tournamentTeams: editedParticipants.map((team: Data) => team.name) } : {}),
       tournamentGames: games,
       ...(nextTieredPlayoffs ? { tieredPlayoffs: nextTieredPlayoffs } : {}),
       scheduleVersion: nextScheduleVersion,
+      lifecycleVersion: nextLifecycleVersion,
       credentialVersion: migratedCredentialVersion,
       scorekeeperConfigured: Boolean(migratedHash || currentCredential.scorekeeperCodeHash || currentEvent.scorekeeperConfigured),
     })));
-    return { success: true, lifecycleVersion: input.expectedLifecycleVersion, scheduleVersion: nextScheduleVersion,
+    return { success: true, lifecycleVersion: nextLifecycleVersion, scheduleVersion: nextScheduleVersion,
       credentialVersion: migratedCredentialVersion, gameVersion: Number(updatedGame.gameVersion || 0),
       tournament };
   }));
@@ -447,3 +513,5 @@ export async function runTournamentScoringCommand(input: TournamentScoringComman
 export const submitTournamentScore = (input: TournamentScoringCommand) => runTournamentScoringCommand(input, 'score');
 export const openTournamentDispute = (input: TournamentScoringCommand) => runTournamentScoringCommand(input, 'dispute');
 export const resolveTournamentDispute = (input: TournamentScoringCommand) => runTournamentScoringCommand(input, 'resolve-dispute');
+
+export const updateTournamentMatch = (input: TournamentScoringCommand) => runTournamentScoringCommand(input, 'edit-match');

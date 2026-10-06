@@ -1,10 +1,12 @@
 "use client";
+import { createTeamEventRequestRegistry } from '@/lib/team-event-request';
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback, useRef } from 'react';
 import { useFirestore, useMemoFirebase, useUser, useCollection, useDoc, useStorage, useAuth } from '@/firebase';
 import { clearBrowserSession, DEMO_EXIT_PENDING_KEY, getAuthToken, authHeader } from '@/lib/client-auth';
 import { leagueResolutionCommand, sendLeagueScoringCommand } from '@/lib/public-league-scoring';
 import {libraryDataUrlBlob} from '@/lib/library-client-upload';
+import { fetchAlertHistory } from '@/lib/client-alert-history';
 import { isAlertRelevantToRecipient } from '@/lib/alert-audience';
 import { isBillableSquadSeat } from '@/lib/team-seat-policy';
 import { calculateHouseholdPayments, type HouseholdPayment } from '@/lib/household-payments';
@@ -67,6 +69,8 @@ export type UserProfile = {
   billing_cycle?: 'monthly' | 'annual' | null;
   stripe_customer_id?: string | null;
   stripe_subscription_id?: string | null;
+  stripe_subscription_status?: string | null;
+  billing_provider?: 'stripe' | 'app_store' | 'play_store' | null;
   seenAlertIds?: string[];
   clubName?: string;
   clubDescription?: string;
@@ -358,6 +362,7 @@ export type EventAssignment = {
 };
 
 export type TeamEvent = {
+  competition?: import("@/lib/competition/document").CompetitionDocument;
   id: string;
   teamId: string;
   title: string;
@@ -673,6 +678,7 @@ export type LeagueRegistrationConfig = {
   config_hash?: string;
   currency?: string;
   registration_cost?: string;
+  payment_method?: "offline" | "stripe";
   offline_payment_instructions?: string;
   require_division_selection?: boolean;
   available_divisions?: string[];
@@ -742,6 +748,7 @@ export type EquipmentItem = {
 };
 
 export type TournamentGame = {
+  winnerId?: string | null;
   gameVersion?: number;
   id: string;
   team1: string;
@@ -776,6 +783,7 @@ export type TournamentGame = {
   isResetMatch?: boolean;
   /** True for conditional matches that only occur under specific bracket outcomes */
   isConditional?: boolean;
+  isNotRequired?: boolean;
   phase?: 'preliminary' | 'playoff';
   playoffDivisionId?: string;
   playoffDivisionName?: string;
@@ -878,6 +886,8 @@ interface TeamContextType {
   householdGames: any[];
   householdBalance: number;
   alerts: TeamAlert[];
+  alertHistoryError: string | null;
+  refreshAlertHistory: () => Promise<void>;
   unreadAlertsCount: number;
   markAlertAsSeen: (id: string) => void;
   markAllAlertsAsSeen: () => void;
@@ -1066,6 +1076,7 @@ const clean = (obj: any): any => {
 };
 
 export function TeamProvider({ children }: { children: ReactNode }) {
+  const eventRequestRegistry = useRef(createTeamEventRequestRegistry());
   const { user: firebaseUser, isAuthResolved } = useUser();
   const firebaseAuth = useAuth();
   const db = useFirestore();
@@ -1390,11 +1401,47 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const { data: gamesData } = useCollection(gamesQuery);
   const games = useMemo(() => gamesData || [], [gamesData]);
 
-  // History is deliberately unbounded here: the inbox promises the member's
-  // full squad broadcast history, not an arbitrary latest-ten slice.
-  const alertsQuery = useMemoFirebase(() => (isAuthResolved && activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'alerts'), orderBy('createdAt', 'desc')) : null, [isAuthResolved, activeTeam?.id, db]);
-  const { data: alertsData } = useCollection<TeamAlert>(alertsQuery);
-  const allAlerts = useMemo(() => alertsData || [], [alertsData]);
+  // Firestore rules cannot safely row-filter an alert collection query. The
+  // authenticated route resolves team authority, target, and audience before
+  // returning history; the client still applies the same policy defensively.
+  const [allAlerts, setAllAlerts] = useState<TeamAlert[]>([]);
+  const [alertHistoryError, setAlertHistoryError] = useState<string | null>(null);
+  const alertHistoryRequest = useRef(0);
+  const loadAlertHistory = useCallback(async (signal?: AbortSignal) => {
+    const requestId = ++alertHistoryRequest.current;
+    if (isSeedingDemo || !isAuthResolved || !firebaseUser?.uid || !activeTeam?.id || !firebaseAuth) {
+      if (!signal?.aborted) { setAllAlerts([]); setAlertHistoryError(null); }
+      return;
+    }
+    const result = await fetchAlertHistory<TeamAlert>({
+      teamId: activeTeam.id, getToken: () => getAuthToken(firebaseAuth), signal,
+    });
+    // An older refresh must never replace a newer response or another squad's inbox.
+    if (result && !signal?.aborted && requestId === alertHistoryRequest.current) {
+      setAllAlerts(result.alerts);
+      setAlertHistoryError(result.error);
+    }
+  }, [activeTeam?.id, firebaseAuth, firebaseUser?.uid, isAuthResolved, isSeedingDemo]);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    const refresh = () => { void loadAlertHistory(controller.signal); };
+    setAllAlerts([]);
+    setAlertHistoryError(null);
+    refresh();
+    const interval = window.setInterval(refresh, 15_000);
+    const stopForegroundRefresh = listenForPushForegroundRefresh({
+      page: window,
+      documentSurface: document,
+      onForeground: refresh,
+    });
+    return () => {
+      ++alertHistoryRequest.current;
+      controller.abort();
+      window.clearInterval(interval);
+      stopForegroundRefresh();
+    };
+  }, [loadAlertHistory]);
   
   const seenAlertIds = useMemo(() => userProfile?.seenAlertIds || [], [userProfile?.seenAlertIds]);
 
@@ -1905,10 +1952,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   // Parent Login Redirect: Automatically push parents to the Family Hub if they land on the main dashboard
   useEffect(() => {
-    if (isAuthResolved && isParent && !isStaff && pathname === '/dashboard') {
+    if (isAuthResolved && !isTeamsLoading && teams.length > 0 && isParent && !isStaff && pathname === '/dashboard') {
       router.push('/family');
     }
-  }, [isAuthResolved, isParent, isStaff, pathname, router]);
+  }, [isAuthResolved, isTeamsLoading, teams.length, isParent, isStaff, pathname, router]);
 
 
   const formatTime = useCallback((iso: string) => { try { return format(new Date(iso), 'h:mm a'); } catch (e) { return '--:--'; } }, []);
@@ -2267,16 +2314,18 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       if (!firebaseAuth) throw new Error('Your session is unavailable. Refresh and try again.');
       const token = await getAuthToken(firebaseAuth);
       if (!token) throw new Error('Your session has expired. Sign in again.');
+      const request = eventRequestRegistry.current.acquire({ action: 'create', teamId: activeTeam.id, uid: firebaseAuth.currentUser?.uid, event: clean(data) });
       const response = await fetch('/api/teams/events/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ action: 'create', teamId: activeTeam.id, event: clean(data) }),
+        body: JSON.stringify({ action: 'create', teamId: activeTeam.id, requestId: request.requestId, event: clean(data) }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Unable to create this event.');
+      eventRequestRegistry.current.complete(request);
 
       // Fire push + email to all team members
-      if (shouldDispatchTeamOutbound(activeTeam)) Promise.resolve().then(async () => {
+      if (!payload.replayed && shouldDispatchTeamOutbound(activeTeam)) Promise.resolve().then(async () => {
         try {
           const { getAuth } = await import('firebase/auth');
           const { getApp } = await import('firebase/app');
@@ -2322,13 +2371,15 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (!isStaff || !activeTeam?.id || !firebaseAuth) return false;
     const token = await getAuthToken(firebaseAuth);
     if (!token) throw new Error('Your session has expired. Sign in again.');
+    const request = eventRequestRegistry.current.acquire({ action: 'create-series', teamId: activeTeam.id, uid: firebaseAuth.currentUser?.uid, event: clean(data), recurrence });
     const response = await fetch('/api/teams/events/action', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-      body: JSON.stringify({ action: 'create-series', teamId: activeTeam.id, event: clean(data), recurrence }),
+      body: JSON.stringify({ action: 'create-series', teamId: activeTeam.id, requestId: request.requestId, event: clean(data), recurrence }),
     });
     const payload = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(payload.error || 'Unable to create this recurring event.');
+    eventRequestRegistry.current.complete(request);
     return true;
   }, [activeTeam?.id, firebaseAuth, isStaff]);
 
@@ -3346,8 +3397,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader(idToken) },
       });
-      const payload = await response.json();
-      if (!response.ok) throw new Error(payload.error || 'Unable to schedule account deletion.');
+      let payload = await response.json();
+      if (!response.ok && payload.code === 'apple_confirmation_required') {
+        toast({ title: 'Confirm with Apple', description: 'Use the Apple account connected to this Squad account. Cancelling leaves your account in place.' });
+        const { requestNativeAppleDeletion } = await import('@/lib/apple-deletion/client');
+        payload = await requestNativeAppleDeletion(window as Parameters<typeof requestNativeAppleDeletion>[0], idToken);
+      } else if (!response.ok) throw new Error(payload.error || 'Unable to schedule account deletion.');
 
       const { signOut } = await import('firebase/auth');
       await clearBrowserSession();
@@ -3445,12 +3500,16 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       createdAt: new Date().toISOString(),
       createdBy: firebaseUser.uid
     }));
-  }, [activeTeam, db, firebaseUser, isSuperAdmin]);
+    void loadAlertHistory();
+  }, [activeTeam, db, firebaseUser, isSuperAdmin, loadAlertHistory]);
 
   const deleteAlert = useCallback(async (id: string) => { 
     if (!isStaff) return;
-    if (activeTeam?.id && db) await deleteDoc(doc(db, 'teams', activeTeam.id, 'alerts', id)); 
-  }, [activeTeam, db, isStaff]);
+    if (activeTeam?.id && db) {
+      await deleteDoc(doc(db, 'teams', activeTeam.id, 'alerts', id));
+      void loadAlertHistory();
+    }
+  }, [activeTeam, db, isStaff, loadAlertHistory]);
 
   const signPublicTournamentWaiver = useCallback(async (teamId: string, eventId: string, tournamentTeamName: string, coachName: string) => { 
     if (!db) return false; 
@@ -3609,7 +3668,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     isSchoolAdmin, householdEvents: householdEvents || [], householdGames: householdGames || [], activeTeamEvents, games, householdBalance, myChildren, plans, isPlansLoading, proQuotaStatus,
     deleteFundraisingOpportunity, addGame, updateGame, canAddProTeam: (proQuotaStatus.remaining > 0),
     isPaywallOpen, setIsPaywallOpen, purchasePro,
-    hasFeature, alerts, unreadAlertsCount,
+    hasFeature, alerts, alertHistoryError, refreshAlertHistory: loadAlertHistory, unreadAlertsCount,
     getCalendarFeedUrl,
 
     markAlertAsSeen, markAllAlertsAsSeen, seenAlertIds, isSeedingDemo, setIsSeedingDemo,
@@ -3652,7 +3711,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     db, userProfile, activeTeam, setActiveTeam, teamsRaw, isTeamsLoading, members, isMembersLoading, firebaseUser, storage,
     isStaff, isPro, isStarter, householdEvents, householdGames, activeTeamEvents, games, myChildren, plans, isPlansLoading, isPaywallOpen,
     isSeedingDemo, setIsSeedingDemo, getCalendarFeedUrl,
-    seenAlertIds, alerts, unreadAlertsCount, isSuperAdmin, isClubManager, isPrimaryClubAuthority, isEliteAccount, hasFeature, proQuotaStatus,
+    seenAlertIds, alerts, alertHistoryError, loadAlertHistory, unreadAlertsCount, isSuperAdmin, isClubManager, isPrimaryClubAuthority, isEliteAccount, hasFeature, proQuotaStatus,
     totalStorageUsed,
 
 

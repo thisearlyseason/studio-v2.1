@@ -1,6 +1,7 @@
 
 "use client";
 
+import { ParentCompanyBrand } from '@/components/ParentCompanyBrand';
 import React from 'react';
 import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
@@ -44,7 +45,8 @@ export default function PrivacyPolicyPage() {
             <ul className="list-disc pl-6 space-y-2">
               <li><strong>Account Data:</strong> Name, email address, and profile picture.</li>
               <li><strong>Team Data:</strong> Roster information, schedules, game results, and files uploaded to your team library.</li>
-              <li><strong>Usage Data:</strong> How you interact with our platform to help us improve your experience.</li>
+              <li><strong>Operational Data:</strong> Sign-in, security, error, and service-delivery records needed to operate and protect the app.</li>
+              <li><strong>Registration Data:</strong> Answers, waivers, and payment status submitted to an organizer. Organizers choose their form fields; provide only information needed for the activity.</li>
             </ul>
           </section>
 
@@ -64,10 +66,20 @@ export default function PrivacyPolicyPage() {
           <section className="space-y-4">
             <h2 className="text-xl font-bold text-foreground uppercase tracking-wider">3. Data Sharing</h2>
             <p>
-              <strong>We do not sell your personal information.</strong> We only share data with service providers (like Firebase for database and authentication) necessary to operate the platform. Your team data is private to your specific squad and is only visible to verified members of that team.
+              <strong>We do not sell your personal information.</strong> We only share data with service providers (like Firebase for database and authentication) necessary to operate the platform. Access depends on the feature and the permissions assigned by the organizer. Staff and authorized team members can access relevant team records. Organizers can publish registration forms, spectator schedules, results, recruiting profiles, and shared links; information included in those public views can be seen outside the team. Do not include private medical information or contact details in public descriptions.
             </p>
           </section>
 
+          <section className="space-y-4">
+            <h2 className="text-xl font-bold text-foreground uppercase tracking-wider">Service providers and optional features</h2>
+            <p>Firebase provides authentication, database, and file storage; Vercel hosts the web app; Stripe processes payments; and Resend delivers emails. The Squad does not receive full card numbers entered into Stripe checkout. These providers may process information outside your province or country. Optional Elfsight support chat loads only when you enable it. Google Fonts and media hosts receive connection information when their resources are requested.</p>
+            <p><Link href="/cookies" className="underline">Read about cookies and local storage</Link>. Newsletter subscription is separate from creating an account. Marketing emails include an unsubscribe link; security and service messages may still be necessary to operate your account.</p>
+          </section>
+          <section className="space-y-4">
+            <h2 className="text-xl font-bold text-foreground uppercase tracking-wider">Youth information and retention</h2>
+            <p>Parents, guardians, and authorized organizers should manage youth information and obtain the permissions required for their activity. Youth access uses the guardian invitation process. Avoid collecting unnecessary sensitive information, and obtain permission before publishing a child&apos;s profile or media.</p>
+            <p>Account and team information is retained while needed to provide the service. Account deletion follows the process below; payment, security, and organizational records may need to be retained for legal obligations or the rights of other participants. Contact us to request access, correction, or removal of information, or to ask about a specific record&apos;s retention.</p>
+          </section>
           <section className="space-y-4">
             <h2 className="text-xl font-bold text-foreground uppercase tracking-wider">4. Data Security</h2>
             <p>
@@ -106,6 +118,7 @@ export default function PrivacyPolicyPage() {
             </p>
           </div>
         </div>
+        <div className="mt-6 flex justify-center"><ParentCompanyBrand /></div>
       </footer>
     </div>
   );

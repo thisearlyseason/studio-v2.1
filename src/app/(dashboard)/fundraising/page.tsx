@@ -123,7 +123,7 @@ function ViewAllDonationsModal({ fund, isOpen, onOpenChange }: {
     <Dialog open={isOpen} onOpenChange={(o) => { onOpenChange(o); if (!o) { setSearchTerm(''); setDateFrom(''); setDateTo(''); setPage(0); } }}>
       <DialogContent className="rounded-[2.5rem] sm:max-w-3xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
         <DialogTitle className="sr-only">All Donations — {fund?.title}</DialogTitle>
-        <div className="h-2 bg-primary w-full" />
+
         <div className="p-8 space-y-6">
           <DialogHeader>
             <div className="flex items-center justify-between">
@@ -445,7 +445,7 @@ function AuthorizedFundraisingPage() {
           }}
         >
           <Card className="max-w-md w-full rounded-[3.5rem] border-none shadow-[0_40px_80px_-15px_rgba(0,0,0,0.15)] bg-white overflow-hidden ring-1 ring-black/5">
-            <div className="h-2 bg-primary w-full" />
+
             <CardHeader className="p-10 lg:p-12 text-center space-y-6">
               <div className="bg-primary/10 w-20 h-20 rounded-4xl flex items-center justify-center mx-auto shadow-inner ring-8 ring-primary/5">
                 <LockIcon className="h-10 w-10 text-primary" />
@@ -543,7 +543,7 @@ function AuthorizedFundraisingPage() {
           
           return (
             <Card key={fund.id} className="rounded-[3rem] border-none shadow-xl overflow-hidden bg-white flex flex-col group transition-all hover:shadow-2xl hover:ring-2 hover:ring-primary/10">
-              <div className={cn("h-2 w-full", isArchive ? "bg-muted" : "bg-primary")} />
+
               <CardContent className="p-8 lg:p-10 space-y-8 flex-1">
                 <div className="flex justify-between items-start">
                   <div className="bg-primary/5 p-5 rounded-3xl text-primary group-hover:text-black shadow-inner transition-colors">
@@ -635,7 +635,7 @@ function AuthorizedFundraisingPage() {
         <DialogContent className="rounded-[3.5rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
           <DialogTitle className="sr-only">Campaign Deployment Strategy</DialogTitle>
           <DialogDescription className="sr-only">Configure multi-channel payment protocols for fundraising</DialogDescription>
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar text-foreground">
             <DialogHeader>
               <div className="flex items-center gap-4 mb-2">
@@ -727,7 +727,7 @@ function AuthorizedFundraisingPage() {
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent className="rounded-[3.5rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
           <DialogTitle className="sr-only">Edit Campaign Strategy</DialogTitle>
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar text-foreground">
             <DialogHeader>
               <div className="flex items-center gap-4 mb-2">
@@ -795,7 +795,7 @@ function AuthorizedFundraisingPage() {
         <DialogContent className="rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden bg-white sm:max-w-lg text-foreground">
           <DialogTitle className="sr-only">Donation Details</DialogTitle>
           <DialogDescription className="sr-only">Verify and confirm receipt of manual or digital donations</DialogDescription>
-          <div className="h-2 bg-black w-full" />
+
           <div className="p-8 lg:p-10 space-y-8">
             <DialogHeader>
               <div className="flex items-center gap-4">
@@ -819,7 +819,7 @@ function AuthorizedFundraisingPage() {
       <Dialog open={isCommitOpen} onOpenChange={setIsCommitOpen}>
         <DialogContent className="rounded-[3.5rem] p-0 border-none shadow-2xl overflow-hidden bg-white sm:max-w-md text-foreground">
           <DialogTitle className="sr-only">Commit to Donation</DialogTitle>
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-8 lg:p-12 space-y-8">
             <DialogHeader>
               <div className="flex items-center gap-4 mb-2">

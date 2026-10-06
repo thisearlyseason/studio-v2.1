@@ -1,15 +1,23 @@
 import type { Metadata } from 'next';
+import { cache } from 'react';
+import { readActiveScoringLeague } from '@/lib/server-competition-scoring';
 import { notFound } from 'next/navigation';
 import { adminDb } from '@/lib/firebase-admin';
 import { isValidFirestoreDocumentId } from '@/lib/firestore-document-id';
 
 type Props = { children: React.ReactNode; params: Promise<{ leagueId: string }> };
 
-async function publicLeague(leagueId: string) {
+const publicLeague = cache(async (leagueId: string) => {
   if (!isValidFirestoreDocumentId(leagueId)) return null;
-  const snapshot = await adminDb.collection('publicLeagueViews').doc(leagueId).get();
-  return snapshot.exists ? snapshot.data() : null;
-}
+  let snapshot = await adminDb.collection('leagues').doc(leagueId).get();
+  if (!snapshot.exists) {
+    const bySlug = await adminDb.collection('leagues').where('slug', '==', leagueId).limit(1).get();
+    if (bySlug.empty) return null;
+    snapshot = bySlug.docs[0];
+  }
+  const league = await adminDb.runTransaction(transaction => readActiveScoringLeague(transaction, snapshot.id));
+  return { name: String(league.name || 'League') };
+});
 
 export async function generateMetadata({ params }: Omit<Props, 'children'>): Promise<Metadata> {
   const { leagueId } = await params;

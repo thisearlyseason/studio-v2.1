@@ -67,7 +67,7 @@ export function QuotaResolutionOverlay() {
   return (
     <Dialog open={true} onOpenChange={() => {}}>
       <DialogContent className="sm:max-w-xl rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl">
-        <div className="h-2 bg-primary w-full" />
+
         <div className="p-8 space-y-8">
           <DialogHeader className="text-center space-y-3">
             <div className="inline-flex items-center gap-2 bg-red-100 text-red-700 px-4 py-1.5 rounded-full text-xs font-black uppercase tracking-widest mx-auto">

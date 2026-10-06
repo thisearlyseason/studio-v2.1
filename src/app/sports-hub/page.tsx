@@ -390,7 +390,7 @@ export default function SportsHubHomePage() {
             <motion.div key={article.id} initial="hidden" whileInView="visible" viewport={{ once: true }} variants={fadeUp} transition={{ delay: i * 0.08 }}>
               <Link href={`/sports-hub/articles/${article.slug}`} className="group block h-full">
                 <div className="h-full bg-card border rounded-2xl overflow-hidden depth-card transition-all duration-300 hover:shadow-xl hover:-translate-y-0.5">
-                  <div className="h-1.5 hero-gradient" />
+
                   <div className="p-6">
                     <Badge variant="outline" className="text-[9px] font-black uppercase tracking-widest text-primary border-primary/20 bg-primary/5 mb-3">
                       {article.category}

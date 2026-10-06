@@ -54,7 +54,7 @@ function DocumentSigningDialog({ doc: d, onSign, members, onComplete }: { doc: T
       </DialogTrigger>
       <DialogContent className="rounded-[2.5rem] sm:max-w-2xl p-0 overflow-hidden border-none shadow-2xl">
         <DialogTitle className="sr-only">Execute Verified Signature</DialogTitle>
-        <div className="h-2 bg-primary w-full" />
+
         <div className="p-8 space-y-6 overflow-y-auto max-h-[90vh]">
           <DialogHeader>
             <DialogTitle className="text-2xl font-black uppercase tracking-tight">{d.title}</DialogTitle>
@@ -276,7 +276,7 @@ export default function FilesPage() {
                 </Button>
               </DialogTrigger>
               <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-0 sm:max-w-md overflow-hidden">
-                <div className="h-2 bg-primary w-full" />
+
                 <div className="p-8 space-y-6">
                   <DialogHeader>
                     <DialogTitle className="text-2xl font-black uppercase">Archive Resource</DialogTitle>
@@ -313,7 +313,7 @@ export default function FilesPage() {
                 </Button>
               </DialogTrigger>
               <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-0 sm:max-w-md overflow-hidden">
-                <div className="h-2 bg-emerald-500 w-full" />
+
                 <div className="p-8 space-y-6">
                   <DialogHeader>
                     <DialogTitle className="text-2xl font-black uppercase">Add URL Link</DialogTitle>

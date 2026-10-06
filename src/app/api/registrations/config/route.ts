@@ -38,6 +38,7 @@ export async function POST(req:NextRequest){
       if(targetKind==='tournament'&&!authorityAlreadyChecked)await resolveCompetitionAuthority({transaction,actorUid:auth.uid,actorRole:auth.role,teamId:targetId,domain:'tournament'});
       const [parent,current,credential]=await Promise.all([transaction.get(parentRef),transaction.get(configRef),...(credentialRef&&scoringCodeHash?[transaction.get(credentialRef)]:[])]);
       if(!parent.exists)throw new RegistrationInputError('Registration target not found.',404);
+      if(normalized.payment_method==='stripe' && (targetKind!=='tournament'||parent.data()?.competition?.version!==2||normalized.type!=='team'))throw new RegistrationInputError('Online tournament payment requires a team registration form on a tournament created with the step-by-step builder.',409);
       if(targetKind==='tournament'&&parent.data()?.isArchived===true)throw new RegistrationInputError('Archived Tournament registration cannot be reactivated.',409);
       if(targetKind==='tournament'&&parent.data()?.status==='cancelled'&&normalized.is_active)throw new RegistrationInputError('Cancelled Tournament registration cannot be activated.',409);
       if(targetKind==='league'&&auth.role!=='superadmin'&&parent.data()?.creatorId!==auth.uid)throw new RegistrationInputError('League organizer access required.',403);
@@ -50,7 +51,7 @@ export async function POST(req:NextRequest){
       const otherForms=targetKind==='tournament'&&!normalized.is_active
         ?await transaction.get(parentRef.collection('registration').where('is_active','==',true))
         :null;
-      const registrationOpen=normalized.is_active||Boolean(otherForms?.docs.some(form=>form.id!==configId));
+      const registrationOpen=!(parent.data()?.competition?.version===2 && parent.data()?.competition?.phase!=="registration" && parent.data()?.competition?.status==="published") && (normalized.is_active||Boolean(otherForms?.docs.some(form=>form.id!==configId)));
       let credentialVersion:number|undefined;
       if(targetKind==='tournament'&&scoringCodeHash&&credentialRef){
         const lifecycleVersion=Number(parent.data()?.lifecycleVersion||0),eventCredentialVersion=Number(parent.data()?.credentialVersion||0),privateCredentialVersion=Number(credential?.data()?.credentialVersion||0);

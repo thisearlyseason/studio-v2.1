@@ -8,6 +8,7 @@ import {
 } from '@/lib/account-creation-policy';
 import { readJsonBodyWithLimit, RequestBodyError } from '@/lib/server-request-guards';
 import { buildWaiverVersionIdentity } from '@/lib/waiver-security';
+import { AccountOwnershipError, readOwnershipAccounts } from '@/lib/server-account-ownership';
 
 const ALLOWED_TYPES = new Set([
   'adult',
@@ -87,7 +88,6 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const ownerRef = adminDb.collection('users').doc(requestedOwnerId);
     const ownedTeamsQuery = adminDb
       .collection('teams')
       .where('ownerUserId', '==', requestedOwnerId);
@@ -103,12 +103,17 @@ export async function POST(request: NextRequest) {
     const code = inviteCode();
 
     await adminDb.runTransaction(async transaction => {
-      const [ownerSnapshot, ownedTeams] = await Promise.all([
-        transaction.get(ownerRef),
+      const [accounts, ownedTeams] = await Promise.all([
+        readOwnershipAccounts(adminDb, transaction, requestedOwnerId, auth.uid),
         transaction.get(ownedTeamsQuery),
       ]);
-      if (!ownerSnapshot.exists) throw new Error('OWNER_PROFILE_MISSING');
-      const limit = auth.role === 'superadmin' ? 100 : accountCreationLimit(ownerSnapshot.data());
+      if (requestedOwnerId !== auth.uid) {
+        const school = (await transaction.get(adminDb.collection('teams').doc(schoolId!))).data();
+        if (school?.ownerUserId !== requestedOwnerId || !Array.isArray(school.schoolAdminIds) || !school.schoolAdminIds.includes(auth.uid)) {
+          throw new AccountOwnershipError('Organization authorization changed. Please refresh and try again.');
+        }
+      }
+      const limit = auth.role === 'superadmin' ? 100 : accountCreationLimit(accounts.owner.data());
       if (ownedTeams.size >= limit) throw new Error('TEAM_LIMIT_REACHED');
 
       const baseTeam = {
@@ -127,6 +132,7 @@ export async function POST(request: NextRequest) {
         createdAt: now,
         ...(schoolId ? { schoolId } : {}),
       };
+      accounts.fence();
       transaction.create(teamRef, baseTeam);
       transaction.set(creatorMembershipRef, {
         teamId,
@@ -192,6 +198,7 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ teamId, code }, { status: 201 });
   } catch (error) {
+    if (error instanceof AccountOwnershipError) return NextResponse.json({ error: error.message }, { status: error.status });
     if (error instanceof RequestBodyError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }

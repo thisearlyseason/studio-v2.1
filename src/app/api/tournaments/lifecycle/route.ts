@@ -1,3 +1,5 @@
+import { replicateCompetition } from '@/lib/competition/replication';
+import { starterTournamentAllowed } from '@/lib/competition/plan-access';
 import { NextRequest, NextResponse } from 'next/server';
 import type { DocumentData, DocumentReference, Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase-admin';
@@ -62,7 +64,7 @@ function validate(data: DocumentData, options: ValidationOptions = {}): void {
   }
 }
 function assertAdvancedEntitlement(team: DocumentData, data: DocumentData): void {
-  if (team.isPro !== true && data.tournamentType !== 'round_robin') fail('This squad plan supports basic Round Robin tournaments only.', 403);
+  if (team.isPro !== true && data.tournamentType !== 'single_elimination') fail('Starter includes Single Elimination Pool only. Upgrade to unlock other tournament formats.', 403);
 }
 function hasSchedule(event: DocumentData): boolean {
   return Boolean(event.tournamentGames?.length || event.schedule?.length || event.deploymentStatus === 'deployed' || event.bracketStatus === 'ready');
@@ -143,6 +145,22 @@ export async function POST(request: NextRequest) {
       const now = new Date().toISOString();
       const version = Number(source.lifecycleVersion || 0) + 1;
       const auditRef = adminDb.collection('tournamentLifecycleAudits').doc(identity.operationId);
+      if (source.competition?.version === 2 && action === 'configure') {
+        // Original roster logo tools remain available; scheduling identities stay engine-owned.
+        const before = source.tournamentTeamsData || [];
+        const after = payload.tournamentTeamsData;
+        if (Object.keys(payload).some(key => key !== 'tournamentTeamsData') || !Array.isArray(after) || after.length !== before.length) fail('Use this tournament’s setup steps to change its teams or schedule.', 409);
+        for (let index = 0; index < before.length; index++) {
+          const previous = before[index], next = record(after[index]);
+          const keys = new Set([...Object.keys(previous), ...Object.keys(next)]);
+          if ([...keys].some(key => key !== 'logoUrl' && JSON.stringify(previous[key]) !== JSON.stringify(next[key]))) fail('Use this tournament’s setup steps to change its teams or schedule.', 409);
+          if (next.logoUrl !== undefined && (typeof next.logoUrl !== 'string' || next.logoUrl.length > 4096 || (next.logoUrl && !/^https?:\/\//i.test(next.logoUrl)))) fail('Use a valid image URL for the team logo.');
+        }
+        transaction.update(eventRef, { tournamentTeamsData: after, lifecycleVersion: version, updatedAt: now });
+        transaction.create(auditRef, { action: 'configure-logos', actorUid: auth.uid, teamId, eventId, createdAt: now });
+        return { success: true, operationState: 'complete', eventId, lifecycleVersion: version };
+      }
+
       if (action === 'create' || action === 'replicate') {
         let definitions: DocumentData[];
         let sourceConfigs: Awaited<ReturnType<typeof configs>> = [];
@@ -158,7 +176,11 @@ export async function POST(request: NextRequest) {
         const existing = await transaction.get(teamRef.collection('events'));
         const names = new Set<string>();
         for (const definition of definitions) {
-          validate(definition, action === 'replicate' ? { allowEmptyRoster: true } : { allowTieredDraft: true }); assertAdvancedEntitlement(team, definition);
+          if (definition.competition?.version === 2) {
+            if (team.isPro !== true && !starterTournamentAllowed(definition.competition.topology.rules)) fail('Starter includes Single Elimination Pool only.', 403);
+            replicateCompetition(definition.competition, definition.title, 'validation');
+          } else validate(definition, action === 'replicate' ? { allowEmptyRoster: true } : { allowTieredDraft: true });
+          assertAdvancedEntitlement(team, definition);
           const name = `${normalized(definition.title)}:${normalized(definition.divisionTitle)}`;
           if (names.has(name) || existing.docs.some(doc => doc.data().isTournament === true && `${normalized(doc.data().title)}:${normalized(doc.data().divisionTitle)}` === name)) fail('A Tournament with this title and division already exists.', 409);
           names.add(name);
@@ -167,6 +189,12 @@ export async function POST(request: NextRequest) {
           const id = `trn_${identity.operationId.slice(12)}_${index}`;
           const registrationCode = `T${identity.operationId.slice(12, 32).toUpperCase()}${index}`;
           const event = buildTournamentReplicationEvent({ source: definition, title: definition.title, eventId: id, teamId, actorUid: auth.uid, ownerUserId: String(team.ownerUserId || auth.uid), registrationCode, now });
+          if (definition.competition?.version === 2) {
+            const competition = replicateCompetition(definition.competition, definition.title, id);
+            event.competition = JSON.parse(JSON.stringify(competition));
+            event.tournamentTeamsData = competition.topology.teams;
+            event.tournamentTeams = competition.topology.teams.map(team => team.name);
+          }
           if (action === 'create') { event.tournamentTeamsData = definition.tournamentTeamsData; event.tournamentTeams = definition.tournamentTeamsData.map((value: DocumentData) => value.name); }
           return { ref: teamRef.collection('events').doc(id), id, registrationCode, event: { ...event, lifecycleVersion: 1 } };
         });

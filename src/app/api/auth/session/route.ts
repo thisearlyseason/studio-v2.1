@@ -1,3 +1,4 @@
+import { notifySignup } from '@/lib/server-signup-notification';
 import { NextRequest, NextResponse } from 'next/server';
 import * as admin from 'firebase-admin';
 import { adminDb, ensureAdminInit } from '@/lib/firebase-admin';
@@ -37,6 +38,9 @@ export async function POST(request: NextRequest) {
       sessionCookie,
       cookieOptions(Math.floor(SESSION_DURATION_MS / 1000))
     );
+    if (auth.signInProvider !== 'anonymous') {
+      await notifySignup(auth.uid, 'free').catch(() => console.warn('[signup] Notification delivery pending retry.'));
+    }
     return response;
   } catch (error) {
     console.error('[auth/session] Unable to create session:', error);

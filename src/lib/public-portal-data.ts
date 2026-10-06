@@ -25,10 +25,10 @@ export function permitsLegacyOrPaidPortals(...planIds: Array<string | null | und
 export function isActiveTournamentPortal(teamId: string, team: any, event: any): boolean {
   const teamStatus = typeof team?.status === 'string' ? team.status.trim().toLowerCase() : '';
   const entitled = permitsLegacyOrPaidPortals(team?.planId, team?.plan_type, team?.subscriptionPlanId);
-  const advancedEntitled = event?.tournamentType === 'round_robin' || team?.isPro === true;
+  const advancedEntitled = event?.tournamentType === 'single_elimination' || team?.isPro === true;
   return Boolean(team && event && entitled && advancedEntitled && event.isTournament === true && event.teamId === teamId &&
     team.isArchived !== true && team.isDeleted !== true && team.is_active !== false && team.isActive !== false && teamStatus !== 'removed' && teamStatus !== 'cancelled' &&
-    event.isArchived !== true && event.isDeleted !== true && event.is_active !== false && event.isActive !== false && event.status !== 'cancelled');
+    (event.competition?.version !== 2 || event.competition.status === 'published') && event.isArchived !== true && event.isDeleted !== true && event.is_active !== false && event.isActive !== false && event.status !== 'cancelled');
 }
 
 export function leagueBillingOwnerUserId(league: Record<string, unknown>): string {
@@ -144,7 +144,7 @@ export function publicTournament(id: string, event: any) {
     registration_cost: event.registration_cost,
     tournamentType: event.tournamentType,
     isTournament: !!event.isTournament,
-    isActive: !!event.isTournament && event.isArchived !== true && event.isDeleted !== true && event.is_active !== false && event.isActive !== false && event.status !== 'cancelled',
+    isActive: !!event.isTournament && (event.competition?.version !== 2 || event.competition.status === 'published') && event.isArchived !== true && event.isDeleted !== true && event.is_active !== false && event.isActive !== false && event.status !== 'cancelled',
     tournamentTeams: event.tournamentTeams || [],
     tournamentTeamsData: (event.tournamentTeamsData || []).map((team: any) => ({
       id: team.id,
@@ -249,11 +249,12 @@ export function spectatorTournament(id: string, event: any) {
     location: String(event.location || ''),
     division: String(event.division || ''),
     tournamentType: String(event.tournamentType || ''),
+    ...(event.competition?.version === 2 ? { workspaceVersion: 2 } : {}),
     tournamentTeamsData: teams,
     tournamentGames: games,
     standings,
     ...(tieredPlayoffs ? { tieredPlayoffs } : {}),
-    isActive: event.isTournament === true && event.isArchived !== true && event.isDeleted !== true && event.is_active !== false && event.isActive !== false && event.status !== 'cancelled',
+    isActive: event.isTournament === true && (event.competition?.version !== 2 || event.competition.status === 'published') && event.isArchived !== true && event.isDeleted !== true && event.is_active !== false && event.isActive !== false && event.status !== 'cancelled',
   };
 }
 
@@ -313,6 +314,7 @@ export function publicRegistrationConfig(id: string, config: any) {
     form_version: Number(config.form_version || 1),
     config_hash: typeof config.config_hash === 'string' ? config.config_hash : '',
     registration_cost: String(config.registration_cost || '0'),
+    payment_method: config.payment_method === 'stripe' ? 'stripe' : 'offline',
     currency: typeof config.currency === 'string' ? config.currency : 'CAD',
     offline_payment_instructions: typeof config.offline_payment_instructions === 'string'
       ? config.offline_payment_instructions

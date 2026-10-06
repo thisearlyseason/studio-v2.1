@@ -53,7 +53,7 @@ export function RSSCard({ article, className }: RSSCardProps) {
           />
         </div>
       )}
-      {!article.imageUrl && <div className="h-1 bg-muted" />}
+      {!article.imageUrl && null}
       <div className="p-5">
         <div className="flex items-center gap-2 mb-3">
           <Badge variant="outline" className="text-[9px] font-black uppercase tracking-widest text-muted-foreground border-muted">

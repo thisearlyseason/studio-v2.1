@@ -1,0 +1,1346 @@
+{
+  "account-delete": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 42620,
+    "sha256": "058b804eb9bff8a31692bea5120c9b0ae5ace98fd3799ac50ba547f256091f74",
+    "route": "/events",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "account-menu": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 69048,
+    "sha256": "b9745f9925ecfe1d30cf9f79716c6af05c1646fe188705eb33d4630a578e5443",
+    "route": "/events",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "activity-details": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 39236,
+    "sha256": "9916c4d58967ae15d7dab4d1bb1c371a4597507a9fbec958261e50ab14c1a462",
+    "route": "/events",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "activity-form": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 39228,
+    "sha256": "6fe9b2cd920c366c1c7db1e89b389fadbf2afc5def9074465a323825c752d167",
+    "route": "/events",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "activity-plan": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 39118,
+    "sha256": "2736674dfbfd6e334f3e74d2f1590dcef7ea540a7625067386f04568839916eb",
+    "route": "/events",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "admin": {
+    "width": 1280,
+    "height": 720,
+    "bytes": 22846,
+    "sha256": "86ab6ac6c0e60c5ca24cbf0c041248a9948cdc8ab1e4f1d74dca0934555ed08b",
+    "route": "/admin",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "admin-account": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 37214,
+    "sha256": "838a9fb7a08a75f08be34716de45663d9d1d797b7b128de9ffd34d1d35c0f16c",
+    "route": "/admin",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "admin-beta": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 32802,
+    "sha256": "34d8e151e2aa9a1fdd8b831fc7945d5bb6d9ffe0231059f2d4004e43821a16a6",
+    "route": "/admin",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "admin-bugs": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 19256,
+    "sha256": "3ceb8b0f3617b5a5acf1bf1b9691229441de89e40abedff2d34de6c90e2e040d",
+    "route": "/admin",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "admin-embeds": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 58748,
+    "sha256": "7ede7efe132e066bd77cb25ef1e00a78b6e235b95bff89a99d799d60302bf8bc",
+    "route": "/admin",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "admin-newsletters": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 43462,
+    "sha256": "66c6b7f718f552c16592bcfa1462a412e766588450b7fa4acca6443096e86705",
+    "route": "/admin",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "admin-plans": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 25254,
+    "sha256": "b5dcf5e3d805b0f49358f5b0bdbe0710c49a060343524df3d1fd58da11c2c94e",
+    "route": "/admin/plans",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "admin-sports": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 40820,
+    "sha256": "b4146127ea2cb34f7ad5b020b5ccf2fe6f14ef13c3ca40ae1deebb1415e74fd4",
+    "route": "/admin",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "admin-users": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 35158,
+    "sha256": "faa33c5043d1a218aa50dce7cee481b3acfd40e935dc852bf027b4052170e969",
+    "route": "/admin",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "alerts": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 31078,
+    "sha256": "61d36fe5501ce1983553aef902dfa55de5dac95b9339c0cbdba57a12e7ccc64f",
+    "route": "/events",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "athlete-evaluation": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 41416,
+    "sha256": "3f3cf08cfad36196f4a3ef49e658a559c595c6df20be9bb3034546e8f1b63de7",
+    "route": "/coaches-corner",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "athlete-film": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 30582,
+    "sha256": "e2a9a56f82f00d9d8af597bbe1ebc83309749b709229703c40e4ebb6a9156032",
+    "route": "/coaches-corner",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "athlete-talent": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 70274,
+    "sha256": "58839f1cb292e94b797502fd4bc3d60c24890a45899594a334598d76f9f594cf",
+    "route": "/coaches-corner",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "attendance": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 58922,
+    "sha256": "8e2f0e44f804c1e2855a5d35f3023a05864277b8c667c851aae875a753ba93d3",
+    "route": "/coaches-corner/attendance",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "billing": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 80404,
+    "sha256": "6d943ae40d82af5d053aeb7438422cbc9a9051955199dd8043d0fe1d1a2c188a",
+    "route": "/dashboard/billing",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "billing-allocation": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 80160,
+    "sha256": "e754c12b65e68caef6fe4f7ef83f01265c3956964abe543a18bbc7d1a2d47717",
+    "route": "/dashboard/billing",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "broadcast": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 40222,
+    "sha256": "0004f74bc36a98f9ded60b6d49baa184f9f06b8a3e5ea6b0ab27f4af223d3fa1",
+    "route": "/events",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "campaign-form": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 47550,
+    "sha256": "4157d0217bb7708a0e0420234ddf561318fd7e807350ebf14dbcba9490edac0d",
+    "route": "/fundraising",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "chat-create": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 43106,
+    "sha256": "c9084041e9f889041d4f14a5d26cce29c1c783f8b3e03120428315ae68b4a1de",
+    "route": "/chats",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "chat-poll": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 28312,
+    "sha256": "21f7e371cd1fbf632d4dade534038f7fdac306f54b8be0aecd99083a0e166d45",
+    "route": "/chats/chat1_demo_squad_pro_UgAE_main",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "chat-settings": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 46364,
+    "sha256": "5408cd1fffb1a5f44483f499dc9d92969577c08375deb28d198e260739d80ca2",
+    "route": "/chats/chat1_demo_squad_pro_UgAE_main",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "chat-thread": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 42826,
+    "sha256": "df6a34a9ac2a4f7168bf9049dbb9ec6f322683b46052b282be3db287a5bf4ce1",
+    "route": "/chats/chat1_demo_squad_pro_UgAE_main",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "competition": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 45480,
+    "sha256": "fb054f7e4f67642817e727ae0496371014286bad0de46fa45253f4ec6cd59718",
+    "route": "/competition",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "dashboard": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 64144,
+    "sha256": "df232615076f868f1f6bceedd76179664feab6557c03e1d3ce3bb4363bac67d1",
+    "route": "/dashboard",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "donations": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 42406,
+    "sha256": "86251b2f94df6dcb9feacd00dfdd76a10e4039d6d1e46d1c14cc9f5d1200e345",
+    "route": "/fundraising",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "drill-form": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 47614,
+    "sha256": "b98a72e7ab940571e39dd49e1fa9d4e9de52d1ae1021d1d7704ad1cdd5ef0e18",
+    "route": "/drills",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "drill-view": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 48794,
+    "sha256": "7ef77f47bae0eae1654f9b71409396e4f54b85521a909ba64358e1023c82e142",
+    "route": "/drills",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "equipment": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 63990,
+    "sha256": "33c2782c643a195be9ff32f8393060221038471ac3b6855a8d7a67cb986aa2c4",
+    "route": "/equipment",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "equipment-assign": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 35126,
+    "sha256": "12968ddcd73f6b2876d25eae9523a73331737b07d570a6e3c29d7451e2dea4d0",
+    "route": "/equipment",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "equipment-form": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 43658,
+    "sha256": "dcd006e46f54936cd54e90deb413228453efe2f364777a7465ff1427a13743b5",
+    "route": "/equipment",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "event-detail": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 34328,
+    "sha256": "4126906de97f5ac57c7eb12133a9c0c1c8068ceedd9812a6736d757329688ac0",
+    "route": "/events",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "event-registration": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 18880,
+    "sha256": "4f0b01614800a22304108ca04f6817e1744a5c3a7030c1dca6aa126404407354",
+    "route": "/events/register/demo_squad_pro_UgAE_main",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "event-rsvp": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 35152,
+    "sha256": "02e615bc016fc6a446e33434c184eef42a785a5d9c07222da2d7b37e0b5599d4",
+    "route": "/events",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "event-tactical-plan": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 38924,
+    "sha256": "51afc6f8df23b592b21ebe69fa8ec2d7456f8b7dcf6b54b4bdce9f9f55621b67",
+    "route": "/events",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "events": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 63954,
+    "sha256": "f0ecb3ff762ee6f3b8ba8f064bc760269614546d352c706dc7ae25f52bac483a",
+    "route": "/events",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "facilities": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 42936,
+    "sha256": "762f8cf68b75e6bf6b4f479db8bca98e5b4839d294798604d7c7f779531f20b9",
+    "route": "/facilities",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "facility-edit": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 32360,
+    "sha256": "6ed49950ec0002b792a7a57592942a01cee199b6b2c83217c8e1b40966508cbf",
+    "route": "/facilities",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "facility-form": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 39904,
+    "sha256": "3300309fa0f0fd6c1ad31f10ed565f241932a4d776736d586b3386f0641cf1d5",
+    "route": "/facilities",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "family": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 59086,
+    "sha256": "247f4577aaec2cd27d2b707d2043032007b67de3a8cd913d96563e04c1f0d7ac",
+    "route": "/family",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "family-add": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 47470,
+    "sha256": "15c4c388d8b65432828c028131d02ec693f5e7c7e6e89ce41be251dd4b731822",
+    "route": "/family",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "family-edit": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 44778,
+    "sha256": "8a1d1145e0993753d4f80ffea23d19802bfab78b6d5fb8f3a2bb7ae30b7ae63b",
+    "route": "/family",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "family-payments": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 57992,
+    "sha256": "dbd82b468fcbbdc2abf9ca8b234e8b1111c391e2ccb1b746b83a8ad9eceb89bb",
+    "route": "/family/payments",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "family-schedule": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 55314,
+    "sha256": "0aac92491996cc63d617febce71824f0b72e4ed4edd0a795892bf8e1991c0bfc",
+    "route": "/family",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "family-teams": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 55048,
+    "sha256": "4b61da1b8192950bfdfddecbcf991d4df2c85a7cc0ddcd5d5ee19db3f1bb01d6",
+    "route": "/family",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "feed": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 53546,
+    "sha256": "a3cca98be5001a7801a83eb83e3eaca5528f5dee7b23194e03d6d9e15a8239ea",
+    "route": "/feed",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "feed-compose": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 53346,
+    "sha256": "2beb0c995d4fec00e03ae686b713ef3e91af75fb943f9cc758d14c5662ebbf14",
+    "route": "/feed",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "film-form": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 35430,
+    "sha256": "b9460e65d9d538d3c182f4b4b53b11c140578df447d1da2ca961055a028e61fc",
+    "route": "/drills",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "finance": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 58882,
+    "sha256": "d5459a9733e4ffe9080e96c0393ef8c959a637b3ce740949682e4a9f15e124d5",
+    "route": "/coaches-corner",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "form-additional": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 32534,
+    "sha256": "486ca4aff6f6b58b0494169f45ce421aedb2796d7ee48b7bd3bd8d162b794193",
+    "route": "/leagues/registration/demo_league_UgAE",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "form-guardian": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 50272,
+    "sha256": "3a43728100423c77503409652fb7ee63a305b65c7996aae5b70718d19e24a85d",
+    "route": "/leagues/registration/demo_league_UgAE",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "form-identity": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 46528,
+    "sha256": "b96ff96cda7f2302ac833c2cad958348168af8655fae0b50f12dac7edda3d006",
+    "route": "/leagues/registration/demo_league_UgAE",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "form-question": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 21922,
+    "sha256": "2e106e9a9ca0170bc7bffb98019c182545df3983fc8df2640b44e759f03a4770",
+    "route": "/leagues/registration/demo_league_UgAE",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "form-waivers": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 50522,
+    "sha256": "6acad8eb1e569c7becd66aca793916648f108f85f65318bd80bf794fc5b97f0d",
+    "route": "/leagues/registration/demo_league_UgAE",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "fundraising": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 49426,
+    "sha256": "f24741cfee67693a8c8bac83b0a8ed2b0fa7671a8602442e31f06c704863b9b9",
+    "route": "/fundraising",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "game-form": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 37714,
+    "sha256": "68c70431e807fdaf8d3c888ca8b980c3a013fd075994d67330094957dfafad73",
+    "route": "/games",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "games": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 60290,
+    "sha256": "1bb1c74b17967e6b2db7acc4e14c7e8ca5c2f1e1ce6b9f6d5a5151c2b2a4db27",
+    "route": "/games",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "global-waiver-form": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 35494,
+    "sha256": "e8b8792ccf934cb127fde6b3d6e20c6f10d4fab71acbfc7f35d74ed6b80f3996",
+    "route": "/club",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "incident-details": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 42214,
+    "sha256": "254c4cd149162456a4826142afb93f201989977bd5e4f53e4a560744e5ba295a",
+    "route": "/coaches-corner",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "incident-form": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 49488,
+    "sha256": "a7ed4c77d41702d90699a9be4bf91625b3a8474f8dc882d1d44c9c9dca1dc024",
+    "route": "/coaches-corner",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "install": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 45266,
+    "sha256": "aa8769257265d3a3f33ac1a69594aac4b1053709c13b84f62d230971bdaf05a9",
+    "route": "/settings",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "join": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 49492,
+    "sha256": "a8ca9a600a109cfa7dc73b3b07496f95febf253d66d9bb13c13cc735d82cf920",
+    "route": "/teams/join",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "join-review": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 29888,
+    "sha256": "bedd8da0135f731bdf6511087589928aceccedeae08c54898ca4c454f69e8f64",
+    "route": "/teams/join",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "league-create": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 33280,
+    "sha256": "fad9de2319378dc915fee0735b3e6341499036f73fe482e53c64c3c0fd90bd91",
+    "route": "/leagues",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "league-edit": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 23700,
+    "sha256": "86d003a06aa5864c45516f477a3b7bfb29eebf4214d2edfc52e9b80536e07840",
+    "route": "/leagues",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "league-hub": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 52106,
+    "sha256": "1dec263d72a7d2f754518cf3988fbf605e4b215afc559a070f0eb18ce9c4729f",
+    "route": "/leagues",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "league-portal-form": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 45240,
+    "sha256": "3e77e1e6a631b1e2c3639e01c293c31f7489aced5cd1deef70c2db08cc5a1987",
+    "route": "/leagues/registration/demo_league_UgAE",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "league-portals": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 67486,
+    "sha256": "0bbef682d0a20d5c595339bb59237ef5abaa79e963d65bc26adf842528f83540",
+    "route": "/leagues",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "league-registration": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 29136,
+    "sha256": "6425c6f166846d671e4a65166d5de49ae5fac912d875ff09257994dd24e1f628",
+    "route": "/register/league/demo_league_UgAE",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "league-schedule": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 59844,
+    "sha256": "e703b7e116fc214ae6ade6cb0e6c31f19885350d1698a0cdc0c09b395f89410b",
+    "route": "/leagues",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "league-season": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 27992,
+    "sha256": "d8f159f813c9516faa8bdafced8d04edf0f546fca4686915f7bcf5695d87ed10",
+    "route": "/leagues",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "league-season-details": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 31798,
+    "sha256": "2a59ff4169bb98631061a3b8a62c0f6d8ab061ad3c0ad4df2cbc52b7ba200402",
+    "route": "/leagues",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "league-season-prepare": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 31850,
+    "sha256": "1ca44b9ccac5ce4562836ea7cddae226fa1dada450e2ae6c6a2719cbe315235f",
+    "route": "/leagues",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "league-season-squads": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 28684,
+    "sha256": "e7436d7e0ff073807520da51ff21762c8c5fc5998a5f57ae64dcf3f7d35fc5ec",
+    "route": "/leagues",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "league-teams": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 51624,
+    "sha256": "f2947883d5763519465a74007ad52ec4aaaf096ff941127bea2a10831d768274",
+    "route": "/leagues/registration/demo_league_UgAE",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "leagues": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 45262,
+    "sha256": "98d390807ed61c4a5f894c224882083583664e89c2818192a84a26e543f763a3",
+    "route": "/leagues",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "legal-docs": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 58564,
+    "sha256": "b4b9b079603e89f8f65213ddd80f18dab29023a43c29c645517b75201553af34",
+    "route": "/coaches-corner",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "library": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 71064,
+    "sha256": "551ead16f03c2df9373f2772f337dace546f5be51deccd18e24c20b78a36cc19",
+    "route": "/files",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "library-link": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 36270,
+    "sha256": "622867ba83f5d9c40dd1807ae05a886e9b2ac008abc8a6b9ddcc4a62ccdc7a41",
+    "route": "/files",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "library-upload": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 38596,
+    "sha256": "82f2ae4f3f4b442d99df637ddb1f5a47c1d6674ca8a3f0a855fc4c07a98534f0",
+    "route": "/files",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "login": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 68452,
+    "sha256": "817641c7c5f7bf8c20427723f5fcef41367afdec5c0a3c8089b4670c824f2f2d",
+    "route": "/login",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "mobile-menu": {
+    "width": 390,
+    "height": 844,
+    "bytes": 15732,
+    "sha256": "90241cfee49fba53773daaab2d6e3758125c583a32b53722de4235cf03a373e3",
+    "route": "/events",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "module-settings": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 56120,
+    "sha256": "ccce548c279a79ce3ed28f64e6d64675f2a23c4e9531b0137d2da05b5c95f96d",
+    "route": "/settings",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "new-team": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 47982,
+    "sha256": "f6204ba6af151ec46054d63572ca1f61b49df045dd9e8f923a463cad5873adc0",
+    "route": "/teams/new",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "new-team-bottom": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 48010,
+    "sha256": "53b34a507434f716d3cc87626fdc68e29fab67d728416fad675c721db7417b58",
+    "route": "/teams/new",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "notification-settings": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 49944,
+    "sha256": "4bd9e3b2ed9b3b08d2c74e48b0c28f375a8f457cd17b46c954132392c6c6511e",
+    "route": "/settings",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "offline-payment": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 37078,
+    "sha256": "62dcddff4e352c02419b4d27f57201613d522ca4a77389de45418c95e9924e49",
+    "route": "/coaches-corner",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "pack-metrics": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 41138,
+    "sha256": "877e5104a73c6cf7889094336b8aeac6a9013f111a1175b5c7b3bfc3fd96f92c",
+    "route": "/coaches-corner",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "pack-profile": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 45806,
+    "sha256": "63334dc3d30ce76983e2a4a6fcc144af13de8747647914314bb98a518ccad782",
+    "route": "/coaches-corner",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "pack-skills": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 48528,
+    "sha256": "0fe6832ef76dc544aed462af9576eb1607690114052378c48f4eb27c9e0e4a1b",
+    "route": "/coaches-corner",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "password-reset": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 69884,
+    "sha256": "b954ae6452a6515133d0582606f386007458ba861011955acb58d0eee92e03c7",
+    "route": "/login",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "payment-item": {
+    "width": 1280,
+    "height": 720,
+    "bytes": 33136,
+    "sha256": "3659f2e5945f55132d7cd6c6094ccee1e3d3c8caaac9bbbb5ed9e74f16035762",
+    "route": "/coaches-corner",
+    "environment": "local emulator; illustrative Stripe status fixture"
+  },
+  "payment-items": {
+    "width": 1280,
+    "height": 720,
+    "bytes": 40072,
+    "sha256": "7f368bb7086c93a8e4513eec3ede62833664e3734da9ee86b60fb7b0e9f67f51",
+    "route": "/coaches-corner",
+    "environment": "local emulator; illustrative Stripe status fixture"
+  },
+  "playbook": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 102404,
+    "sha256": "429e255ce999ccd933e6625f6ea506adc2efd546c7e91835cf8860eb5f3a4bbc",
+    "route": "/drills",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "player-dashboard": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 61626,
+    "sha256": "6fc987a9c227157257af2f01cb69f1dcf7134fa72d940d41632e122cd122b17d",
+    "route": "/dashboard",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "practice-form": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 48860,
+    "sha256": "dc6ea4be4b4afb0c274b25d9565bf1dbb112ad3706db4964c49ef1d17b88725f",
+    "route": "/practice",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "profile-edit": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 34626,
+    "sha256": "4eee297993c109351357fd5acad2a8fd7e97187404070a7299691f8e3561c7aa",
+    "route": "/settings",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "public-donate": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 46764,
+    "sha256": "83147c6e81a66a0868ed049ef45fd98af47365a08016585626cff60e07498290",
+    "route": "/public/donate/demo_squad_pro_UgAE_main/fund1_demo_squad_pro_UgAE_main",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "public-volunteer": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 37782,
+    "sha256": "738ab4f76db4379c51b25ee4de5542f93a61663cf176f69134e7dbe8ba7eea22",
+    "route": "/public/volunteer/demo_squad_pro_UgAE_main/vol1_demo_squad_pro_UgAE_main",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "referee": {
+    "width": 1280,
+    "height": 720,
+    "bytes": 30768,
+    "sha256": "87b149ab0ebae422fa64c7fe970be9dd80d559b6eac72b008897c66203f8850e",
+    "route": "/tournaments/referee/demo_squad_pro_UgAE_main/tourn_demo_squad_pro_UgAE_main",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "registration-responses": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 36120,
+    "sha256": "4a6054b137eb842a04026ba9be3585738cca42a806bc0fe28c06f43852167df2",
+    "route": "/leagues/registration/demo_league_UgAE",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "roster-export": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 49862,
+    "sha256": "c0582f197ea2dfc59c7eff7c02a3ebb97a5177f8c42385192ba8f86cbdc371bc",
+    "route": "/roster",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "roster-invite": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 43766,
+    "sha256": "3fd7cedcef5f4f95edd21f4cfbdb55cf2ab2f82ffb91e59833f305f6327e6b24",
+    "route": "/roster",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "roster-profile": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 52128,
+    "sha256": "d5f45f4e85283c005145ba86b97d20ac09d3c2e4b28f9228daeddd53e5a123bd",
+    "route": "/roster",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "roster-remove": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 27270,
+    "sha256": "73eae980026d032d0733f83be334a695557ae31ed7f5dfb49ff8a09d26819e03",
+    "route": "/roster",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "roster-role": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 28714,
+    "sha256": "8d1ea05ec679a12ce4c31feea8a32a3b81c61d0888a619ba6c4f0b57072a1c75",
+    "route": "/roster",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "safety": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 57032,
+    "sha256": "37b956bb1e0f41de604567ec60e10db9fb5e350a3fcc9e473adea25d4faa28c5",
+    "route": "/coaches-corner",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "schedule-companion": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 40764,
+    "sha256": "a43b0a5077217b129925966c8dc0a625dd9fd5eba2c24288757b6091776063bc",
+    "route": "/schedule-app",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "schedule-tasks": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 23214,
+    "sha256": "d1ee93b17734dd12b6d4c865df85588efe8d8bf79f566aa41740095c42a1d93d",
+    "route": "/schedule-app",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "school-add-squad": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 33334,
+    "sha256": "0d322f21671f923f5544fa9c2144877526baba75de22ee8778be868dc532dfa2",
+    "route": "/club",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "school-admins": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 42002,
+    "sha256": "7160ba2800a5b603477328976a7e8d8b4cf44cc0e0530427b836010fff718c6c",
+    "route": "/club",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "school-coaches": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 42816,
+    "sha256": "0c7f45193d139805f31ca2367dc569d076827475100510813011313a40c85366",
+    "route": "/club",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "school-edit": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 36192,
+    "sha256": "217bfcade0b83351e7613936ff2ae7464512852c14da44481f27f7fb71e7e54d",
+    "route": "/club",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "school-finance": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 48224,
+    "sha256": "1636a000b957e4c0aa381981e595721b98df1c1177f544c918cbe0b6f9f92177",
+    "route": "/club",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "school-hub": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 60870,
+    "sha256": "7f27f3a948057154dac15be072aeb4aeac42976f301d99e3906002364c8c3ce4",
+    "route": "/club",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "school-safety": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 50188,
+    "sha256": "4ff7094312e0ef9e874b68fb68cff41c1f29471eda47b8c2446548528dfc700d",
+    "route": "/club",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "school-squads": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 51672,
+    "sha256": "8c3d7e5c8f29cab1450bb2cd769d382fe5671caf2a712c8ca5d3ff7320c95b8c",
+    "route": "/club",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "school-waivers": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 41712,
+    "sha256": "1b1a54951559c63f28f941da7af2b777265c8b7fce9a85a6e0440d3eb164434c",
+    "route": "/club",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "score-form": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 39822,
+    "sha256": "7864beca5d313c43c12204f21ec13b4b318d8f3b0ab29004b6c7abdbdd3b489e",
+    "route": "/games",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "scorekeeper": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 25456,
+    "sha256": "cb98ede7eb5f464abd22df3846ec435923ec16a0501402114992e7c7acf06c16",
+    "route": "/leagues/scorekeeper/demo_league_UgAE",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "scorekeeper-game": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 22502,
+    "sha256": "ba2eb5102b49edac517e011451af6eaf9b6f79c534470ab27756253bfde4f689",
+    "route": "/leagues/scorekeeper/demo_league_UgAE/sched1",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "scorekeeper-games": {
+    "width": 1280,
+    "height": 720,
+    "bytes": 29574,
+    "sha256": "c6c6fcb2fe5f4679eda1b7d807a8fe77de5b5fc81b04a6e75e9ffa83d227762a",
+    "route": "/leagues/scorekeeper/demo_league_UgAE",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "season-reset": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 34226,
+    "sha256": "888bc8e342c71b50c5f04095fceb7ee9a6dc176816f38ed37b0038b49e16ccea",
+    "route": "/settings",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "settings": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 49764,
+    "sha256": "7266769c070dc179aedf51dc7a9da48ffc73f13e9b8c7667463a62e3023f94bf",
+    "route": "/settings",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "signup-details": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 19574,
+    "sha256": "2753b7d3fe12e48c455cb942f31a7319225ed79175ddbdda5db9158d44ada439",
+    "route": "/signup",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "signup-plan": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 24746,
+    "sha256": "e9d7868c2d057b9ec6a86919aab7e2a3406487bba3aa7e1debddf32b438108d2",
+    "route": "/signup",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "signup-role": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 25492,
+    "sha256": "a2ac430191a0f4f7081918ad7b97fc961c58cec2d3cb27235bbd3622a19c26a2",
+    "route": "/signup",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "spectator": {
+    "width": 1280,
+    "height": 720,
+    "bytes": 26400,
+    "sha256": "961982e436463c2c120cf9686d1e77db5391803af1dcf3831a00c1983847a58d",
+    "route": "/leagues/spectator/demo_league_UgAE",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "sports-hub": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 53256,
+    "sha256": "3aa78e4165181dae1b8f67e6ae830d5aa9e0c2f77f5a9904ea2e10f6aea16bb7",
+    "route": "/sports-hub",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "sports-preferences": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 47508,
+    "sha256": "c57c9a6e1158efcd121755c3af62a2e24a237aee0a66cdd9dbdf05a12f6b80c5",
+    "route": "/sports-hub/preferences",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "sports-search": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 33172,
+    "sha256": "d29cbb2b318eabb8be69677aec25d228854a4d55660a72768560eb900265b31c",
+    "route": "/sports-hub/search",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "sports-template-detail": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 50756,
+    "sha256": "98cb01fba176c6203f591a13a24eb803f9e9be1712da5a96cb834898b8b594c7",
+    "route": "/sports-hub/templates/soccer-scoresheet",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "sports-templates": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 68018,
+    "sha256": "f97f5a61ac798a00065f35aca48edf371d970c05b9aebd7295f4115505b08b10",
+    "route": "/sports-hub/templates",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "squad-registration": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 18878,
+    "sha256": "edb3220fa196d8da6e71ed30943884b0a82baccade543df908aa1df81155890e",
+    "route": "/register/squad/demo_squad_pro_UgAE_main",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "squad-switcher": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 72274,
+    "sha256": "24f82fc548a55270e1532ee975591c9b2c10a0f79b6f6b8226259396c957e89c",
+    "route": "/events",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "stripe-connect": {
+    "width": 1280,
+    "height": 720,
+    "bytes": 47500,
+    "sha256": "2a94bb5c3e29b6cb4e6fe3a7f56c69bc40eb4274c05c2d2e98b2c60570219e2e",
+    "route": "/coaches-corner",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "team": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 55922,
+    "sha256": "0923d6767f2ed192325f2bf005602956aac30b54b8aa6fe0b306bd8b83a30fd2",
+    "route": "/team",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "team-branding": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 67036,
+    "sha256": "f8b2257648efb92f8bc404173d202fa55547984a362e7778b95e3e7851e3d7c0",
+    "route": "/team",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "team-code": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 49532,
+    "sha256": "9465c5a3046e660eb557f420ab69d8d9019a760892661f133ff9b2a66efefdb7",
+    "route": "/team",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "team-edit": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 36342,
+    "sha256": "97bb2bb29745559c1d5531eda88e5deaa82e8c1999b6913a924a66ff797d4820",
+    "route": "/team",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "tournament-architecture": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 49654,
+    "sha256": "110015d3461613b23cb4febbf12bf718ffda3acb888fb120c916a31edfbf29d5",
+    "route": "/manage-tournaments",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "tournament-brackets": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 41076,
+    "sha256": "76401b9559114ffbad01630ea92c4dd8eaad2e9e63bff3abe0f57b82da706c7a",
+    "route": "/manage-tournaments",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "tournament-create": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 34366,
+    "sha256": "9949cbf69ba8f71410f5b07b58dd809fa0719708fedc97da3868aaa34171408c",
+    "route": "/manage-tournaments",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "tournament-format": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 47428,
+    "sha256": "64f70b3e0cdaf5b9c0b9f8fa8705b6cc4d5c1ac32d3070ac2c29cad47210294d",
+    "route": "/manage-tournaments",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "tournament-hub": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 50668,
+    "sha256": "5e366052c090b4a5b80f497fed4b3837f375c55a4133b650669b63d67b568dab",
+    "route": "/manage-tournaments",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "tournament-officials": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 58196,
+    "sha256": "9fb5405bd731c7705b57ed176b882fe017472e5d56f067640ee4481fa65fb586",
+    "route": "/manage-tournaments",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "tournament-phase2": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 34018,
+    "sha256": "a9f592082eca87a20b073670bd4fb3e814faadc430a3a298086edaa5af830937",
+    "route": "/manage-tournaments",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "tournament-phase3": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 42052,
+    "sha256": "c8ae6607dfd2e5ec8a8b90af7cde8604616ac89a241b7bf5a68fd8ec8327d80e",
+    "route": "/manage-tournaments",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "tournament-phase4": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 34106,
+    "sha256": "28835ecd195e7acf14b17aefce48bb1962fe4aee8e87a51dc72d25553ad8d051",
+    "route": "/manage-tournaments",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "tournament-registration": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 39744,
+    "sha256": "a2ecc404dce7767e1f97212a354253c5f15c91650d7f2a023e03af884358d382",
+    "route": "/register/tournament/demo_squad_pro_UgAE_main/tourn_demo_squad_pro_UgAE_main",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "tournaments": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 48256,
+    "sha256": "de73191ddb2727392c0f6fd3dba8bea45848e14fe70631172b9988048f688ab7",
+    "route": "/manage-tournaments",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "verify-email": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 15412,
+    "sha256": "af89713d06874334656a60426bbe531ac1822472209957c36b007fd2a5ce64d0",
+    "route": "/verify-email",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "volunteer-audit": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 48498,
+    "sha256": "a0daf9bc218e767f44707bbe36283483ed34491b42eeb87753f55d652076b4f7",
+    "route": "/volunteers",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "volunteer-form": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 37650,
+    "sha256": "7eb08e35af1943764e239f6ab94c4962cc2bf46499fc953fd5832b9a0752d0c6",
+    "route": "/volunteers",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "volunteer-manage": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 57524,
+    "sha256": "d0b170c6fb1c2008d688f822f4416ccc5c19b88794829b77e24b98c0650efbe1",
+    "route": "/coaches-corner",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "volunteers": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 54452,
+    "sha256": "1da3fd5ce70b22a3ff0fb329ce3c4c8e9932b7141b5af45f6fa4b6786755d2f5",
+    "route": "/volunteers",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "waiver-audit": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 31576,
+    "sha256": "ea1abf823ae9c74d37f67ef76000aa982509075565cc40459e0186b39dc49817",
+    "route": "/coaches-corner",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "waiver-create": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 45074,
+    "sha256": "8523ff4e890f8a4e646ac76a0901d05a9ffd62e878337a47b2a2f926cfcc9326",
+    "route": "/coaches-corner",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "waiver-library": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 40368,
+    "sha256": "40d10e0ba747575d42848bd9b6b9bc15d020a6f7a0f008c8af7f76b2dba26ddf",
+    "route": "/coaches-corner",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "waiver-sign": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 48420,
+    "sha256": "fdd9ac5ba82e826edf5c660abd011c02f5334982fbaf8c374dd7a87130e9ffe6",
+    "route": "/files",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "watch-status": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 50322,
+    "sha256": "af3b17cdd26ef9b66a77516a32eb8003dd10528e276ceb303a2e92f4ea2a4232",
+    "route": "/drills",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "youth-activate": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 25138,
+    "sha256": "96c1147e370820918249523702d573963fc232c160acfeac02311ae57cbaa211",
+    "route": "/signup/youth",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "youth-invite": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 35120,
+    "sha256": "4645585d766bd991cc5ea3ea98f33ca5c9969c6f346179bbb026a8f0e5b4deb4",
+    "route": "/family",
+    "environment": "local emulator or public local app; sample data"
+  },
+  "youth-invite-ready": {
+    "width": 1440,
+    "height": 1000,
+    "bytes": 40132,
+    "sha256": "7b9c4cb812c79d7f9bc0141e7d43b8cb2954f5f967ba2251f15606170e45827a",
+    "route": "/family",
+    "environment": "local emulator or public local app; sample data"
+  }
+}

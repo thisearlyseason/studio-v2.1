@@ -85,7 +85,7 @@ export default function ParentsPage() {
           >
             <Link href={`/sports-hub/articles/${article.slug}`} className="group block h-full">
               <article className="depth-card h-full overflow-hidden rounded-2xl border bg-card transition-all duration-300 hover:-translate-y-0.5 hover:shadow-xl">
-                <div className="hero-gradient h-1.5" />
+
                 <div className="p-6">
                   <Badge variant="outline" className="mb-3 border-primary/20 bg-primary/5 text-[9px] font-black uppercase tracking-widest text-primary">
                     {getSubCategory(article)}

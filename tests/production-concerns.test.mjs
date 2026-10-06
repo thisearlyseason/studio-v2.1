@@ -106,7 +106,8 @@ test('route-aware authorization, private recruiting, and alert dismissal fail cl
   assert.match(middleware, /publicProjectionExists\(request\)/);
   assert.match(middleware, /NextResponse\.rewrite\(new URL\('\/__not-found'/);
   assert.match(middleware, /X-Robots-Tag', 'noindex, nofollow'/);
-  assert.match(spectatorLayout, /collection\('publicLeagueViews'\)/);
+  assert.match(spectatorLayout, /readActiveScoringLeague\(transaction, snapshot.id\)/);
+  assert.match(spectatorLayout, /collection\('leagues'\)/);
   assert.equal((spectatorLayout.match(/notFound\(\)/g) || []).length, 2);
   assert.match(registrationLayout, /collection\('leagues'\)/);
   assert.match(registrationLayout, /where\('slug', '==', identifier\)/);
@@ -227,7 +228,8 @@ test('demo launch creates its protected profile before entering dashboard routes
     const session = launcher.indexOf('await establishBrowserSession(demoCredential.user)');
     assert.ok(bootstrap >= 0 && bootstrap < session);
   }
-  assert.match(login, /if \(isDemoLoading\) return;/);
+  // Auto-navigation must wait for both demo bootstrap and native auth handoff.
+  assert.match(login, /React\.useEffect\(\(\) => \{\s*if \(isDemoLoading \|\| nativeBrowserAuthGate\.busy\(\)\) return;/);
   assert.match(clientAuth, /fetch\('\/api\/demo\/seed'/);
   assert.match(clientAuth, /Authorization: `Bearer \$\{token\}`/);
 });
@@ -243,7 +245,8 @@ test('shared navigation uses plain language and role-specific primary actions', 
   ]);
 
   assert.match(shell, /const roleNavigationOrder = isParent/);
-  assert.match(shell, /const primaryCoordTabs = filteredCoordTabs\.slice\(0, 5\)/);
+  assert.match(shell, /const primaryCoordTabs = filteredCoordTabs\.filter/);
+  assert.match(shell, /\['\/leagues', '\/manage-tournaments'\]\.includes\(tab.href\)/);
   assert.match(shell, /Your Main Tools/);
   assert.match(shell, /More Tools/);
   assert.match(shell, /Join & Invite/);

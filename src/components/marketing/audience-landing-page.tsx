@@ -1,3 +1,4 @@
+import { ParentCompanyBrand } from '@/components/ParentCompanyBrand';
 import Image from 'next/image';
 import Link from 'next/link';
 import {
@@ -246,7 +247,8 @@ export function AudienceLandingPage({ landing }: { landing: AudienceLanding }) {
           </div>
           <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Built in Canada</p>
         </div>
-      </footer>
+        <div className="mt-6 flex justify-center"><ParentCompanyBrand /></div>
+    </footer>
     </main>
   );
 }

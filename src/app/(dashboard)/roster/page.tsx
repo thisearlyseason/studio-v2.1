@@ -620,7 +620,7 @@ export default function RosterPage() {
                 <DialogContent className="sm:max-w-md rounded-[2.5rem] border-none shadow-2xl p-0 overflow-y-auto bg-white text-foreground">
                   <DialogTitle className="sr-only">Invite Teammates</DialogTitle>
                   <DialogDescription className="sr-only">Enroll new teammates via squad code or recruitment link</DialogDescription>
-                  <div className="h-2 bg-primary w-full" />
+
                   <div className="p-8 space-y-8">
                     <DialogHeader>
                       <DialogTitle className="text-3xl font-black uppercase tracking-tight text-foreground">Recruit Hub</DialogTitle>
@@ -1222,7 +1222,7 @@ export default function RosterPage() {
         <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
           <DialogTitle className="sr-only">Provision Role</DialogTitle>
           <DialogDescription className="sr-only">Update organizational authority and team position</DialogDescription>
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-8 space-y-6">
             <DialogHeader>
               <div className="flex items-center gap-3 mb-2">

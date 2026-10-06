@@ -87,7 +87,10 @@ async function publicProjectionExists(request: NextRequest): Promise<boolean | u
   };
 
   if (isLeagueSpectator) {
-    return (await database().collection('publicLeagueViews').doc(identifier).get()).exists;
+    const db = database();
+    const direct = await db.collection('leagues').doc(identifier).get();
+    const league = direct.exists ? direct : (await db.collection('leagues').where('slug', '==', identifier).limit(1).get()).docs[0];
+    return !!league?.exists && league.data()?.is_active !== false && league.data()?.isArchived !== true && league.data()?.isDeleted !== true;
   }
   if (isLeagueRegistration) {
     const db = database();

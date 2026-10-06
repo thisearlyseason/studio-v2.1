@@ -69,6 +69,25 @@ const getYoutubeThumbnail = (url: string) => {
   return `https://img.youtube.com/vi/${videoId}/hqdefault.jpg`;
 };
 
+function DrillInstructions({ text }: { text: string }) {
+  const paragraphRef = useRef<HTMLParagraphElement>(null);
+  const [expanded, setExpanded] = useState(false);
+  const [overflowing, setOverflowing] = useState(false);
+  useEffect(() => {
+    const paragraph = paragraphRef.current;
+    if (!paragraph || expanded) return;
+    const measure = () => setOverflowing(paragraph.scrollHeight > paragraph.clientHeight + 1);
+    measure();
+    const observer = new ResizeObserver(measure);
+    observer.observe(paragraph);
+    return () => observer.disconnect();
+  }, [text, expanded]);
+  return <div className="space-y-2">
+    <p ref={paragraphRef} className={cn("text-sm text-muted-foreground leading-relaxed whitespace-pre-line", !expanded && "line-clamp-3")}>{text}</p>
+    {(overflowing || expanded) && <button type="button" aria-expanded={expanded} onClick={(event) => { event.stopPropagation(); setExpanded(value => !value); }} className="min-h-11 text-xs font-bold text-primary hover:underline">{expanded ? "Collapse instructions" : "Expand instructions"}</button>}
+  </div>;
+}
+
 export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
   const { activeTeam, isTeamsLoading, addDrill, updateDrill, deleteDrill, purchasePro, isStaff, addFile, deleteFile, user, isPro, members } = useTeam();
   const db = useFirestore();
@@ -110,7 +129,6 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
   const [newTime, setNewTime] = useState<string>('');
   const [newDate, setNewDate] = useState<string>(new Date().toISOString());
   const [editingItemId, setEditingItemId] = useState<string | null>(null);
-  const [expandedDrillIds, setExpandedDrillIds] = useState<Set<string>>(new Set());
   const [isWatchersOpen, setIsWatchersOpen] = useState(false);
   const [watchersDrill, setWatchersDrill] = useState<any>(null);
 
@@ -129,15 +147,6 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
   const filteredDrills = useMemo(() => drills.filter(d => d.title.toLowerCase().includes(searchTerm.toLowerCase())), [drills, searchTerm]);
   const filteredFiles = useMemo(() => teamFiles.filter(f => ['Game Tape', 'Practice Session', 'Highlights'].includes(f.category) && f.name.toLowerCase().includes(searchTerm.toLowerCase())), [teamFiles, searchTerm]);
 
-  const toggleExpand = (e: React.MouseEvent, id: string) => {
-    e.stopPropagation();
-    setExpandedDrillIds(prev => {
-      const next = new Set(prev);
-      if (next.has(id)) next.delete(id);
-      else next.add(id);
-      return next;
-    });
-  };
 
   const handleAddDrill = async () => {
     if (!newTitle || !newDesc || !activeTeam || !db) return;
@@ -444,7 +453,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
           }}
         >
           <Card className="max-w-md w-full rounded-[3.5rem] border-none shadow-[0_40px_80px_-15px_rgba(0,0,0,0.15)] bg-white overflow-hidden ring-1 ring-black/5">
-            <div className="h-2 bg-primary w-full" />
+
             <div className="p-10 text-center space-y-6">
               <div className="mx-auto w-20 h-20 bg-primary/5 rounded-4xl flex items-center justify-center ring-1 ring-primary/10 animate-pulse">
                 <Lock className="h-10 w-10 text-primary" />
@@ -467,11 +476,12 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
       )}
 
       <div className={cn("space-y-8 animate-in fade-in duration-500", embedded ? "pb-8" : "pb-20", !isPro && "blur-sm grayscale pointer-events-none")}>
-        <div className={cn("flex flex-col md:flex-row md:items-center gap-6", embedded ? "justify-end" : "justify-between")}>
-          {!embedded && (
+        <div className={cn("flex flex-col xl:flex-row xl:items-center justify-between gap-4")}>
+          {(
             <div className="space-y-1">
               <Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3 tracking-widest mb-1">Execution Hub</Badge>
-              <h1 className="text-4xl font-black tracking-tight uppercase text-foreground leading-none">Playbook Hub</h1>
+              <h2 className="text-2xl sm:text-3xl font-black tracking-tight text-foreground leading-tight">Playbook</h2>
+              <p className="text-sm text-muted-foreground leading-relaxed">Browse drills, study plays, and watch your team’s videos.</p>
             </div>
           )}
           <div className="flex bg-muted/30 p-1.5 rounded-2xl border-2 shadow-inner">
@@ -489,26 +499,12 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
           </div>
         </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-8">
-        <aside className="space-y-6 md:col-span-1">
-          <Card className="rounded-[2.5rem] border-none shadow-md ring-1 ring-black/5 p-8 bg-black text-white relative group overflow-hidden">
-            <Package className="absolute -right-4 -bottom-4 h-32 w-32 opacity-10 -rotate-12 group-hover:scale-110 transition-transform duration-700" />
-            <div className="relative z-10 space-y-4">
-              <Badge className="bg-white/10 text-white border-none font-black text-[8px] h-5 px-3">SQUAD READY</Badge>
-              <h3 className="text-2xl font-black uppercase leading-tight tracking-tighter">Master Execution</h3>
-              <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest leading-relaxed">Study institutional protocols and game tape to maintain strategic advantage.</p>
-            </div>
-          </Card>
+      <div className="space-y-6 min-w-0">
+        <div className="rounded-2xl border bg-muted/20 px-5 py-4 text-sm text-muted-foreground leading-relaxed">
+          <strong className="text-foreground">Mandatory watch:</strong> Coaches can require teammates to watch 75% of a drill or game video and check their progress.
+        </div>
 
-          <div className="bg-muted/30 p-6 rounded-[2.5rem] border-2 border-dashed space-y-4">
-            <div className="flex items-center gap-2"><Info className="h-4 w-4 text-primary" /><span className="text-[10px] font-black uppercase">Mandatory Watch</span></div>
-            <p className="text-[10px] font-medium text-muted-foreground leading-relaxed italic">
-              Enable "Mandatory 75% Watch" on any drill or game tape. The coach will see a real-time roster checklist of who has completed at least 75% of the video.
-            </p>
-          </div>
-        </aside>
-
-        <div className="md:col-span-2 lg:col-span-3 space-y-8">
+        <div className="min-w-0 space-y-6">
           <div className="flex flex-col sm:flex-row gap-4 items-center justify-between">
             <div className="relative flex-1 w-full">
               <Search className="absolute left-4 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
@@ -530,10 +526,10 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
             )}
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6">
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             {viewMode === 'drills' ? filteredDrills.map((drill, drillIndex) => (
-              <Card key={drill.id} className="rounded-[2.5rem] overflow-hidden border-none shadow-sm ring-1 ring-black/5 cursor-pointer bg-white group hover:shadow-xl transition-all" onClick={() => setSelectedDrill(drill)}>
-                <div className="aspect-video bg-black relative overflow-hidden">
+              <Card key={drill.id} className="rounded-4xl min-w-0 overflow-hidden border-none shadow-sm ring-1 ring-black/5 cursor-pointer bg-white group hover:shadow-xl transition-all" onClick={() => setSelectedDrill(drill)}>
+                <button type="button" aria-label={drill.videoUrl ? `Open ${drill.title}` : `View diagram for ${drill.title}`} className="block w-full aspect-video bg-black relative overflow-hidden focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-primary" onClick={(event) => { event.stopPropagation(); if (!drill.videoUrl && drill.coverImageUrl) setLightboxUrl(drill.coverImageUrl); else setSelectedDrill(drill); }}>
                   {drill.coverImageUrl ? (
                     <img src={drill.coverImageUrl} alt={drill.title} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
                   ) : drill.videoUrl && getYoutubeThumbnail(drill.videoUrl) ? (
@@ -549,9 +545,6 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
                     </div>
                   )}
                   <Badge className="absolute top-4 left-4 bg-primary text-white border-none font-black text-[8px] uppercase">Drill Protocol</Badge>
-                  {drill.estimatedTime && (
-                    <Badge className="absolute top-4 right-4 bg-black/80 text-white border-none font-black text-[8px] uppercase"><Clock className="h-3 w-3 mr-1 inline" /> {drill.estimatedTime}</Badge>
-                  )}
                   {/* Green checkmark if user watched */}
                   {hasUserWatched(drill) && (
                     <div className="absolute bottom-4 right-4 bg-green-500 text-white rounded-full p-1.5 shadow-lg">
@@ -563,24 +556,26 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
                       <Bell className="h-4 w-4" />
                     </div>
                   )}
-                </div>
-                <CardContent className="p-6 space-y-2">
-                  <div className="flex justify-between items-start gap-4">
-                    <h3 className="font-black text-lg uppercase truncate tracking-tight text-foreground">{drill.title}</h3>
-                    <div className="flex items-center gap-2 shrink-0 flex-wrap justify-end">
+                </button>
+                <CardContent className="p-5 sm:p-6 space-y-4">
+                  <div className="space-y-4 min-w-0">
+                    <h3 className="block w-full min-w-0 font-black text-xl leading-snug wrap-break-word tracking-tight text-foreground">{drill.title}</h3>
+                    {drill.estimatedTime && <p className="text-sm text-muted-foreground flex items-center gap-2"><Clock className="h-4 w-4 shrink-0" />Estimated practice time: {drill.estimatedTime}</p>}
+                    {!drill.videoUrl && drill.coverImageUrl && <Button type="button" variant="outline" className="min-h-11 rounded-full" onClick={(event) => { event.stopPropagation(); setLightboxUrl(drill.coverImageUrl); }}><Search className="h-4 w-4 mr-2" />View diagram</Button>}
+                    <div className="flex items-center gap-2 flex-wrap border-t pt-3">
                       {renderWatchBadge(drill)}
                       <Badge variant="secondary" className="rounded-lg h-5 text-[8px] font-black uppercase">{(drill.comments?.length || 0)} MARKS</Badge>
                       {isStaff && (
-                        <div className="flex bg-muted/50 rounded-xl overflow-hidden shadow-inner">
-                          <Button aria-label={`Move ${drill.title} earlier`} disabled={drillIndex === 0} variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground rounded-none" onClick={(event) => moveDrill(event, drill.id, -1)}>
+                        <div className="flex flex-wrap max-w-full bg-muted/50 rounded-xl overflow-hidden">
+                          <Button aria-label={`Move ${drill.title} earlier`} disabled={drillIndex === 0} variant="ghost" size="icon" className="h-11 w-11 text-muted-foreground rounded-none" onClick={(event) => moveDrill(event, drill.id, -1)}>
                             <ChevronUp className="h-3 w-3" />
                           </Button>
-                          <Button aria-label={`Move ${drill.title} later`} disabled={drillIndex === filteredDrills.length - 1} variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground rounded-none border-l" onClick={(event) => moveDrill(event, drill.id, 1)}>
+                          <Button aria-label={`Move ${drill.title} later`} disabled={drillIndex === filteredDrills.length - 1} variant="ghost" size="icon" className="h-11 w-11 text-muted-foreground rounded-none border-l" onClick={(event) => moveDrill(event, drill.id, 1)}>
                             <ChevronDown className="h-3 w-3" />
                           </Button>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button aria-label={`Edit ${drill.title}`} variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-black/5 rounded-none" onClick={(e) => { e.stopPropagation(); openEditDrill(e, drill); }}>
+                              <Button aria-label={`Edit ${drill.title}`} variant="ghost" size="icon" className="h-11 w-11 text-muted-foreground hover:bg-black/5 rounded-none" onClick={(e) => { e.stopPropagation(); openEditDrill(e, drill); }}>
                                 <Edit2 className="h-3 w-3" />
                               </Button>
                             </TooltipTrigger>
@@ -588,7 +583,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
                           </Tooltip>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button aria-label={`${drill.mandatoryWatch ? 'Disable' : 'Enable'} mandatory watch for ${drill.title}`} variant="ghost" size="icon" className="h-7 w-7 text-amber-600 hover:bg-amber-50 rounded-none border-l" onClick={(e) => toggleMandatoryWatch(e, drill, 'drills')}>
+                              <Button aria-label={`${drill.mandatoryWatch ? 'Disable' : 'Enable'} mandatory watch for ${drill.title}`} variant="ghost" size="icon" className="h-11 w-11 text-amber-600 hover:bg-amber-50 rounded-none border-l" onClick={(e) => toggleMandatoryWatch(e, drill, 'drills')}>
                                 {drill.mandatoryWatch ? <Bell className="h-3 w-3" /> : <BellOff className="h-3 w-3" />}
                               </Button>
                             </TooltipTrigger>
@@ -597,7 +592,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
                           {drill.mandatoryWatch && (
                             <Tooltip>
                               <TooltipTrigger asChild>
-                                <Button aria-label={`View watch status for ${drill.title}`} variant="ghost" size="icon" className="h-7 w-7 text-primary hover:bg-primary/5 rounded-none border-l" onClick={(e) => { e.stopPropagation(); setWatchersDrill(drill); setIsWatchersOpen(true); }}>
+                                <Button aria-label={`View watch status for ${drill.title}`} variant="ghost" size="icon" className="h-11 w-11 text-primary hover:bg-primary/5 rounded-none border-l" onClick={(e) => { e.stopPropagation(); setWatchersDrill(drill); setIsWatchersOpen(true); }}>
                                   <Users className="h-3 w-3" />
                                 </Button>
                               </TooltipTrigger>
@@ -606,7 +601,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
                           )}
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button aria-label={`Delete ${drill.title}`} variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50 rounded-none border-l" onClick={(e) => { e.stopPropagation(); deleteDrill(drill.id); }}>
+                              <Button aria-label={`Delete ${drill.title}`} variant="ghost" size="icon" className="h-11 w-11 text-red-500 hover:bg-red-50 rounded-none border-l" onClick={(e) => { e.stopPropagation(); deleteDrill(drill.id); }}>
                                 <Trash2 className="h-3 w-3" />
                               </Button>
                             </TooltipTrigger>
@@ -616,20 +611,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
                       )}
                     </div>
                   </div>
-                  <p className={cn(
-                    "text-xs font-medium text-muted-foreground leading-relaxed transition-all",
-                    !expandedDrillIds.has(drill.id) && "line-clamp-3"
-                  )}>
-                    {drill.description}
-                  </p>
-                  {drill.description.length > 120 && (
-                    <button
-                      onClick={(e) => toggleExpand(e, drill.id)}
-                      className="text-[9px] font-black text-primary uppercase tracking-widest hover:underline pt-1"
-                    >
-                      {expandedDrillIds.has(drill.id) ? "Minimize Protocol" : "Read Full Protocol"}
-                    </button>
-                  )}
+                  <DrillInstructions text={drill.description || ""} />
                   {isStaff && drill.mandatoryWatch && (
                     <div className="pt-2">
                       <button
@@ -644,7 +626,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
                 </CardContent>
               </Card>
             )) : filteredFiles.map(file => (
-              <Card key={file.id} className="rounded-[2.5rem] overflow-hidden border-none shadow-sm ring-1 ring-black/5 cursor-pointer bg-white group hover:shadow-xl transition-all" onClick={() => setSelectedFile(file)}>
+              <Card key={file.id} className="rounded-4xl min-w-0 overflow-hidden border-none shadow-sm ring-1 ring-black/5 cursor-pointer bg-white group hover:shadow-xl transition-all" onClick={() => setSelectedFile(file)}>
                 <div className="aspect-video bg-black flex items-center justify-center relative overflow-hidden">
                   {file.url && (file.url.includes('youtube.com') || file.url.includes('youtu.be/')) && getYoutubeThumbnail(file.url) ? (
                     <img src={getYoutubeThumbnail(file.url)!} alt={file.name} className="w-full h-full object-cover opacity-60 group-hover:opacity-80 transition-opacity" />
@@ -665,16 +647,16 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
                     </div>
                   )}
                 </div>
-                <CardContent className="p-6 space-y-2">
-                  <div className="flex justify-between items-start gap-4">
-                    <h3 className="font-black text-lg uppercase truncate tracking-tight text-foreground">{file.name}</h3>
-                    <div className="flex items-center gap-2 shrink-0">
+                <CardContent className="p-5 sm:p-6 space-y-4">
+                  <div className="space-y-4 min-w-0">
+                    <h3 className="block w-full min-w-0 font-black text-xl leading-snug wrap-break-word tracking-tight text-foreground">{file.name}</h3>
+                    <div className="flex items-center gap-2 flex-wrap border-t pt-3">
                       <Badge variant="secondary" className="rounded-lg h-5 text-[8px] font-black uppercase">{(file.comments?.length || 0)} MARKS</Badge>
                       {isStaff && (
-                        <div className="flex bg-muted/50 rounded-xl overflow-hidden shadow-inner">
+                        <div className="flex flex-wrap max-w-full bg-muted/50 rounded-xl overflow-hidden">
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button aria-label={`Edit ${file.name}`} variant="ghost" size="icon" className="h-7 w-7 text-muted-foreground hover:bg-black/5 rounded-none" onClick={(e) => { e.stopPropagation(); openEditFile(e, file); }}>
+                              <Button aria-label={`Edit ${file.name}`} variant="ghost" size="icon" className="h-11 w-11 text-muted-foreground hover:bg-black/5 rounded-none" onClick={(e) => { e.stopPropagation(); openEditFile(e, file); }}>
                                 <Edit2 className="h-3 w-3" />
                               </Button>
                             </TooltipTrigger>
@@ -682,7 +664,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
                           </Tooltip>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button aria-label={`${(file as any).mandatoryWatch ? 'Disable' : 'Enable'} mandatory watch for ${file.name}`} variant="ghost" size="icon" className="h-7 w-7 text-amber-600 hover:bg-amber-50 rounded-none border-l" onClick={(e) => toggleMandatoryWatch(e, file as any, 'files')}>
+                              <Button aria-label={`${(file as any).mandatoryWatch ? 'Disable' : 'Enable'} mandatory watch for ${file.name}`} variant="ghost" size="icon" className="h-11 w-11 text-amber-600 hover:bg-amber-50 rounded-none border-l" onClick={(e) => toggleMandatoryWatch(e, file as any, 'files')}>
                                 {(file as any).mandatoryWatch ? <Bell className="h-3 w-3" /> : <BellOff className="h-3 w-3" />}
                               </Button>
                             </TooltipTrigger>
@@ -690,7 +672,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
                           </Tooltip>
                           <Tooltip>
                             <TooltipTrigger asChild>
-                              <Button aria-label={`Delete ${file.name}`} variant="ghost" size="icon" className="h-7 w-7 text-red-500 hover:bg-red-50 rounded-none border-l" onClick={(e) => { e.stopPropagation(); deleteFile(file.id); }}>
+                              <Button aria-label={`Delete ${file.name}`} variant="ghost" size="icon" className="h-11 w-11 text-red-500 hover:bg-red-50 rounded-none border-l" onClick={(e) => { e.stopPropagation(); deleteFile(file.id); }}>
                                 <Trash2 className="h-3 w-3" />
                               </Button>
                             </TooltipTrigger>
@@ -711,7 +693,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
       {/* Roster Watch Status Dialog */}
       <Dialog open={isWatchersOpen} onOpenChange={setIsWatchersOpen}>
         <DialogContent className="rounded-[3rem] sm:max-w-lg p-0 border-none shadow-2xl overflow-hidden bg-white">
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-8 space-y-6">
             <DialogHeader>
               <DialogTitle className="text-2xl font-black uppercase tracking-tight">Roster Watch Status</DialogTitle>
@@ -769,7 +751,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
                 <Input placeholder="e.g. 5-4-3 Double Play Rotation" className="h-14 rounded-2xl border-2 font-black text-lg" value={newTitle ?? ""} onChange={e => setNewTitle(e.target.value)} />
               </div>
               <div className="space-y-2">
-                <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1 flex items-center gap-1"><Clock className="h-3 w-3" /> Time</Label>
+                <Label className="text-[10px] font-black uppercase tracking-[0.2em] ml-1 flex items-center gap-1"><Clock className="h-3 w-3" /> Practice time</Label>
                 <Input placeholder="e.g. 15 mins" className="h-14 rounded-2xl border-2 font-black text-lg" value={newTime ?? ""} onChange={e => setNewTime(e.target.value)} />
               </div>
             </div>
@@ -1001,8 +983,8 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
                               {selectedDrill ? "Drill Protocol" : "Archive Tape"}
                             </Badge>
                             {selectedDrill?.estimatedTime && (
-                              <Badge className="bg-white/10 text-white border-none font-black text-[11px] uppercase tracking-wider px-5 h-8" title="Estimated Completion Time">
-                                <Clock className="h-4 w-4 mr-2" /> {selectedDrill.estimatedTime}
+                              <Badge className="bg-white/10 text-white border-none font-black text-[11px] uppercase tracking-wider px-5 h-8" title="Estimated practice time">
+                                <Clock className="h-4 w-4 mr-2" /> Estimated practice time: {selectedDrill.estimatedTime}
                               </Badge>
                             )}
                           </div>
@@ -1191,9 +1173,10 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
 
       {/* Tactical Lightbox */}
       <Dialog open={!!lightboxUrl} onOpenChange={(o) => !o && setLightboxUrl(null)}>
-        <DialogContent className="max-w-[95vw] max-h-[90vh] p-0 border-none bg-black/90 backdrop-blur-xl overflow-hidden rounded-[2.5rem] flex items-center justify-center">
+        <DialogContent hideClose className="w-[95vw] max-w-[95vw] sm:max-w-[95vw] max-h-[90vh] p-0 border-none bg-black/90 backdrop-blur-xl overflow-hidden rounded-[2.5rem] flex items-center justify-center">
           <DialogTitle className="sr-only">Tactical Asset Preview</DialogTitle>
           <button
+            aria-label="Close diagram"
             className="absolute top-6 right-6 z-60 h-12 w-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
             onClick={() => setLightboxUrl(null)}
           >

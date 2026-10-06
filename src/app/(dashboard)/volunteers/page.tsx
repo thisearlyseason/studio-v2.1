@@ -173,7 +173,7 @@ export default function VolunteerHubPage() {
           }}
         >
           <Card className="max-w-md w-full rounded-[3.5rem] border-none shadow-3xl bg-white overflow-hidden ring-1 ring-black/5">
-            <div className="h-2 bg-primary w-full" />
+
             <CardHeader className="p-12 text-center space-y-8">
               <div className="bg-primary/10 w-24 h-24 rounded-4xl flex items-center justify-center mx-auto shadow-inner group">
                 <LockIcon className="h-12 w-12 text-primary group-hover:scale-110 transition-transform" />
@@ -409,7 +409,7 @@ export default function VolunteerHubPage() {
 
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
         <DialogContent className="rounded-[4rem] sm:max-w-xl p-0 border-none shadow-3xl overflow-hidden bg-white">
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-12 space-y-10">
             <div className="space-y-2">
               <Badge className="bg-primary/10 text-primary border-none font-black text-[9px] px-4 rounded-full">Strategic Deployment</Badge>
@@ -461,7 +461,7 @@ export default function VolunteerHubPage() {
 
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent className="rounded-[4rem] sm:max-w-xl p-0 border-none shadow-3xl overflow-hidden bg-white">
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-12 space-y-10">
             <div className="space-y-2">
               <Badge className="bg-primary/10 text-primary border-none font-black text-[9px] px-4 rounded-full">Refine Deployment</Badge>

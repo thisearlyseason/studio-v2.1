@@ -377,46 +377,51 @@ const GET_DEMO_DATA = (
         ]
       }
     ],
-      // ── Seeded Drills — verified-embeddable sports YouTube videos ──
+      // Seeded drills use original first-party diagrams; no third-party video.
     drills: [
       {
-        id: `d1_${teamId}`, title: 'Defensive Footwork Fundamentals',
-        description: 'Master defensive footwork, positioning, and communication. Focus on your zone and help-side rotations for maximum defensive coverage.',
-        // Source: CoachUp Nation — "5 Defensive Basketball Drills" (public, embedding enabled)
-        videoUrl: 'https://www.youtube.com/watch?v=3er8D0hFj2g',
-        coverImageUrl: 'https://images.unsplash.com/photo-1546519638-68e109498ffc?w=800&q=80',
+        id: `d1_${teamId}`, title: 'Defensive Positioning Fundamentals',
+        description: 'Practice on-ball and help-side positioning in a two-on-two shell drill. Move as the ball moves, communicate with your partner, and recover to your assignment.',
+        videoUrl: '',
+        mediaSourceUrl: '',
+        coverImageUrl: '/demo-media/defensive-positioning.svg',
         additionalMedia: [
-          { url: 'https://images.unsplash.com/photo-1574629810360-7efbbe195018?w=800&q=80', description: 'Full-court defensive positioning diagram' },
-          { url: 'https://images.unsplash.com/photo-1519861531473-9200262188bf?w=800&q=80', description: 'Player footwork breakdown' }
+          { url: '/demo-media/defensive-positioning.svg', description: 'The Squad original practice diagram' }
         ],
-        estimatedTime: '20 mins', createdAt: now.toISOString(), mandatoryWatch: true, mandatoryWatchThreshold: 75, watchedBy: {}
+        estimatedTime: '20 mins', createdAt: now.toISOString(), mandatoryWatch: false, mandatoryWatchThreshold: 75, watchedBy: {}
       },
       {
         id: `d2_${teamId}`, title: 'Agility Ladder & Speed Drills',
         description: 'Ladder drills, cone exercises, and explosive first-step training. Builds the quickness and footwork elite athletes use every game.',
-        // Source: MindBodyGreen — "The Perfect Push Up" (public, embedding verified)
-        videoUrl: 'https://www.youtube.com/watch?v=IODxDxX7oi4',
-        coverImageUrl: 'https://images.unsplash.com/photo-1517963879433-6ad2b056d712?w=800&q=80',
-        additionalMedia: [],
+        videoUrl: '',
+        mediaSourceUrl: '',
+        coverImageUrl: '/demo-media/agility-ladder.svg',
+        additionalMedia: [
+          { url: '/demo-media/agility-ladder.svg', description: 'The Squad original practice diagram' }
+        ],
         estimatedTime: '25 mins', createdAt: now.toISOString(), mandatoryWatch: false, mandatoryWatchThreshold: 75, watchedBy: {}
       },
       {
         id: `d3_${teamId}`, title: 'Team Passing & Movement Patterns',
         description: 'Crisp passing mechanics and off-ball movement. These patterns build chemistry and create open looks through coordinated team motion.',
-        // Source: MommaStrong — "15 Min Full Body Stretch" (public, embedding verified)
-        videoUrl: 'https://www.youtube.com/watch?v=g_tea8ZNk5A',
-        coverImageUrl: 'https://images.unsplash.com/photo-1608245449230-4ac19066d2d0?w=800&q=80',
-        additionalMedia: [{ url: 'https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=800&q=80', description: 'Passing lanes diagram' }],
+        videoUrl: '',
+        mediaSourceUrl: '',
+        coverImageUrl: '/demo-media/passing-movement.svg',
+        additionalMedia: [
+          { url: '/demo-media/passing-movement.svg', description: 'The Squad original practice diagram' }
+        ],
         estimatedTime: '15 mins', createdAt: now.toISOString(), mandatoryWatch: false, mandatoryWatchThreshold: 75, watchedBy: {}
       },
       {
         id: `d4_${teamId}`, title: 'Conditioning & Endurance Circuit',
         description: 'High-intensity conditioning circuit designed to build game-ready stamina. Push through fatigue so you perform in the fourth quarter.',
-        // Source: STACK Media — athletic conditioning (public, embedding enabled)
-        videoUrl: 'https://www.youtube.com/watch?v=ml6cT4AZdqI',
-        coverImageUrl: 'https://images.unsplash.com/photo-1541534741688-6078c6bfb5c5?w=800&q=80',
-        additionalMedia: [],
-        estimatedTime: '30 mins', createdAt: now.toISOString(), mandatoryWatch: true, mandatoryWatchThreshold: 75, watchedBy: {}
+        videoUrl: '',
+        mediaSourceUrl: '',
+        coverImageUrl: '/demo-media/conditioning-circuit.svg',
+        additionalMedia: [
+          { url: '/demo-media/conditioning-circuit.svg', description: 'The Squad original practice diagram' }
+        ],
+        estimatedTime: '30 mins', createdAt: now.toISOString(), mandatoryWatch: false, mandatoryWatchThreshold: 75, watchedBy: {}
       },
     ],
     practice_templates: [

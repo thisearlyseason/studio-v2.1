@@ -164,7 +164,7 @@ const softwareSchema = {
   offers: {
     '@type': 'Offer',
     price: '0',
-    priceCurrency: 'CAD',
+    priceCurrency: 'USD',
     description: 'Free tier available with paid plans for advanced features',
   },
   provider: {

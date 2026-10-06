@@ -43,8 +43,8 @@ test('store post-verification destinations preserve joins and never return to pu
       { target: 'child', joinCode: 'demo_c', planChoice: 'starter' },
       '/family?addChild=1&returnTo=%2Fteams%2Fjoin%3Fcode%3DDEMO_C',
     ],
-    [{ target: 'child', joinCode: '', planChoice: 'starter' }, '/family'],
-    [{ target: 'coach', joinCode: '', planChoice: 'starter' }, '/teams/new?tier=starter'],
+    [{ target: 'child', joinCode: '', planChoice: 'starter' }, '/dashboard'],
+    [{ target: 'coach', joinCode: '', planChoice: 'starter' }, '/dashboard'],
     [{ target: 'school_ad', joinCode: '', planChoice: 'school' }, '/dashboard'],
     [{ target: 'league_creator', joinCode: '', planChoice: 'elite_league' }, '/dashboard'],
   ];
@@ -59,13 +59,13 @@ test('store post-verification destinations preserve joins and never return to pu
   );
 });
 
-test('store missing-profile onboarding does not route organization roles into paid creation', () => {
-  assert.equal(onboardingDestinationForRole('adult_player', 'store'), '/teams/join');
-  assert.equal(onboardingDestinationForRole('parent', 'store'), '/family');
-  assert.equal(onboardingDestinationForRole('coach', 'store'), '/teams/new?tier=starter');
-  assert.equal(onboardingDestinationForRole('admin', 'store'), '/dashboard');
-  assert.equal(onboardingDestinationForRole('league_creator', 'store'), '/dashboard');
-
-  assert.equal(onboardingDestinationForRole('admin', 'web'), '/teams/new');
-  assert.equal(onboardingDestinationForRole('league_creator', 'web'), '/competition');
+test('new free profiles land on the dashboard on both distributions', () => {
+  for (const distribution of ['web', 'store']) {
+    for (const role of ['adult_player', 'parent', 'coach', 'admin', 'league_creator']) {
+      assert.equal(onboardingDestinationForRole(role, distribution), '/dashboard');
+    }
+    for (const target of ['self', 'child', 'coach', 'school_ad', 'league_creator']) {
+      assert.equal(signupPostVerificationPath({ target, joinCode: '', planChoice: 'starter' }, distribution), '/dashboard');
+    }
+  }
 });

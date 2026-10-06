@@ -4,6 +4,7 @@ import * as admin from 'firebase-admin';
 import { adminDb } from '@/lib/firebase-admin'; // Ensures admin app is initialized
 import { findActiveTeamMember, getTeamAuthority } from '@/lib/server-team-access';
 import { sendNotificationToUsers } from '@/lib/server-notification-delivery';
+import { validNotificationUrl } from '@/lib/notification-targets';
 import { assertOutboundProviderAllowed } from '@/lib/server-outbound-provider-policy';
 import {
   enforceUserRateLimit,
@@ -59,6 +60,9 @@ export async function POST(req: NextRequest) {
     }
     if (!isInternal && (!teamId || !Array.isArray(recipientUserIds) || recipientUserIds.length === 0)) {
       return NextResponse.json({ error: 'teamId and recipientUserIds are required' }, { status: 400 });
+    }
+    if (!validNotificationUrl(url)) {
+      return NextResponse.json({ error: 'Notification links must stay on The Squad.' }, { status: 400 });
     }
     if (!isInternal && topic) {
       return NextResponse.json({ error: 'Topic notifications are restricted to trusted server callers.' }, { status: 403 });

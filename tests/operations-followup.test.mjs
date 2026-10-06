@@ -98,13 +98,13 @@ test('fundraising uses connected Stripe and webhook idempotency instead of arbit
   assert.match(webhook, /recordFundraisingDonation/);
   assert.match(webhook, /runTransaction/);
   assert.match(webhook, /stripe_\$\{paymentIntentId\}/);
-  assert.match(webhook, /FieldValue\.increment\(amountCents \/ 100\)/);
+  assert.match(webhook, /FieldValue\.increment\(\(refund\.net_amount - previousNet\) \/ 100\)/);
 });
 
-test('terms match the current CAD checkout contract without stale hardcoded prices', async () => {
+test('terms match the current USD checkout contract without stale hardcoded prices', async () => {
   const terms = await readSource('../src/app/terms/page.tsx');
 
-  assert.match(terms, /prices are presented and billed in <strong>Canadian dollars \(CAD\)<\/strong>/);
+  assert.match(terms, /prices are presented and billed in <strong>US dollars \(USD\)<\/strong>/);
   assert.match(terms, /Stripe checkout summary presented before purchase controls/);
   assert.doesNotMatch(terms, /\$12\.99 USD/);
   assert.doesNotMatch(terms, /\$23\.99 USD/);
@@ -165,7 +165,7 @@ test('production configuration has no external AI provider dependency', async ()
   assert.equal(functionsPackage.dependencies.googleapis, undefined);
 });
 
-test('the public help guide ships the verified FAQ walkthrough media', async () => {
+test('the public help guide ships screenshot walkthroughs and retains legacy FAQ media', async () => {
   const guide = await readSource('../src/app/how-to/page.tsx');
   const faqAssets = [
     '../public/faq/how-to-create-a-game.mp4',
@@ -174,11 +174,14 @@ test('the public help guide ships the verified FAQ walkthrough media', async () 
     '../public/faq/league-created.png',
   ];
 
-  assert.match(guide, /Latest Walkthroughs/);
-  assert.match(guide, /\/faq\/how-to-create-a-game\.mp4/);
-  assert.match(guide, /\/faq\/family-hub-mobile\.png/);
-  assert.match(guide, /\/faq\/player-dashboard-tablet\.png/);
-  assert.match(guide, /\/faq\/league-created\.png/);
+  assert.match(guide, /GUIDE_CHAPTERS/);
+  assert.match(guide, /how-to\/screenshots\/\$\{step\.image\}\.webp/);
+  const screenshots = JSON.parse(await readSource('../src/lib/how-to/screenshots.json'));
+  assert.ok(Object.keys(screenshots).length > 0);
+  for (const id of Object.keys(screenshots)) {
+    const contents = await readFile(new URL(`../public/how-to/screenshots/${id}.webp`, import.meta.url));
+    assert.ok(contents.byteLength > 0, `${id} must be included in the production bundle`);
+  }
 
   for (const asset of faqAssets) {
     const contents = await readFile(new URL(asset, import.meta.url));

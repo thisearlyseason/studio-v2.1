@@ -1,3 +1,4 @@
+import { blockRef } from '@/lib/server-moderation';
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { verifyFirebaseToken } from '@/lib/api-auth';
@@ -70,6 +71,11 @@ export async function POST(req: NextRequest) {
         throw new Error('FORBIDDEN');
       }
       if (!message.exists) throw new Error('NOT_FOUND');
+      const authorId = message.data()?.authorId || message.data()?.senderId;
+      if (typeof authorId === 'string' && authorId && authorId !== auth.uid) {
+        const blocks = await Promise.all([transaction.get(blockRef(auth.uid, authorId)), transaction.get(blockRef(authorId, auth.uid))]);
+        if (blocks.some(block => block.exists)) throw new Error('FORBIDDEN');
+      }
 
       const poll = message.data()?.poll;
       if (message.data()?.isDeleted === true) throw new Error('NOT_FOUND');

@@ -1,4 +1,5 @@
 const PAID_PLAN_TYPES = new Set(['team', 'elite', 'league', 'school']);
+import { hasCurrentPaidSubscription } from './native-billing/entitlements';
 const ENTITLED_STATUSES = new Set(['active', 'trialing']);
 
 export function accountCreationLimit(profile: Record<string, unknown> | undefined): number {
@@ -7,7 +8,7 @@ export function accountCreationLimit(profile: Record<string, unknown> | undefine
     typeof profile?.subscription_status === 'string'
       ? profile.subscription_status.toLowerCase()
       : '';
-  if (!PAID_PLAN_TYPES.has(plan) || !ENTITLED_STATUSES.has(status)) return 1;
+  if (!PAID_PLAN_TYPES.has(plan) || !ENTITLED_STATUSES.has(status) || !hasCurrentPaidSubscription(profile || {})) return 1;
 
   const configured = Number(profile?.team_limit);
   const addOns = Number(profile?.extra_teams);

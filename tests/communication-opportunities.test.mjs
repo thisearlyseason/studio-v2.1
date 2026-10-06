@@ -103,7 +103,7 @@ test('scouting pack content is constrained to printable page width', () => {
   const roster = read('../src/app/(dashboard)/roster/page.tsx');
   const pdf = read('../src/lib/pdf-utils.ts');
 
-  assert.match(pdf, /fitText\(fullTitle, pageWidth - 102/);
+  assert.match(pdf, /doc\.getTextWidth\(title\.toUpperCase\(\)\) > width - 40/);
   assert.match(roster, /truncateToWidth/);
   assert.match(roster, /splitTextToSize\(evaluationHeading/);
   assert.doesNotMatch(roster, /drawField\('Recruit Status'.*, 185, y\)/);

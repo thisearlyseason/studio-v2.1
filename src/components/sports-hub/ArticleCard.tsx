@@ -82,7 +82,7 @@ export function ArticleCard({ article, variant = 'default', className }: Article
       'group relative bg-card border rounded-2xl overflow-hidden depth-card transition-all duration-300 hover:shadow-xl hover:-translate-y-0.5',
       className
     )}>
-      <div className="h-1.5 hero-gradient" />
+
       <div className="p-5">
         <div className="flex flex-wrap gap-1.5 mb-3">
           {article.categories.slice(0, 2).map((cat) => (

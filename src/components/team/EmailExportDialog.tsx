@@ -151,7 +151,7 @@ export function EmailExportDialog({ members, teamName, getLeagueMembers, leagueI
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden bg-white text-foreground">
-        <div className="h-2 bg-primary w-full" />
+
         <div className="p-8 space-y-8">
           <DialogHeader>
             <DialogTitle className="text-3xl font-black uppercase tracking-tight text-foreground">Personnel Export</DialogTitle>

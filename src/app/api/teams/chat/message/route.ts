@@ -1,3 +1,5 @@
+import { blockRef, allowedNotificationRecipients } from '@/lib/server-moderation';
+import { isDirectConversation } from '@/lib/moderation-policy';
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -46,6 +48,7 @@ export async function POST(req: NextRequest) {
     const teamRef = adminDb.collection('teams').doc(teamId);
     const chatRef = teamRef.collection('groupChats').doc(chatId);
     const profile = await adminDb.collection('users').doc(auth.uid).get();
+
 
     let safePoll: Record<string, unknown> | null = null;
     if (type === 'poll') {
@@ -97,6 +100,12 @@ export async function POST(req: NextRequest) {
         (!isPrivileged && (!hasActiveMembership || !chatMembers.includes(auth.uid)))
       ) throw new Error('FORBIDDEN');
 
+      if (isDirectConversation(chatMembers, auth.uid)) {
+        const other = chatMembers.find(id => id !== auth.uid) as string;
+        const blocks = await Promise.all([transaction.get(blockRef(auth.uid, other)), transaction.get(blockRef(other, auth.uid))]);
+        if (blocks.some(block => block.exists)) throw new Error('BLOCKED');
+      }
+
       channelName = typeof chatData.name === 'string' ? chatData.name.trim().slice(0, 100) || channelName : channelName;
       if (existing.exists) {
         if (existing.data()?.authorId !== auth.uid || existing.data()?.requestFingerprint !== requestFingerprint) {
@@ -121,6 +130,7 @@ export async function POST(req: NextRequest) {
       recipientUserIds = [...new Set(memberships.filter((uid): uid is string => Boolean(uid) && uid !== auth.uid))];
       const unreadUpdate: Record<string, unknown> = {
         lastMessage: content || (type === 'poll' ? 'New poll' : 'Shared an image'),
+        lastMessageAuthorId: auth.uid,
         lastMessageAt: createdAt,
         [`unreadBy.${auth.uid}`]: 0,
       };
@@ -140,7 +150,7 @@ export async function POST(req: NextRequest) {
     try {
       if (replayed) throw new Error('SKIP_REPLAY_DELIVERY');
       notificationResult = await sendNotificationToUsers({
-        recipientUserIds,
+        recipientUserIds: await allowedNotificationRecipients(auth.uid, recipientUserIds),
         title: `New message in ${channelName}`,
         body: content || (type === 'poll' ? 'New poll' : 'Shared an image'),
         url: `/chats/${chatId}?teamId=${encodeURIComponent(teamId)}`,
@@ -162,6 +172,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     const code = error instanceof Error ? error.message : '';
+    if (code === 'BLOCKED') return NextResponse.json({ error: 'This conversation is unavailable because of a user block.' }, { status: 403 });
     if (code === 'FORBIDDEN') return NextResponse.json({ error: 'This tactical channel is unavailable.' }, { status: 403 });
     if (code === 'CONFLICT') return NextResponse.json({ error: 'This request identity was already used for another message.' }, { status: 409 });
     console.error('[teams/chat/message] Error:', error);

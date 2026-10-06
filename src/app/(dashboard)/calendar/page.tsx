@@ -668,7 +668,7 @@ function CalendarSubscriptionDialog() {
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl bg-white">
-        <div className="h-2 bg-primary w-full" />
+
         <div className="p-8 space-y-6 relative overflow-hidden">
           <div className="absolute top-0 right-0 p-8 opacity-5 -rotate-12 pointer-events-none">
             <Zap className="h-40 w-40 text-primary" />

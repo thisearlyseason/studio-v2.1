@@ -1,3 +1,4 @@
+import { sharedBookingConflicts, adjacentBookingDates } from '@/lib/competition/booking-conflicts';
 import { createHash, randomUUID } from 'node:crypto';
 import { FieldValue } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase-admin';
@@ -82,6 +83,7 @@ type Interval = {
 export type ExternalScheduleBooking = {
   id?: string;
   sourceId?: unknown;
+  timezone?: unknown; startMs?: unknown; endMs?: unknown; restMinutes?: unknown; turnaroundMinutes?: unknown; conflictingResourceIds?: unknown;
   resourceId?: unknown;
   teamIds?: unknown;
   date?: unknown;
@@ -757,7 +759,8 @@ function eventInterval(data: FirebaseFirestore.DocumentData): Interval | null {
 export function findExternalBookingConflicts(
   leagueId: string,
   games: NormalizedLeagueGame[],
-  bookings: ExternalScheduleBooking[]
+  bookings: ExternalScheduleBooking[],
+  restMinutes = 0
 ): string[] {
   const sourceId = `league:${leagueId}`;
   const conflicts: string[] = [];
@@ -766,20 +769,9 @@ export function findExternalBookingConflicts(
     const interval = intervalForGame(game);
     for (const data of bookings) {
       if (data.sourceId === sourceId) continue;
-      const other: Interval = {
-        date: cleanDate(data.date),
-        startMinute: Number(data.startMinute),
-        endMinute: Number(data.endMinute),
-      };
-      if (!other.date || !Number.isFinite(other.startMinute) ||
-          !Number.isFinite(other.endMinute) || !overlaps(interval, other)) continue;
-      const bookedTeams = Array.isArray(data.teamIds) ? data.teamIds : [];
-      if ([game.team1Id, game.team2Id].some(teamId => bookedTeams.includes(teamId))) {
-        conflicts.push(`A team in ${game.id} is already booked at ${game.date} ${game.time}.`);
-      }
-      if (data.resourceId === game.resourceId) {
-        conflicts.push(`${game.location} is already booked at ${game.date} ${game.time}.`);
-      }
+      const conflict = sharedBookingConflicts({ ...interval, resourceId: game.resourceId, teamIds: [game.team1Id, game.team2Id], restMinutes, turnaroundMinutes: restMinutes }, { ...data, date: data.date, startMinute: data.startMinute, endMinute: data.endMinute });
+      if (conflict.team) conflicts.push(`A team in ${game.id} is already booked or resting at ${game.date} ${game.time}.`);
+      if (conflict.resource) conflicts.push(`${game.location} is already booked at ${game.date} ${game.time}.`);
     }
   }
 
@@ -790,14 +782,16 @@ async function validateExternalConflicts(
   leagueId: string,
   games: NormalizedLeagueGame[],
   teamEventSnapshots: FirebaseFirestore.QuerySnapshot[],
-  transaction: FirebaseFirestore.Transaction
+  transaction: FirebaseFirestore.Transaction,
+  restMinutes = 0
 ): Promise<void> {
-  const bookings = await Promise.all([...new Set(games.map(game => game.date))].map(date => transaction.get(adminDb.collection('scheduleBookings').where('date', '==', date))));
+  const bookings = await Promise.all(adjacentBookingDates(games.map(game => game.date)).map(date => transaction.get(adminDb.collection('scheduleBookings').where('date', '==', date))));
   const bookingSnapshot = { docs: bookings.flatMap(snapshot => snapshot.docs) };
   const conflicts = findExternalBookingConflicts(
     leagueId,
     games,
     bookingSnapshot.docs.map(booking => ({ id: booking.id, ...booking.data() })),
+    restMinutes,
   );
 
   for (const snapshot of teamEventSnapshots) {
@@ -910,7 +904,7 @@ export async function deployLeagueSchedule(input: LeagueScheduleDeploymentInput)
       ...[...new Set(prepared.games.map(game => game.resourceId))].map(id => transaction.get(adminDb.collectionGroup('events').where('resourceId', '==', id))),
       ...[...new Set(prepared.games.map(game => game.location))].map(location => transaction.get(adminDb.collectionGroup('events').where('location', '==', location))),
     ]);
-    await validateExternalConflicts(input.leagueId, prepared.games, snapshots, transaction);
+    await validateExternalConflicts(input.leagueId, prepared.games, snapshots, transaction, Number(league.schedulerConfig?.breakLength || 0));
     const clear = await prepareLeagueProjectionClear(transaction, input.leagueId);
     const now = new Date().toISOString();
     clear();
@@ -919,7 +913,7 @@ export async function deployLeagueSchedule(input: LeagueScheduleDeploymentInput)
       const ref = adminDb.collection('scheduleBookings').doc(bookingId(input.leagueId, game.id));
       transaction.set(ref, {
         id: ref.id, sourceType: 'league', sourceId: `league:${input.leagueId}`, sourceGameId: game.id,
-        leagueId: input.leagueId, teamIds: [game.team1Id, game.team2Id], resourceId: game.resourceId,
+        leagueId: input.leagueId, teamIds: [game.team1Id, game.team2Id], resourceId: game.resourceId, restMinutes: Number(league.schedulerConfig?.breakLength || 0), turnaroundMinutes: Number(league.schedulerConfig?.breakLength || 0),
         location: game.location, date: game.date, startMinute: interval.startMinute, endMinute: interval.endMinute,
         startTime: game.time, durationMinutes: game.durationMinutes, updatedAt: now,
       });

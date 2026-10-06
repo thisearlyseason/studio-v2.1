@@ -9,10 +9,10 @@ const appDistribution = configuredDistribution || 'web';
 const localEmulatorConnectSources =
   process.env.NODE_ENV !== 'production' &&
   process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS === 'true'
-    ? ' http://127.0.0.1:8080 http://127.0.0.1:9099 http://127.0.0.1:9199 http://localhost:8080 http://localhost:9099 http://localhost:9199'
+    ? ` http://127.0.0.1:${process.env.NEXT_PUBLIC_FIRESTORE_EMULATOR_PORT || 8080} http://127.0.0.1:${process.env.NEXT_PUBLIC_AUTH_EMULATOR_PORT || 9099} http://127.0.0.1:${process.env.NEXT_PUBLIC_STORAGE_EMULATOR_PORT || 9199} http://localhost:${process.env.NEXT_PUBLIC_FIRESTORE_EMULATOR_PORT || 8080} http://localhost:${process.env.NEXT_PUBLIC_AUTH_EMULATOR_PORT || 9099} http://localhost:${process.env.NEXT_PUBLIC_STORAGE_EMULATOR_PORT || 9199}`
     : '';
 const localEmulatorMediaSources = localEmulatorConnectSources
-  ? ' http://127.0.0.1:9199 http://localhost:9199'
+  ? ` http://127.0.0.1:${process.env.NEXT_PUBLIC_STORAGE_EMULATOR_PORT || 9199} http://localhost:${process.env.NEXT_PUBLIC_STORAGE_EMULATOR_PORT || 9199}`
   : '';
 
 /** Security headers applied to every response. */
@@ -42,8 +42,10 @@ const securityHeaders = [
     key: 'Content-Security-Policy',
     value: [
       "default-src 'self'",
+      "object-src 'none'",
+      "base-uri 'self'",
       // Stripe Connect requires connect-js.stripe.com in script-src
-      "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://apis.google.com https://www.gstatic.com js.stripe.com connect-js.stripe.com *.stripe.com elfsightcdn.com *.elfsightcdn.com",
+      `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV !== 'production' ? " 'unsafe-eval'" : ''} https://apis.google.com https://www.gstatic.com js.stripe.com connect-js.stripe.com *.stripe.com elfsightcdn.com *.elfsightcdn.com`,
       "style-src 'self' 'unsafe-inline' fonts.googleapis.com",
       "font-src 'self' fonts.gstatic.com",
       "img-src 'self' data: blob: https: storage.googleapis.com *.firebasestorage.app placehold.co images.unsplash.com picsum.photos api.dicebear.com freeimage.host",

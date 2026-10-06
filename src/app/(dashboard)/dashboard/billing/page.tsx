@@ -1,5 +1,9 @@
 "use client";
+import { BillingCountryDeclaration } from '@/components/billing-country-declaration';
+import { SchoolPlanDeclaration } from '@/components/school-plan-declaration';
+import { schoolOrganizationDeclaration, schoolPlanEligibilityError, type SchoolOrganizationDeclaration } from '@/lib/school-plan-eligibility';
 
+import { useSubscriptionCapabilities } from '@/lib/use-subscription-capabilities';
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTeam } from '@/components/providers/team-provider';
@@ -36,7 +40,7 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { SquadIdentity } from '@/components/SquadIdentity';
 import { isBillableSquadSeat } from '@/lib/team-seat-policy';
-import { getBillingPlanStatusLabel } from '@/lib/billing-plan-status';
+import { getBillingPlanStatusLabel, isDemoBillingIdentity } from '@/lib/billing-plan-status';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -56,6 +60,11 @@ export default function BillingDashboard() {
   const [loading, setLoading] = useState<string | null>(null);
   const [pendingSync, setPendingSync] = useState(false);
   const [addonQty, setAddonQty] = useState(userProfile?.extra_teams || 0);
+  const [billingCountry, setBillingCountry] = useState('');
+  const [billingCountryRequired, setBillingCountryRequired] = useState(false);
+  useEffect(() => { setBillingCountry(''); setBillingCountryRequired(false); }, [userProfile?.id]);
+  const [organizationDeclaration, setOrganizationDeclaration] = useState<SchoolOrganizationDeclaration | ''>('');
+  const declaredOrganization = organizationDeclaration || schoolOrganizationDeclaration((userProfile as any)?.organizationType) || '';
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(
     userProfile?.billing_cycle || 'monthly'
   );
@@ -69,9 +78,10 @@ export default function BillingDashboard() {
     }
   }, [userProfile?.billing_cycle]);
 
-  // Demo detection: team IDs starting with 'demo_' or isDemo flag on team/user
-  const isDemo = !!(activeTeam?.isDemo || (userProfile as any)?.isDemo ||
-    teams?.some(t => t.id?.startsWith('demo_')));
+  const isDemo = isDemoBillingIdentity({
+    anonymous: auth?.currentUser?.isAnonymous,
+    profileIsDemo: (userProfile as any)?.isDemo,
+  });
 
   const currentPlan = PRICING_CONFIG.find(p => p.id === userProfile?.plan_type) || null;
   const paidSeatLimit = userProfile?.team_limit ?? 0;
@@ -85,9 +95,15 @@ export default function BillingDashboard() {
   const isStripeLinked = !!userProfile?.stripe_subscription_id;
   const hasPaidPlan = ['team', 'elite', 'league', 'school', 'squad_pro', 'squad_pro_demo'].includes(userProfile?.plan_type || '');
 
+  const capabilities = useSubscriptionCapabilities(auth, userProfile?.id, userProfile?.stripe_subscription_id);
+
   // ─── Handlers ────────────────────────────────────────────────────────────
   const handleUpdatePlan = async (newPlan: Plan | null, initialAddons?: number) => {
     if (!userProfile?.id) return;
+    if (!capabilities.planChangesAllowed || ((initialAddons || 0) > 0 && !capabilities.addonsAllowed)) {
+      toast({ title: 'Plan changes unavailable', description: 'Plan changes and extra squad slots are temporarily unavailable. Please try again later.' });
+      return;
+    }
 
     // Demo accounts cannot make real Stripe transactions
     if (isDemo) {
@@ -99,6 +115,8 @@ export default function BillingDashboard() {
       return;
     }
 
+    const eligibilityError = schoolPlanEligibilityError(newPlan?.id || '', userProfile, declaredOrganization);
+    if (eligibilityError) { toast({ title: 'Organization declaration required', description: eligibilityError, variant: 'destructive' }); return; }
     setLoading(newPlan ? 'plan_' + newPlan.id : 'addon_init');
     if (!isStripeLinked) {
       try {
@@ -111,10 +129,13 @@ export default function BillingDashboard() {
             teamId: activeTeam?.id,
             priceId: newPlan ? (billingCycle === 'annual' ? newPlan.annualPriceId : newPlan.monthlyPriceId) : null,
             billingCycle,
+            organizationDeclaration: declaredOrganization,
             extraTeamQty: initialAddons || 0,
+            ...(billingCountry ? { billingCountry } : {}),
           }),
         });
         const data = await response.json();
+        if (data.code === 'BILLING_COUNTRY_REQUIRED') setBillingCountryRequired(true);
         if (data.url) {
           window.location.href = data.url;
         } else {
@@ -140,6 +161,7 @@ export default function BillingDashboard() {
         body: JSON.stringify({
           userId: userProfile.id,
           newPriceId,
+          organizationDeclaration: declaredOrganization,
           operationId: crypto.randomUUID(),
         }),
       });
@@ -163,6 +185,7 @@ export default function BillingDashboard() {
   };
 
   const handleUpdateAddon = async (qty: number) => {
+    if (!capabilities.addonsAllowed) return;
     if (!userProfile?.id) return;
     if (isDemo) {
       toast({
@@ -230,15 +253,16 @@ export default function BillingDashboard() {
     }
   };
 
-  const openStripePortal = async () => {
+  const openStripePortal = async (purpose?: 'payment_method_update') => {
     if (!userProfile?.id) return;
+    if (purpose === 'payment_method_update' ? !capabilities.paymentMethodUpdateAllowed : !capabilities.portalAllowed) { toast({ title: 'Billing portal unavailable', description: 'You can still cancel your subscription from this page.' }); return; }
     setLoading('portal');
     try {
       const token = await getAuthToken(auth);
       const res = await fetch('/api/stripe/customer-portal', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ userId: userProfile.id, operationId: crypto.randomUUID() }),
+        body: JSON.stringify({ userId: userProfile.id, operationId: crypto.randomUUID(), ...(purpose ? { purpose } : {}) }),
       });
       const data = await res.json();
       if (data.url) window.location.href = data.url;
@@ -297,6 +321,23 @@ export default function BillingDashboard() {
 
   if (!userProfile) return <div className="p-20 text-center"><Loader2 className="animate-spin mx-auto h-8 w-8" /></div>;
 
+  if (userProfile.billing_provider === 'app_store' || userProfile.billing_provider === 'play_store') {
+    const apple = userProfile.billing_provider === 'app_store';
+    return <Card className="mx-auto my-10 max-w-2xl">
+      <CardHeader>
+        <CardTitle>{currentPlan?.name || 'The Squad subscription'}</CardTitle>
+        <CardDescription>Billed through {apple ? 'Apple' : 'Google Play'}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p>Your plan includes {paidSeatLimit} paid squad seats. Manage renewal, cancellation, and payment details with the store where you subscribed.</p>
+        <Button asChild><a href={apple ? 'https://apps.apple.com/account/subscriptions' : 'https://play.google.com/store/account/subscriptions?package=pro.thesquad.app'} target="_blank" rel="noopener noreferrer">Manage {apple ? 'Apple' : 'Google Play'} subscription</a></Button>
+        <p className="text-sm text-muted-foreground">To restore purchases, open The Squad app and go to Settings → Subscriptions using the same The Squad account.</p>
+        {isStripeLinked && ['active', 'trialing', 'past_due'].includes(userProfile.stripe_subscription_status || '') &&
+          <Button variant="outline" onClick={() => openStripePortal()}>Manage existing web subscription</Button>}
+      </CardContent>
+    </Card>;
+  }
+
   // Helpers
   const currentPlanIndex = PRICING_CONFIG.findIndex(p => p.id === userProfile.plan_type);
   const isCancelling = userProfile.cancel_at_period_end === true;
@@ -310,6 +351,8 @@ export default function BillingDashboard() {
   return (
     <div className="max-w-5xl mx-auto py-10 px-4 md:px-6 space-y-10 pb-20">
 
+      {billingCountryRequired && <BillingCountryDeclaration value={billingCountry} onChange={setBillingCountry} />}
+
       {/* ── Header ── */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
         <div className="space-y-1">
@@ -320,7 +363,7 @@ export default function BillingDashboard() {
             Manage <span className="text-primary italic">Your Plan</span>
           </h1>
           <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">
-            Upgrade, downgrade, or cancel at any time
+            {capabilities.planChangesAllowed ? 'Upgrade, downgrade, or cancel at any time' : 'Plan changes are temporarily unavailable. You can still cancel below.'}
           </p>
         </div>
         <div className="flex items-center gap-2 flex-wrap">
@@ -328,11 +371,16 @@ export default function BillingDashboard() {
             <Button
               variant="outline"
               className="rounded-xl font-bold h-10 gap-2"
-              onClick={openStripePortal}
-              disabled={loading === 'portal'}
+              onClick={() => openStripePortal()}
+              disabled={loading === 'portal' || !capabilities.portalAllowed}
             >
               {loading === 'portal' ? <Loader2 className="h-4 w-4 animate-spin" /> : <ReceiptText className="h-4 w-4" />}
               Invoices & Payment Methods
+            </Button>
+          )}
+          {isStripeLinked && !capabilities.portalAllowed && capabilities.paymentMethodUpdateAllowed && (
+            <Button variant="outline" className="rounded-xl font-bold h-10" onClick={() => openStripePortal('payment_method_update')} disabled={loading === 'portal'}>
+              Update Payment Method
             </Button>
           )}
           <Button
@@ -375,7 +423,7 @@ export default function BillingDashboard() {
 
       {/* ── Current Plan Card ── */}
       <Card className="rounded-4xl border-none shadow-xl overflow-hidden ring-1 ring-black/5">
-        <div className="h-1.5 hero-gradient w-full" />
+
         <CardContent className="p-6 md:p-8">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="flex items-center gap-5">
@@ -388,7 +436,7 @@ export default function BillingDashboard() {
                 <div className="flex items-center gap-2 mt-1">
                   <div className={cn('w-2 h-2 rounded-full', isStripeLinked && !isCancelling ? 'bg-green-500' : isCancelling ? 'bg-amber-500' : 'bg-muted-foreground/40')} />
                   <p className="text-[10px] font-bold text-muted-foreground uppercase">
-                    {getBillingPlanStatusLabel({ isCancelling, isStripeLinked, isDemo })}
+                    {getBillingPlanStatusLabel({ isCancelling, isStripeLinked, isDemo, hasManagedAccess: isPro && !!currentPlan && currentPlan.id !== 'free' })}
                   </p>
                 </div>
               </div>
@@ -455,10 +503,8 @@ export default function BillingDashboard() {
                     : 'border-border/40 hover:border-primary/40 hover:shadow-lg cursor-pointer',
                   plan.highlight && !isCurrent && 'ring-2 ring-primary/20'
                 )}
-                onClick={() => !isCurrent && !isLoading && handleUpdatePlan(plan)}
+                onClick={() => !isCurrent && !isLoading && capabilities.planChangesAllowed && handleUpdatePlan(plan)}
               >
-                {isCurrent && <div className="h-1 bg-primary w-full" />}
-                {plan.highlight && !isCurrent && <div className="h-1 hero-gradient w-full" />}
                 <CardContent className="p-5 flex flex-col flex-1 gap-3">
                   <div className="flex items-start justify-between">
                     <div>
@@ -483,7 +529,7 @@ export default function BillingDashboard() {
                       {billingCycle === 'annual' ? plan.annualPrice : plan.monthlyPrice}
                     </span>
                     <span className="text-[9px] font-black text-muted-foreground uppercase">
-                      /{billingCycle === 'annual' ? 'yr' : 'mo'}
+                      USD /{billingCycle === 'annual' ? 'yr' : 'mo'}
                     </span>
                   </div>
 
@@ -496,6 +542,7 @@ export default function BillingDashboard() {
                     ))}
                   </ul>
 
+                  {plan.id === 'school' && userProfile?.plan_type !== 'school' && <SchoolPlanDeclaration value={declaredOrganization} onChange={setOrganizationDeclaration} />}
                   {!isCurrent && (
                     <Button
                       className={cn(
@@ -504,12 +551,12 @@ export default function BillingDashboard() {
                           ? 'bg-primary hover:bg-primary/90 text-white'
                           : 'bg-muted hover:bg-muted/80 text-foreground'
                       )}
-                      disabled={isLoading}
+                      disabled={isLoading || !capabilities.planChangesAllowed}
                       onClick={(e) => { e.stopPropagation(); handleUpdatePlan(plan); }}
                     >
                       {isLoading
                         ? <Loader2 className="h-4 w-4 animate-spin" />
-                        : isUpgrade ? '↑ Upgrade to this plan' : '↓ Downgrade to this plan'
+                        : !capabilities.planChangesAllowed ? 'Plan changes unavailable' : isUpgrade ? '↑ Upgrade to this plan' : '↓ Downgrade to this plan'
                       }
                     </Button>
                   )}
@@ -537,22 +584,24 @@ export default function BillingDashboard() {
                   <h3 className="font-black uppercase tracking-tight text-sm">Extra Squad Slots</h3>
                 </div>
                 <p className="text-[10px] font-bold text-muted-foreground">
-                  Add additional team slots beyond your plan limit.
-                  {billingCycle === 'annual' ? EXTRA_TEAM_CONFIG.annualPrice : EXTRA_TEAM_CONFIG.monthlyPrice} per squad per {billingCycle === 'annual' ? 'year' : 'month'}.
+                  {capabilities.addonsAllowed ? 'Add additional team slots beyond your plan limit.' : 'Extra squad slots are temporarily unavailable.'}
+                  {billingCycle === 'annual' ? EXTRA_TEAM_CONFIG.annualPrice : EXTRA_TEAM_CONFIG.monthlyPrice} USD per squad per {billingCycle === 'annual' ? 'year' : 'month'}.
                 </p>
               </div>
               <div className="flex items-center gap-4">
                 <button
+                  disabled={!capabilities.addonsAllowed}
                   onClick={() => setAddonQty(q => Math.max(0, q - 1))}
                   className="w-10 h-10 rounded-xl bg-white border shadow-sm flex items-center justify-center hover:bg-black hover:text-white transition-all"
                 ><Minus className="h-4 w-4" /></button>
                 <span className="text-3xl font-black w-8 text-center">{addonQty}</span>
                 <button
+                  disabled={!capabilities.addonsAllowed}
                   onClick={() => setAddonQty(q => q + 1)}
                   className="w-10 h-10 rounded-xl bg-white border shadow-sm flex items-center justify-center hover:bg-black hover:text-white transition-all"
                 ><Plus className="h-4 w-4" /></button>
                 <Button
-                  disabled={addonQty === (userProfile.extra_teams || 0) || loading === 'addon' || loading === 'addon_init'}
+                  disabled={!capabilities.addonsAllowed || addonQty === (userProfile.extra_teams || 0) || loading === 'addon' || loading === 'addon_init'}
                   className="h-10 px-6 rounded-xl font-black uppercase text-[10px]"
                   onClick={() => {
                     const currentQty = userProfile.extra_teams || 0;
@@ -669,8 +718,8 @@ export default function BillingDashboard() {
               <Button
                 variant="outline"
                 className="rounded-xl font-bold h-10 border-red-200 text-red-600 hover:bg-red-50 gap-2"
-                onClick={openStripePortal}
-                disabled={loading === 'portal'}
+                onClick={() => openStripePortal()}
+                disabled={loading === 'portal' || !capabilities.portalAllowed}
               >
                 <ExternalLink className="h-4 w-4" />
                 Manage in Stripe

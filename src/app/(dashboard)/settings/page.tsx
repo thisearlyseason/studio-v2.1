@@ -1,5 +1,6 @@
 "use client";
 
+import { ParentCompanyBrand } from '@/components/ParentCompanyBrand';
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -148,6 +149,7 @@ export default function SettingsPage() {
 
   useEffect(() => {
     setMounted(true);
+    if (isStoreDistribution) { setIsStandalone(true); return; }
     // Read PWA state from environment
     const standaloneMode =
       window.matchMedia('(display-mode: standalone)').matches ||
@@ -168,6 +170,7 @@ export default function SettingsPage() {
   }, []);
 
   const handleSettingsInstallClick = async () => {
+    if (isStoreDistribution) return;
     if (settingsIsIOS) { setShowSettingsIOSInstructions(true); return; }
     if (!settingsDeferredPrompt) { setShowSettingsGeneralInstructions(true); return; }
     await settingsDeferredPrompt.prompt();
@@ -192,11 +195,11 @@ export default function SettingsPage() {
       });
       // Initialize notifications from user preferences
       const permissionGranted =
-        typeof window !== 'undefined' &&
+        !isStoreDistribution && typeof window !== 'undefined' &&
         'Notification' in window &&
         Notification.permission === 'granted';
       setNotificationPermission(
-        typeof window !== 'undefined' && 'Notification' in window
+        !isStoreDistribution && typeof window !== 'undefined' && 'Notification' in window
           ? Notification.permission
           : 'unsupported'
       );
@@ -371,6 +374,7 @@ export default function SettingsPage() {
   };
 
   const enableNotifications = async () => {
+    if (isStoreDistribution) return;
     setIsNotifLoading(true);
     try {
       if (!('Notification' in window) || !('serviceWorker' in navigator)) {
@@ -408,6 +412,7 @@ export default function SettingsPage() {
   };
 
   const handleNotificationsToggle = async (enabled: boolean) => {
+    if (isStoreDistribution) return;
     if (enabled) {
       setIsNotificationConsentOpen(true);
       return;
@@ -431,6 +436,7 @@ export default function SettingsPage() {
   };
 
   const handleUpcomingEventNotificationsToggle = async (enabled: boolean) => {
+    if (isStoreDistribution) return;
     setIsUpcomingEventNotifLoading(true);
     try {
       setUpcomingEventNotifications(enabled);
@@ -545,7 +551,7 @@ export default function SettingsPage() {
               </DialogTrigger>
               <DialogContent className="sm:max-w-2xl rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden">
                 <DialogTitle className="sr-only">Edit Profile Architect</DialogTitle>
-                <div className="h-2 bg-primary w-full" />
+
                 <div className="p-8 lg:p-12 space-y-10">
                   <DialogHeader>
                     <DialogTitle className="text-3xl font-black uppercase tracking-tight">Identity Architect</DialogTitle>
@@ -646,18 +652,18 @@ export default function SettingsPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         <Card className="rounded-[2.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
-          <CardHeader className="bg-muted/30 border-b p-8 flex flex-row items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="bg-primary/10 p-2.5 rounded-xl text-primary"><Bell className="h-5 w-5" /></div>
-              <CardTitle className="text-sm font-black uppercase tracking-widest">Tactical Alerts</CardTitle>
+          <CardHeader className="bg-muted/30 border-b p-5 sm:p-6 flex flex-row items-center justify-between gap-4 space-y-0">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="bg-primary/10 p-2.5 shrink-0 rounded-xl text-primary"><Bell className="h-5 w-5" /></div>
+              <CardTitle className="text-sm font-bold leading-snug wrap-break-word">Tactical Alerts</CardTitle>
             </div>
-            <Switch aria-label="Tactical alerts" checked={notifications} onCheckedChange={handleNotificationsToggle} disabled={isNotifLoading} />
+            <Switch className="shrink-0" aria-label="Tactical alerts" checked={notifications} onCheckedChange={handleNotificationsToggle} disabled={isNotifLoading || isStoreDistribution || notificationPermission === 'unsupported'} />
           </CardHeader>
-          <CardContent className="p-8 space-y-4">
+          <CardContent className="p-5 sm:p-6 space-y-4">
             <p className="text-[10px] font-bold text-muted-foreground uppercase leading-relaxed">
               Global system for push notifications covering feed updates, match schedule changes, and real-time coordinator alerts.
             </p>
-            {notificationPermission === 'denied' && (
+            {!isStoreDistribution && notificationPermission === 'denied' && (
               <div className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-left">
                 <p className="text-[10px] font-black uppercase tracking-widest text-amber-800">
                   The Squad notifications are blocked in this browser
@@ -667,10 +673,12 @@ export default function SettingsPage() {
                 </p>
               </div>
             )}
-            {notificationPermission === 'unsupported' && (
+            {(isStoreDistribution || notificationPermission === 'unsupported') && (
               <div className="rounded-2xl border border-muted bg-muted/30 p-4 text-left">
                 <p className="text-xs font-medium leading-relaxed text-muted-foreground">
-                  Notifications are unavailable in this browser. On iPhone or iPad, add The Squad to your Home Screen and open the installed app.
+                  {isStoreDistribution
+                    ? 'Push notifications are not available in this version of the app. Open The Squad to check your team updates and schedule.'
+                    : 'Notifications are unavailable in this browser. On iPhone or iPad, add The Squad to your Home Screen and open the installed app.'}
                 </p>
               </div>
             )}
@@ -678,30 +686,31 @@ export default function SettingsPage() {
         </Card>
 
         <Card className="rounded-[2.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
-            <CardHeader className="bg-muted/30 border-b p-8 flex flex-row items-center justify-between">
-              <div className="flex items-center gap-4">
-                <div className="bg-blue-100 p-2.5 rounded-xl text-blue-700"><Bell className="h-5 w-5" /></div>
+            <CardHeader className="bg-muted/30 border-b p-5 sm:p-6 flex flex-row items-center justify-between gap-4 space-y-0">
+              <div className="flex min-w-0 items-center gap-3">
+                <div className="bg-blue-100 p-2.5 shrink-0 rounded-xl text-blue-700"><Bell className="h-5 w-5" /></div>
                 <div>
-                  <CardTitle className="text-sm font-black uppercase tracking-widest">Game-Day Reminders</CardTitle>
+                  <CardTitle className="text-sm font-bold leading-snug wrap-break-word">Game-Day Reminders</CardTitle>
                   <CardDescription className="mt-1 text-[10px] font-bold uppercase tracking-wider">
                     All active squad members
                   </CardDescription>
                 </div>
               </div>
               <Switch
+                className="shrink-0"
                 aria-label="Game-day reminders"
                 checked={notifications && upcomingEventNotifications}
                 onCheckedChange={handleUpcomingEventNotificationsToggle}
-                disabled={isUpcomingEventNotifLoading || !notifications}
+                disabled={isUpcomingEventNotifLoading || !notifications || isStoreDistribution}
               />
             </CardHeader>
-            <CardContent className="p-8 space-y-3">
+            <CardContent className="p-5 sm:p-6 space-y-3">
               <p className="text-[10px] font-bold text-muted-foreground uppercase leading-relaxed">
                 Receive one same-day alert with the upcoming game, practice, tournament, meeting, or event time and location.
               </p>
               {!notifications && (
                 <p className="text-[10px] font-black uppercase tracking-wider text-amber-700">
-                  Turn on Tactical Alerts first to enable game-day reminders.
+                  {isStoreDistribution ? 'Game-day push reminders are not available in this version of the app. Your upcoming events are listed in Schedule.' : 'Turn on Tactical Alerts first to enable game-day reminders.'}
                 </p>
               )}
             </CardContent>
@@ -709,16 +718,16 @@ export default function SettingsPage() {
 
         {canManageBilling && (
         <Card className="rounded-[2.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
-          <CardHeader className="bg-muted/30 border-b p-8 flex flex-row items-center justify-between">
-            <div className="flex items-center gap-4">
-              <div className="bg-amber-100 p-2.5 rounded-xl text-amber-600"><ShieldCheck className="h-5 w-5" /></div>
-              <CardTitle className="text-sm font-black uppercase tracking-widest">Subscription Intelligence</CardTitle>
+          <CardHeader className="bg-muted/30 border-b p-5 sm:p-6 flex flex-row items-center justify-between gap-4 space-y-0">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="bg-amber-100 p-2.5 shrink-0 rounded-xl text-amber-600"><ShieldCheck className="h-5 w-5" /></div>
+              <CardTitle className="text-sm font-bold leading-snug wrap-break-word">Subscription Intelligence</CardTitle>
             </div>
             <Badge className={cn("font-black uppercase text-[8px] tracking-widest", user.subscription_status === 'active' ? "bg-green-100 text-green-700" : "bg-primary/10 text-primary")}>
               {user.subscription_status || 'Free'}
             </Badge>
           </CardHeader>
-          <CardContent className="p-8 space-y-6">
+          <CardContent className="p-5 sm:p-6 space-y-6">
             <div className="flex items-center justify-between">
               <div className="space-y-1">
                 <p className="text-[10px] font-black uppercase tracking-widest opacity-40">Active Tier</p>
@@ -736,6 +745,7 @@ export default function SettingsPage() {
                 Includes {user.extra_teams} Extra Add-on Seats
               </p>
             ) : null}
+            {isStoreDistribution && <Link href="/subscriptions" className="font-semibold underline">Subscriptions &amp; restore purchases</Link>}
             {!isStoreDistribution && (
               <Button asChild variant="outline" className="w-full rounded-2xl border-2 font-black uppercase text-[10px] h-12 hover:bg-black hover:text-white transition-all">
                 <Link href="/dashboard/billing">Manage Subscription <ChevronRight className="ml-1 h-4 w-4" /></Link>
@@ -752,7 +762,7 @@ export default function SettingsPage() {
           <p className="text-[10px] text-muted-foreground px-2 mb-4 font-bold uppercase tracking-widest leading-relaxed">
             Toggle which squad modules are visible in the sidebar. Disabled modules are completely hidden and inaccessible to all users in this squad.
           </p>
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+          <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] gap-4">
             {TEAM_MODULE_SETTINGS_DEFINITIONS.map(module => {
               const Icon = TEAM_MODULE_ICONS[module.key];
               // features is undefined by default, so we treat undefined as true (enabled)
@@ -775,18 +785,18 @@ export default function SettingsPage() {
 
               return (
                 <div key={module.key} className={cn(
-                  "p-4 rounded-4xl border shadow-sm flex items-center justify-between transition-all",
+                  "p-4 min-w-0 rounded-2xl border shadow-sm flex items-center justify-between gap-4 transition-all",
                   isEnabled ? "bg-white" : "bg-muted/50 grayscale-[0.5]"
                 )}>
-                  <div className="flex items-center gap-3">
-                    <div className={cn("p-2 rounded-xl", isEnabled ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>
+                  <div className="flex min-w-0 flex-1 items-center gap-3">
+                    <div className={cn("p-2 shrink-0 rounded-xl", isEnabled ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>
                       {isEnabled ? <Icon className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                     </div>
-                    <span className={cn("text-xs font-black uppercase tracking-widest", !isEnabled && "text-muted-foreground")}>
+                    <span className={cn("text-sm font-semibold leading-snug wrap-break-word", !isEnabled && "text-muted-foreground")}>
                       {module.name}
                     </span>
                   </div>
-                  <Switch aria-label={`${module.name} visibility`} checked={isEnabled} onCheckedChange={handleToggle} />
+                  <Switch className="shrink-0" aria-label={`${module.name} visibility`} checked={isEnabled} onCheckedChange={handleToggle} />
                 </div>
               );
             })}
@@ -849,11 +859,11 @@ export default function SettingsPage() {
       </div>
 
       {/* ── App Installation Card ── */}
-      {!isStandalone && (
+      {!isStoreDistribution && !isStandalone && (
         <div className="space-y-4 pt-10 border-t">
           <h3 className="text-xs font-black uppercase tracking-[0.3em] text-muted-foreground px-2">App Installation</h3>
           <Card className="rounded-[2.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
-            <CardHeader className="bg-muted/30 border-b p-8 flex flex-row items-center justify-between">
+            <CardHeader className="bg-muted/30 border-b p-5 sm:p-6 flex flex-row items-center justify-between gap-4 space-y-0">
               <div className="flex items-center gap-4">
                 <div className="bg-primary/10 p-2.5 rounded-xl text-primary"><Smartphone className="h-5 w-5" /></div>
                 <div>
@@ -899,12 +909,13 @@ export default function SettingsPage() {
         </div>
       )}
 
+      <ParentCompanyBrand />
       <p className="text-center text-[9px] font-black uppercase text-muted-foreground tracking-[0.3em] opacity-30 pt-10 pb-20">The Squad Coordination Hub v1.0.0 • Verified Global ID: {user.id.slice(-8)}</p>
 
       <Dialog open={isResetOpen} onOpenChange={setIsResetOpen}>
         <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl p-0 overflow-hidden">
           <DialogTitle className="sr-only">Season Reset Selection</DialogTitle>
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-8 space-y-6">
             <DialogHeader>
               <div className="flex items-center gap-3 mb-2">

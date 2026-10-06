@@ -486,7 +486,7 @@ export default function PublicScoutPortalPage() {
           <div className="absolute inset-0 bg-linear-to-br from-primary/10 via-transparent to-transparent pointer-events-none" />
           <div className="absolute top-0 right-0 p-16 opacity-5 pointer-events-none"><Zap className="h-96 w-96" /></div>
           {/* Sport accent bar */}
-          <div className="h-1 bg-linear-to-r from-primary via-primary/60 to-transparent" />
+
           <div className="flex flex-col lg:flex-row items-center gap-12 p-10 lg:p-16 relative z-10">
             <div className="relative shrink-0">
               <div className="h-48 w-48 lg:h-64 lg:w-64 rounded-[3rem] border-2 border-white/10 shadow-2xl overflow-hidden bg-white/5 flex items-center justify-center ring-1 ring-primary/20">

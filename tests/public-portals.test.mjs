@@ -128,7 +128,7 @@ test('tournament team registration is transactional and fails closed after brack
   assert.match(source, /adminDb\.runTransaction/);
   assert.match(source, /TOURNAMENT_ROSTER_LOCKED/);
   assert.match(source, /tournamentGames\.length > 0/);
-  assert.match(source, /transaction\.create\(entry, entryData\)/);
+  assert.match(source, /transaction\.create\(entry,\s*\{\.\.\.entryData,entrant:registeredTeam,status:eligible\?/);
   assert.match(source, /transaction\.update\(tournamentEventRef/);
   assert.match(source, /freshEvent\.data\(\)\?\.tournamentGames/);
 });
@@ -143,7 +143,7 @@ test('linked squad registrations verify staff authority and canonicalize client 
   assert.match(action, /if \(!authority\?\.isStaff\)/);
   assert.match(action, /answers\.teamName = canonicalName/);
   assert.match(action, /answers\.teamLogoUrl = canonicalLogo/);
-  assert.match(action, /id: `p_\$\{entry\.id\}`/);
+  assert.match(action, /id:\s*`p_\$\{entry\.id\}`/);
   assert.match(action, /sourceTeamId:/);
   assert.match(leaguePage, /headers: \{ 'content-type': 'application\/json', \.\.\.authHeader\(token\) \}/);
   assert.match(tournamentPage, /headers: \{ 'Content-Type': 'application\/json', \.\.\.authHeader\(token\) \}/);
@@ -311,4 +311,13 @@ test('public recruiting DTO excludes household linkage and unsafe media', () => 
   assert.equal('evaluatorId' in result.evaluations[0], false);
   assert.equal(result.videos.length, 1);
   assert.equal(result.profile.photos.length, 1);
+});
+
+test('league portal entry and submission checks honor current and legacy owner plan markers', async () => {
+  for (const file of ['src/app/api/public/portals/route.ts','src/app/api/public/portals/action/route.ts']) {
+    const source=await readFile(file,'utf8');
+    assert.match(source,/permitsLegacyOrPaidPortals\(creator\.data\(\)\?\.planId, creator\.data\(\)\?\.plan_type, creator\.data\(\)\?\.subscriptionPlanId\)/);
+  }
+  assert.equal(permitsLegacyOrPaidPortals('elite_league',undefined,undefined),true);
+  assert.equal(permitsLegacyOrPaidPortals('starter',undefined,undefined),false);
 });

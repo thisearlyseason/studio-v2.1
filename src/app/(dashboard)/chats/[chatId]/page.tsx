@@ -1,6 +1,7 @@
 
 "use client";
 
+import { ContentSafety, BlockedUsers, useBlockedAuthors } from '@/components/content-safety';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { format } from 'date-fns';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
@@ -76,6 +77,7 @@ function ChatRoomInner() {
   } = useTeam();
   const db = useFirestore();
   const auth = useAuth();
+  const { data: blocks, isLoading: blocksLoading } = useBlockedAuthors();
 
   // For hub channels opened by an organizer who has no activeTeam selected,
   // the teamId is passed as a URL query param so we can query Firestore directly
@@ -119,8 +121,8 @@ function ChatRoomInner() {
 
   const { data: rawMessages, isLoading: isMessagesLoading, error: messagesError } = useCollection<Message>(messagesQuery);
   const messages = useMemo(
-    () => (rawMessages ? rawMessages.map(normalizeChatMessage) as Message[] : []),
-    [rawMessages],
+    () => (rawMessages ? rawMessages.map(normalizeChatMessage).filter(msg => !blocks?.some(block => block.authorId === msg.authorId)) as Message[] : []),
+    [rawMessages, blocks],
   );
 
   useEffect(() => {
@@ -181,7 +183,7 @@ function ChatRoomInner() {
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Unable to send this message.';
       setSendAttempt(failChatSend(sending, message));
-      toast({ title: 'Message Not Sent', description: 'Your draft is preserved. Retry when your connection returns.', variant: 'destructive' });
+      toast({ title: 'Message Not Sent', description: `${message} Your draft is preserved.`, variant: 'destructive' });
     }
   };
 
@@ -299,7 +301,7 @@ function ChatRoomInner() {
   });
 
   return (
-    <div className="flex flex-col h-[calc(100vh-160px)] md:h-[calc(100vh-130px)] -mt-4 md:-mt-4 -mx-4 overflow-hidden bg-muted/5">
+    <div className="flex flex-col h-[calc(100vh-160px)] md:h-[calc(100vh-130px)] mt-0 md:mt-0 -mx-4 overflow-hidden bg-muted/5">
       <div className="flex flex-col p-4 border-b bg-white sticky top-0 z-20 shadow-sm gap-3">
         <div className="flex items-center gap-3">
           <Tooltip>
@@ -376,9 +378,10 @@ function ChatRoomInner() {
         </div>
       </div>
 
+      <div className="px-4 py-2 border-b"><BlockedUsers /></div>
       <ScrollArea className="flex-1 px-4 py-6">
         <div className="max-w-4xl mx-auto space-y-8 pb-10" ref={scrollRef}>
-          {isMessagesLoading ? (
+          {isMessagesLoading || blocksLoading ? (
             <div className="flex justify-center p-8"><Loader2 className="h-6 w-6 animate-spin text-primary opacity-20" /></div>
           ) : messages.length > 0 ? (
             messages.map((msg, idx) => {
@@ -396,6 +399,7 @@ function ChatRoomInner() {
                     </div>
                   )}
                   
+                  <ContentSafety target={{ teamId: effectiveTeamId!, kind: 'message', parentId: chatId as string, contentId: msg.id }} authorId={msg.authorId} authorName={msg.author} />
                   {!isPoll ? (
                     <div className={cn(
                       "max-w-[85%] sm:max-w-[70%] p-4 rounded-3xl text-sm shadow-md space-y-3 relative group transition-all", 
@@ -529,7 +533,7 @@ function ChatRoomInner() {
                 placeholder="Tactical update..." 
                 value={input} 
                 onChange={e => setInput(e.target.value)} 
-                onKeyDown={e => e.key === 'Enter' && handleSendMessage()} 
+                onKeyDown={e => { if (e.key === 'Enter' && !e.nativeEvent.isComposing) { e.preventDefault(); void handleSendMessage(); } }}
                 disabled={sendAttempt?.status === 'sending'}
               />
               <Tooltip>
@@ -577,7 +581,7 @@ function ChatRoomInner() {
       <Dialog open={isMembersDialogOpen} onOpenChange={setIsMembersDialogOpen}>
         <DialogContent className="w-[calc(100vw-1rem)] max-w-md max-h-[calc(100dvh-1rem)] rounded-3xl sm:rounded-[2.5rem] border-none shadow-2xl p-0 overflow-y-auto">
           <DialogTitle className="sr-only">Squad Enrollment Management</DialogTitle>
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-5 sm:p-8 space-y-5 sm:space-y-6">
             <DialogHeader>
               <DialogTitle className="text-xl sm:text-2xl font-black uppercase tracking-tight pr-8">Squad Enrollment</DialogTitle>
@@ -673,7 +677,7 @@ function ChatRoomInner() {
       <Dialog open={isPollDialogOpen} onOpenChange={setIsPollDialogOpen}>
         <DialogContent className="sm:max-w-md rounded-[3rem] border-none shadow-2xl overflow-hidden p-0">
           <DialogTitle className="sr-only">Launch Squad Poll</DialogTitle>
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-8">
             <DialogHeader className="mb-6">
               <DialogTitle className="text-3xl font-black uppercase tracking-tight leading-none">Launch Poll</DialogTitle>

@@ -66,7 +66,7 @@ export default async function SportLandingPage({ params }: PageProps) {
       description: landing.seoDescription,
       featureList: features.map(feature => feature.title),
       provider: { '@type': 'Organization', name: 'The Squad', url: 'https://www.thesquad.pro' },
-      offers: { '@type': 'Offer', price: '0', priceCurrency: 'CAD', description: 'Free squad plan available' },
+      offers: { '@type': 'Offer', price: '0', priceCurrency: 'USD', description: 'Free squad plan available' },
     },
     {
       '@context': 'https://schema.org',

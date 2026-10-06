@@ -126,6 +126,8 @@ const coordinationTabs = [
   { name: 'Roster', href: '/roster', icon: Users, pro: false },
   { name: 'Practice', href: '/practice', icon: Dumbbell, pro: true },
   { name: 'Competition Hub', href: '/competition', icon: Medal, pro: false },
+  { name: 'Leagues', href: '/leagues', icon: Medal, pro: false },
+  { name: 'Tournaments', href: '/manage-tournaments', icon: Trophy, pro: false },
   { name: 'Scorekeeping', href: '/games', icon: Trophy, pro: false },
   { name: 'Volunteer', href: '/volunteers', icon: HandHelping, pro: true },
   { name: 'Fundraising', href: '/fundraising', icon: PiggyBank, pro: true },
@@ -409,7 +411,6 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     deleteTeam, deleteAccount, isSuperAdmin
   } = useTeam();
   const auth = useAuth();
-  const hasDemoBanner = !!user?.isDemo && !user?.isBetaTester;
   const canAccessCoachesCorner = hasCoachesCornerEntitlement(activeTeam, isSuperAdmin);
   const isAdminTabLocked = (tab: (typeof adminTabs)[number]) =>
     tab.href === '/coaches-corner'
@@ -499,7 +500,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     pwaInstallPromptBroker.consume();
   };
 
-  const showInstallBtn = !isStandalone && !installDismissed;
+  const showInstallBtn = !isStoreDistribution && !isStandalone && !installDismissed;
 
   const roleNavigationOrder = isParent
     ? ['/events', '/chats', '/files', '/volunteers', '/competition']
@@ -546,8 +547,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     })
     .sort((a, b) => navigationPriority(a.href) - navigationPriority(b.href));
 
-  const primaryCoordTabs = filteredCoordTabs.slice(0, 5);
-  const additionalCoordTabs = filteredCoordTabs.slice(5);
+  // Keep competition destinations discoverable even when the institution-only hub is unavailable.
+  const primaryCoordTabs = filteredCoordTabs.filter((tab, index) => index < 5 || ['/leagues', '/manage-tournaments'].includes(tab.href));
+  const additionalCoordTabs = filteredCoordTabs.filter(tab => !primaryCoordTabs.includes(tab));
 
   const filteredAdminTabs = adminTabs.filter(tab => {
     // League creators without a team: show Facilities (free) + Equipment (locked if free)
@@ -675,18 +677,14 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <SidebarProvider>
+    <SidebarProvider className="relative h-full min-h-0">
       <div className="flex flex-col h-full w-full bg-background selection:bg-primary/20">
-        <div className="flex flex-1 overflow-y-hidden">
+        <div className="flex min-h-0 flex-1 overflow-hidden">
           <Sidebar 
-            className="border-r bg-white w-72 shrink-0 shadow-sm" 
+            className="absolute inset-y-0 h-full border-r bg-white w-72 shrink-0 shadow-sm **:data-[sidebar=sidebar]:overflow-y-auto **:data-[sidebar=sidebar]:overscroll-contain **:data-[sidebar=sidebar]:touch-pan-y"
             collapsible="offcanvas"
-            style={hasDemoBanner ? {
-              top: '2.25rem',
-              height: 'calc(100vh - 2.25rem)'
-            } : undefined}
           >
-            <SidebarHeader className="p-6 bg-white">
+            <SidebarHeader className="shrink-0 p-6 bg-white">
               <BrandLogo variant="light-background" className="h-10 w-44 justify-start mb-10" priority />
               
               <SidebarMenu className="space-y-2 mb-6">
@@ -856,7 +854,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               )}
             </SidebarHeader>
 
-            <SidebarContent className="flex-1 overflow-y-auto px-4 py-2 bg-white">
+            <SidebarContent className="flex-none overflow-visible px-4 py-2 bg-white">
               {/* School institution mode OR Elite Hub mode: hide all nav items */}
               {(!isSchoolInstitutionMode && !isEliteHubMode) && (
                 <SidebarMenu className="space-y-6">
@@ -880,12 +878,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               )}
               {(isSchoolInstitutionMode || isEliteHubMode) && (
                 <div className="px-4 py-6 text-center space-y-3">
-                  <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground/50">Select a squad above to open its team tools</p>
+                  <p className="text-[9px] font-black uppercase tracking-[0.3em] text-muted-foreground">Select a squad above to open its team tools</p>
                 </div>
               )}
             </SidebarContent>
 
-            <SidebarFooter className="p-4 border-t bg-white space-y-3">
+            <SidebarFooter className="mt-auto shrink-0 p-4 pb-[max(1rem,env(safe-area-inset-bottom))] border-t bg-white space-y-3">
 
               {/* ── Pro Upgrade Banner ── show for all non-Pro users */}
               {!isStoreDistribution && trialCountdown.active && (
@@ -983,6 +981,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 <div className="hidden md:block">
                   <h2 className="text-xl lg:text-2xl font-black uppercase tracking-tighter text-foreground">
                     {user?.role === 'league_creator' && pathname === '/competition' ? 'Competition Hub' :
+                     pathname === '/settings' ? 'Settings' :
                      pathname === '/dashboard' ? 'Dashboard' :
                      (pathname === '/leagues' && isSchoolMode ? 'Programs' : 
                       pathname === '/club' ? (isSchoolMode ? 'School Hub' : 'Club Hub') :
@@ -1012,7 +1011,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   <DropdownMenuTrigger asChild>
                     <button
                       aria-label="Open account menu"
-                      className="hidden sm:block focus:outline-none flex items-center gap-2 group"
+                      className={cn(isStoreDistribution ? "block" : "hidden sm:block", "focus:outline-none items-center gap-2 group")}
                     >
                       <Avatar className="h-8 w-8 md:h-10 md:w-10 border-2 border-background shadow-md transition-transform group-hover:scale-105 active:scale-95">
                         <AvatarImage src={user?.avatar} />
@@ -1066,7 +1065,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                           </DropdownMenuItem>
                         </AlertDialogTrigger>
                         <AlertDialogContent className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden p-0">
-                          <div className="h-2 bg-destructive w-full" />
+
                           <div className="p-8 space-y-6">
                             <AlertDialogHeader>
                               <AlertDialogTitle className="text-2xl font-black uppercase tracking-tight">Delete Team</AlertDialogTitle>
@@ -1092,7 +1091,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                         </DropdownMenuItem>
                       </AlertDialogTrigger>
                       <AlertDialogContent className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden p-0">
-                        <div className="h-2 bg-destructive w-full" />
+
                         <div className="p-8 space-y-6">
                           <AlertDialogHeader>
                             <AlertDialogTitle className="text-2xl font-black uppercase tracking-tight">Delete Account</AlertDialogTitle>
@@ -1192,7 +1191,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
                 <Sheet open={isMoreMenuOpen} onOpenChange={setIsMoreMenuOpen}>
                   <SheetContent side="bottom" className="rounded-t-[3rem] p-0 border-none shadow-2xl h-[80vh] flex flex-col bg-white">
-                    <div className="h-2 bg-primary w-full shrink-0" />
+
                     <SheetHeader className="px-8 pt-6 pb-4 text-center">
                       <SheetTitle className="text-2xl font-black uppercase tracking-tight text-foreground">All Tools</SheetTitle>
                       <SheetDescription className="font-bold text-primary uppercase text-[10px] tracking-widest">
@@ -1536,7 +1535,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       {/* iOS PWA Install Instructions Dialog */}
       <Dialog open={showIOSInstructions} onOpenChange={setShowIOSInstructions}>
         <DialogContent className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden p-0 max-w-sm">
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-8 space-y-6">
             <DialogHeader>
               <DialogTitle className="text-2xl font-black uppercase tracking-tight flex items-center gap-3">
@@ -1585,7 +1584,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       {/* General PWA Install Instructions Dialog */}
       <Dialog open={showGeneralInstructions} onOpenChange={setShowGeneralInstructions}>
         <DialogContent className="rounded-[2.5rem] border-none shadow-2xl overflow-hidden p-0 max-w-sm">
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-8 space-y-6">
             <DialogHeader>
               <DialogTitle className="text-2xl font-black uppercase tracking-tight flex items-center gap-3">

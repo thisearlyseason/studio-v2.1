@@ -1,6 +1,7 @@
 
 "use client";
 
+import OrganizerGuide from '@/components/guidance/OrganizerGuide';
 import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -83,6 +84,7 @@ function NewTeamForm() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pt-4 pb-20">
+      <OrganizerGuide kind="team" />
       <Button variant="ghost" onClick={() => router.back()} className="font-bold">
         <ChevronLeft className="h-4 w-4 mr-1" /> Back
       </Button>
@@ -90,10 +92,10 @@ function NewTeamForm() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8">
         <div className="lg:col-span-3 space-y-6">
           <Card className="border-none shadow-2xl rounded-[2.5rem] overflow-hidden bg-white ring-1 ring-black/5">
-            <div className="h-2 hero-gradient w-full" />
+
             <CardHeader className="p-8 lg:p-10">
-              <CardTitle className="text-3xl font-black uppercase tracking-tight">Launch Squad</CardTitle>
-              <CardDescription className="text-[10px] font-bold uppercase tracking-widest">Operational Deployment</CardDescription>
+              <CardTitle className="text-3xl font-black uppercase tracking-tight">Create your team</CardTitle>
+              <CardDescription className="text-[10px] font-bold uppercase tracking-widest">Add the basics now. Invite people next.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-8 p-8 lg:p-10 pt-0">
               <div className="space-y-2">
@@ -103,7 +105,7 @@ function NewTeamForm() {
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="team-type" className="text-[10px] font-black uppercase tracking-widest">Team Protocol</Label>
+                  <Label htmlFor="team-type" className="text-[10px] font-black uppercase tracking-widest">Team type</Label>
                   {isSchoolAdmin && activeTeam?.type === 'school' ? (
                     <div className="h-12 rounded-xl border-2 border-muted bg-muted/20 flex items-center px-4 font-bold text-muted-foreground">
                        {type === 'school_squad' ? 'Sub-Squad' : 'School Team'}
@@ -201,7 +203,7 @@ function NewTeamForm() {
             {isProcessing ? <><Loader2 aria-hidden="true" className="h-6 w-6 animate-spin" /><span>Creating team…</span></> : (
               !isStoreDistribution && selectedPlan === 'team' && proQuotaStatus.remaining <= 0
                 ? 'Create Then Upgrade →'
-                : 'Deploy Squad Hub'
+                : 'Create team'
             )}
           </Button>
         </div>

@@ -1,5 +1,5 @@
 import { adminDb } from '@/lib/firebase-admin';
-import { isEntitledSubscriptionStatus } from '@/lib/subscription-seat-policy';
+import { hasCurrentPaidSubscription } from '@/lib/native-billing/entitlements';
 
 export { isEntitledSubscriptionStatus } from '@/lib/subscription-seat-policy';
 
@@ -92,7 +92,7 @@ async function resolvePaidEntitlement(
     team.isPro === true &&
     PAID_PLAN_TYPES.has(team.planId || '') &&
     PAID_PLAN_TYPES.has(entitlementUser.plan_type || '') &&
-    isEntitledSubscriptionStatus(entitlementUser.subscription_status)
+    hasCurrentPaidSubscription(entitlementUser)
   );
 }
 

@@ -1,5 +1,6 @@
 'use client';
 
+import { ParentCompanyBrand } from '@/components/ParentCompanyBrand';
 import React from 'react';
 import Link from 'next/link';
 import { BookOpen, ChevronLeft, Search } from 'lucide-react';
@@ -59,7 +60,8 @@ export function SportsHubClientLayout({ children }: { children: React.ReactNode 
           </div>
           <div className="border-t border-background/10 pt-8 flex flex-col md:flex-row items-center justify-between gap-4"><p className="text-xs font-bold text-background/30 uppercase tracking-widest">© {new Date().getFullYear()} The Squad · All rights reserved</p><div className="flex gap-6"><Link href="/privacy" className="text-xs font-bold text-background/30 hover:text-background/60 uppercase tracking-widest transition-colors">Privacy</Link><Link href="/terms" className="text-xs font-bold text-background/30 hover:text-background/60 uppercase tracking-widest transition-colors">Terms</Link></div></div>
         </div>
-      </footer>
+        <div className="mt-6 flex justify-center"><ParentCompanyBrand /></div>
+    </footer>
     </div>
   );
 }

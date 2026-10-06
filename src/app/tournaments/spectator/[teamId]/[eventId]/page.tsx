@@ -1,4 +1,5 @@
 "use client";
+import CompetitionController from "@/components/tournaments/CompetitionController";
 
 import React, { useEffect, useMemo, useState } from 'react';
 import { useParams } from 'next/navigation';
@@ -135,6 +136,7 @@ export default function PublicSpectatorHub() {
     </div>
   );
 
+  if ((event as TeamEvent & {workspaceVersion?:number}).workspaceVersion === 2) return <CompetitionController teamId={String(teamId)} eventId={String(eventId)} publicView readOnly />;
   return (
     <div className="min-h-screen bg-muted/5 flex flex-col items-center py-8 lg:py-12 px-4 md:px-6">
       <BrandLogo variant="light-background" className="h-10 w-40 mb-10" />

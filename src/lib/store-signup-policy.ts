@@ -5,7 +5,8 @@ export type SignupRegistrationTarget =
   | 'child'
   | 'coach'
   | 'league_creator'
-  | 'school_ad';
+  | 'school_ad'
+  | 'nonprofit_manager';
 export type SignupPlanChoice =
   | 'starter'
   | 'pro_team'
@@ -29,7 +30,7 @@ export function signupNextState(
   if (target === 'self' || target === 'child') {
     return { step: 'join_team', planChoice: null };
   }
-  return { step: 'plan', planChoice: target === 'school_ad' ? 'school' : null };
+  return { step: 'plan', planChoice: (target === 'school_ad' || target === 'nonprofit_manager') ? 'school' : null };
 }
 
 export function signupSteps(
@@ -69,16 +70,8 @@ export function signupPostVerificationPath(
     destination = `/family?addChild=1&returnTo=${encodeURIComponent(teamJoinPath)}`;
   } else if (teamJoinPath) {
     destination = teamJoinPath;
-  } else if (input.target === 'child') {
-    destination = '/family';
-  } else if (input.target === 'coach') {
-    destination = distribution === 'store' ? '/teams/new?tier=starter' : '/teams/new';
-  } else if (input.target === 'league_creator') {
-    destination = distribution === 'store' ? '/dashboard' : '/competition';
-  } else if (input.target === 'school_ad') {
-    destination = distribution === 'store' ? '/dashboard' : '/teams/new';
   } else {
-    destination = '/teams/join';
+    destination = '/dashboard';
   }
 
   return safeReturnPath(destination, distribution);
@@ -88,15 +81,6 @@ export function onboardingDestinationForRole(
   role: OnboardingRole,
   distribution: AppDistribution,
 ): string {
-  const webDestinations: Record<OnboardingRole, string> = {
-    adult_player: '/teams/join',
-    parent: '/family',
-    coach: '/teams/new',
-    admin: '/teams/new',
-    league_creator: '/competition',
-  };
-  if (distribution === 'web') return webDestinations[role];
-  if (role === 'coach') return '/teams/new?tier=starter';
-  if (role === 'admin' || role === 'league_creator') return '/dashboard';
-  return webDestinations[role];
+  // A new profile has no team yet. Creation and joining remain dashboard actions.
+  return safeReturnPath('/dashboard', distribution);
 }

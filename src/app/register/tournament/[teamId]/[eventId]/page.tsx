@@ -76,7 +76,16 @@ function RegistrationForm() {
   const [isSuccess, setIsSuccess] = useState(false);
   const [waiverAgreed, setWaiverAgreed] = useState(false);
   const [signature, setSignature] = useState('');
-  const [requestId] = useState(() => crypto.randomUUID());
+  const receiptKey = `tournament-registration:${teamId}:${eventId}:${protocolId}`;
+  const [requestId, setRequestId] = useState('');
+  useEffect(() => { const saved = sessionStorage.getItem(`${receiptKey}:request`); const value = saved || crypto.randomUUID(); sessionStorage.setItem(`${receiptKey}:request`, value); setRequestId(value); }, [receiptKey]);
+  const [checkoutEntry, setCheckoutEntry] = useState('');
+  const [checkoutError,setCheckoutError] = useState('');
+  useEffect(()=>{setCheckoutEntry(sessionStorage.getItem(`${receiptKey}:entry`)||'');},[receiptKey]);
+  async function openCheckout(entryId:string){
+    setCheckoutError('');
+    try{const response=await fetch('/api/tournaments/registration-checkout',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({teamId,eventId,entryId,requestId})});const data=await response.json();if(!response.ok)throw new Error(data.error);if(data.url)window.location.assign(data.url);else setCheckoutError(data.paid?'Payment confirmed. Your team is registered.':'Payment is processing. Enrollment will update after Stripe confirms it.');}catch(error){setCheckoutError(error instanceof Error?error.message:'Payment is pending. Retry checkout.');}
+  }
 
   useEffect(() => {
     if (protocolId !== 'team_config' || !squadId || !squadName) return;
@@ -175,7 +184,9 @@ function RegistrationForm() {
       });
       const result = await response.json();
       if (!response.ok) throw new Error(result.error || 'Submission failed.');
+      setCheckoutEntry(result.entryId);sessionStorage.setItem(`${receiptKey}:entry`,result.entryId);
       setIsSuccess(true);
+      if(config.payment_method==='stripe'&&Number(config.registration_cost)>0)await openCheckout(result.entryId);
     } catch (error) {
       toast({
         title: "Submission Failed",
@@ -318,7 +329,7 @@ function RegistrationForm() {
 
   if (!config || !config.is_active || !event) return <PortalStatus status={status ?? (portal ? 404 : null)} message={error} onRetry={retry} title={status === 404 || portal ? 'Registration Closed' : undefined} />;
 
-  if (isSuccess) {
+  if (isSuccess || checkoutEntry) {
     return (
       <div className="min-h-screen bg-muted/30 flex flex-col items-center justify-center p-6 text-center text-foreground">
         <BrandLogo variant="light-background" className="h-10 w-40 mb-10" />
@@ -328,6 +339,9 @@ function RegistrationForm() {
           </div>
           <h2 className="text-4xl font-black uppercase tracking-tighter">Registration Submitted</h2>
           <p className="text-muted-foreground font-bold uppercase tracking-widest text-[11px] mt-2 mb-10">Your response was received for {event?.title}</p>
+          {Number(config.registration_cost)>0&&<p className="mb-6">{config.payment_method==='stripe'?'Your team is added after Stripe verifies successful payment.':'Your team is added after the organizer confirms your offline payment.'}</p>}
+          {checkoutError&&<p role="status" className="mb-4">{checkoutError}</p>}
+          {config.payment_method==='stripe'&&Number(config.registration_cost)>0&&checkoutEntry&&<Button onClick={()=>void openCheckout(checkoutEntry)} className="mb-6 rounded-2xl">Continue to secure payment</Button>}
           
           <div className="bg-primary p-8 rounded-4xl text-left text-white space-y-4 shadow-xl">
             <div className="flex items-center gap-2"><Info className="h-5 w-5 opacity-50" /><p className="text-[10px] font-black uppercase tracking-wide">Action Required</p></div>
@@ -358,7 +372,7 @@ function RegistrationForm() {
 
           <div className="bg-white/50 backdrop-blur-sm p-6 rounded-3xl border-2 border-white shadow-xl space-y-4">
             <h3 className="font-black text-xs uppercase tracking-widest text-primary mb-2">Tournament Details</h3>
-            <p className="text-sm font-medium leading-relaxed text-foreground/80">{event.description || 'Tournament details will be provided by the organizer.'}</p>
+            <p className="text-sm font-medium leading-relaxed text-foreground/80 whitespace-pre-wrap">{config.description || event.description || 'Tournament details will be provided by the organizer.'}</p>
             
             <div className="pt-4 border-t border-black/5 grid grid-cols-2 gap-4">
               <div className="space-y-1">
@@ -419,14 +433,13 @@ function RegistrationForm() {
               </div>
               <div className="flex items-center gap-3 bg-white p-4 rounded-2xl border-2 border-amber-200">
                 <div className="bg-amber-100 p-2 rounded-xl"><Sparkles className="h-4 w-4 text-amber-600" /></div>
-                <p className="text-[10px] font-black uppercase text-amber-700 tracking-tight leading-tight">Online payment is not yet available</p>
+                <p className="text-[10px] font-black uppercase text-amber-700 tracking-tight leading-tight">{config.payment_method==='stripe'?'Secure Stripe checkout after signup':'Offline payment requires organizer confirmation'}</p>
               </div>
             </div>}
           </div>
         </div>
 
         <Card className="lg:col-span-7 rounded-[3.5rem] border-none shadow-2xl overflow-hidden bg-white ring-1 ring-black/5 min-h-[600px] flex flex-col">
-          <div className="h-3 bg-primary w-full" />
           
           <div className="p-10 lg:p-12 pb-6 border-b flex items-center justify-between">
             <div className="flex items-center gap-4">

@@ -1,6 +1,7 @@
 
 "use client";
 
+import { useBlockedAuthors } from '@/components/content-safety';
 import React, { useState, useEffect, useMemo } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -53,6 +54,7 @@ type ChatContext = {
 };
 
 export default function ChatsPage() {
+  const { isBlocked, isLoading: blocksLoading } = useBlockedAuthors();
   const { activeTeam, setActiveTeam, members, createChat, deleteChat, hideChatForUser, isStaff, isParent, isPlayer, isSuperAdmin, user, teams, isPrimaryClubAuthority, isSchoolMode, isEliteAccount } = useTeam();
   const db = useFirestore();
   const auth = useAuth();
@@ -309,7 +311,7 @@ export default function ChatsPage() {
             </Button>
           </DialogTrigger>
           <DialogContent className="sm:max-w-md rounded-[2.5rem] border-none shadow-2xl overflow-hidden p-0">
-            <div className="h-2 bg-primary w-full" />
+
             <div className="p-8">
               <DialogHeader>
                 <DialogTitle className="text-3xl font-black tracking-tight uppercase">New Tactical Group</DialogTitle>
@@ -407,7 +409,7 @@ export default function ChatsPage() {
 
       {isStaff && (
         <Card className="overflow-hidden rounded-4xl border-2 border-primary/20 bg-white shadow-lg">
-          <div className="h-2 bg-primary" />
+
           <CardContent className="p-6 md:p-8">
             <div className="mb-6 flex items-start gap-4">
               <div className="rounded-2xl bg-primary p-3 text-white">
@@ -525,7 +527,7 @@ export default function ChatsPage() {
                     </div>
                     <div className="flex items-center justify-between gap-4">
                       <p className="text-sm text-muted-foreground font-medium truncate pr-6 leading-none">
-                        {chat.lastMessage || 'Channel established. Ready for coordination.'}
+                        {blocksLoading || !chat.lastMessageAuthorId || isBlocked(chat.lastMessageAuthorId) ? 'Open conversation' : chat.lastMessage || 'Channel established. Ready for coordination.'}
                       </p>
                       {chat.unread && chat.unread > 0 && (
                         <div className="bg-primary text-white text-[10px] font-black h-6 w-6 rounded-full flex items-center justify-center shrink-0 shadow-lg shadow-primary/20 animate-in zoom-in duration-300">

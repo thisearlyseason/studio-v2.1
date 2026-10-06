@@ -1,3 +1,4 @@
+import { mergeBillingSources } from '@/lib/native-billing/entitlements';
 import * as admin from 'firebase-admin';
 import { adminDb } from '@/lib/firebase-admin';
 import {
@@ -16,6 +17,7 @@ export type PaidSeatReconciliation = {
 
 export async function reconcilePaidTeamSeats(input: {
   userId: string;
+  source?: 'stripe' | 'revenuecat';
   planType: string;
   entitled: boolean;
   capacity: number;
@@ -47,6 +49,7 @@ export async function reconcilePaidTeamSeats(input: {
       throw new Error('SUBSCRIPTION_MUTATION_IN_PROGRESS');
     }
 
+    const effective = mergeBillingSources(userSnapshot.data() || {}, input);
     const allOwnedTeams = new Map(teamsSnapshot.docs.map(teamDoc => [teamDoc.id, teamDoc]));
     const billableTeams = teamsSnapshot.docs.filter(teamDoc =>
       isBillableSquadSeat(teamDoc.data())
@@ -58,12 +61,14 @@ export async function reconcilePaidTeamSeats(input: {
     const selectedTeamId =
       input.selectedTeamId && ownedTeams.has(input.selectedTeamId)
         ? input.selectedTeamId
-        : null;
+        : input.source === 'revenuecat' && input.entitled && effective.grant.entitled && allocatedTeamIds.length === 0
+          ? [...ownedTeams.keys()].sort()[0] || null
+          : null;
     const paidTeamIds = choosePaidTeamIds({
       allocatedTeamIds,
       selectedTeamId,
-      entitled: input.entitled,
-      capacity: input.capacity,
+      entitled: effective.grant.entitled,
+      capacity: effective.grant.capacity,
     });
     const paidTeamIdSet = new Set(paidTeamIds);
     const candidateIds = new Set(allocatedTeamIds);
@@ -81,7 +86,7 @@ export async function reconcilePaidTeamSeats(input: {
 
     const updatedAt = new Date().toISOString();
     transaction.update(userRef, {
-      ...input.userUpdates,
+      ...effective.updates,
       ...(!input.requiredMutationKey && mutationLock
         ? { subscriptionMutation: admin.firestore.FieldValue.delete() }
         : {}),
@@ -90,8 +95,8 @@ export async function reconcilePaidTeamSeats(input: {
       const team = teamDoc.data();
       const keepPaid = isBillableSquadSeat(team)
         ? paidTeamIdSet.has(teamDoc.id)
-        : input.entitled;
-      const planId = keepPaid ? input.planType : 'free';
+        : effective.grant.entitled;
+      const planId = keepPaid ? effective.grant.planType : 'free';
       transaction.update(teamDoc.ref, {
         planId,
         isPro: keepPaid,

@@ -187,7 +187,7 @@ test('redeploy consults authoritative referee assignments even when the event pr
 });
 
 test('a downgraded team cannot mutate an advanced tournament but can clear it safely', async () => {
-  const advanced = event({ tournamentType: 'single_elimination', tournamentGames: [game('game-one', '10:00 AM')] });
+  const advanced = event({ tournamentType: 'double_elimination', tournamentGames: [game('game-one', '10:00 AM')] });
   const blocked = await appFor({ 'teams/team-a': { ownerUserId: 'owner', planId: 'team', isPro: false }, 'teams/team-a/events/cup-a': advanced });
   try { assert.equal((await post(blocked, command({ action: 'add-referee', requestId: 'tournament-downgrade-mutation-0001', refereeId: undefined, referee: { name: 'New', email: 'new@example.test' } }))).status, 403); }
   finally { blocked.dispose(); }
@@ -495,4 +495,9 @@ test('schedule clear atomically removes owned bookings and referee assignments b
     assert.equal(app.records.has('tournamentRefereeAssignments/owned'), false);
     assert.equal(app.records.has('tournamentRefereeAssignments/foreign'), true);
   } finally { app.dispose(); }
+});
+
+test('new-format tournament keeps the original officials assignment workflow',async()=>{
+ const app=await appFor({'teams/team-a':baseTeam,'teams/team-a/events/cup-a':event({competition:{version:2},tournamentType:'single_elimination'})});
+ try{const assigned=await post(app,command());assert.equal(assigned.status,200,JSON.stringify(assigned.body));assert.equal(app.records.get('teams/team-a/events/cup-a').tournamentGames[0].refereeId,referee.id);assert.equal(app.records.get('teams/team-a/events/cup-a').competition.version,2);}finally{app.dispose();}
 });

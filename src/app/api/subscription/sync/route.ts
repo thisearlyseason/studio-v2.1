@@ -1,3 +1,4 @@
+import { assertManagedReceipt, ManagedCheckoutUnavailable, ManagedCoverageUnavailable } from '@/lib/stripe-managed-checkout';
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { adminDb } from '@/lib/firebase-admin';
@@ -5,7 +6,7 @@ import { getStripe } from '@/lib/stripe-client';
 import { verifyFirebaseToken, assertOwner, assertNonAnonymous } from '@/lib/api-auth';
 import {
   PLAN_PRICE_MAP,
-  EXTRA_TEAM_PRICE_IDS,
+  isExtraTeamPriceId,
   PRICE_BILLING_CYCLE,
 } from '@/lib/stripe-price-map';
 import { isEntitledSubscriptionStatus } from '@/lib/server-team-entitlements';
@@ -111,6 +112,7 @@ export async function POST(req: NextRequest) {
     let billingCycle: 'monthly' | 'annual' | null = null;
 
     if (activeSub) {
+      await assertManagedReceipt(stripe, activeSub);
       for (const item of activeSub.items.data) {
         const resolved = PLAN_PRICE_MAP[item.price.id];
         if (resolved) {
@@ -118,8 +120,7 @@ export async function POST(req: NextRequest) {
           baseTeamLimit = resolved.teamLimit;
           billingCycle = PRICE_BILLING_CYCLE[item.price.id] || null;
         } else if (
-          item.price.id === EXTRA_TEAM_PRICE_IDS.monthly ||
-          item.price.id === EXTRA_TEAM_PRICE_IDS.annual
+          isExtraTeamPriceId(item.price.id)
         ) {
           extraTeams = item.quantity || 0;
         }
@@ -159,6 +160,7 @@ export async function POST(req: NextRequest) {
       teamLimit: totalTeamLimit,
     });
   } catch (err: any) {
+    if (err instanceof ManagedCheckoutUnavailable || err instanceof ManagedCoverageUnavailable) return NextResponse.json({ error: err.message }, { status: 409 });
     if (err instanceof RequestBodyError) {
       return NextResponse.json({ error: err.message }, { status: err.status });
     }

@@ -76,9 +76,9 @@ export function getSdks(firebaseApp: FirebaseApp) {
       process.env.NEXT_PUBLIC_USE_FIREBASE_EMULATORS === 'true' &&
       !globalSdks.firebaseEmulatorsConnected) {
     const emulatorHost = window.location.hostname || '127.0.0.1';
-    connectAuthEmulator(auth, `http://${emulatorHost}:9099`, { disableWarnings: true });
-    connectFirestoreEmulator(firestore, emulatorHost, 8080);
-    connectStorageEmulator(storage, emulatorHost, 9199);
+    connectAuthEmulator(auth, `http://${emulatorHost}:${process.env.NEXT_PUBLIC_AUTH_EMULATOR_PORT || 9099}`, { disableWarnings: true });
+    connectFirestoreEmulator(firestore, emulatorHost, Number(process.env.NEXT_PUBLIC_FIRESTORE_EMULATOR_PORT || 8080));
+    connectStorageEmulator(storage, emulatorHost, Number(process.env.NEXT_PUBLIC_STORAGE_EMULATOR_PORT || 9199));
     globalSdks.firebaseEmulatorsConnected = true;
     console.info('[Firebase] Connected to local Auth, Firestore, and Storage emulators.');
   }

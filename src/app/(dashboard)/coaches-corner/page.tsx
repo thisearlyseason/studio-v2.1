@@ -1,5 +1,6 @@
 "use client";
 
+import { paymentNetCents } from '@/lib/payment-refund-state';
 import {prepareIncidentSubmission, settleIncidentSubmission} from '@/lib/incident-submission';
 import {exportCurrentIncidents} from '@/lib/incident-client';
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
@@ -205,7 +206,7 @@ function MemberDetailsDialog({ member, protocols, volunteerOpps, events, isOpen,
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="rounded-[3rem] sm:max-w-3xl p-0 overflow-hidden border-none shadow-2xl bg-white">
-        <div className="h-2 bg-primary w-full" />
+
         <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
           <DialogHeader>
             <div className="flex items-center gap-6 mb-4">
@@ -659,7 +660,7 @@ function VolunteerOpportunityManager() {
       {/* Deployment & Refinement Modal */}
       <Dialog open={isAdding || !!editingOpp} onOpenChange={(o) => { if(!o) { setIsAdding(false); setEditingOpp(null); } }}>
         <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 overflow-hidden border-none shadow-2xl bg-white text-foreground">
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-10 space-y-8 overflow-y-auto max-h-[90vh] custom-scrollbar">
             <DialogHeader>
               <div className="flex items-center gap-4 mb-2">
@@ -2047,7 +2048,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
       <Dialog open={isEditing} onOpenChange={setIsEditing}>
         <DialogContent className="rounded-[3rem] sm:max-w-4xl p-0 overflow-hidden border-none shadow-2xl">
           <DialogTitle className="sr-only">Recruiting Pack Architect</DialogTitle>
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
             <DialogHeader>
               <DialogTitle className="text-3xl font-black uppercase tracking-tight">Pack Architect</DialogTitle>
@@ -2979,7 +2980,7 @@ function SafetyHub() {
         <DialogContent className="rounded-[3.5rem] sm:max-w-2xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
           <DialogTitle className="sr-only">Incident Reporting Protocol</DialogTitle>
           {saveError && <p role="alert" className="text-destructive">{saveError}</p>}
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
             <DialogHeader>
               <div className="flex items-center gap-4 mb-2">
@@ -3171,7 +3172,7 @@ function SignatureAuditDialog({ proto }: { proto: any }) {
         <Button variant="outline" size="sm" className="w-full mt-4 h-9 text-[10px] uppercase font-black tracking-widest hover:bg-black hover:text-white transition-all">Audit Signatures</Button>
       </DialogTrigger>
       <DialogContent className="rounded-3xl border-none shadow-2xl p-0 overflow-hidden bg-white max-w-lg">
-        <div className="h-2 bg-primary w-full" />
+
         <div className="p-8 space-y-6">
           <DialogHeader>
             <DialogTitle className="text-xl font-black uppercase tracking-tight">{proto.title} Audit</DialogTitle>
@@ -3999,7 +4000,7 @@ function CoachesCornerContent() {
       <Dialog open={!!editingWaiver} onOpenChange={(o) => !o && setEditingWaiver(null)}>
         <DialogContent className="rounded-[3rem] sm:max-w-4xl p-0 overflow-hidden border-none shadow-2xl bg-white text-foreground">
           <DialogTitle className="sr-only">Protocol Architect</DialogTitle>
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-8 lg:p-12 space-y-8 overflow-y-auto max-h-[90vh] custom-scrollbar">
             <DialogHeader>
               <div className="flex items-center gap-4 mb-2">
@@ -4163,7 +4164,7 @@ function SquadFinancialHub() {
       type: 'payment' as const,
       payment_method: (p.payment_method || 'offline') as 'online' | 'offline',
       label: p.payer_name || p.payer_email || 'Payer',
-      amount: Math.round((p.amount || 0) / 100), // stored in cents; display in dollars
+      amount: paymentNetCents(p) / 100, // net cents, preserving fractional dollars
       date: p.createdAt || '',
       email: p.payer_email || '',
       stripe_receipt_url: p.stripe_receipt_url as string | undefined,
@@ -4336,6 +4337,7 @@ function SquadFinancialHub() {
                     <td className="px-6 py-4 font-black text-sm uppercase tracking-tight">{tx.label}</td>
                     <td className="px-4 py-4 text-[10px] font-bold text-muted-foreground max-w-[140px] truncate">
                       {(tx as any).paymentItemName || (tx.type === 'enrollment' ? 'Enrollment' : tx.type === 'donation' ? 'Donation' : '—')}
+                      {isPayment && <span className="block">{String((tx as any).status).replaceAll('_', ' ')}</span>}
                     </td>
                     <td className="px-4 py-4">
                       {isPayment ? (
@@ -4382,7 +4384,7 @@ function SquadFinancialHub() {
       {/* ── Add Offline Payment Dialog ── */}
       <Dialog open={isOfflineDialogOpen} onOpenChange={o => { if (!isRecording) setIsOfflineDialogOpen(o); }}>
         <DialogContent className="rounded-[3rem] sm:max-w-lg p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
-          <div className="h-2 bg-amber-500 w-full" />
+
           <div className="p-8 space-y-5">
             <DialogHeader>
               <div className="flex items-center gap-3">
@@ -4548,7 +4550,7 @@ function WaiverArchive() {
       <Dialog open={!!selectedWaiver} onOpenChange={o => !o && setSelectedWaiver(null)}>
         <DialogContent className="rounded-[3rem] sm:max-w-2xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
           <DialogTitle className="sr-only">Waiver Signatories</DialogTitle>
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-8 space-y-6 overflow-y-auto max-h-[85vh] custom-scrollbar">
             {selectedGroup && (
               <>

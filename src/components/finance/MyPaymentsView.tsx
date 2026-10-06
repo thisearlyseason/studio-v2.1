@@ -1,5 +1,6 @@
 "use client";
 
+import { paymentNetCents } from '@/lib/payment-refund-state';
 import React, { useEffect, useMemo, useState } from 'react';
 import { ExternalLink, Download, Receipt, CreditCard, Banknote, Loader2 } from 'lucide-react';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -21,7 +22,8 @@ interface Payment {
   amount: number; // cents
   currency: string;
   payment_method: 'online' | 'offline';
-  status: 'paid' | 'pending' | 'failed';
+  status: 'paid' | 'pending' | 'failed' | 'refunded' | 'partially_refunded';
+  amount_refunded?: number;
   stripe_receipt_url?: string;
   notes?: string;
   createdAt: string;
@@ -94,8 +96,7 @@ export function MyPaymentsView({ userEmail, teamIds }: MyPaymentsViewProps) {
 
   const totalPaid = useMemo(() =>
     (payments || [])
-      .filter(p => p.status === 'paid')
-      .reduce((sum, p) => sum + (p.amount || 0), 0),
+      .reduce((sum, p) => sum + paymentNetCents(p), 0),
     [payments]
   );
 
@@ -198,7 +199,7 @@ export function MyPaymentsView({ userEmail, teamIds }: MyPaymentsViewProps) {
         {payments.map(payment => {
           const isOnline = payment.payment_method === 'online';
           const isPaid = payment.status === 'paid';
-          const amountStr = `$${((payment.amount || 0) / 100).toFixed(2)}`;
+          const amountStr = `$${(paymentNetCents(payment) / 100).toFixed(2)}`;
 
           return (
             <Card
@@ -231,7 +232,7 @@ export function MyPaymentsView({ userEmail, teamIds }: MyPaymentsViewProps) {
                         'border-none font-black text-[7px] uppercase px-2 h-4',
                         isPaid ? 'bg-emerald-100 text-emerald-700' : 'bg-red-100 text-red-700'
                       )}>
-                        {payment.status}
+                        {payment.status.replaceAll('_', ' ')}
                       </Badge>
                       {payment.createdAt && (
                         <span className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">

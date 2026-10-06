@@ -1,6 +1,7 @@
 
 "use client";
 
+import { ParentCompanyBrand } from '@/components/ParentCompanyBrand';
 import React from 'react';
 import Link from 'next/link';
 import { ChevronLeft } from 'lucide-react';
@@ -66,7 +67,7 @@ export default function TermsOfServicePage() {
           <section className="space-y-4">
             <h2 className="text-xl font-bold text-foreground uppercase tracking-wider">4. Subscriptions & Payments</h2>
             <p>
-              Current subscription tiers, billing periods, trial terms, and prices are shown on our pricing page and again at checkout. Unless expressly stated otherwise, prices are presented and billed in <strong>Canadian dollars (CAD)</strong>. The Stripe checkout summary presented before purchase controls the amount and billing cadence you authorize. Payments are non-refundable for partial billing periods except where required by law. We may change future pricing with at least 30 days&apos; notice to affected subscribers.
+              Current subscription tiers, billing periods, trial terms, and prices are shown on our pricing page and again at checkout. Unless expressly stated otherwise, prices are presented and billed in <strong>US dollars (USD)</strong>. The Stripe checkout summary presented before purchase controls the amount and billing cadence you authorize. Payments are non-refundable for partial billing periods except where required by law. We may change future pricing with at least 30 days&apos; notice to affected subscribers.
             </p>
           </section>
 
@@ -105,6 +106,7 @@ export default function TermsOfServicePage() {
             </p>
           </div>
         </div>
+        <div className="mt-6 flex justify-center"><ParentCompanyBrand /></div>
       </footer>
     </div>
   );

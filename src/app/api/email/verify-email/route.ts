@@ -5,6 +5,7 @@ import { verificationEmail } from '@/lib/email-templates';
 import { ensureAdminInit } from '@/lib/firebase-admin';
 import { getResend } from '@/lib/server-resend-client';
 import { isApprovedLocalMailSink } from '@/lib/server-outbound-provider-policy';
+import { sendHostedQaVerificationEmail } from '@/lib/server-qa-verification-email';
 import {
   enforceUserRateLimit,
   readJsonBodyWithLimit,
@@ -43,6 +44,10 @@ export async function POST(req: NextRequest) {
     }
     if (account.emailVerified) {
       return NextResponse.json({ success: true, alreadyVerified: true });
+    }
+
+    if (await sendHostedQaVerificationEmail(req)) {
+      return NextResponse.json({ success: true, transport: 'firebase-qa' });
     }
 
     const appUrl = process.env.NEXT_PUBLIC_APP_URL || 'https://www.thesquad.pro';

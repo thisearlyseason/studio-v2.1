@@ -168,7 +168,7 @@ export default function PublicTournamentWaiverPage() {
         </div>
 
         <Card className="rounded-[3rem] border-none shadow-2xl overflow-hidden bg-white ring-1 ring-black/5">
-          <div className="h-2 bg-primary w-full" />
+
           <form onSubmit={handleSubmit}>
             <CardHeader className="p-8 lg:p-10 pb-4">
               <div className="flex items-center gap-4 mb-4">

@@ -101,7 +101,7 @@ test('Tournament scoring rejects wrong or rotated code, stale versions, invalid 
     try { const before = structuredClone([...records]); assert.equal((await post(app, command(change))).status, status); assert.deepEqual([...records], before); }
     finally { app.dispose(); }
   }
-  for (const [eventChange, teamChange] of [[{ isArchived: true }, null], [{ is_active: false }, null], [null, { planId: 'team', isPro: false }]]) {
+  for (const [eventChange, teamChange] of [[{ isArchived: true }, null], [{ is_active: false }, null], [{ tournamentType: 'double_elimination' }, { planId: 'team', isPro: false }]]) {
     const { app, records } = await setup();
     try {
       if (eventChange) Object.assign(records.get('teams/team-a/events/cup-a'), eventChange);
@@ -149,21 +149,21 @@ test('Tournament score transaction rejects tenant and lifecycle mismatches witho
   }
 });
 
-test('authenticated Starter owner can score basic round robin while public and advanced scoring remain denied', async () => {
-  const authenticated = await setup('../../src/app/api/tournaments/scoring/route.ts', { uid: 'owner', role: 'coach' }, {}, { tournamentType: 'round_robin' });
+test('authenticated Starter owner can score Single Elimination Pool while public and advanced scoring remain denied', async () => {
+  const authenticated = await setup('../../src/app/api/tournaments/scoring/route.ts', { uid: 'owner', role: 'coach' }, {}, { tournamentType: 'single_elimination' });
   try {
     Object.assign(authenticated.records.get('teams/team-a'), { planId: 'starter', isPro: false });
     assert.equal((await post(authenticated.app, command())).status, 200);
   } finally { authenticated.app.dispose(); }
 
-  const credential = await setup('../../src/app/api/public/portals/action/route.ts', null, {}, { tournamentType: 'round_robin' });
+  const credential = await setup('../../src/app/api/public/portals/action/route.ts', null, {}, { tournamentType: 'single_elimination' });
   try {
     Object.assign(credential.records.get('teams/team-a'), { planId: 'starter', isPro: false });
     assert.equal((await post(credential.app, command())).status, 403);
     assert.equal(auditCount(credential.records), 0);
   } finally { credential.app.dispose(); }
 
-  const advanced = await setup('../../src/app/api/tournaments/scoring/route.ts', { uid: 'owner', role: 'coach' });
+  const advanced = await setup('../../src/app/api/tournaments/scoring/route.ts', { uid: 'owner', role: 'coach' }, {}, {tournamentType:'double_elimination'});
   try {
     Object.assign(advanced.records.get('teams/team-a'), { planId: 'starter', isPro: false });
     assert.equal((await post(advanced.app, command())).status, 403);
@@ -326,4 +326,88 @@ test('first-use legacy credential migration remains replay safe while new stale 
     assert.equal(records.get('teams/team-a/events/cup-a/private/scoring').credentialVersion, 1);
     assert.equal((await post(app, { ...body, requestId: 'legacy-code-score-02', expectedScheduleVersion: 7, expectedGameVersion: 3 })).status, 409);
   } finally { app.dispose(); }
+});
+
+const editCommand = (overrides = {}) => command({ action: 'edit-match', recordScore: false,
+  matchDetails: { team1Name: 'Alpha United', team2Name: 'Bravo', location: 'Field 1' }, ...overrides });
+
+test('organizer edits rename the participant in every match and standings input without recording a result', async () => {
+  const { app, records } = await setup('../../src/app/api/tournaments/scoring/route.ts', undefined, {}, {
+    tournamentTeams: ['Alpha', 'Bravo'],
+    tournamentGames: [baseGame(), baseGame({ id: 'second', team1: 'Bravo', team1Id: 'bravo', team2: 'Alpha', team2Id: 'alpha', isCompleted: true, score1: 5, score2: 3 })],
+  });
+  try {
+    const result = await post(app, editCommand());
+    assert.equal(result.status, 200, JSON.stringify(result.body));
+    const event = records.get('teams/team-a/events/cup-a');
+    assert.equal(event.tournamentGames[0].team1, 'Alpha United');
+    assert.equal(event.tournamentGames[1].team2, 'Alpha United');
+    assert.equal(event.tournamentGames[0].isCompleted, false);
+    assert.equal(event.tournamentGames[1].score1, 5);
+    assert.equal(event.tournamentTeamsData[0].name, 'Alpha United');
+    assert.deepEqual(event.tournamentTeams, ['Alpha United', 'Bravo']);
+    assert.equal(event.tournamentGames[1].team2Id, 'alpha');
+    assert.equal(event.tournamentGames[1].gameVersion, 3);
+    const before = structuredClone([...records]);
+    assert.deepEqual(await post(app, editCommand()), result);
+    assert.deepEqual([...records], before);
+    assert.equal(auditCount(records), 1);
+  } finally { app.dispose(); }
+});
+
+test('same-winner score correction preserves completed descendants while winner changes fail atomically', async () => {
+  const downstream = baseGame({ id: 'final', team2: 'Charlie', team2Id: 'charlie', isCompleted: true, score1: 6, score2: 2 });
+  for (const changesWinner of [false, true]) {
+    const { app, records } = await setup('../../src/app/api/tournaments/scoring/route.ts', undefined, {}, {
+      tournamentGames: [baseGame({ isCompleted: true, score1: 3, score2: 1, winnerId: 'alpha', winnerTo: 'final', winnerSlot: 'team1' }), downstream],
+    });
+    try {
+      const result = await post(app, editCommand({ recordScore: true, score1: changesWinner ? 0 : 4, score2: 2 }));
+      assert.equal(result.status, changesWinner ? 409 : 200, JSON.stringify(result.body));
+      const event = records.get('teams/team-a/events/cup-a');
+      assert.equal(event.tournamentGames[0].score1, changesWinner ? 3 : 4);
+      assert.equal(event.tournamentGames[1].score1, 6);
+      assert.equal(event.tournamentGames[1].score2, 2);
+      assert.equal(event.tournamentGames[1].isCompleted, true);
+      assert.equal(auditCount(records), changesWinner ? 0 : 1);
+    } finally { app.dispose(); }
+  }
+});
+
+test('location edit updates the shared booking and detects another schedule conflict atomically', async () => {
+  for (const conflict of [false, true]) {
+    const { app, records } = await setup('../../src/app/api/tournaments/scoring/route.ts');
+    records.set('scheduleBookings/own', { sourceId: 'tournament:team-a:cup-a', sourceGameId: 'game-one', date: '2026-09-10', startMinute: 600, endMinute: 660, resourceId: 'field1', location: 'Field 1' });
+    if (conflict) records.set('scheduleBookings/other', { sourceId: 'other', date: '2026-09-10', startMinute: 620, endMinute: 680, location: 'Field 2', resourceId: 'field2' });
+    try {
+      const result = await post(app, editCommand({ matchDetails: { location: 'Field 2', team1Name: 'Alpha United', team2Name: 'Bravo' } }));
+      assert.equal(result.status, conflict ? 409 : 200, JSON.stringify(result.body));
+      assert.equal(records.get('scheduleBookings/own').location, conflict ? 'Field 1' : 'Field 2');
+      assert.equal(records.get('teams/team-a/events/cup-a').tournamentGames[0].location, conflict ? 'Field 1' : 'Field 2');
+      assert.equal(auditCount(records), conflict ? 0 : 1);
+      if (!conflict) {
+        const fields = records.get('teams/team-a/events/cup-a').selectedFields;
+        assert.ok(fields.every(field => typeof field === 'string'));
+        assert.ok(fields.includes('custom:Field 2'), 'schedule configuration preserves the edited location as a field identifier');
+      }
+    } finally { app.dispose(); }
+  }
+});
+
+test('match edits reject unauthorized users, malformed data, duplicate names and stale versions', async () => {
+  for (const [auth, body, expected] of [
+    [{ uid: 'outsider' }, editCommand(), 403],
+    [undefined, editCommand({ matchDetails: { location: 'Field 1', team1Name: 'Bravo' } }), 400],
+    [undefined, editCommand({ recordScore: 'true' }), 400],
+    [undefined, editCommand({ expectedScheduleVersion: 5 }), 409],
+    [undefined, editCommand({ recordScore: true, score1: -1 }), 400],
+  ]) {
+    const { app, records } = await setup('../../src/app/api/tournaments/scoring/route.ts', auth);
+    try {
+      const result = await post(app, body);
+      assert.equal(result.status, expected, JSON.stringify(result.body));
+      assert.equal(records.get('teams/team-a/events/cup-a').scheduleVersion, 6);
+      assert.equal(auditCount(records), 0);
+    } finally { app.dispose(); }
+  }
 });

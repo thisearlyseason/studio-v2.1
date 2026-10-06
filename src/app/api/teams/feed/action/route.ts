@@ -1,3 +1,4 @@
+import { hasBlockBetween } from '@/lib/server-moderation';
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { verifyFirebaseToken } from '@/lib/api-auth';
@@ -186,6 +187,12 @@ export async function POST(req: NextRequest) {
 
     if (!postId) return NextResponse.json({ error: 'A valid post is required.' }, { status: 400 });
     const postRef = feed.doc(postId);
+    if (['create-comment', 'toggle-like', 'vote'].includes(action)) {
+      const post = await postRef.get();
+      if (post.exists && await hasBlockBetween(auth.uid, String(post.data()?.authorId || ''))) {
+        return NextResponse.json({ error: 'Interaction with this user is blocked.' }, { status: 403 });
+      }
+    }
 
     if (action === 'create-comment') {
       if (!canComment) return NextResponse.json({ error: 'Comments are disabled for this account.' }, { status: 403 });

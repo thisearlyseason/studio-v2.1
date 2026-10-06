@@ -71,10 +71,13 @@ export async function getTeamDeliveryTargets(teamId: string): Promise<TeamDelive
 export function validNotificationUrl(value: unknown): boolean {
   if (value === undefined || value === null || value === '') return true;
   if (typeof value !== 'string' || value.length > 500) return false;
-  if (value.startsWith('/')) return !value.startsWith('//');
   try {
-    const url = new URL(value);
-    return url.protocol === 'https:' && ['thesquad.pro', 'www.thesquad.pro'].includes(url.hostname.toLowerCase());
+    // Parse relative paths as the browser does: backslashes and control
+    // characters can turn an apparently local path into an external URL.
+    const url = value.startsWith('/')
+      ? new URL(value, 'https://www.thesquad.pro')
+      : new URL(value);
+    return ['https://thesquad.pro', 'https://www.thesquad.pro'].includes(url.origin);
   } catch {
     return false;
   }

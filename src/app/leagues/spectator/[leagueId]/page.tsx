@@ -258,7 +258,7 @@ export default function PublicLeagueSpectatorHub() {
                               {game.isDisputed ? (
                                 <span className="text-[8px] font-black uppercase text-amber-700 tracking-[0.2em] px-2 py-0.5 bg-amber-50 rounded-full border border-amber-200">Disputed · Unofficial</span>
                               ) : game.isCompleted ? (
-                                <span className="text-[8px] font-black uppercase text-primary tracking-[0.2em] px-2 py-0.5 bg-primary/5 rounded-full border border-primary/10">Archive Log</span>
+                                <span className="text-[8px] font-black uppercase text-primary tracking-[0.2em] px-2 py-0.5 bg-primary/5 rounded-full border border-primary/10">Completed</span>
                               ) : (
                                 <div className="flex items-center gap-1.5 animate-in fade-in duration-1000">
                                   <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse shadow-[0_0_8px_rgba(34,197,94,0.5)]" />
@@ -285,7 +285,7 @@ export default function PublicLeagueSpectatorHub() {
             <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-white">
               <div className="overflow-x-auto">
                 <table className="w-full text-left">
-                  <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest text-muted-foreground border-b"><tr><th className="px-6 py-5">Squad</th><th className="px-2 py-5 text-center">W-L</th><th className="px-6 py-5 text-right text-primary">PTS</th></tr></thead>
+                  <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest text-muted-foreground border-b"><tr><th className="px-6 py-5">Squad</th><th className="px-2 py-5 text-center">W-L-D</th><th className="px-6 py-5 text-right text-primary">PTS</th></tr></thead>
                   <tbody className="divide-y">{standings.map((team, idx) => (
                     <tr key={team.id} className="hover:bg-primary/5 transition-colors">
                       <td className="px-6 py-5">
@@ -299,7 +299,7 @@ export default function PublicLeagueSpectatorHub() {
                           <span className="font-black text-xs uppercase tracking-tight truncate max-w-[100px]">{team.teamName}</span>
                         </div>
                       </td>
-                      <td className="px-2 py-5 text-center font-bold text-[10px] text-muted-foreground">{team.wins}-{team.losses}</td>
+                      <td className="px-2 py-5 text-center font-bold text-[10px] text-muted-foreground">{team.wins}-{team.losses}-{team.ties || 0}</td>
                       <td className="px-6 py-5 text-right">
                         <span className={cn("font-black text-sm", team.points > 0 ? "text-primary" : team.points < 0 ? "text-destructive" : "text-foreground")}>
                           {team.points > 0 ? '+' : ''}{team.points}

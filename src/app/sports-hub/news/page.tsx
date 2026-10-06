@@ -115,7 +115,7 @@ function ArticleCard({
     <motion.div variants={fadeUp} className="group h-full">
       <div className="h-full bg-card border rounded-2xl overflow-hidden flex flex-col transition-all duration-300 hover:shadow-xl hover:-translate-y-0.5">
         {/* Top accent bar */}
-        <div className="h-1 hero-gradient shrink-0" />
+
 
         <div className="p-5 flex-1 flex flex-col">
           {/* Header row */}

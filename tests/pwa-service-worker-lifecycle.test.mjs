@@ -141,3 +141,16 @@ test('post-logout offline navigation cannot reveal a prior authenticated respons
   assert.notEqual(response, stalePrivateResponse);
   assert.deepEqual(response, { kind: 'public-offline' });
 });
+
+
+test('localhost development chunks bypass stale service-worker caches', async () => {
+  const harness = workerHarness();
+  for (const host of ['localhost', '127.0.0.1', '[::1]']) {
+    let intercepted = false;
+    harness.listeners.get('fetch')({
+      request: { method: 'GET', mode: 'cors', url: `http://${host}:9019/_next/static/chunks/app/layout.js` },
+      respondWith() { intercepted = true; },
+    });
+    assert.equal(intercepted, false, `${host} must use the current development build`);
+  }
+});

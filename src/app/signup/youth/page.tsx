@@ -117,7 +117,7 @@ function YouthSignupContent() {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center p-6">
         <Card className="max-w-md w-full rounded-[3rem] bg-white border-none shadow-2xl p-12 text-center space-y-6">
-          <div className="h-2 bg-destructive w-full -mt-12 -mx-12 w-[calc(100%+6rem)] rounded-t-[3rem]" />
+
           <AlertCircle className="h-16 w-16 text-destructive mx-auto opacity-50" />
           <div>
             <h2 className="text-2xl font-black uppercase tracking-tight">Invitation Error</h2>
@@ -136,7 +136,7 @@ function YouthSignupContent() {
     return (
       <div className="min-h-screen bg-black flex items-center justify-center p-6">
         <Card className="max-w-md w-full rounded-[3rem] bg-white border-none shadow-2xl p-0 text-center overflow-hidden">
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-12 space-y-6">
             <div className="bg-green-100 h-20 w-20 rounded-full flex items-center justify-center mx-auto">
               <CheckCircle2 className="h-10 w-10 text-green-600" />
@@ -176,7 +176,7 @@ function YouthSignupContent() {
         </div>
 
         <Card className="rounded-[3rem] bg-white border-none shadow-2xl overflow-hidden">
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-10 space-y-8">
             {/* Athlete identity confirm */}
             <div className="bg-black text-white p-6 rounded-2xl space-y-3 relative overflow-hidden">

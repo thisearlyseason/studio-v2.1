@@ -85,7 +85,8 @@ test('builders retain server versions and protected ledger writes do not use dir
   assert.doesNotMatch(league,/form_version: \(localConfig\?\.form_version \|\| 0\) \+ 1/);
   assert.match(league,/setLocalConfig\(saved\)/);
   assert.match(tournament,/const savedConfig = \{ \.\.\.updated, \.\.\.payload\.config, id: configId \}/);
-  assert.match(tournament,/setLocalConfig\(savedConfig\)/);
+  assert.match(tournament,/setLocalConfig\(nextConfig\)/);
+  assert.match(tournament,/form_version: savedConfig.form_version, config_hash: savedConfig.config_hash/);
   assert.doesNotMatch(provider,/addDoc\(collection\(entryParentRef, 'registrationEntries'/);
   assert.match(provider,/api\/public\/portals\/action/);
   assert.doesNotMatch(provider,/registrationEntries', entryId\), \{ payment_received/);

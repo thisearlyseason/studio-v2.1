@@ -1460,3 +1460,42 @@ test('Sports Hub drafts, feeds, and subscriber data remain protected', async () 
   await assertFails(getDoc(doc(outsiderDb, 'sports_hub_newsletter_subscribers', 'hub-subscriber-a')));
   await assertSucceeds(getDoc(doc(superAdminDb, 'sports_hub_newsletter_subscribers', 'hub-subscriber-a')));
 });
+
+test('block lists are owner-readable only and all safety writes require the server', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'userSafety/member/blocks/owner'), { authorId: 'owner' });
+    await setDoc(doc(db, 'moderationReports/report'), { reporterId: 'member', status: 'pending' });
+  });
+  const member = testEnv.authenticatedContext('member', { email_verified: true }).firestore();
+  const outsider = testEnv.authenticatedContext('outsider', { email_verified: true }).firestore();
+  await assertSucceeds(getDoc(doc(member, 'userSafety/member/blocks/owner')));
+  await assertFails(getDoc(doc(outsider, 'userSafety/member/blocks/owner')));
+  await assertFails(setDoc(doc(member, 'userSafety/member/blocks/outsider'), { authorId: 'outsider' }));
+  await assertFails(deleteDoc(doc(member, 'userSafety/member/blocks/owner')));
+  await assertFails(getDoc(doc(member, 'moderationReports/report')));
+  await assertFails(setDoc(doc(member, 'moderationReports/new'), { status: 'pending' }));
+});
+
+test('feed clients cannot bypass server blocking or read comments after a moderated post is removed', async () => {
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'teams/team-a/feedPosts/post'), { authorId: 'owner', content: 'Test' });
+    await setDoc(doc(db, 'teams/team-a/feedPosts/post/comments/comment'), { authorId: 'member', content: 'Reply' });
+  });
+  const owner = testEnv.authenticatedContext('owner', { email_verified: true }).firestore();
+  const member = testEnv.authenticatedContext('member', { email_verified: true }).firestore();
+  await assertFails(getDoc(doc(member, 'teams/team-a/feedPosts/post/comments/comment')));
+  await assertFails(setDoc(doc(owner, 'teams/team-a/feedPosts/post/comments/new'), { authorId: 'owner', content: 'Bypass' }));
+  await assertFails(setDoc(doc(owner, 'teams/team-a/feedPosts/new'), { authorId: 'owner', content: 'Bypass' }));
+  await testEnv.withSecurityRulesDisabled(context => deleteDoc(doc(context.firestore(), 'teams/team-a/feedPosts/post')));
+  await assertFails(getDoc(doc(member, 'teams/team-a/feedPosts/post/comments/comment')));
+});
+
+test('versioned tournament documents cannot bypass the validated workspace',async()=>{
+ await testEnv.withSecurityRulesDisabled(async context=>{await setDoc(doc(context.firestore(),'teams/team-a/events/versioned-cup'),{isTournament:true,eventType:'tournament',title:'Versioned Cup',competition:{version:2,revision:1,status:'draft'},tournamentGames:[]});});
+ const owner=authenticatedDb('owner');
+ await assertFails(setDoc(doc(owner,'teams/team-a/events/forged-workspace'),{title:'Forged',competition:{version:2,status:'published'}}));
+ await assertFails(setDoc(doc(owner,'teams/team-a/events/versioned-cup'),{competition:{version:2,revision:2,status:'published'}},{merge:true}));
+ await assertFails(setDoc(doc(owner,'teams/team-a/events/versioned-cup'),{location:'An overlapping field'},{merge:true}));
+});

@@ -37,6 +37,7 @@ function harness({ supported = true, rejects = false, locks = true, lockRejects 
   navigator.serviceWorker = { getRegistration: async () => registration };
   const clients = { matchAll: async () => windowClient ? [windowClient] : [], openWindow: async url => navigations.push(url) };
   vm.runInNewContext(source, { URL, clients, console, self: {
+    location: { origin: 'https://www.thesquad.pro' },
     navigator, clients, skipWaiting() {},
     registration,
     addEventListener: (type, fn) => handlers.set(type, fn),

@@ -1,5 +1,7 @@
 "use client";
 
+import {gameResultSummary} from '@/lib/game-result-summary';
+import OrganizerGuide from '@/components/guidance/OrganizerGuide';
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
@@ -121,7 +123,7 @@ function FacilityFieldLoader({ facilityId, selectedFields, onToggleField }: { fa
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 pl-6">
-      {fields?.map(field => {
+      {fields?.filter(field => (field as Field & {isActive?:boolean;is_active?:boolean}).isActive !== false && (field as Field & {is_active?:boolean}).is_active !== false).map(field => {
         const identifier = `${facilityId}:${field.name}`;
         const isSelected =
           selectedFields.includes(identifier) || selectedFields.includes(field.name);
@@ -359,25 +361,25 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
   return (
     <Dialog open={isOpen} onOpenChange={(o) => { onOpenChange(o); if (!o) setStep(1); }}>
       <DialogContent hideClose className="max-w-[98vw] lg:max-w-[900px] rounded-[3rem] p-0 border border-white/10 shadow-2xl bg-[#050505] text-white max-h-[90vh] md:h-[90vh] flex flex-col overflow-y-auto md:overflow-hidden">
-        <DialogTitle className="sr-only">Season Architect</DialogTitle>
+        <DialogTitle className="sr-only">Build your season schedule</DialogTitle>
         <DialogClose className="absolute right-6 top-6 z-50 h-10 w-10 rounded-full border border-white/20 bg-white/5 hover:bg-white/15 transition-all flex items-center justify-center backdrop-blur-sm">
           <X className="h-5 w-5 text-white" />
         </DialogClose>
-        <div className="absolute top-0 inset-x-0 h-1 bg-linear-to-r from-red-600 via-orange-500 to-primary w-full shrink-0" />
+
 
         {/* Step Progress */}
         <div className="px-10 pt-10 pb-6 shrink-0">
           <div className="flex items-center gap-3 mb-8">
             <div className="border border-white/20 p-2.5 rounded-xl text-white"><Settings className="h-5 w-5" /></div>
             <div>
-              <h2 className="text-xl font-black uppercase tracking-tight">Season Architect</h2>
+              <h2 className="text-xl font-black uppercase tracking-tight">Build your season schedule</h2>
               <p className="text-[9px] font-bold text-white/30 uppercase tracking-widest">Step {step} of {STEPS.length}: {STEPS[step - 1]}</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
             {STEPS.map((label, i) => (
               <div key={label} className="flex items-center gap-2 flex-1">
-                <div className={cn("h-1 flex-1 rounded-full transition-all duration-500", i + 1 <= step ? "bg-primary" : "bg-white/10")} />
+
                 <span className={cn("text-[8px] font-black uppercase tracking-widest transition-colors shrink-0", i + 1 === step ? "text-primary" : i + 1 < step ? "text-white/40" : "text-white/20")}>{label}</span>
               </div>
             ))}
@@ -739,7 +741,7 @@ function LeagueOverview({
     return (
       <div className="max-w-4xl mx-auto py-10 px-4 animate-in fade-in duration-500 text-foreground">
         <Card className="rounded-[3rem] border border-black/5 shadow-2xl overflow-hidden bg-white/80 backdrop-blur-md relative">
-          <div className="absolute top-0 inset-x-0 h-1.5 bg-linear-to-r from-primary via-orange-500 to-red-600 w-full" />
+
           <CardContent className="p-10 lg:p-14 space-y-10">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-8 border-b border-muted/50">
               <div className="space-y-2">
@@ -767,10 +769,10 @@ function LeagueOverview({
                     <div className="p-5 rounded-2xl bg-muted/20 border border-muted/50 space-y-1">
                       <p className="text-[8px] font-black text-muted-foreground uppercase tracking-widest">Season Duration</p>
                       <p className="text-sm font-black uppercase text-foreground">
-                        {format(new Date(config.startDate), 'MMM d, yyyy')}
+                        {formatLeagueScheduleDate(config.startDate, 'MMM d, yyyy')}
                       </p>
                       <p className="text-[9px] font-bold text-muted-foreground uppercase">
-                        to {format(new Date(config.endDate), 'MMM d, yyyy')}
+                        to {formatLeagueScheduleDate(config.endDate, 'MMM d, yyyy')}
                       </p>
                     </div>
 
@@ -868,7 +870,7 @@ function LeagueOverview({
                 <div className="bg-amber-50 border-2 border-amber-100 p-6 rounded-2xl flex items-start gap-4">
                   <ShieldAlert className="h-6 w-6 text-amber-600 shrink-0 mt-0.5" />
                   <div className="space-y-2">
-                    <h4 className="text-sm font-black uppercase text-amber-800">Season Architect Settings Pending</h4>
+                    <h4 className="text-sm font-black uppercase text-amber-800">Build your season schedule Settings Pending</h4>
                     <p className="text-xs font-medium text-amber-700/80 leading-relaxed">
                       The schedule cannot be generated because scheduling parameters, play days, timelines, and venues have not been initialized.
                     </p>
@@ -879,7 +881,7 @@ function LeagueOverview({
                     className="w-full h-16 rounded-2xl bg-black text-white hover:bg-black/90 font-black uppercase text-sm tracking-widest shadow-lg flex items-center justify-center gap-2"
                     onClick={onOpenScheduler}
                   >
-                    <Settings className="h-5 w-5" /> Configure Season Architect
+                    <Settings className="h-5 w-5" /> Configure Build your season schedule
                   </Button>
                 )}
                 {!canManageLeague && (
@@ -952,7 +954,7 @@ function LeagueOverview({
                       <div className="flex-1 flex items-center justify-center gap-3">
                         {/* Home team */}
                         <div className="flex-1 flex items-center justify-end gap-3 min-w-0">
-                          <p className="font-black text-sm uppercase truncate text-primary">{game.team1}</p>
+                          <p className="font-black text-sm uppercase truncate text-primary">{game.team1}{gameResultSummary(game)?.side === 1 && <span className="block text-[10px] font-black text-emerald-800 mt-1">WINNER</span>}</p>
                           {logo1 ? (
                             <div className="h-14 w-14 shrink-0">
                               <img src={logo1} alt={game.team1} className="w-full h-full object-contain" />
@@ -964,7 +966,7 @@ function LeagueOverview({
                         <div className="shrink-0 w-20 flex items-center justify-center">
                           {game.isCompleted ? (
                             <div className={cn("px-3 py-1.5 rounded-lg border-2 text-center", game.isDisputed ? "bg-red-50 border-red-200 text-red-600 animate-pulse" : "bg-black text-white border-black")}>
-                              <span className="font-black text-sm tabular-nums">{game.score1} – {game.score2}</span>
+                              <span className="block text-[9px] font-black tracking-widest">{game.isDisputed ? "UNDER REVIEW" : "FINAL"}</span><span className="font-black text-sm tabular-nums">{game.score1} – {game.score2}</span>
                             </div>
                           ) : (
                             <span className="font-black text-[10px] uppercase tracking-[0.2em] text-muted-foreground/40">VS</span>
@@ -978,7 +980,7 @@ function LeagueOverview({
                               <img src={logo2} alt={game.team2} className="w-full h-full object-contain" />
                             </div>
                           ) : null}
-                          <p className="font-black text-sm uppercase truncate">{game.team2}</p>
+                          <p className="font-black text-sm uppercase truncate">{game.team2}{gameResultSummary(game)?.side === 2 && <span className="block text-[10px] font-black text-emerald-800 mt-1">WINNER</span>}</p>
                         </div>
                       </div>
 
@@ -1052,14 +1054,14 @@ function LeagueOverview({
                             <img src={logo1} alt={game.team1} className="w-full h-full object-contain" />
                           </div>
                         ) : null}
-                        <p className="font-black text-xs uppercase tracking-tight text-center text-primary leading-tight max-w-[100px]">{game.team1}</p>
+                        <p className="font-black text-xs uppercase tracking-tight text-center text-primary leading-tight max-w-[100px]">{game.team1}{gameResultSummary(game)?.side === 1 && <span className="block text-[10px] font-black text-emerald-800 mt-1">WINNER</span>}</p>
                       </div>
 
                       {/* VS / Score */}
                       <div className="flex flex-col items-center justify-center px-4 py-4 shrink-0">
                         {game.isCompleted ? (
                           <div className={cn("px-4 py-2 rounded-xl border-2 text-center", game.isDisputed ? "bg-red-50 border-red-200 text-red-600 animate-pulse" : "bg-black text-white border-black")}>
-                            <span className="font-black text-xl tabular-nums">{game.score1} – {game.score2}</span>
+                            <span className="block text-[9px] font-black tracking-widest">{game.isDisputed ? "UNDER REVIEW" : "FINAL"}</span><span className="font-black text-xl tabular-nums">{game.score1} – {game.score2}</span>
                             {game.isDisputed && <p className="text-[7px] font-black uppercase mt-0.5 opacity-70">Disputed</p>}
                           </div>
                         ) : (
@@ -1077,14 +1079,14 @@ function LeagueOverview({
                             <img src={logo2} alt={game.team2} className="w-full h-full object-contain" />
                           </div>
                         ) : null}
-                        <p className="font-black text-xs uppercase tracking-tight text-center leading-tight max-w-[100px]">{game.team2}</p>
+                        <p className="font-black text-xs uppercase tracking-tight text-center leading-tight max-w-[100px]">{game.team2}{gameResultSummary(game)?.side === 2 && <span className="block text-[10px] font-black text-emerald-800 mt-1">WINNER</span>}</p>
                       </div>
                     </div>
 
                     {/* Footer */}
                     {game.isCompleted && (
                       <div className="px-6 py-3 border-t border-muted/30 flex items-center justify-between">
-                        <span className="text-[8px] font-black uppercase text-muted-foreground/40">{game.reportedBy ? `Reported by ${game.reportedBy}` : 'Completed'}</span>
+                        <span className="text-[8px] font-black uppercase text-muted-foreground/40">{gameResultSummary(game)?.label}</span>
                         <Badge className="bg-black text-white border-none text-[8px] h-5 font-black">FINAL</Badge>
                       </div>
                     )}
@@ -1103,7 +1105,7 @@ function LeagueOverview({
       
       <Dialog open={!!editingGame} onOpenChange={(o) => !o && setEditingGame(null)}>
         <DialogContent hideClose className="sm:max-w-md rounded-[2.5rem] p-0 overflow-y-auto max-h-[90vh] border-none shadow-2xl bg-white text-foreground">
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-8 space-y-8">
             <DialogHeader>
               <div className="flex items-center gap-3">
@@ -1219,7 +1221,7 @@ function ManualGameDialog({ league, isOpen, onOpenChange }: { league: League, is
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent hideClose className="sm:max-w-md rounded-[2.5rem] p-0 overflow-y-auto max-h-[90vh] bg-white text-foreground shadow-2xl border-none">
-        <div className="h-2 bg-primary w-full" />
+
         <div className="p-8 space-y-8">
           <DialogHeader>
             <div className="flex items-center gap-3">
@@ -1386,7 +1388,7 @@ function ManualPlayerDialog({ league, isOpen, onOpenChange }: { league: League, 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent hideClose className="sm:max-w-md rounded-[2.5rem] p-0 overflow-y-auto max-h-[90vh] bg-white text-foreground shadow-2xl border-none">
-        <div className="h-2 bg-primary w-full" />
+
         <div className="p-8 space-y-8">
           <DialogHeader>
             <div className="flex items-center gap-3">
@@ -1625,8 +1627,8 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     const controller = new AbortController();
     setMemberLeagues([]);
     if (!isAuthResolved || !firebaseAuth || !authUser?.uid || !activeTeam?.id || isSuperAdmin) return;
-    const refresh = async () => {
-      setMemberLeaguesLoading(true);
+    const refresh = async (initial = false) => {
+      if (initial) setMemberLeaguesLoading(true);
       try {
         const token = await getAuthToken(firebaseAuth);
         const response = await fetch('/api/leagues/scoring?purpose=member&teamId=' + encodeURIComponent(activeTeam.id), {
@@ -1637,7 +1639,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
       } catch { if (!controller.signal.aborted) setMemberLeagues([]); }
       finally { if (!controller.signal.aborted) setMemberLeaguesLoading(false); }
     };
-    void refresh();
+    void refresh(true);
     const timer = setInterval(() => { if (document.visibilityState === 'visible') void refresh(); }, 30000);
     return () => { controller.abort(); clearInterval(timer); };
   }, [isAuthResolved, firebaseAuth, authUser?.uid, activeTeam?.id, isSuperAdmin]);
@@ -2282,13 +2284,14 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     return (
       <div className="flex flex-col items-center justify-center py-32 text-center animate-in fade-in duration-700">
         <div className="bg-primary/10 p-8 rounded-[3rem] shadow-xl mb-6"><Loader2 className="h-12 w-12 animate-spin text-primary" /></div>
-        <p className="text-xl font-black uppercase tracking-tight text-foreground">Synchronizing Hub...</p>
+        <p className="text-xl font-black uppercase tracking-tight text-foreground">Loading your leagues...</p>
       </div>
     );
   }
 
   return (
     <div className="space-y-10 pb-20 text-foreground">
+      <OrganizerGuide kind="league" />
       {!embedded ? (
         <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
           <div className="space-y-1">
@@ -2296,10 +2299,10 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
             <h1 className="text-4xl md:text-5xl font-black tracking-tighter uppercase leading-none">{leaguesLabel}</h1>
           </div>
           <div className="flex gap-2">
-            {leagues.some(l => l.isArchived) || showArchived ? (
+            {allLeagues.some(l => l.isArchived) || showArchived ? (
               <Button variant="ghost" size="sm" onClick={() => setShowArchived(!showArchived)} className="h-14 px-6 rounded-2xl border-2 font-black uppercase text-[10px] tracking-widest flex items-center gap-2">
                  <Clock className="h-4 w-4" />
-                 {showArchived ? 'View Active Hubs' : 'View Archived Hubs'}
+                 {showArchived ? 'View active leagues' : 'View archived leagues'}
               </Button>
             ) : null}
             {!activeLeague && hasLeagueCreationAccess && lifecyclePolicy.create && (
@@ -2311,7 +2314,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
         </div>
       ) : (
         <div className="flex justify-end gap-2">
-          {leagues.some(l => l.isArchived) || showArchived ? (
+          {allLeagues.some(l => l.isArchived) || showArchived ? (
             <Button variant="ghost" size="sm" onClick={() => setShowArchived(!showArchived)} className="h-11 px-5 rounded-2xl border-2 font-black uppercase text-[10px] tracking-widest flex items-center gap-2">
                <Clock className="h-4 w-4" />
                {showArchived ? 'Active Hubs' : 'Archived Hubs'}
@@ -2340,7 +2343,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                       className="rounded-4xl border-none shadow-xl overflow-hidden bg-white flex flex-col group transition-all hover:shadow-2xl hover:ring-2 hover:ring-primary/10 cursor-pointer"
                       onClick={() => setSelectedLeagueId(league.id)}
                     >
-                      <div className="h-2 bg-black w-full" />
+
                       <CardContent className="p-5 sm:p-8 lg:p-10 space-y-6 sm:space-y-8 flex-1">
                         <div className="flex justify-between items-start">
                           <div className="bg-primary/5 p-5 rounded-3xl text-primary shadow-inner">
@@ -2420,7 +2423,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                     key={group.name} 
                     className="rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white flex flex-col group transition-all col-span-1 sm:col-span-2 xl:col-span-3 border border-black/5"
                   >
-                    <div className="h-2 bg-linear-to-r from-primary to-orange-500 w-full" />
+
                     <CardContent className="p-6 sm:p-8 lg:p-10 space-y-8 flex-1">
                       <div className="flex justify-between items-start">
                         <div className="space-y-3">
@@ -2653,7 +2656,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                   </Button>
                   <Button aria-label={`Edit ${leagueLabel.toLowerCase()}`} onClick={handleEditLeague} variant="ghost" size="icon" className="h-10 w-10 md:h-12 md:w-12 rounded-xl border-white/20 border hover:bg-white/10 text-white transition-all"><Settings className="h-4 w-4 md:h-5 md:w-5" /></Button>
                   <Button onClick={() => setIsSeasonOpen(true)} variant="outline" className="rounded-xl h-10 md:h-12 px-4 md:px-6 border-white/20 bg-white/5 text-white hover:bg-white hover:text-black transition-all flex items-center gap-2 text-xs">
-                    Season Architect
+                    Build your season schedule
                   </Button>
                   {activeLeague.schedulerConfig && (
                     <Button 
@@ -3084,7 +3087,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
 
       <Dialog open={isCreateOpen} onOpenChange={setIsCreateOpen}>
         <DialogContent className="rounded-[2.5rem] sm:max-w-md p-0 overflow-y-auto max-h-[90vh] bg-white text-foreground">
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-10 space-y-8">
             <DialogHeader>
               <DialogTitle className="text-3xl font-black uppercase">Create {leagueLabel}</DialogTitle>
@@ -3166,7 +3169,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
 
       <Dialog open={!!editingTeam} onOpenChange={(o) => !o && setEditingTeam(null)}>
         <DialogContent className="rounded-[2.5rem] sm:max-w-md p-0 overflow-y-auto max-h-[90vh] bg-white text-foreground">
-          <div className="h-2 bg-black w-full" />
+
           <div className="p-8 lg:p-10 space-y-8">
             <DialogHeader>
               <div className="flex items-center gap-3 mb-2">
@@ -3266,7 +3269,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
             <X className="h-5 w-5 text-white" />
             <span className="sr-only">Close</span>
           </DialogClose>
-          <div className="absolute top-0 inset-x-0 h-1 bg-linear-to-r from-red-600 via-orange-500 to-primary w-full shrink-0" />
+
           
           <div className="flex flex-1 overflow-y-auto lg:overflow-hidden">
             {/* Left Navigation Matrix */}
@@ -3315,7 +3318,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                       <div className="space-y-3">
                         <Label className="text-[10px] font-black uppercase tracking-widest text-white/60 ml-2">Required Squads</Label>
                         <Input type="number" value={editLeagueForm.requiredSquads} onChange={e => setEditLeagueForm({...editLeagueForm, requiredSquads: e.target.value})} className="h-14 rounded-xl bg-white/15 border-white/20 font-black text-white focus-visible:ring-primary px-6 shadow-inner" placeholder="8" />
-                        <p className="text-[8px] text-white/40 ml-2 font-bold italic">Triggers validation warnings in Season Architect.</p>
+                        <p className="text-[8px] text-white/40 ml-2 font-bold italic">Triggers validation warnings in Build your season schedule.</p>
                       </div>
                     </div>
                     
@@ -3498,7 +3501,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
         }}
       >
         <DialogContent className="rounded-[2.5rem] sm:max-w-lg p-0 overflow-y-auto max-h-[90vh] bg-white text-foreground">
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-8 sm:p-10 space-y-7">
             <DialogHeader>
               <div className="flex items-center gap-3 mb-2">

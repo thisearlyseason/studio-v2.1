@@ -1,5 +1,6 @@
 "use client";
 
+import OrganizerGuide from '@/components/guidance/OrganizerGuide';
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import Link from 'next/link';
 import { useTeam, Team, Member, TeamDocument, TeamIncident } from '@/components/providers/team-provider';
@@ -907,6 +908,7 @@ function AuthorizedClubManagementPage() {
     <div className="space-y-5 md:space-y-8 pb-24 animate-in fade-in duration-700 w-full" style={{maxWidth:'100%', overflowX:'hidden'}}>
 
       {/* ── HERO CARD ── */}
+      <OrganizerGuide kind="organization" />
       <Card className="bg-black text-white p-5 md:p-10 lg:p-14 rounded-4xl md:rounded-[3rem] shadow-2xl relative overflow-hidden group border-none hero-gradient">
         <div className="absolute top-0 right-0 p-4 md:p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-1000">
           <Building className="h-28 w-28 md:h-56 md:w-56" />
@@ -970,7 +972,7 @@ function AuthorizedClubManagementPage() {
       {/* ── Provision Sub-Squad Dialog ── */}
       <Dialog open={isSubSquadModalOpen} onOpenChange={setIsSubSquadModalOpen}>
         <DialogContent className="rounded-[2.5rem] p-0 border-none shadow-2xl overflow-hidden w-[calc(100vw-2rem)] sm:max-w-md bg-white">
-          <div className="h-2 bg-linear-to-r from-primary via-black to-primary w-full" />
+
           <div className="p-5 sm:p-8 space-y-6 w-full">
             <DialogHeader>
               <div className="bg-primary/10 w-14 h-14 rounded-2xl flex items-center justify-center mb-3">
@@ -1140,11 +1142,11 @@ function AuthorizedClubManagementPage() {
       {/* ── Stats Grid ── */}
       <div className="grid grid-cols-2 gap-3 md:gap-5">
         <Card className="rounded-3xl md:rounded-4xl border-none shadow-md bg-primary text-white p-4 md:p-6 space-y-1">
-          <p className="text-[9px] font-black uppercase opacity-60 tracking-widest">Pro Squads</p>
+          <p className="text-[9px] font-black uppercase tracking-widest">Pro Squads</p>
           <p className="text-3xl md:text-4xl font-black" aria-live="polite">
             {isHubDataLoading ? <Loader2 className="h-7 w-7 animate-spin" aria-label="Loading squad total" /> : allocatedSquadCount}
           </p>
-          <p className="text-[8px] font-bold uppercase opacity-60">
+          <p className="text-[8px] font-bold uppercase">
             {remainingSquadSeats} of {organizationSeatLimit} seats available
           </p>
         </Card>
@@ -1152,7 +1154,7 @@ function AuthorizedClubManagementPage() {
           <p className="text-[9px] font-black uppercase opacity-60 tracking-widest">Fiscal Pulse</p>
           <p className="text-xl md:text-2xl font-black">${fiscalSummary.fiscalPulseTotal.toLocaleString()}</p>
           <Progress value={fiscalSummary.fiscalPulseRate} className="h-1 bg-white/10" />
-          <p className="text-[7px] font-bold opacity-40 uppercase tracking-widest">
+          <p className="text-[7px] font-bold text-white uppercase tracking-widest">
             Fees <span className="text-white/70">${fiscalSummary.totalEnrollmentRevenue.toLocaleString()}</span>
             {' · '}
             Donations <span className="text-white/70">${fiscalSummary.totalDonationsConfirmed.toLocaleString()}</span>
@@ -2008,7 +2010,7 @@ function AuthorizedClubManagementPage() {
       {/* Edit Club/School Dialog */}
       <Dialog open={isEditClubOpen} onOpenChange={setIsEditOpen}>
         <DialogContent className="rounded-[2.5rem] p-0 overflow-hidden w-[calc(100vw-2rem)] sm:max-w-md border-none shadow-2xl glass text-foreground">
-          <div className="h-2 bg-black w-full" />
+
           <div className="p-5 sm:p-8 space-y-6">
             <DialogHeader>
               <DialogTitle className="text-2xl md:text-3xl font-black uppercase tracking-tight">
@@ -2060,7 +2062,7 @@ function AuthorizedClubManagementPage() {
       {/* Deploy Protocol Dialog */}
       <Dialog open={isDeployProtocolOpen} onOpenChange={setIsDeployProtocolOpen}>
         <DialogContent className="rounded-[2.5rem] p-0 border-none shadow-2xl overflow-hidden w-[calc(100vw-2rem)] sm:max-w-2xl bg-white text-foreground flex max-h-[calc(100dvh-2rem)] flex-col">
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-5 sm:p-8 space-y-6 flex-1 min-h-0 overflow-y-auto custom-scrollbar">
             <DialogHeader>
               <DialogTitle className="text-2xl font-black uppercase tracking-tight">Deploy Global Waiver</DialogTitle>
@@ -2123,7 +2125,7 @@ function AuthorizedClubManagementPage() {
       {/* Organization seat release */}
       <AlertDialog open={!!teamToDelete} onOpenChange={o => !o && setTeamToDelete(null)}>
         <AlertDialogContent className="rounded-4xl border-none shadow-2xl overflow-hidden p-0 bg-white w-[calc(100vw-2rem)] max-w-md">
-          <div className="h-2 bg-red-600 w-full" />
+
           <div className="p-5 sm:p-8 space-y-5">
             <AlertDialogHeader>
               <AlertDialogTitle className="text-2xl font-black uppercase tracking-tight text-foreground">Remove from Organization?</AlertDialogTitle>

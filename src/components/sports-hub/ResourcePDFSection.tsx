@@ -274,7 +274,7 @@ export function ResourcePDFSection({ resourceId, title, description, category, c
       {/* Visible download banner */}
       <div className="mb-10 rounded-2xl border-2 border-primary/20 bg-primary/5 overflow-hidden">
         {/* Red accent strip */}
-        <div className="h-1 hero-gradient" />
+
 
         <div className="p-5 flex flex-col sm:flex-row items-start sm:items-center gap-4">
           {/* Icon */}

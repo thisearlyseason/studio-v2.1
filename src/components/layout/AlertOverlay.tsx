@@ -159,7 +159,7 @@ function QuoteIcon({ className }: { className?: string }) {
 }
 
 export function AlertsHistoryDialog({ children }: { children: React.ReactNode }) {
-  const { alerts, markAlertAsSeen, markAllAlertsAsSeen, seenAlertIds, isStaff, deleteAlert } = useTeam();
+  const { alerts, alertHistoryError, refreshAlertHistory, markAlertAsSeen, markAllAlertsAsSeen, seenAlertIds, isStaff, deleteAlert } = useTeam();
   const [isOpen, setIsOpen] = useState(false);
   const { toast } = useToast();
 
@@ -181,7 +181,7 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
       <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl bg-white">
         <DialogTitle className="sr-only">Squad Alert Inbox</DialogTitle>
         <DialogDescription className="sr-only">History of all broadcasts dispatched to you</DialogDescription>
-        <div className="h-2 bg-primary w-full" />
+
         <DialogHeader className="p-8 pb-2">
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-3">
@@ -223,7 +223,12 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
         </DialogHeader>
         <ScrollArea className="max-h-[450px] px-8 pb-10">
           <div className="space-y-4 pt-4">
-            {displayAlerts.length > 0 ? displayAlerts.map((alert: TeamAlert) => {
+            {alertHistoryError ? (
+              <div role="alert" className="space-y-3 rounded-2xl bg-muted/30 p-4">
+                <p className="text-sm font-medium">{alertHistoryError}</p>
+                <Button variant="outline" onClick={() => { void refreshAlertHistory(); }}>Try again</Button>
+              </div>
+            ) : displayAlerts.length > 0 ? displayAlerts.map((alert: TeamAlert) => {
               const isUnread = !seenAlertIds.includes(alert.id);
               return (
                 <div key={alert.id} className={cn(
@@ -432,7 +437,7 @@ export function CreateAlertButton() {
       <DialogContent className="sm:max-w-md rounded-[3rem] border-none shadow-2xl overflow-hidden p-0 bg-white">
         <DialogTitle className="sr-only">Deploy Broadcast</DialogTitle>
         <DialogDescription className="sr-only">Dispatch high priority directive to the roster</DialogDescription>
-        <div className="h-2 bg-primary w-full" />
+
         <div className="p-8 lg:p-10 space-y-8">
           <DialogHeader>
             <div className="flex items-center gap-4 mb-2">

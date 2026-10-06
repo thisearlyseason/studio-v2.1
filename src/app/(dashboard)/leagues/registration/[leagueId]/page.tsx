@@ -65,6 +65,7 @@ import { cn } from '@/lib/utils';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { jsPDF } from 'jspdf';
 import { addSquadBranding, generateBrandedPDF } from '@/lib/pdf-utils';
+import { createWaiverArchivePdf } from '@/lib/waiver-archive-pdf';
 import { format } from 'date-fns';
 import { authHeader, getAuthToken } from '@/lib/client-auth';
 
@@ -76,6 +77,7 @@ export default function LeagueRegistrationAdminPage() {
   const router = useRouter();
   const { isAuthResolved, user: authUser } = useUser();
   const { 
+    updateLeague,
     saveLeagueRegistrationConfig, 
     assignEntryToTeam, 
     activeTeam, 
@@ -102,6 +104,8 @@ export default function LeagueRegistrationAdminPage() {
     division: ''
   });
   const [isManualProcessing, setIsManualProcessing] = useState(false);
+  const [openingPortals, setOpeningPortals] = useState(false);
+  const [portalError, setPortalError] = useState('');
   const [saveStatus, setSaveStatus] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
 
   // --- SYNC ---
@@ -168,73 +172,7 @@ export default function LeagueRegistrationAdminPage() {
       toast({ title: "No waivers found", description: "This league has no signed waivers yet." });
       return;
     }
-    const pdf = new jsPDF();
-    
-    // Initial Page
-    addSquadBranding(pdf, "Waiver Archive", activeLeague?.name || "League Record");
-    pdf.setFontSize(14);
-    pdf.setTextColor(0);
-    pdf.text("ARCHIVE SUMMARY", 20, 60);
-    pdf.setFontSize(10);
-    pdf.setTextColor(80);
-    pdf.text(`League: ${activeLeague?.name || 'Unknown'}`, 20, 70);
-    pdf.text(`Total Records: ${archivedWaivers.length}`, 20, 78);
-    pdf.text(`Business Entity: SQUAD INTELLIGENCE`, 20, 86);
-    
-    pdf.setDrawColor(230);
-    pdf.line(20, 95, 190, 95);
-
-    archivedWaivers.forEach((waiver) => {
-      pdf.addPage();
-      addSquadBranding(pdf, "WAIVER RECORD", `UID: ${waiver.id}`);
-      
-      pdf.setFontSize(14);
-      pdf.setTextColor(0);
-      pdf.text("PARTICIPANT INFO", 20, 60);
-      
-      pdf.setDrawColor(200);
-      pdf.setLineWidth(0.1);
-      pdf.line(20, 63, 65, 63);
-
-      pdf.setFontSize(11);
-      pdf.text(`Name:`, 20, 72);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(waiver.signer, 50, 72);
-      
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(`Affiliation:`, 20, 80);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(waiver.teamName || 'Independent', 50, 80);
-      
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(`Signed At:`, 20, 88);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(format(new Date(waiver.signedAt), 'PPP p'), 50, 88);
-      
-      pdf.setFont('helvetica', 'normal');
-      pdf.text(`Type:`, 20, 96);
-      pdf.setFont('helvetica', 'bold');
-      pdf.text(waiver.type.toUpperCase(), 50, 96);
-
-      pdf.setFont('helvetica', 'bold');
-      pdf.setFontSize(14);
-      pdf.text("WAIVER TEXT", 20, 115);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(8);
-      pdf.setTextColor(50);
-      const splitWaiver = pdf.splitTextToSize(waiver.waiverText, 170);
-      pdf.text(splitWaiver, 20, 125);
-
-      pdf.setFontSize(14);
-      pdf.setFont('helvetica', 'bold');
-      pdf.setTextColor(0);
-      const lastLine = 125 + (splitWaiver.length * 3.5);
-      pdf.text("EXECUTION LOG", 20, lastLine + 15);
-      pdf.setFont('helvetica', 'normal');
-      pdf.setFontSize(9);
-      pdf.text(`The user ${waiver.signer} confirmed their identity and agreed to the above terms via electronic signature on ${format(new Date(waiver.signedAt), 'PPP p')}. This record is cryptographically timestamped and archived by SQUAD INTELLIGENCE Secure Hub.`, 20, lastLine + 25, { maxWidth: 170 });
-    });
-
+    const pdf = createWaiverArchivePdf(activeLeague?.name || 'League', archivedWaivers);
     pdf.save(`${activeLeague?.name || 'League'}_Waiver_Archive.pdf`);
     toast({ title: "Archive Generated" });
   };
@@ -406,6 +344,13 @@ export default function LeagueRegistrationAdminPage() {
         <Button variant={activeTab === 'config' ? 'secondary' : 'ghost'} className="rounded-xl h-9 px-6 font-black uppercase text-[9px]" onClick={() => setActiveTab('config')}>Form Builder</Button>
       </div>
 
+      {activeLeague?.is_active === false && !activeLeague?.isArchived && <div className="rounded-2xl border border-amber-300 bg-amber-50 p-5 space-y-3">
+        <h2 className="font-black">Open your league before sharing signup forms</h2>
+        <p className="text-sm">The league’s public portals are closed. Open them, then turn on each form you want to share. You can collect registrations before creating a schedule.</p>
+        <Button disabled={openingPortals} onClick={async () => {setOpeningPortals(true);setPortalError('');try {await updateLeague(leagueId as string,{is_active:true});} catch(error) {setPortalError(error instanceof Error ? error.message : 'Could not open portals. Please try again.');} finally {setOpeningPortals(false);}}}>{openingPortals ? 'Opening…' : 'Open league portals'}</Button>
+        {portalError && <p role="alert">{portalError}</p>}
+      </div>}
+
       {activeTab === 'entries' ? (
         <div className="space-y-6">
           <div className="flex flex-wrap items-center gap-3">
@@ -480,7 +425,7 @@ export default function LeagueRegistrationAdminPage() {
       ) : (
         <div className="max-w-4xl mx-auto pb-32">
           <div className="space-y-16 relative">
-            <div className="flex bg-black text-white p-8 rounded-[3rem] items-center justify-between border-2 border-white/10 shadow-2xl mb-12">
+            <div className="flex flex-col gap-6 bg-black text-white p-6 sm:p-8 rounded-[3rem] items-stretch sm:flex-row sm:items-center justify-between border-2 border-white/10 shadow-2xl mb-12">
               <div className="space-y-2">
                 <div className="flex items-center gap-3">
                   <Badge className="bg-primary text-white border-none font-black uppercase text-[9px] h-6 px-3 shadow-lg shadow-primary/20">Registration Form</Badge>
@@ -489,7 +434,7 @@ export default function LeagueRegistrationAdminPage() {
                 <h3 className="text-3xl font-black uppercase tracking-tighter">Form Builder</h3>
                 <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest">Registration form for {activeLeague?.name || 'League'}</p>
               </div>
-              <div className="flex items-center gap-6">
+              <div className="flex min-w-0 items-center gap-6">
                 <div className="text-right hidden md:block">
                   <p className="text-[10px] font-black uppercase text-white/40 tracking-widest mb-1">Public Registration Link</p>
                   <p className="text-[9px] font-mono text-primary font-bold">/register/league/{leagueId}</p>
@@ -1046,7 +991,7 @@ export default function LeagueRegistrationAdminPage() {
       {/* SHARED FIELD ARCHITECT */}
       <Dialog open={!!editingField} onOpenChange={(open) => !open && setEditingField(null)}>
         <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden max-w-sm">
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-8 space-y-6">
               <DialogHeader><DialogTitle className="text-2xl font-black uppercase">Add Question</DialogTitle></DialogHeader>
               <div className="space-y-4">
@@ -1106,7 +1051,7 @@ export default function LeagueRegistrationAdminPage() {
 
       <Dialog open={!!inspectingEntryId} onOpenChange={(open) => !open && setInspectingEntryId(null)}>
         <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden w-full max-w-2xl max-h-[90vh] flex flex-col">
-          <div className="h-2 bg-primary w-full shrink-0" />
+
           {/* Dark header */}
           <div className="bg-black text-white px-8 py-5 flex items-center justify-between shrink-0">
             <div className="flex items-center gap-4">
@@ -1175,8 +1120,8 @@ export default function LeagueRegistrationAdminPage() {
               {/* SIGNED WAIVERS */}
               <div className="space-y-3">
                 <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Signed Waivers</p>
-                {archivedWaivers.filter(w => (w as any).email === inspectingEntry?.answers?.email).length > 0 ? (
-                  archivedWaivers.filter(w => (w as any).email === inspectingEntry?.answers?.email).map(w => (
+                {archivedWaivers.filter(w => (w as any).entryId === inspectingEntry?.id || (!(w as any).entryId && !!inspectingEntry?.answers?.email && ((w as any).email || (w as any).answers?.email) === inspectingEntry.answers.email)).length > 0 ? (
+                  archivedWaivers.filter(w => (w as any).entryId === inspectingEntry?.id || (!(w as any).entryId && !!inspectingEntry?.answers?.email && ((w as any).email || (w as any).answers?.email) === inspectingEntry.answers.email)).map(w => (
                     <div key={w.id} className="p-4 rounded-2xl bg-green-50 border-2 border-green-100 flex items-center justify-between gap-4">
                       <div className="flex items-center gap-3 min-w-0">
                         <FileSignature className="h-5 w-5 text-green-600 shrink-0" />
@@ -1234,6 +1179,16 @@ export default function LeagueRegistrationAdminPage() {
                     </Select>
                   </div>
                 )}
+                {inspectingEntry?.protocol_id === 'team_config' && inspectingEntry.status !== 'accepted' && (
+                  <Button onClick={async () => {
+                    try {
+                      const token=await getAuthToken(auth);
+                      const response=await fetch('/api/public/portals/action',{method:'POST',headers:{'Content-Type':'application/json',...authHeader(token)},body:JSON.stringify({kind:'league',action:'update-registration',leagueId,entryId:inspectingEntry.id,status:'accepted'})});
+                      if(!response.ok)throw new Error((await response.json()).error || 'Could not approve this team.');
+                      toast({title:'Team approved',description:'This team is ready to include in your season schedule.'});
+                    } catch(error) {toast({title:'Team not approved',description:error instanceof Error ? error.message : 'Please try again.',variant:'destructive'});}
+                  }}>Approve team for scheduling</Button>
+                )}
                 <div className="space-y-2">
                   <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground px-1">Verification Status</p>
                   <Button
@@ -1263,7 +1218,7 @@ export default function LeagueRegistrationAdminPage() {
 
       <Dialog open={isManualAddOpen} onOpenChange={setIsManualAddOpen}>
         <DialogContent className="rounded-[2.5rem] sm:max-w-md bg-white">
-          <div className="h-2 bg-primary w-full" />
+
           <div className="p-8 lg:p-10 space-y-8">
             <DialogHeader>
               <DialogTitle className="text-2xl font-black uppercase">

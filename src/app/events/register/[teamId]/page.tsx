@@ -117,7 +117,7 @@ function RegistrationForm() {
       <BrandLogo variant="light-background" className="h-10 w-40 mb-8" />
       
       <Card className="max-w-md w-full rounded-[2.5rem] shadow-2xl overflow-hidden border-none bg-white">
-        <div className="h-2 hero-gradient w-full" />
+
         <CardHeader className="space-y-1 pb-2">
           <CardTitle className="text-3xl font-black tracking-tighter">{event.title}</CardTitle>
           <CardDescription className="text-base font-medium">Event Registration Hub</CardDescription>

@@ -239,7 +239,7 @@ export default function JoinTeamPage() {
 
         {/* Every signed-in account may enroll itself as an ordinary player. */}
         <Card className={cn("rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col", isStaff && "lg:col-span-2")}>
-            <div className="h-2 bg-primary w-full" />
+
             <CardHeader className="p-8 lg:p-10">
               <div className="flex items-center gap-4 mb-2">
                 <div className="bg-primary/10 p-3 rounded-2xl text-primary">
@@ -359,7 +359,7 @@ export default function JoinTeamPage() {
         {isStaff ? (
           <>
             <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-black text-white flex flex-col">
-              <div className="h-2 bg-primary w-full" />
+
               <CardHeader className="p-8 lg:p-10">
                 <div className="flex items-center gap-4 mb-2">
                   <div className="bg-primary p-3 rounded-2xl text-white shadow-lg shadow-primary/20"><Trophy className="h-6 w-6" /></div>
@@ -383,7 +383,7 @@ export default function JoinTeamPage() {
             </Card>
 
             <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col">
-              <div className="h-2 bg-primary w-full" />
+
               <CardHeader className="p-8 lg:p-10">
                 <div className="flex items-center gap-4 mb-2">
                   <div className="bg-primary/10 p-3 rounded-2xl text-primary"><CalendarDays className="h-6 w-6" /></div>

@@ -66,6 +66,9 @@ test('account purge covers personal profiles, memberships, messages, invites, an
   );
 
   for (const expected of [
+    'moderationReports:reporterId',
+    'moderationReports:authorId',
+    'blocks:authorId',
     'calendarFeeds:userId',
     'calendarSync:userId',
     'notificationDeviceTokens:userId',

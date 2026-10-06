@@ -114,7 +114,7 @@ export default function PublicLeagueScorekeeperEntryPage() {
       <div className="max-w-xl w-full space-y-6">
         <Button variant="ghost" onClick={() => router.push(`/leagues/scorekeeper/${leagueId}`)} className="font-black uppercase text-[10px] tracking-widest"><ChevronLeft className="h-4 w-4 mr-2" /> Back to Schedule</Button>
         <Card className="rounded-[3rem] border-none shadow-2xl overflow-hidden bg-white ring-1 ring-black/5">
-          <div className="h-2 bg-primary w-full" />
+
           <CardHeader className="p-8 lg:p-10 pb-4">
             <div className="flex items-center gap-4 mb-4"><div className="bg-primary/10 p-3 rounded-2xl text-primary"><ShieldAlert className="h-6 w-6" /></div><div><CardTitle className="text-2xl font-black uppercase tracking-tight">Post Result</CardTitle><CardDescription className="text-[10px] font-bold uppercase tracking-widest mt-1">Official Score Entry</CardDescription></div></div>
             <div className="bg-muted/30 p-6 rounded-2xl border-2 border-dashed space-y-4">
@@ -227,7 +227,7 @@ export default function PublicLeagueScorekeeperEntryPage() {
 
       <Dialog open={isDisputeOpen} onOpenChange={setIsDisputeOpen}>
         <DialogContent className="rounded-[2.5rem] p-0 border-none shadow-2xl overflow-hidden sm:max-w-md">
-          <div className="h-2 bg-red-600 w-full" />
+
           <div className="p-8 space-y-6">
             <DialogHeader>
               <div className="flex items-center gap-3 mb-2">

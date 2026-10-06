@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { accountCreationLimit, normalizeCreationText } from '@/lib/account-creation-policy';
 import { verifyFirebaseToken, type DecodedToken } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
+import { AccountOwnershipError, readOwnershipAccounts } from '@/lib/server-account-ownership';
 import {
   assertCompetitionMutationAuthority,
   resolveCompetitionAuthority,
@@ -484,9 +485,8 @@ async function mutateCreate(auth: DecodedToken, input: Extract<LeagueLifecycleRe
   return runCompetitionOperation({ db: adminDb, actorUid: auth.uid, identity }, async ({ transaction }) => {
     await assertCurrentAuthority(transaction, auth, authority.tenantId, { teamId: input.teamId });
     const ownerUid = await tenantOwnerUid(transaction, authority.tenantId);
-    const profileRef = adminDb.collection('users').doc(ownerUid);
-    const profile = await transaction.get(profileRef);
-    if (!profile.exists) fail('OWNER_PROFILE_MISSING');
+    const accounts = await readOwnershipAccounts(adminDb, transaction, ownerUid, auth.uid);
+    const profile = accounts.owner;
     const team = input.teamId ? await transaction.get(adminDb.collection('teams').doc(input.teamId)) : null;
     const leagues = await existingTenantLeagues(transaction, authority.tenantId, auth, ownerUid);
     assertIdentityAvailable(leagues, input.name, input.divisionTitle || '');
@@ -495,6 +495,7 @@ async function mutateCreate(auth: DecodedToken, input: Extract<LeagueLifecycleRe
     const groups = new Set(leagues.map(league => nameKey(league.data().name)).filter(Boolean));
     if (!groups.has(nameKey(input.name)) && auth.role !== 'superadmin' && groups.size >= accountCreationLimit(profile.data())) fail('LEAGUE_LIMIT_REACHED');
     const now = new Date().toISOString();
+    accounts.fence();
     transaction.create(nameReservation, {
       tenantId: authority.tenantId, leagueId: createdLeagueId, nameKey: nameKey(input.name), divisionKey: nameKey(input.divisionTitle || ''), createdAt: now,
     });
@@ -523,8 +524,8 @@ async function mutateClone(auth: DecodedToken, input: Extract<LeagueLifecycleReq
     const sourcePrivate = await transaction.get(sourceRef.collection('private').doc('lifecycle'));
     const configs = await transaction.get(sourceRef.collection('registration'));
     const ownerUid = await tenantOwnerUid(transaction, authority.tenantId);
-    const profile = await transaction.get(adminDb.collection('users').doc(ownerUid));
-    if (!profile.exists) fail('OWNER_PROFILE_MISSING');
+    const accounts = await readOwnershipAccounts(adminDb, transaction, ownerUid, auth.uid);
+    const profile = accounts.owner;
     const leagues = await existingTenantLeagues(transaction, authority.tenantId, auth, ownerUid);
     const source = { id: sourceSnapshot.id, ...(sourceSnapshot.data() || {}) } as Record<string, unknown> & { id: string; name: string; divisionTitle?: string };
     if (source.isArchived === true) fail('LEAGUE_LIFECYCLE_STATE_CONFLICT');
@@ -535,6 +536,7 @@ async function mutateClone(auth: DecodedToken, input: Extract<LeagueLifecycleReq
     if ((await transaction.get(nameReservation)).exists) fail(cloneIdentity.divisionTitle ? 'DIVISION_ALREADY_EXISTS' : 'LEAGUE_ALREADY_EXISTS');
     const now = new Date().toISOString();
     const cloneRef = adminDb.collection('leagues').doc(clonedLeagueId);
+    accounts.fence();
     transaction.create(nameReservation, {
       tenantId: authority.tenantId, leagueId: clonedLeagueId, nameKey: nameKey(cloneIdentity.name), divisionKey: nameKey(cloneIdentity.divisionTitle), createdAt: now,
     });
@@ -742,6 +744,7 @@ async function handle(request: NextRequest): Promise<NextResponse> {
             : await mutateDelete(authResult, input, authority, identity);
     return NextResponse.json(result, { status: input.action === 'create' || input.action === 'clone' ? 201 : 200 });
   } catch (error) {
+    if (error instanceof AccountOwnershipError) return NextResponse.json({ error: error.message }, { status: error.status });
     if (error instanceof ScheduleDeploymentError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     if (error instanceof RequestBodyError) return NextResponse.json({ error: error.message }, { status: error.status });
     const code = error instanceof Error ? error.message : 'LEAGUE_LIFECYCLE_FAILED';

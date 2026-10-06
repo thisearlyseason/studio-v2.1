@@ -547,6 +547,8 @@ exports.purgeExpiredDeletionRequests = (0, scheduler_1.onSchedule)({
                 refs.slice(start, start + 450).forEach((documentRef) => batch.delete(documentRef));
                 await batch.commit();
             }
+            // Block preferences are private account data outside the users tree.
+            await db.recursiveDelete(db.collection('userSafety').doc(uid));
             if (user.exists)
                 await db.recursiveDelete(user.ref);
             try {
@@ -628,6 +630,7 @@ exports.cleanupAnonymousUsers = (0, scheduler_1.onSchedule)({
                             if (facility.data().isDemo === true)
                                 await db.recursiveDelete(facility.ref);
                         }
+                        await db.recursiveDelete(db.collection('userSafety').doc(uid));
                         await db.recursiveDelete(db.collection('users').doc(uid));
                         try {
                             await auth.deleteUser(uid);

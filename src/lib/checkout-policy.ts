@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { activeNativeEntitlement } from './native-billing/catalog';
 
 export const SIGNUP_TRIAL_DAYS = 5;
 export const NEW_ACCOUNT_TRIAL_WINDOW_MS = 2 * 60 * 60 * 1000;
@@ -17,13 +18,11 @@ export function isBlockingSubscriptionStatus(status: unknown): boolean {
 }
 
 export function hasUnresolvedSubscription(profile: Record<string, unknown>): boolean {
-  const status = profile.subscriptionStatus ??
-    profile.subscription_status ??
-    profile.stripe_subscription_status;
-  if (isBlockingSubscriptionStatus(status)) return true;
-  if (['canceled', 'cancelled', 'ended', 'inactive', 'incomplete_expired'].includes(
-    String(status || '').trim().toLowerCase()
-  )) return false;
+  if (activeNativeEntitlement(profile.native_subscription)) return true;
+  const statuses = [profile.subscriptionStatus, profile.subscription_status, profile.stripe_subscription_status]
+    .map(status => String(status || '').trim().toLowerCase()).filter(Boolean);
+  if (statuses.some(isBlockingSubscriptionStatus)) return true;
+  if (statuses.length && statuses.every(status => ['canceled', 'cancelled', 'ended', 'inactive', 'incomplete_expired'].includes(status))) return false;
   return Boolean(profile.stripe_subscription_id || profile.stripeSubscriptionId);
 }
 
