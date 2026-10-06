@@ -210,7 +210,7 @@ function MemberDetailsDialog({ member, protocols, volunteerOpps, events, isOpen,
         <div className="p-8 lg:p-12 space-y-10 overflow-y-auto max-h-[90vh] custom-scrollbar">
           <DialogHeader>
             <div className="flex items-center gap-6 mb-4">
-              <Avatar className="h-20 w-20 rounded-[2rem] border-4 border-white shadow-xl">
+              <Avatar className="h-20 w-20 rounded-4xl border-4 border-white shadow-xl">
                 <AvatarImage src={member.avatar} />
                 <AvatarFallback className="font-black text-2xl">{member.name[0]}</AvatarFallback>
               </Avatar>
@@ -563,7 +563,7 @@ function VolunteerOpportunityManager() {
     <div className="space-y-10">
       <div className="flex items-center justify-between px-2">
         <div className="flex items-center gap-4">
-          <div className="bg-primary/10 p-4 rounded-[1.5rem] text-primary shadow-xl shadow-primary/5">
+          <div className="bg-primary/10 p-4 rounded-3xl text-primary shadow-xl shadow-primary/5">
             <LayoutGrid className="h-8 w-8" />
           </div>
           <div>
@@ -708,7 +708,7 @@ function VolunteerOpportunityManager() {
             </div>
 
             <DialogFooter>
-              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleSave}>
+              <Button className="w-full h-16 rounded-4xl text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleSave}>
                 <Save className="h-5 w-5 mr-3" /> Commit Mission Deployment
               </Button>
             </DialogFooter>
@@ -1654,14 +1654,14 @@ function RecruitingProfileManager({ member }: { member: Member }) {
 
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-5 duration-700">
-      <header className="grid grid-cols-1 xl:grid-cols-12 items-center gap-10 bg-white p-10 lg:p-14 rounded-[3.5rem] lg:rounded-[4.5rem] border-2 border-black/[0.03] shadow-2xl shadow-black/5 relative overflow-hidden group">
+      <header className="grid grid-cols-1 xl:grid-cols-12 items-center gap-10 bg-white p-10 lg:p-14 rounded-[3.5rem] lg:rounded-[4.5rem] border-2 border-black/3 shadow-2xl shadow-black/5 relative overflow-hidden group">
         <div className="absolute top-0 right-0 p-12 opacity-5 pointer-events-none group-hover:rotate-12 transition-transform duration-1000">
           <Star className="h-64 w-64 text-zinc-900" />
         </div>
         
         <div className="xl:col-span-8 flex flex-col md:flex-row items-center gap-10 lg:gap-14 relative z-10">
           <div className="relative shrink-0">
-            <Avatar className="h-44 w-44 lg:h-52 lg:w-52 rounded-[3.5rem] lg:rounded-[4rem] ring-[12px] ring-primary/5 shadow-2xl overflow-hidden border-4 border-white transition-transform duration-500 group-hover:scale-[1.02]">
+            <Avatar className="h-44 w-44 lg:h-52 lg:w-52 rounded-[3.5rem] lg:rounded-[4rem] ring-12 ring-primary/5 shadow-2xl overflow-hidden border-4 border-white transition-transform duration-500 group-hover:scale-[1.02]">
               <AvatarImage src={mediaReadUrl(profile.photoURL || member.avatar,storage.app.options.storageBucket)} className="object-cover" />
               <AvatarFallback className="font-black text-5xl bg-zinc-50 text-zinc-300">{member.name[0]}</AvatarFallback>
             </Avatar>
@@ -1699,7 +1699,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                    </p>
                 </div>
               </div>
-              <h3 className="text-2xl md:text-3xl font-black uppercase tracking-tighter text-zinc-900 leading-[1.1] break-words">
+              <h3 className="text-2xl md:text-3xl font-black uppercase tracking-tighter text-zinc-900 leading-[1.1] wrap-break-word">
                 {member.name}
               </h3>
               
@@ -1729,13 +1729,13 @@ function RecruitingProfileManager({ member }: { member: Member }) {
 
             <div className="flex flex-wrap items-center justify-center md:justify-start gap-x-8 gap-y-4 pt-2">
               <div className="flex items-center gap-3 group/item">
-                <div className="h-9 w-9 rounded-2xl bg-zinc-50 flex items-center justify-center text-primary border border-black/[0.03] shadow-sm transition-colors group-hover/item:bg-primary/10">
+                <div className="h-9 w-9 rounded-2xl bg-zinc-50 flex items-center justify-center text-primary border border-black/3 shadow-sm transition-colors group-hover/item:bg-primary/10">
                   <Target className="h-4.5 w-4.5" />
                 </div>
                 <p className="text-[13px] font-black text-zinc-700 uppercase tracking-widest">{profile.primaryPosition || member.position || 'Athlete'}</p>
               </div>
               <div className="flex items-center gap-3 group/item">
-                <div className="h-9 w-9 rounded-2xl bg-zinc-50 flex items-center justify-center text-primary border border-black/[0.03] shadow-sm transition-colors group-hover/item:bg-primary/10">
+                <div className="h-9 w-9 rounded-2xl bg-zinc-50 flex items-center justify-center text-primary border border-black/3 shadow-sm transition-colors group-hover/item:bg-primary/10">
                   <ShieldCheck className="h-4.5 w-4.5" />
                 </div>
                 <p className="text-[13px] font-black text-primary uppercase tracking-widest">{activeTeam}</p>
@@ -1749,7 +1749,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
             </div>
 
             {member.status === 'removed' && (
-              <div className="bg-red-50 p-6 rounded-[2rem] border-2 border-dashed border-red-200 mt-6 space-y-2 animate-in slide-in-from-top duration-500">
+              <div className="bg-red-50 p-6 rounded-4xl border-2 border-dashed border-red-200 mt-6 space-y-2 animate-in slide-in-from-top duration-500">
                 <div className="flex items-center gap-2 mb-1">
                   <History className="h-4 w-4 text-red-600" />
                   <p className="text-[10px] font-black uppercase tracking-widest text-red-700 leading-none">Decommissioned Personnel</p>
@@ -1771,7 +1771,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
               variant="outline"
               disabled={!scoutPortalEnabled || !member.playerId}
               aria-describedby={!scoutPortalEnabled ? `scout-portal-lock-${member.id}` : undefined}
-              className="group/btn relative w-full overflow-hidden rounded-[2rem] h-16 xl:h-20 border-2 border-zinc-100 font-black uppercase text-[12px] tracking-[0.1em] hover:bg-zinc-50 hover:text-black transition-all active:scale-[0.98] shadow-sm px-10 bg-white disabled:cursor-not-allowed disabled:opacity-55"
+              className="group/btn relative w-full overflow-hidden rounded-4xl h-16 xl:h-20 border-2 border-zinc-100 font-black uppercase text-[12px] tracking-widest hover:bg-zinc-50 hover:text-black transition-all active:scale-[0.98] shadow-sm px-10 bg-white disabled:cursor-not-allowed disabled:opacity-55"
               onClick={() => scoutPortalEnabled && member.playerId && window.open(`/recruit/player/${member.playerId}`, '_blank')}
             >
               <div className="flex items-center justify-center relative z-10">
@@ -1786,14 +1786,14 @@ function RecruitingProfileManager({ member }: { member: Member }) {
             )}
           </div>
           <Button 
-            className="group/btn relative overflow-hidden rounded-[2rem] h-16 xl:h-20 font-black uppercase text-[12px] tracking-[0.1em] shadow-2xl shadow-primary/20 active:scale-[0.98] transition-all bg-primary hover:bg-primary/95 text-white border-b-4 border-black/10 px-10" 
+            className="group/btn relative overflow-hidden rounded-4xl h-16 xl:h-20 font-black uppercase text-[12px] tracking-widest shadow-2xl shadow-primary/20 active:scale-[0.98] transition-all bg-primary hover:bg-primary/95 text-white border-b-4 border-black/10 px-10" 
             onClick={() => setIsEditing(true)}
           >
             <div className="flex items-center justify-center relative z-10">
               <Sparkles className="h-5 w-5 mr-3 text-white/80 group-hover/btn:scale-110 transition-transform" /> 
               Pack Architect
             </div>
-            <div className="absolute inset-0 bg-gradient-to-tr from-white/0 via-white/5 to-white/0 translate-x-[-100%] group-hover/btn:translate-x-[100%] transition-transform duration-1000" />
+            <div className="absolute inset-0 bg-linear-to-tr from-white/0 via-white/5 to-white/0 -translate-x-full group-hover/btn:translate-x-full transition-transform duration-1000" />
           </Button>
         </div>
       </header>
@@ -1801,7 +1801,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
 
       <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
         <section className="md:col-span-2 space-y-8">
-          <Card className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 bg-white">
+          <Card className="rounded-4xl border-none shadow-sm ring-1 ring-black/5 bg-white">
             <CardHeader className="bg-muted/30 p-6 border-b"><CardTitle className="text-xs font-black uppercase tracking-widest">Athletic Pulse</CardTitle></CardHeader>
             <CardContent className="p-6 grid grid-cols-2 sm:grid-cols-3 gap-4">
               <div className="bg-muted/20 p-4 rounded-2xl text-center space-y-1">
@@ -1831,7 +1831,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
             />
           </Card>
 
-          <Card className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 bg-white">
+          <Card className="rounded-4xl border-none shadow-sm ring-1 ring-black/5 bg-white">
             <CardHeader className="bg-muted/30 p-6 border-b flex flex-row items-center justify-between">
               <CardTitle className="text-xs font-black uppercase tracking-widest">Highlight Reel</CardTitle>
               <div className="flex items-center gap-2">
@@ -1946,7 +1946,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
               <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-8">
                 {photos.length === 0 ? (
                   <div className="col-span-full py-24 flex flex-col items-center justify-center border-2 border-dashed rounded-[3rem] bg-muted/5 space-y-4 opacity-40">
-                     <div className="bg-white p-6 rounded-[2rem] shadow-sm"><Camera className="h-10 w-10 text-primary" /></div>
+                     <div className="bg-white p-6 rounded-4xl shadow-sm"><Camera className="h-10 w-10 text-primary" /></div>
                      <p className="text-xs font-black uppercase tracking-[0.3em]">No Strategic Imagery Captured</p>
                   </div>
                 ) : (
@@ -1965,7 +1965,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                          <X className="h-5 w-5 stroke-[4px]" />
                       </button>
 
-                      <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-8">
+                      <div className="absolute inset-0 bg-linear-to-t from-black/80 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-300 flex flex-col justify-end p-8">
                         <p className="text-[10px] font-black uppercase tracking-widest text-white/60">Tactical Capture {i + 1}</p>
                         <p className="text-[12px] font-black uppercase tracking-widest text-white mt-1">Tap to Expand HD</p>
                       </div>
@@ -2024,7 +2024,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
             </div>
           </Card>
 
-          <Card className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 bg-white p-6 space-y-4">
+          <Card className="rounded-4xl border-none shadow-sm ring-1 ring-black/5 bg-white p-6 space-y-4">
             <div className="flex items-center justify-between">
               <h4 className="text-[10px] font-black uppercase tracking-widest text-primary">Strategic Bio</h4>
               <Star className="h-4 w-4 text-primary opacity-20" />
@@ -2033,7 +2033,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
           </Card>
 
           {staffNote && (
-            <Card className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 bg-primary/5 p-6 space-y-4 animate-in fade-in duration-700">
+            <Card className="rounded-4xl border-none shadow-sm ring-1 ring-black/5 bg-primary/5 p-6 space-y-4 animate-in fade-in duration-700">
               <div className="flex items-center justify-between">
                 <h4 className="text-[10px] font-black uppercase tracking-widest text-primary">Commander's Appraisal</h4>
                 <ShieldAlert className="h-4 w-4 text-primary opacity-40" />
@@ -2426,7 +2426,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
                         );
                       })}
                       {stats.length === 0 && (
-                        <div className="text-center py-12 border-2 border-dashed rounded-[2rem] opacity-30">
+                        <div className="text-center py-12 border-2 border-dashed rounded-4xl opacity-30">
                           <History className="h-8 w-8 mx-auto mb-2 opacity-20" />
                           <p className="text-[10px] font-black uppercase">No seasonal records yet.</p>
                           <p className="text-[9px] font-bold text-muted-foreground mt-1">Click "Add Season" to start tracking {activeSport} stats.</p>
@@ -2473,7 +2473,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
 
             <DialogFooter className="pt-6">
               <Button 
-                className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" 
+                className="w-full h-16 rounded-4xl text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" 
                 onClick={handleUpdateProfile}
                 disabled={isSyncing}
               >
@@ -2560,7 +2560,7 @@ function RecruitingProfileManager({ member }: { member: Member }) {
         <DialogContent className="rounded-none sm:rounded-[3rem] w-full sm:max-w-4xl h-full sm:h-auto sm:max-h-[95vh] p-0 border-none shadow-2xl overflow-hidden bg-white flex flex-col">
           <DialogTitle className="sr-only">Video Viewer</DialogTitle>
           <DialogClose asChild>
-            <Button variant="ghost" size="icon" className="absolute top-4 right-4 z-[60] h-10 w-10 rounded-full bg-black/50 hover:bg-black/70 text-white border border-white/20 backdrop-blur-md shadow-2xl transition-all">
+            <Button variant="ghost" size="icon" className="absolute top-4 right-4 z-60 h-10 w-10 rounded-full bg-black/50 hover:bg-black/70 text-white border border-white/20 backdrop-blur-md shadow-2xl transition-all">
               <X className="h-5 w-5" />
             </Button>
           </DialogClose>
@@ -3130,7 +3130,7 @@ function SafetyHub() {
             </div>
 
             <DialogFooter>
-              <Button className="w-full h-16 rounded-[2rem] text-lg font-black bg-black text-white hover:bg-red-600 transition-all shadow-xl border-none" onClick={handleLogIncident} disabled={isProcessing || !form.title}>
+              <Button className="w-full h-16 rounded-4xl text-lg font-black bg-black text-white hover:bg-red-600 transition-all shadow-xl border-none" onClick={handleLogIncident} disabled={isProcessing || !form.title}>
                 {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Commit Report to Ledger"}
               </Button>
             </DialogFooter>
@@ -3510,17 +3510,17 @@ function CoachesCornerContent() {
 
       {/* ── Global Waiver Signing Modal ───────────────────────────────────── */}
       <Dialog open={!!signingWaiver} onOpenChange={(o) => !o && setSigningWaiver(null)}>
-        <DialogContent className="w-[calc(100vw-2rem)] max-w-xl rounded-[2rem] p-0 overflow-hidden border-none shadow-2xl bg-white">
+        <DialogContent className="w-[calc(100vw-2rem)] max-w-xl rounded-4xl p-0 overflow-hidden border-none shadow-2xl bg-white">
           <div className="px-5 sm:px-7 pt-6 sm:pt-7 pb-4 border-b pr-14">
             <DialogHeader className="space-y-2 text-left">
-              <DialogTitle className="font-black uppercase tracking-tight text-xl leading-tight break-words">{signingWaiver?.title}</DialogTitle>
+              <DialogTitle className="font-black uppercase tracking-tight text-xl leading-tight wrap-break-word">{signingWaiver?.title}</DialogTitle>
               <DialogDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground leading-relaxed">
                 Team Waiver · Hub Deployed · Requires One Staff Acknowledgement
               </DialogDescription>
             </DialogHeader>
           </div>
           <div data-waiver-signing-body className="px-5 sm:px-7 py-5 max-h-[55vh] overflow-y-auto overscroll-contain">
-            <div className="rounded-2xl bg-muted/30 p-4 sm:p-5 text-sm leading-6 text-foreground/80 border whitespace-pre-wrap break-words">
+            <div className="rounded-2xl bg-muted/30 p-4 sm:p-5 text-sm leading-6 text-foreground/80 border whitespace-pre-wrap wrap-break-word">
               {signingWaiver?.content || 'No waiver content provided.'}
             </div>
           </div>
@@ -3693,7 +3693,7 @@ function CoachesCornerContent() {
                 {allCoaches.map(coach => (
                   <Card key={coach.id} className="rounded-[2.5rem] border-none shadow-xl bg-white p-8 space-y-4 group hover:shadow-2xl transition-all border-b-4 border-primary/20">
                     <div className="flex items-center gap-4">
-                      <Avatar className="h-16 w-16 rounded-[1.5rem] border-2 border-white ring-4 ring-primary/5 shadow-lg group-hover:scale-105 transition-transform">
+                      <Avatar className="h-16 w-16 rounded-3xl border-2 border-white ring-4 ring-primary/5 shadow-lg group-hover:scale-105 transition-transform">
                         <AvatarImage src={coach.avatar} />
                         <AvatarFallback className="font-black text-xl">{coach.name[0]}</AvatarFallback>
                       </Avatar>
@@ -4064,7 +4064,7 @@ function CoachesCornerContent() {
             </div>
 
             <DialogFooter>
-              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleSaveProtocolUpdate}>
+              <Button className="w-full h-16 rounded-4xl text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleSaveProtocolUpdate}>
                 <Save className="h-6 w-6 mr-3" /> Commit Protocol Sync
               </Button>
             </DialogFooter>
@@ -4239,7 +4239,7 @@ function SquadFinancialHub() {
 
       {/* ── Stripe Connect Setup (Pro only — free/starter never reach here) ── */}
       {(user?.isDemo || activeTeam?.isDemo) && !isSuperAdmin ? (
-        <Card className="rounded-[2rem] border-none shadow-md bg-muted/30 p-6">
+        <Card className="rounded-4xl border-none shadow-md bg-muted/30 p-6">
           <div className="flex items-start gap-3">
             <CreditCard className="h-5 w-5 text-muted-foreground shrink-0" />
             <div>
@@ -4459,7 +4459,7 @@ function SquadFinancialHub() {
 
             <DialogFooter>
               <Button
-                className="w-full h-14 rounded-[2rem] font-black text-base shadow-lg active:scale-[0.98] transition-all"
+                className="w-full h-14 rounded-4xl font-black text-base shadow-lg active:scale-[0.98] transition-all"
                 onClick={handleRecordOfflinePayment}
                 disabled={isRecording}
               >

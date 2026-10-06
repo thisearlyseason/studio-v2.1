@@ -276,7 +276,7 @@ export default function PublicSpectatorHub() {
                             <Card 
                               key={game.id} 
                               className={cn(
-                                "rounded-[2rem] border-none shadow-sm ring-1 transition-all group overflow-hidden flex flex-col",
+                                "rounded-4xl border-none shadow-sm ring-1 transition-all group overflow-hidden flex flex-col",
                                 isPastDay 
                                   ? "bg-muted/5 ring-black/5 p-3 space-y-1 hover:bg-white" 
                                   : "bg-white ring-black/5 p-6 space-y-5 hover:shadow-2xl hover:ring-primary/20"

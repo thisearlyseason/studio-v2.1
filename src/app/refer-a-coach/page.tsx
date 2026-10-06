@@ -60,7 +60,7 @@ export default function ReferACoachPage() {
           <div className="relative">
             <span className="flex h-14 w-14 items-center justify-center rounded-2xl bg-primary"><Users className="h-7 w-7" /></span>
             <p className="mt-10 text-[10px] font-black uppercase tracking-[0.26em] text-primary">Parent referral</p>
-            <h1 className="mt-4 text-5xl font-black uppercase leading-[0.92] tracking-[-0.05em] sm:text-6xl">Think your team could use less chaos?</h1>
+            <h1 className="mt-4 text-5xl font-black uppercase leading-[0.92] tracking-tighter sm:text-6xl">Think your team could use less chaos?</h1>
             <p className="mt-6 text-base font-medium leading-8 text-white/65">Send your coach a friendly introduction to The Squad. We will send the exact message shown here—nothing else.</p>
             <div className="mt-10 space-y-4 border-t border-white/15 pt-8">
               <p className="flex items-start gap-3 text-sm font-bold text-white/75"><ShieldCheck className="mt-0.5 h-5 w-5 shrink-0 text-primary" /> One-time referral only. The coach is not subscribed to marketing.</p>

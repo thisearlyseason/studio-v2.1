@@ -58,7 +58,7 @@ export function AudienceLandingPage({ landing }: { landing: AudienceLanding }) {
 
       <section className="relative isolate overflow-hidden bg-black text-white">
         <div className="absolute inset-0 -z-20 bg-[radial-gradient(circle_at_78%_24%,rgba(211,28,32,0.42),transparent_34%),radial-gradient(circle_at_18%_90%,rgba(211,28,32,0.18),transparent_30%)]" />
-        <div className="absolute inset-0 -z-10 opacity-20 [background-image:linear-gradient(rgba(255,255,255,.12)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.12)_1px,transparent_1px)] [background-size:52px_52px]" />
+        <div className="absolute inset-0 -z-10 opacity-20 bg-[linear-gradient(rgba(255,255,255,.12)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,.12)_1px,transparent_1px)] bg-size-[52px_52px]" />
         <div className="mx-auto grid min-h-[720px] max-w-7xl items-center gap-16 px-5 py-20 sm:px-8 lg:grid-cols-[1.1fr_.9fr] lg:py-28">
           <div>
             <div className="mb-7 inline-flex items-center gap-3 rounded-full border border-white/20 bg-white/10 px-4 py-2 text-[10px] font-black uppercase tracking-[0.24em] text-white/80">
@@ -91,7 +91,7 @@ export function AudienceLandingPage({ landing }: { landing: AudienceLanding }) {
             <div className="absolute -inset-5 rotate-3 rounded-[44px] border border-primary/40 bg-primary/10" />
             <div
               data-testid="campaign-hero-photo"
-              className="relative aspect-[16/10] overflow-hidden rounded-[38px] border border-white/15 bg-zinc-900 shadow-[0_35px_90px_rgba(0,0,0,.55)]"
+              className="relative aspect-16/10 overflow-hidden rounded-[38px] border border-white/15 bg-zinc-900 shadow-[0_35px_90px_rgba(0,0,0,.55)]"
             >
               <Image
                 src={`/images/campaigns/${landing.slug}-hero.webp`}
@@ -101,7 +101,7 @@ export function AudienceLandingPage({ landing }: { landing: AudienceLanding }) {
                 sizes="(max-width: 1024px) 92vw, 560px"
                 className="object-cover"
               />
-              <div className="absolute inset-0 bg-gradient-to-t from-black via-black/5 to-transparent" />
+              <div className="absolute inset-0 bg-linear-to-t from-black via-black/5 to-transparent" />
               <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-4 p-6 text-white sm:p-8">
                 <div>
                   <p className="text-[9px] font-black uppercase tracking-[0.28em] text-primary">Built for your side of sport</p>
@@ -219,7 +219,7 @@ export function AudienceLandingPage({ landing }: { landing: AudienceLanding }) {
       </section>
 
       <section className="relative overflow-hidden bg-black py-20 text-white sm:py-28">
-        <div className="absolute right-[-8rem] top-[-10rem] h-96 w-96 rounded-full bg-primary/30 blur-3xl" />
+        <div className="absolute -right-32 -top-40 h-96 w-96 rounded-full bg-primary/30 blur-3xl" />
         <div className="relative mx-auto max-w-5xl px-5 text-center sm:px-8">
           <p className="text-[10px] font-black uppercase tracking-[0.26em] text-primary">{landing.audience}</p>
           <h2 className="mt-5 text-4xl font-black uppercase leading-[0.95] tracking-[-0.045em] sm:text-7xl">{landing.finalTitle}</h2>

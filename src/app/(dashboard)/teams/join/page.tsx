@@ -418,7 +418,7 @@ export default function JoinTeamPage() {
       </div>
 
       {isStaff && activeTeam && (
-        <Card className="rounded-[2rem] border-primary/20 bg-primary/5">
+        <Card className="rounded-4xl border-primary/20 bg-primary/5">
           <CardContent className="p-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div><p className="font-black uppercase tracking-tight">Invite players to {activeTeam.name}</p><p className="text-xs text-muted-foreground mt-1">Share the link. Players join themselves; you do not need to create their account.</p></div>
             <Button onClick={handleCopyInviteLink} className="h-11 rounded-xl font-black uppercase text-[10px] shrink-0"><Copy className="h-4 w-4 mr-2" /> Copy Player Invite Link</Button>

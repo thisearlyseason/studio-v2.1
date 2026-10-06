@@ -169,7 +169,7 @@ export default function PracticeManagementPage() {
         <Card className="max-w-md w-full rounded-[3.5rem] border-none shadow-2xl bg-white overflow-hidden ring-1 ring-black/5">
 
           <div className="p-10 text-center space-y-6">
-            <div className="mx-auto w-20 h-20 bg-primary/5 rounded-[2rem] flex items-center justify-center ring-1 ring-primary/10">
+            <div className="mx-auto w-20 h-20 bg-primary/5 rounded-4xl flex items-center justify-center ring-1 ring-primary/10">
               <Lock className="h-10 w-10 text-primary" />
             </div>
             <div className="space-y-2">
@@ -256,7 +256,7 @@ export default function PracticeManagementPage() {
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             {filteredTemplates.length > 0 ? filteredTemplates.map(template => (
-              <Card key={template.id} className="group rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 overflow-hidden bg-white min-w-0 hover:shadow-xl transition-shadow">
+              <Card key={template.id} className="group rounded-4xl border-none shadow-sm ring-1 ring-black/5 overflow-hidden bg-white min-w-0 hover:shadow-xl transition-shadow">
                 <button type="button" aria-label={`View practice: ${template.title}`} onClick={() => setViewingTemplateId(template.id)} className="block w-full text-left focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-primary">
                   <div className="relative">
                     <PracticeCover drill={(template.drillIds || []).map(id => teamDrills?.find(drill => drill.id === id)).find(drill => drill?.coverImageUrl || drill?.videoUrl || drill?.url || drill?.additionalMedia?.length)} title={template.title} />
@@ -264,7 +264,7 @@ export default function PracticeManagementPage() {
                     <Badge className="absolute top-4 right-4 rounded-full bg-black/75 text-white px-3 py-1">{template.drillIds?.length || 0} {(template.drillIds?.length || 0) === 1 ? 'drill' : 'drills'}</Badge>
                   </div>
                   <div className="p-6 space-y-3">
-                  <h3 className="text-xl font-bold leading-snug break-words">{template.title}</h3>
+                  <h3 className="text-xl font-bold leading-snug wrap-break-word">{template.title}</h3>
                   <p className="text-sm text-muted-foreground line-clamp-2 leading-relaxed">{template.description || 'No practice objective provided.'}</p>
                   <div className="flex flex-wrap gap-2">{Array.from(new Set((template.drillIds || []).map(id => teamDrills?.find(drill => drill.id === id)).flatMap(drill => drill ? [drill.category || drill.type || 'Drill protocol', ...(drill.estimatedTime ? [String(drill.estimatedTime)] : [])] : []))).map(label => <Badge key={label} variant="secondary" className="rounded-full px-3 py-1">{label}</Badge>)}</div>
                   <span className="inline-flex min-h-11 items-center gap-2 font-semibold text-primary">View practice <ChevronRight className="h-4 w-4" aria-hidden="true" /></span>
@@ -300,7 +300,7 @@ export default function PracticeManagementPage() {
                 members={members}
                 defaultTab="plan"
               >
-                <Card className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg hover:-translate-y-0.5 transition-all group overflow-hidden bg-white cursor-pointer">
+                <Card className="rounded-4xl border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg hover:-translate-y-0.5 transition-all group overflow-hidden bg-white cursor-pointer">
                   <div className="flex items-stretch min-h-28">
                     <div className="w-24 bg-black text-white flex flex-col items-center justify-center shrink-0 transition-colors group-hover:bg-primary">
                       <span className="text-[8px] font-black uppercase opacity-60 leading-none">{format(event.date.includes('T') ? parseISO(event.date) : new Date(event.date.replace(/-/g, '/')), 'MMM')}</span>
@@ -315,7 +315,7 @@ export default function PracticeManagementPage() {
                           </Badge>
                         )}
                       </div>
-                      <h4 className="font-black text-base uppercase break-words group-hover:text-primary transition-colors text-foreground">{event.title}</h4>
+                      <h4 className="font-black text-base uppercase wrap-break-word group-hover:text-primary transition-colors text-foreground">{event.title}</h4>
                       <div className="flex flex-wrap items-center justify-between gap-2 mt-2">
                         <p className="text-[10px] font-medium text-muted-foreground flex items-center gap-1 opacity-60">
                           <Clock className="h-3 w-3" /> {event.startTime || 'TBD'}
@@ -339,7 +339,7 @@ export default function PracticeManagementPage() {
                <Trophy className="absolute -right-4 -bottom-4 h-32 w-32 opacity-10 -rotate-12 transition-transform duration-700 group-hover:scale-110" />
                <div className="relative z-10 space-y-4">
                  <Badge className="bg-primary text-white border-none font-black text-[8px]">COMMAND INTEL</Badge>
-                 <h3 className="text-xl font-black uppercase leading-tight tracking-tighter break-words">Drill Synchronization</h3>
+                 <h3 className="text-xl font-black uppercase leading-tight tracking-tighter wrap-break-word">Drill Synchronization</h3>
                  <p className="text-[10px] font-bold text-white/40 uppercase tracking-widest leading-relaxed">
                    When a template is selected during event creation, all associated tactical drills are automatically injected into the squad's itinerary.
                  </p>
@@ -407,7 +407,7 @@ export default function PracticeManagementPage() {
                 </Badge>
               </div>
 
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto p-2 border-2 border-dashed rounded-[2rem] bg-muted/20 custom-scrollbar">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 max-h-[300px] overflow-y-auto p-2 border-2 border-dashed rounded-4xl bg-muted/20 custom-scrollbar">
                 {teamDrills && teamDrills.length > 0 ? teamDrills.map((drill: any) => {
                   const isSelected = selectedDrills.includes(drill.id);
                   return (
@@ -441,7 +441,7 @@ export default function PracticeManagementPage() {
             </div>
           </div>
 
-          <div className="p-8 bg-background border-t flex items-center justify-end gap-3 translate-y-[-1px]">
+          <div className="p-8 bg-background border-t flex items-center justify-end gap-3 -translate-y-px">
             <DialogClose asChild>
               <Button variant="outline" className="rounded-xl h-12 px-6 font-black uppercase text-[10px] border-2">Abort</Button>
             </DialogClose>

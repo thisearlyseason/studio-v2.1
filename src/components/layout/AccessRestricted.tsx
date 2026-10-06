@@ -46,7 +46,7 @@ export function AccessRestricted({
 
             <div className="flex flex-col gap-4">
               {!isStoreDistribution && (
-                <Button size="lg" className="h-16 rounded-[2rem] bg-white text-black hover:bg-primary hover:text-white font-black text-xl transition-all border-none shadow-xl active:scale-95 group/btn" onClick={() => router.push('/pricing')}>
+                <Button size="lg" className="h-16 rounded-4xl bg-white text-black hover:bg-primary hover:text-white font-black text-xl transition-all border-none shadow-xl active:scale-95 group/btn" onClick={() => router.push('/pricing')}>
                   Upgrade Fleet Status <ArrowRight className="ml-2 h-5 w-5 group-hover/btn:translate-x-1 transition-transform" />
                 </Button>
               )}

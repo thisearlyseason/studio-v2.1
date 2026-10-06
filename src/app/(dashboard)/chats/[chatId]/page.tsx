@@ -477,7 +477,7 @@ function ChatRoomInner() {
           )}
           {chatImage && (
             <div className="relative inline-block animate-in zoom-in duration-300">
-              <img src={chatImage} className="h-24 w-auto rounded-[1.5rem] border-4 border-white shadow-xl ring-1 ring-black/10" alt="Preview" />
+              <img src={chatImage} className="h-24 w-auto rounded-3xl border-4 border-white shadow-xl ring-1 ring-black/10" alt="Preview" />
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button aria-label="Remove attached image" variant="destructive" size="icon" className="absolute -top-3 -right-3 h-8 w-8 rounded-full shadow-lg border-2 border-white" onClick={() => setChatImage(undefined)}>
@@ -529,7 +529,7 @@ function ChatRoomInner() {
             
             <div className="flex-1 relative">
               <Input 
-                className="w-full rounded-[1.5rem] bg-muted/30 border-2 border-transparent focus:border-primary/20 focus:bg-white h-12 px-6 font-bold text-base transition-all pr-12 shadow-inner" 
+                className="w-full rounded-3xl bg-muted/30 border-2 border-transparent focus:border-primary/20 focus:bg-white h-12 px-6 font-bold text-base transition-all pr-12 shadow-inner" 
                 placeholder="Tactical update..." 
                 value={input} 
                 onChange={e => setInput(e.target.value)} 

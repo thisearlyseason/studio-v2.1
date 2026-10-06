@@ -483,7 +483,7 @@ export default function TournamentRegistrationAdminPage() {
               <button
                 key={form.id}
                 onClick={() => { setConfigId(form.id); setFormsListMode(false); setActiveTab('entries'); }}
-                className="text-left p-6 rounded-[2rem] border-2 bg-white shadow-sm hover:border-primary hover:shadow-lg transition-all group"
+                className="text-left p-6 rounded-4xl border-2 bg-white shadow-sm hover:border-primary hover:shadow-lg transition-all group"
               >
                 <div className="flex items-start justify-between gap-4">
                   <div className="bg-primary/10 p-3 rounded-2xl text-primary"><Layers className="h-5 w-5" /></div>
@@ -497,7 +497,7 @@ export default function TournamentRegistrationAdminPage() {
             ))}
             <button
               onClick={() => setIsCreatingForm(true)}
-              className="text-left p-6 rounded-[2rem] border-2 border-dashed bg-muted/5 hover:bg-muted/10 transition-all flex flex-col items-center justify-center gap-3 min-h-[140px]"
+              className="text-left p-6 rounded-4xl border-2 border-dashed bg-muted/5 hover:bg-muted/10 transition-all flex flex-col items-center justify-center gap-3 min-h-[140px]"
             >
               <FilePlus2 className="h-8 w-8 text-muted-foreground/40" />
               <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground/60">Create New Form</span>
@@ -697,7 +697,7 @@ export default function TournamentRegistrationAdminPage() {
                   <div className="space-y-6">
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       <div className={cn(
-                        "p-6 rounded-[2rem] border-2 transition-all cursor-pointer",
+                        "p-6 rounded-4xl border-2 transition-all cursor-pointer",
                         localConfig?.require_default_waiver ? "bg-white border-rose-400 ring-4 ring-rose-400/10 shadow-md" : "bg-white/40 border-rose-100 opacity-60"
                       )} onClick={() => handleUpdateConfig({ require_default_waiver: !localConfig?.require_default_waiver })}>
                         <div className="flex items-center justify-between mb-2">
@@ -709,7 +709,7 @@ export default function TournamentRegistrationAdminPage() {
                       </div>
 
                       <div className={cn(
-                        "p-6 rounded-[2rem] border-2 transition-all",
+                        "p-6 rounded-4xl border-2 transition-all",
                         (localConfig?.selected_team_waivers?.length || 0) > 0 ? "bg-white border-rose-400 ring-4 ring-rose-400/10 shadow-md" : "bg-white/40 border-rose-100 opacity-60"
                       )}>
                         <div className="flex items-center justify-between mb-2">
@@ -933,11 +933,11 @@ export default function TournamentRegistrationAdminPage() {
               <CardContent className="p-8 lg:p-10 space-y-8 relative z-10">
                 <Badge className="bg-primary text-white border-none font-black uppercase text-[9px] h-6 px-3 shadow-lg shadow-primary/20">Public Registration</Badge>
                 <div className="flex items-center gap-3"><Trophy className="h-8 w-8 text-primary" /><h3 className="text-3xl font-black tracking-tighter uppercase leading-[0.9]">Registration Link</h3></div>
-                <div className="bg-white/10 p-6 rounded-[2rem] border border-white/5 space-y-4">
+                <div className="bg-white/10 p-6 rounded-4xl border border-white/5 space-y-4">
                   <p className="text-[10px] font-mono font-bold truncate opacity-80">/register/tournament/{teamId}/{eventId}</p>
                   <Button className="w-full h-14 rounded-2xl bg-white text-black font-black uppercase text-xs shadow-xl" onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/register/tournament/${teamId}/${eventId}?protocol=${configId}`); toast({ title: "Registration Link Copied" }); }}>Copy Registration Link</Button>
                 </div>
-                <div className="bg-white/10 p-6 rounded-[2rem] border border-white/5 space-y-4">
+                <div className="bg-white/10 p-6 rounded-4xl border border-white/5 space-y-4">
                   <p className="text-[9px] font-black uppercase tracking-widest text-white/60">Tournament Code / ID</p>
                   <p className="text-2xl font-mono font-black tracking-widest break-all">{event?.registrationCode || `${teamId}:${eventId}`}</p>
                   <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">

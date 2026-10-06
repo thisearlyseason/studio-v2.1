@@ -139,7 +139,7 @@ export function StripeConnectSetup({ userId, teamId, onConnected }: StripeConnec
 
   if (platformProfileError) {
     return (
-      <Card className="rounded-[2rem] border-none shadow-md overflow-hidden">
+      <Card className="rounded-4xl border-none shadow-md overflow-hidden">
         <CardContent className="p-6 flex flex-col gap-4">
           <div className="flex items-start gap-3">
             <div className="bg-amber-100 p-2.5 rounded-xl shrink-0">
@@ -184,7 +184,7 @@ export function StripeConnectSetup({ userId, teamId, onConnected }: StripeConnec
 
   if (isLoading) {
     return (
-      <Card className="rounded-[2rem] border-none shadow-md bg-muted/30 p-6">
+      <Card className="rounded-4xl border-none shadow-md bg-muted/30 p-6">
         <div className="flex items-center gap-3">
           <Loader2 className="h-5 w-5 animate-spin text-primary/40" />
           <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">
@@ -197,7 +197,7 @@ export function StripeConnectSetup({ userId, teamId, onConnected }: StripeConnec
 
   if (fetchError) {
     return (
-      <Card className="rounded-[2rem] border-none shadow-md bg-red-50 ring-1 ring-red-100 p-5">
+      <Card className="rounded-4xl border-none shadow-md bg-red-50 ring-1 ring-red-100 p-5">
         <div className="flex items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <AlertCircle className="h-5 w-5 text-red-500 shrink-0" />
@@ -219,7 +219,7 @@ export function StripeConnectSetup({ userId, teamId, onConnected }: StripeConnec
   // ── Already connected and charges enabled ─────────────────────────────────
   if (status?.connected && status.chargesEnabled) {
     return (
-      <Card className="rounded-[2rem] border-none shadow-md bg-emerald-50 ring-1 ring-emerald-100 overflow-hidden">
+      <Card className="rounded-4xl border-none shadow-md bg-emerald-50 ring-1 ring-emerald-100 overflow-hidden">
         <CardContent className="p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="bg-emerald-500 p-2.5 rounded-xl text-white shadow-sm shrink-0">
@@ -256,7 +256,7 @@ export function StripeConnectSetup({ userId, teamId, onConnected }: StripeConnec
   // ── Connected but setup incomplete ────────────────────────────────────────
   if (status?.connected && !status.chargesEnabled) {
     return (
-      <Card className="rounded-[2rem] border-none shadow-md bg-amber-50 ring-1 ring-amber-100 overflow-hidden">
+      <Card className="rounded-4xl border-none shadow-md bg-amber-50 ring-1 ring-amber-100 overflow-hidden">
         <CardContent className="p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
           <div className="flex items-center gap-3">
             <div className="bg-amber-400 p-2.5 rounded-xl text-white shadow-sm shrink-0">
@@ -287,7 +287,7 @@ export function StripeConnectSetup({ userId, teamId, onConnected }: StripeConnec
 
   // ── Not yet connected ─────────────────────────────────────────────────────
   return (
-    <Card className="rounded-[2rem] border-none shadow-xl bg-black text-white overflow-hidden relative group">
+    <Card className="rounded-4xl border-none shadow-xl bg-black text-white overflow-hidden relative group">
       {/* Subtle background decoration */}
       <div className="absolute top-0 right-0 p-8 opacity-5 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700">
         <CreditCard className="h-32 w-32" />

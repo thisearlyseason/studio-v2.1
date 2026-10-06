@@ -165,7 +165,7 @@ function YouthSignupContent() {
   // ── Main form ──
   return (
     <div className="min-h-screen bg-black flex flex-col items-center justify-center p-6 relative overflow-hidden">
-      <div className="absolute inset-0 bg-gradient-to-b from-primary/20 via-transparent to-black/80 pointer-events-none" />
+      <div className="absolute inset-0 bg-linear-to-b from-primary/20 via-transparent to-black/80 pointer-events-none" />
 
       <div className="relative z-10 w-full max-w-md space-y-8">
         <div className="text-center">

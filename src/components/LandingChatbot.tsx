@@ -55,7 +55,7 @@ export function LandingChatbot() {
 
   return (
     <>
-      <button type="button" className="fixed bottom-24 right-5 z-[60] rounded-lg border bg-white px-3 py-2 text-sm text-black" onClick={() => window.location.reload()}>Stop chat and reload</button>
+      <button type="button" className="fixed bottom-24 right-5 z-60 rounded-lg border bg-white px-3 py-2 text-sm text-black" onClick={() => window.location.reload()}>Stop chat and reload</button>
       <Script id="elfsight-squad-chatbot" src="https://elfsightcdn.com/platform.js" strategy="afterInteractive" />
       <div className={APP_CLASS} />
     </>

@@ -142,7 +142,7 @@ export function LocationAutocomplete({
 
       {isOpen && suggestions.length > 0 && (
         <div className="absolute z-50 top-full left-0 right-0 mt-1.5 bg-white border border-black/5 rounded-2xl shadow-2xl shadow-black/10 overflow-hidden">
-          <ul className="max-h-64 overflow-y-auto divide-y divide-black/[0.04]">
+          <ul className="max-h-64 overflow-y-auto divide-y divide-black/4">
             {suggestions.map(result => {
               const [primary, ...rest] = result.display_name.split(',');
               const secondary = rest.slice(0, 3).join(',').trim();

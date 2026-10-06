@@ -37,7 +37,7 @@ export function PracticeCover({ drill, title }: { drill?: PracticeReaderDrill; t
   const firstImage = mediaSource(typeof extra === 'string' ? extra : extra?.url);
   const cover = mediaSource(drill?.coverImageUrl)?.url || video?.thumbnail || (firstImage?.kind === 'image' ? firstImage.url : undefined);
   return <div className="aspect-video bg-neutral-950 relative overflow-hidden">
-    {cover && !failed ? <img src={cover} alt={title} onError={() => setFailed(true)} className="h-full w-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" /> : <div className="absolute inset-0 bg-gradient-to-br from-neutral-800 to-black flex items-center justify-center"><Dumbbell className="h-16 w-16 text-white/25" /></div>}
+    {cover && !failed ? <img src={cover} alt={title} onError={() => setFailed(true)} className="h-full w-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" /> : <div className="absolute inset-0 bg-linear-to-br from-neutral-800 to-black flex items-center justify-center"><Dumbbell className="h-16 w-16 text-white/25" /></div>}
     {video && <span className="absolute inset-0 flex items-center justify-center"><span className="rounded-full bg-black/50 p-4 ring-1 ring-white/30"><Play className="h-7 w-7 text-white fill-white" /></span></span>}
     <div className="absolute bottom-4 left-4 flex gap-2 text-xs font-semibold text-white">
       {video && <span className="rounded-full bg-black/75 px-3 py-1 flex items-center gap-1.5"><Video className="h-3.5 w-3.5" /> Video</span>}

@@ -70,9 +70,9 @@ test('public Tournament schedule renders date-only values in the viewer local ca
 
 test('Tournament architect constrains Radix scroll content to the mobile viewport', async () => {
   const source = await readFile(new URL('../src/app/(dashboard)/manage-tournaments/manage-tournaments-page-content.tsx', import.meta.url), 'utf8');
-  assert.match(source, /\[&_\[data-radix-scroll-area-viewport\]>div\]:!block/);
-  assert.match(source, /\[&_\[data-radix-scroll-area-viewport\]>div\]:!w-full/);
-  assert.match(source, /\[&_\[data-radix-scroll-area-viewport\]>div\]:!min-w-0/);
+  assert.match(source, /\[&_\[data-radix-scroll-area-viewport\]>div\]:block!/);
+  assert.match(source, /\[&_\[data-radix-scroll-area-viewport\]>div\]:w-full!/);
+  assert.match(source, /\[&_\[data-radix-scroll-area-viewport\]>div\]:min-w-0!/);
   assert.match(source, /data-testid="daily-operational-windows"[^>]*className="min-w-0 bg-\[#0a0a0a\] p-5 sm:p-8/);
   assert.match(source, /data-testid="daily-window-row"[^>]*className="min-w-0 bg-white\/5 p-4[^\"]*sm:flex-row/);
   assert.match(source, /data-testid="daily-window-controls"[^>]*className="flex min-w-0 flex-wrap items-center gap-3/);

@@ -152,7 +152,7 @@ export function ContentSafety({
           if (!open && !busy) setMode(null);
         }}
       >
-        <DialogContent className="h-auto max-h-[85dvh] w-[calc(100%_-_2rem)] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-2xl p-6 [&>div]:gap-4">
+        <DialogContent className="h-auto max-h-[85dvh] w-[calc(100%-2rem)] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-2xl p-6 [&>div]:gap-4">
           <DialogHeader className="pr-8">
             <DialogTitle>
               {mode === "report" ? "Report content" : `Block ${authorName}?`}
@@ -233,7 +233,7 @@ export function BlockedUsers() {
         </Button>
       )}
       <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="h-auto max-h-[85dvh] w-[calc(100%_-_2rem)] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-2xl p-6 [&>div]:gap-4">
+        <DialogContent className="h-auto max-h-[85dvh] w-[calc(100%-2rem)] left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-2xl p-6 [&>div]:gap-4">
           <DialogHeader className="pr-8">
             <DialogTitle>Blocked users</DialogTitle>
             <DialogDescription>
@@ -255,7 +255,7 @@ export function BlockedUsers() {
                 key={block.id}
                 className="flex items-center justify-between gap-3"
               >
-                <span className="break-words min-w-0">{block.authorName}</span>
+                <span className="wrap-break-word min-w-0">{block.authorName}</span>
                 <Button
                   disabled={busy !== null}
                   variant="outline"

@@ -183,7 +183,7 @@ export function MyPaymentsView({ userEmail, teamIds }: MyPaymentsViewProps) {
   return (
     <div className="space-y-6">
       {/* Summary KPI */}
-      <Card className="rounded-[2rem] border-none shadow-md bg-black text-white p-6 relative overflow-hidden">
+      <Card className="rounded-4xl border-none shadow-md bg-black text-white p-6 relative overflow-hidden">
         <Receipt className="absolute -right-4 -bottom-4 h-20 w-20 opacity-10" />
         <p className="text-[9px] font-black uppercase tracking-widest opacity-50">Total Paid</p>
         <p className="text-4xl font-black mt-1">
@@ -204,7 +204,7 @@ export function MyPaymentsView({ userEmail, teamIds }: MyPaymentsViewProps) {
           return (
             <Card
               key={payment.id}
-              className="rounded-[2rem] border-none shadow-md bg-white ring-1 ring-black/5 overflow-hidden"
+              className="rounded-4xl border-none shadow-md bg-white ring-1 ring-black/5 overflow-hidden"
             >
               <CardContent className="p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-4 min-w-0">

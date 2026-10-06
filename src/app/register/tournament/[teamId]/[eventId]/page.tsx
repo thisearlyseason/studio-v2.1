@@ -215,7 +215,7 @@ function RegistrationForm() {
     }
     if (field.type === 'information_box') {
       return (
-        <div key={field.id} className="flex items-start gap-4 p-6 bg-blue-50 rounded-[2rem] border-2 border-blue-100 my-4">
+        <div key={field.id} className="flex items-start gap-4 p-6 bg-blue-50 rounded-4xl border-2 border-blue-100 my-4">
           <div className="bg-blue-100 p-2.5 rounded-xl text-blue-600 shrink-0 mt-0.5"><Info className="h-5 w-5" /></div>
           <div className="space-y-1">
             <p className="font-black text-sm uppercase tracking-widest text-blue-900">{field.label}</p>
@@ -343,7 +343,7 @@ function RegistrationForm() {
           {checkoutError&&<p role="status" className="mb-4">{checkoutError}</p>}
           {config.payment_method==='stripe'&&Number(config.registration_cost)>0&&checkoutEntry&&<Button onClick={()=>void openCheckout(checkoutEntry)} className="mb-6 rounded-2xl">Continue to secure payment</Button>}
           
-          <div className="bg-primary p-8 rounded-[2rem] text-left text-white space-y-4 shadow-xl">
+          <div className="bg-primary p-8 rounded-4xl text-left text-white space-y-4 shadow-xl">
             <div className="flex items-center gap-2"><Info className="h-5 w-5 opacity-50" /><p className="text-[10px] font-black uppercase tracking-wide">Action Required</p></div>
             <p className="text-sm font-bold leading-relaxed">
               To manage your team throughout the tournament, open a free account for roster updates and real-time access to the live bracket.
@@ -428,7 +428,7 @@ function RegistrationForm() {
               <p className="text-sm font-black text-green-600 uppercase tracking-widest">✓ NO FEE — Free Entry</p>
             )}
             {config.registration_cost && parseFloat(config.registration_cost) > 0 && <div className="pt-4 border-t border-primary/10 space-y-4">
-              <div className="bg-white p-5 rounded-[2rem] text-[11px] font-medium leading-relaxed border border-primary/5 text-foreground/80 shadow-inner whitespace-pre-wrap">
+              <div className="bg-white p-5 rounded-4xl text-[11px] font-medium leading-relaxed border border-primary/5 text-foreground/80 shadow-inner whitespace-pre-wrap">
                 {config.offline_payment_instructions}
               </div>
               <div className="flex items-center gap-3 bg-white p-4 rounded-2xl border-2 border-amber-200">
@@ -633,7 +633,7 @@ function RegistrationForm() {
                           {config.custom_waiver_text && (
                             <div className="space-y-2">
                               <p className="text-[10px] font-black uppercase tracking-widest text-primary ml-1">Organization-Specific Agreement</p>
-                              <ScrollArea className="h-48 p-6 rounded-[2rem] bg-primary/5 border border-primary/20 font-medium text-xs leading-loose text-primary/90">
+                              <ScrollArea className="h-48 p-6 rounded-4xl bg-primary/5 border border-primary/20 font-medium text-xs leading-loose text-primary/90">
                                 {config.custom_waiver_text}
                               </ScrollArea>
                             </div>
@@ -648,7 +648,7 @@ function RegistrationForm() {
                             </div>
                           ))}
 
-                          <div className="flex items-center space-x-4 p-5 bg-primary/5 rounded-[2rem] border-2 border-primary/10 group transition-all hover:bg-primary/10">
+                          <div className="flex items-center space-x-4 p-5 bg-primary/5 rounded-4xl border-2 border-primary/10 group transition-all hover:bg-primary/10">
                             <Checkbox id="waiver_agree" checked={waiverAgreed} onCheckedChange={v => setWaiverAgreed(!!v)} className="h-6 w-6 rounded-lg border-2 border-primary" />
                             <Label htmlFor="waiver_agree" className="flex-1 text-[10px] font-black uppercase tracking-tight cursor-pointer leading-tight">
                               {isPlayerPipeline ? "I confirm that I (or the athlete in my care) have reviewed and accept the tournament rules and liability terms above." : "I confirm that our team has reviewed and accepts the tournament rules and liability terms above."}

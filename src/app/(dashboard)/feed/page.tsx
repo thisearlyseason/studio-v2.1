@@ -98,7 +98,7 @@ function CommentList({ postId, teamId, isAdmin, currentUserId, onDeleteComment }
                 )}
               </div>
             </div>
-            <p className="text-xs font-medium text-foreground/80 leading-snug break-words">{comment.content}</p>
+            <p className="text-xs font-medium text-foreground/80 leading-snug wrap-break-word">{comment.content}</p>
           </div>
         </div>
       ))}
@@ -331,7 +331,7 @@ export default function FeedPage() {
         {/* Team Hero Section */}
         <section className="relative h-48 sm:h-64 lg:h-80 rounded-3xl lg:rounded-[2.5rem] overflow-hidden shadow-xl lg:shadow-2xl group ring-1 ring-black/5">
           <img src={activeTeam.heroImageUrl || "https://picsum.photos/seed/squadhero/1200/400"} alt="Team Hero" className="absolute inset-0 w-full h-full object-cover transition-transform duration-1000 group-hover:scale-105" />
-          <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent" />
+          <div className="absolute inset-0 bg-linear-to-t from-black/80 via-black/20 to-transparent" />
           {isAdmin && (
             <div className="absolute top-4 right-4 lg:top-6 lg:right-6 z-20">
               <input type="file" ref={heroInputRef} className="hidden" accept="image/*" onChange={async (e) => {
@@ -449,7 +449,7 @@ export default function FeedPage() {
               </CardHeader>
               <CardContent className="pt-2 pb-4 lg:pb-6 px-6 lg:px-8 space-y-4">
                 {post.type === 'poll' ? (
-                  <div className="bg-card border rounded-3xl lg:rounded-[2rem] overflow-hidden">
+                  <div className="bg-card border rounded-3xl lg:rounded-4xl overflow-hidden">
                     <div className="bg-primary/5 p-4 lg:p-6 border-b flex items-center justify-between">
                       <h4 className="font-black text-base lg:text-xl tracking-tight leading-tight">{post.poll?.question}</h4>
                       <BarChart2 className="h-4 w-4 lg:h-5 lg:w-5 text-primary opacity-50 shrink-0 ml-2" />
@@ -474,7 +474,7 @@ export default function FeedPage() {
                     </div>
                   </div>
                 ) : (
-                  <p className="text-base lg:text-lg leading-relaxed font-medium text-foreground/80 break-words">{post.content}</p>
+                  <p className="text-base lg:text-lg leading-relaxed font-medium text-foreground/80 wrap-break-word">{post.content}</p>
                 )}
                 {post.imagePath ? <FeedMedia teamId={activeTeam.id} postId={post.id}/> : post.imageUrl && <img src={post.imageUrl} className="rounded-2xl lg:rounded-2xl w-full h-auto object-cover max-h-[400px] lg:max-h-[600px] border shadow-inner" alt="Feed media" />}
               </CardContent>
@@ -522,7 +522,7 @@ export default function FeedPage() {
       </div>
 
       <Dialog open={isPollDialogOpen} onOpenChange={setIsPollDialogOpen}>
-        <DialogContent className="sm:max-w-4xl rounded-3xl lg:rounded-[2rem] overflow-hidden p-0 max-h-[90vh] flex flex-col border-none shadow-2xl">
+        <DialogContent className="sm:max-w-4xl rounded-3xl lg:rounded-4xl overflow-hidden p-0 max-h-[90vh] flex flex-col border-none shadow-2xl">
           <DialogTitle className="sr-only">Launch Squad Poll</DialogTitle>
           <DialogDescription className="sr-only">Create a tactical poll for your squad</DialogDescription>
           <div className="overflow-y-auto flex-1 custom-scrollbar">

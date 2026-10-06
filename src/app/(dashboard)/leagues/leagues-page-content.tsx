@@ -440,7 +440,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
               </section>
               <section className="space-y-5 pt-6 border-t border-white/10">
                 <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Venue Allocation</h3>
-                <ScrollArea className="h-56 border border-white/10 rounded-[2rem] bg-white/5 p-6">
+                <ScrollArea className="h-56 border border-white/10 rounded-4xl bg-white/5 p-6">
                   {facilities?.length ? facilities.map(f => (
                     <div key={f.id} className="space-y-4 mb-8 last:mb-0">
                       <div className="flex items-center gap-3 px-2"><Building className="h-4 w-4 text-primary" /><span className="text-xs font-black uppercase text-white">{f.name}</span></div>
@@ -459,7 +459,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                 <p className="text-[10px] font-medium text-white/40 leading-relaxed">
                   Below are the squads currently enrolled in this {leagueLabel.toLowerCase()}. You can stage additional squads manually here before finalizing the season details.
                 </p>
-                <div className="border border-white/10 rounded-[2rem] bg-white/5 p-6 max-h-60 overflow-y-auto space-y-3">
+                <div className="border border-white/10 rounded-4xl bg-white/5 p-6 max-h-60 overflow-y-auto space-y-3">
                   {leagueTeams.length > 0 ? (
                     leagueTeams.map((team: any) => (
                       <div key={team.id} className="flex items-center justify-between bg-white/5 p-4 rounded-xl border border-white/10">
@@ -531,7 +531,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
               </section>
               <section className="space-y-5 pt-6 border-t border-white/10">
                 <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Enrollment Status</h3>
-                <div className="bg-primary/5 p-6 rounded-[2rem] border border-primary/20 space-y-4">
+                <div className="bg-primary/5 p-6 rounded-4xl border border-primary/20 space-y-4">
                   <div className="flex items-center gap-2 text-primary"><Info className="h-4 w-4" /><h4 className="text-[10px] font-black uppercase tracking-widest">Squad Count</h4></div>
                   <p className="text-[11px] font-bold text-white/60 uppercase">{totalRegisteredTeams} squads detected • {leagueTeams.length} Enrolled</p>
                   {leagueTeams.length < 2 && (
@@ -1036,7 +1036,7 @@ function LeagueOverview({
                 return (
                   <Card
                     key={game.id}
-                    className="rounded-[2rem] border-none shadow-md overflow-hidden bg-white ring-1 ring-black/5 hover:shadow-xl hover:ring-primary/20 transition-all cursor-pointer group"
+                    className="rounded-4xl border-none shadow-md overflow-hidden bg-white ring-1 ring-black/5 hover:shadow-xl hover:ring-primary/20 transition-all cursor-pointer group"
                     onClick={() => canManageLeague && setEditingGame(game)}
                   >
                     {/* Meta strip */}
@@ -1136,16 +1136,16 @@ function LeagueOverview({
             <div className="grid grid-cols-2 gap-6">
               <div className="space-y-3">
                 <Label className="text-[10px] font-black uppercase opacity-60 ml-1">Home Score</Label>
-                <Input type="number" disabled={editingGame?.isDisputed && resolutionOutcome === 'uphold'} value={scoreForm.s1} onChange={e => setScoreForm({...scoreForm, s1: e.target.value})} className="h-20 text-center text-4xl font-black rounded-[1.5rem] border-2 focus:ring-primary focus:border-primary transition-all" placeholder="0" />
+                <Input type="number" disabled={editingGame?.isDisputed && resolutionOutcome === 'uphold'} value={scoreForm.s1} onChange={e => setScoreForm({...scoreForm, s1: e.target.value})} className="h-20 text-center text-4xl font-black rounded-3xl border-2 focus:ring-primary focus:border-primary transition-all" placeholder="0" />
               </div>
               <div className="space-y-3">
                 <Label className="text-[10px] font-black uppercase opacity-60 ml-1">Guest Score</Label>
-                <Input type="number" disabled={editingGame?.isDisputed && resolutionOutcome === 'uphold'} value={scoreForm.s2} onChange={e => setScoreForm({...scoreForm, s2: e.target.value})} className="h-20 text-center text-4xl font-black rounded-[1.5rem] border-2 focus:ring-primary focus:border-primary transition-all" placeholder="0" />
+                <Input type="number" disabled={editingGame?.isDisputed && resolutionOutcome === 'uphold'} value={scoreForm.s2} onChange={e => setScoreForm({...scoreForm, s2: e.target.value})} className="h-20 text-center text-4xl font-black rounded-3xl border-2 focus:ring-primary focus:border-primary transition-all" placeholder="0" />
               </div>
             </div>
             <div className="flex gap-4">
               <Button variant="outline" className="flex-1 h-14 rounded-2xl font-black uppercase text-xs" onClick={() => setEditingGame(null)}>Cancel</Button>
-              <Button className="flex-[2] h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleUpdateScore} disabled={isSavingScore || (!!editingGame?.isDisputed && (!canResolve || !resolutionReason.trim()))}>{editingGame?.isDisputed ? 'Resolve Dispute' : 'Commit Result'}</Button>
+              <Button className="flex-2 h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleUpdateScore} disabled={isSavingScore || (!!editingGame?.isDisputed && (!canResolve || !resolutionReason.trim()))}>{editingGame?.isDisputed ? 'Resolve Dispute' : 'Commit Result'}</Button>
             </div>
           </div>
         </DialogContent>
@@ -1239,7 +1239,7 @@ function ManualGameDialog({ league, isOpen, onOpenChange }: { league: League, is
                   <SelectTrigger className="h-12 border-2 rounded-xl font-bold bg-white text-foreground">
                     <SelectValue placeholder="Select Home" />
                   </SelectTrigger>
-                  <SelectContent className="rounded-xl bg-white border-2 border-muted shadow-2xl z-[100]">
+                  <SelectContent className="rounded-xl bg-white border-2 border-muted shadow-2xl z-100">
                     {leagueTeams.length === 0 ? (
                       <div className="p-4 text-[10px] font-bold uppercase text-muted-foreground text-center">No squads found</div>
                     ) : (
@@ -1266,7 +1266,7 @@ function ManualGameDialog({ league, isOpen, onOpenChange }: { league: League, is
                   <SelectTrigger className="h-12 border-2 rounded-xl font-bold bg-white text-foreground">
                     <SelectValue placeholder="Select Guest" />
                   </SelectTrigger>
-                  <SelectContent className="rounded-xl bg-white border-2 border-muted shadow-2xl z-[100]">
+                  <SelectContent className="rounded-xl bg-white border-2 border-muted shadow-2xl z-100">
                     {leagueTeams.length === 0 ? (
                       <div className="p-4 text-[10px] font-bold uppercase text-muted-foreground text-center">No squads found</div>
                     ) : (
@@ -1313,7 +1313,7 @@ function ManualGameDialog({ league, isOpen, onOpenChange }: { league: League, is
                   <SelectTrigger className="h-12 border-2 rounded-xl font-bold bg-white text-foreground">
                     <SelectValue placeholder="Select configured field" />
                   </SelectTrigger>
-                  <SelectContent className="rounded-xl bg-white border-2 border-muted shadow-2xl z-[100]">
+                  <SelectContent className="rounded-xl bg-white border-2 border-muted shadow-2xl z-100">
                     {configuredFields.map(field => (
                       <SelectItem key={field.resourceId} value={field.resourceId} className="font-bold uppercase text-[10px] py-3">
                         {field.name}
@@ -1334,7 +1334,7 @@ function ManualGameDialog({ league, isOpen, onOpenChange }: { league: League, is
 
           <div className="flex gap-4 pt-4">
             <Button variant="outline" className="flex-1 h-14 rounded-2xl font-black uppercase text-xs" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button className="flex-[2] h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 disabled:opacity-50" onClick={handleSubmit} disabled={isProcessing}>
+            <Button className="flex-2 h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 disabled:opacity-50" onClick={handleSubmit} disabled={isProcessing}>
               {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Append Fixture"}
             </Button>
           </div>
@@ -1415,7 +1415,7 @@ function ManualPlayerDialog({ league, isOpen, onOpenChange }: { league: League, 
 
           <div className="flex gap-4 pt-4">
             <Button variant="outline" className="flex-1 h-14 rounded-2xl font-black uppercase text-xs" onClick={() => onOpenChange(false)}>Cancel</Button>
-            <Button className="flex-[2] h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleSubmit} disabled={isProcessing}>
+            <Button className="flex-2 h-14 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={handleSubmit} disabled={isProcessing}>
               {isProcessing ? <Loader2 className="h-5 w-5 animate-spin" /> : "Append Athlete"}
             </Button>
           </div>
@@ -2340,13 +2340,13 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                   return (
                     <Card 
                       key={league.id} 
-                      className="rounded-[2rem] border-none shadow-xl overflow-hidden bg-white flex flex-col group transition-all hover:shadow-2xl hover:ring-2 hover:ring-primary/10 cursor-pointer"
+                      className="rounded-4xl border-none shadow-xl overflow-hidden bg-white flex flex-col group transition-all hover:shadow-2xl hover:ring-2 hover:ring-primary/10 cursor-pointer"
                       onClick={() => setSelectedLeagueId(league.id)}
                     >
 
                       <CardContent className="p-5 sm:p-8 lg:p-10 space-y-6 sm:space-y-8 flex-1">
                         <div className="flex justify-between items-start">
-                          <div className="bg-primary/5 p-5 rounded-[1.5rem] text-primary shadow-inner">
+                          <div className="bg-primary/5 p-5 rounded-3xl text-primary shadow-inner">
                             <Trophy className="h-10 w-10" />
                           </div>
                           <div className="flex items-center gap-2">
@@ -2378,7 +2378,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                           </div>
                         </div>
                         <div className="space-y-1 min-w-0">
-                          <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight group-hover:text-primary transition-colors leading-tight break-words overflow-hidden">{league.name}</h3>
+                          <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight group-hover:text-primary transition-colors leading-tight wrap-break-word overflow-hidden">{league.name}</h3>
                           <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest mt-1">
                             {Object.keys(league.teams || {}).length} squads • ID: {(league.slug || league.id).toUpperCase()}
                           </p>
@@ -2465,7 +2465,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                             <div 
                               key={divLeague.id}
                               onClick={() => setSelectedLeagueId(divLeague.id)}
-                              className="rounded-[1.75rem] border-2 border-black/5 hover:border-primary/20 bg-muted/5 hover:bg-primary/[0.02] p-5 space-y-4 transition-all duration-300 cursor-pointer flex flex-col justify-between group/div"
+                              className="rounded-[1.75rem] border-2 border-black/5 hover:border-primary/20 bg-muted/5 hover:bg-primary/2 p-5 space-y-4 transition-all duration-300 cursor-pointer flex flex-col justify-between group/div"
                             >
                               <div className="space-y-3">
                                 <div className="flex justify-between items-start gap-2">
@@ -2588,14 +2588,14 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
               {getLeagueDeploymentLabel(activeLeague)}
             </Badge>
           </div>
-          <Card className="rounded-[2rem] md:rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-black text-white p-5 md:p-10 relative group">
+          <Card className="rounded-4xl md:rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-black text-white p-5 md:p-10 relative group">
             <div className="absolute top-0 right-0 p-6 md:p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700"><ShieldCheck className="h-32 w-32 md:h-48 md:w-48" /></div>
             <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-5 md:gap-8 relative z-10">
               <div className="flex items-center gap-4 md:gap-6 min-w-0">
-                <div className="bg-primary p-3 md:p-5 rounded-[1rem] md:rounded-[1.5rem] shadow-xl shrink-0"><Trophy className="h-7 w-7 md:h-10 md:w-10 text-white" /></div>
+                <div className="bg-primary p-3 md:p-5 rounded-2xl md:rounded-3xl shadow-xl shrink-0"><Trophy className="h-7 w-7 md:h-10 md:w-10 text-white" /></div>
               <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h2 className="text-2xl md:text-4xl font-black uppercase tracking-tight leading-none break-words">{activeLeague.name}</h2>
+                    <h2 className="text-2xl md:text-4xl font-black uppercase tracking-tight leading-none wrap-break-word">{activeLeague.name}</h2>
                     {activeLeague.divisionTitle && (
                       <Badge className="bg-primary text-white border-none font-black text-[10px] h-6 px-3.5 uppercase tracking-wider">
                         {activeLeague.divisionTitle}
@@ -2754,7 +2754,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
 
           <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as any)} className="mt-0">
             <TabsContent value="teams" className="mt-0 animate-in fade-in duration-500">
-              <Card className="rounded-[2rem] md:rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
+              <Card className="rounded-4xl md:rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
                       <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest border-b"><tr><th className="px-4 md:px-10 py-4 md:py-5">Squad Rank</th><th className="px-3 md:px-4 py-4 md:py-5 text-center">Portal Code</th><th className="px-3 md:px-4 py-4 md:py-5 text-center">Record</th><th className="px-3 md:px-4 py-4 md:py-5 text-center">PTS</th><th className="px-3 md:px-4 py-4 md:py-5 text-center">Compliance</th><th className="px-4 md:px-10 py-4 md:py-5 text-right text-primary">Actions</th></tr></thead>
@@ -2885,7 +2885,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                                           <SelectTrigger className="h-8 rounded-lg border font-black text-[8px] uppercase w-40 bg-white text-foreground">
                                             <SelectValue placeholder="Assign to Team..." />
                                           </SelectTrigger>
-                                          <SelectContent className="rounded-xl bg-white border shadow-2xl z-[100]">
+                                          <SelectContent className="rounded-xl bg-white border shadow-2xl z-100">
                                             {Object.entries(activeLeague.teams || {})
                                               .filter(([_, t]) => t.status === 'accepted' || t.status === 'assigned')
                                               .map(([tId, t]) => (
@@ -3070,7 +3070,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
         </div>
       ) : (
         <div className="text-center py-24 bg-muted/10 border-2 border-dashed rounded-[3rem] space-y-6 text-foreground">
-          <div className="bg-white w-20 h-20 rounded-[2rem] flex items-center justify-center mx-auto shadow-xl"><Shield className="h-10 w-10 text-primary opacity-20" /></div>
+          <div className="bg-white w-20 h-20 rounded-4xl flex items-center justify-center mx-auto shadow-xl"><Shield className="h-10 w-10 text-primary opacity-20" /></div>
           <div className="space-y-2">
             <h3 className="text-2xl font-black uppercase">{leagues.length > 0 ? `Select a ${leagueLabel}` : 'No Competitive Enrollment'}</h3>
             <p className="text-sm font-bold text-muted-foreground uppercase tracking-widest max-sm:px-4 max-w-sm mx-auto leading-relaxed">
@@ -3433,7 +3433,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                       </div>
                       
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                        <div className="p-6 rounded-[2rem] bg-white/5 border border-white/10 flex flex-col justify-between gap-6">
+                        <div className="p-6 rounded-4xl bg-white/5 border border-white/10 flex flex-col justify-between gap-6">
                            <div className="space-y-2">
                              <p className="text-[10px] font-black uppercase tracking-widest text-white">Archive League Hub</p>
                              <p className="text-[10px] font-medium text-white/40 leading-relaxed italic">Move this league to the historical archives. It will stay in your database but hidden from active squads.</p>
@@ -3443,7 +3443,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                            </Button>
                         </div>
 
-                        <div className="p-6 rounded-[2rem] bg-red-500/5 border border-red-500/20 flex flex-col justify-between gap-6">
+                        <div className="p-6 rounded-4xl bg-red-500/5 border border-red-500/20 flex flex-col justify-between gap-6">
                            <div className="space-y-2">
                              <p className="text-[10px] font-black uppercase tracking-widest text-red-500">Decommission Entire Season</p>
                              <p className="text-[10px] font-medium text-red-500/60 leading-relaxed italic">Warning: This will purge all active matches and standings. Registration data and waivers will remain archived.</p>

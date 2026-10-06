@@ -143,7 +143,7 @@ export default function BetaApplicationPage() {
 
       {/* Hero Section */}
       <section className="pt-40 pb-20 px-6 relative overflow-hidden">
-        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,_var(--tw-gradient-stops))] from-primary/20 via-black to-black pointer-events-none" />
+        <div className="absolute inset-0 bg-[radial-gradient(ellipse_at_top_right,var(--tw-gradient-stops))] from-primary/20 via-black to-black pointer-events-none" />
         
         <div className="container mx-auto max-w-4xl relative z-10 text-center space-y-8">
           <motion.div 
@@ -377,7 +377,7 @@ export default function BetaApplicationPage() {
               </div>
 
               {/* Gift Banner */}
-              <div className="relative overflow-hidden rounded-[1.5rem] border border-primary/40 bg-gradient-to-br from-primary/20 via-primary/10 to-transparent p-6 flex items-start gap-4">
+              <div className="relative overflow-hidden rounded-3xl border border-primary/40 bg-linear-to-br from-primary/20 via-primary/10 to-transparent p-6 flex items-start gap-4">
                 <div className="shrink-0 w-12 h-12 rounded-2xl bg-primary/20 flex items-center justify-center">
                   <Gift className="w-6 h-6 text-primary" />
                 </div>
@@ -440,7 +440,7 @@ export default function BetaApplicationPage() {
             </div>
 
             {/* Beta Tester Expectations */}
-            <Card className="bg-primary/5 border-primary/20 mt-12 rounded-[2rem]">
+            <Card className="bg-primary/5 border-primary/20 mt-12 rounded-4xl">
               <CardContent className="p-8 space-y-6 text-white">
                 <div className="flex items-center gap-3">
                   <AlertCircle className="w-6 h-6 text-primary" />
@@ -472,7 +472,7 @@ export default function BetaApplicationPage() {
             </Card>
 
             {/* Feedback Instructions */}
-            <div className="bg-white/5 border border-white/10 p-8 rounded-[2rem] space-y-4">
+            <div className="bg-white/5 border border-white/10 p-8 rounded-4xl space-y-4">
               <div className="flex items-center gap-3 mb-2">
                 <MessageSquare className="w-5 h-5 text-muted-foreground" />
                 <h4 className="text-lg font-black uppercase tracking-tight">Feedback Protocol</h4>

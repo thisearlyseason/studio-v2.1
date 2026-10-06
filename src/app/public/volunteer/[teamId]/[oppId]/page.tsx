@@ -232,7 +232,7 @@ function VolunteerSignupForm() {
             <CardFooter className="p-8 lg:p-10 pt-0">
               <Button 
                 type="submit" 
-                className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all"
+                className="w-full h-16 rounded-4xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all"
                 disabled={isSubmitting || !formData.name || !formData.email || !formData.phone || !formData.relationship}
               >
                 {isSubmitting ? <Loader2 className="h-6 w-6 animate-spin" /> : "Commit to Assignment"}

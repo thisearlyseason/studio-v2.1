@@ -132,7 +132,7 @@ export default function PaymentsPage() {
 
       {/* Stats Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card data-testid="family-payment-total-paid" className="rounded-[2rem] border-none shadow-xl bg-black text-white overflow-hidden">
+        <Card data-testid="family-payment-total-paid" className="rounded-4xl border-none shadow-xl bg-black text-white overflow-hidden">
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-3">
               <div className="bg-green-500/20 p-2 rounded-xl"><CheckCircle2 className="h-5 w-5 text-green-400" /></div>
@@ -142,7 +142,7 @@ export default function PaymentsPage() {
             <p className="text-3xl font-black">${stats.paid.toFixed(2)}</p>
           </CardContent>
         </Card>
-        <Card data-testid="family-payment-outstanding" className="rounded-[2rem] border-none shadow-md bg-white ring-1 ring-black/5 overflow-hidden">
+        <Card data-testid="family-payment-outstanding" className="rounded-4xl border-none shadow-md bg-white ring-1 ring-black/5 overflow-hidden">
           <CardContent className="p-6">
             <div className="mb-3">
               <div className="bg-amber-500/10 p-2 rounded-xl w-fit"><Clock className="h-5 w-5 text-amber-500" /></div>
@@ -151,7 +151,7 @@ export default function PaymentsPage() {
             <p className="text-3xl font-black text-amber-600">${stats.outstanding.toFixed(2)}</p>
           </CardContent>
         </Card>
-        <Card data-testid="family-payment-overdue" className="rounded-[2rem] border-none shadow-md bg-white ring-1 ring-black/5 overflow-hidden">
+        <Card data-testid="family-payment-overdue" className="rounded-4xl border-none shadow-md bg-white ring-1 ring-black/5 overflow-hidden">
           <CardContent className="p-6">
             <div className="mb-3">
               <div className="bg-red-500/10 p-2 rounded-xl w-fit"><AlertCircle className="h-5 w-5 text-red-500" /></div>
@@ -160,7 +160,7 @@ export default function PaymentsPage() {
             <p className="text-3xl font-black text-red-600">${stats.overdue.toFixed(2)}</p>
           </CardContent>
         </Card>
-        <Card className="rounded-[2rem] border-none shadow-md bg-white ring-1 ring-black/5 overflow-hidden">
+        <Card className="rounded-4xl border-none shadow-md bg-white ring-1 ring-black/5 overflow-hidden">
           <CardContent className="p-6">
             <div className="mb-3">
               <div className="bg-primary/10 p-2 rounded-xl w-fit"><Calendar className="h-5 w-5 text-primary" /></div>
@@ -199,7 +199,7 @@ export default function PaymentsPage() {
       ) : filtered.length === 0 ? (
         <Card className="rounded-[3rem] border-4 border-dashed border-muted/30 bg-muted/5">
           <CardContent className="p-16 flex flex-col items-center justify-center text-center">
-            <div className="bg-white p-6 rounded-[2rem] shadow-xl mb-6 ring-1 ring-black/5">
+            <div className="bg-white p-6 rounded-4xl shadow-xl mb-6 ring-1 ring-black/5">
               <Receipt className="h-12 w-12 text-primary/30" />
             </div>
             <h3 className="text-2xl font-black uppercase tracking-tight mb-2">No Records Found</h3>
@@ -216,7 +216,7 @@ export default function PaymentsPage() {
             const dateStr = (() => { try { return format(parseISO(payment.date), 'MMM d, yyyy'); } catch { return payment.date; } })();
             const dueDateStr = payment.dueDate ? (() => { try { return format(parseISO(payment.dueDate), 'MMM d, yyyy'); } catch { return payment.dueDate; } })() : null;
             return (
-              <Card data-testid={`family-payment-${payment.id}`} key={payment.id} className="rounded-[2rem] border-none shadow-md bg-white ring-1 ring-black/5 hover:shadow-lg transition-all hover:-translate-y-0.5 duration-200 overflow-hidden">
+              <Card data-testid={`family-payment-${payment.id}`} key={payment.id} className="rounded-4xl border-none shadow-md bg-white ring-1 ring-black/5 hover:shadow-lg transition-all hover:-translate-y-0.5 duration-200 overflow-hidden">
                 <CardContent className="p-0">
                   <div className="flex items-stretch">
                     <div className={`w-1.5 shrink-0 ${payment.status === 'paid' ? 'bg-green-500' : payment.status === 'overdue' ? 'bg-red-500' : 'bg-amber-400'}`} />
@@ -280,7 +280,7 @@ export default function PaymentsPage() {
       )}
 
       {/* Security Footer */}
-      <Card className="rounded-[2rem] border-none shadow-md bg-black text-white overflow-hidden">
+      <Card className="rounded-4xl border-none shadow-md bg-black text-white overflow-hidden">
         <CardContent className="p-6 flex items-center gap-4">
           <div className="bg-white/10 p-3 rounded-2xl shrink-0"><ShieldCheck className="h-6 w-6 text-primary" /></div>
           <div>

@@ -909,14 +909,14 @@ function AuthorizedClubManagementPage() {
 
       {/* ── HERO CARD ── */}
       <OrganizerGuide kind="organization" />
-      <Card className="bg-black text-white p-5 md:p-10 lg:p-14 rounded-[2rem] md:rounded-[3rem] shadow-2xl relative overflow-hidden group border-none hero-gradient">
+      <Card className="bg-black text-white p-5 md:p-10 lg:p-14 rounded-4xl md:rounded-[3rem] shadow-2xl relative overflow-hidden group border-none hero-gradient">
         <div className="absolute top-0 right-0 p-4 md:p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-1000">
           <Building className="h-28 w-28 md:h-56 md:w-56" />
         </div>
         <div className="relative z-10 flex flex-col gap-4 md:gap-6">
           <div className="space-y-2">
             <Badge className="bg-primary text-white border-none font-black uppercase tracking-[0.2em] text-[9px] md:text-[10px] h-6 md:h-7 px-3 md:px-4 shadow-lg">Organization Overview</Badge>
-            <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-6xl font-black tracking-tighter uppercase leading-[0.9] text-white break-words">
+            <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-6xl font-black tracking-tighter uppercase leading-[0.9] text-white wrap-break-word">
               {user?.schoolName || user?.clubName || (isSchoolMode ? 'School Hub' : 'Club Hub')}
             </h1>
             <p className="text-white/60 font-bold uppercase tracking-[0.15em] text-[9px] md:text-[10px]">
@@ -943,8 +943,8 @@ function AuthorizedClubManagementPage() {
 
       {/* ── School Hub Onboarding Note ── */}
       {isSchoolMode && !hubNoteDismissed && (
-        <div className="relative rounded-[1.5rem] border-2 border-primary/20 bg-primary/5 p-4 md:p-6 flex gap-3 md:gap-5 items-start overflow-hidden group animate-in slide-in-from-top-4 duration-500">
-          <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent pointer-events-none rounded-[1.5rem]" />
+        <div className="relative rounded-3xl border-2 border-primary/20 bg-primary/5 p-4 md:p-6 flex gap-3 md:gap-5 items-start overflow-hidden group animate-in slide-in-from-top-4 duration-500">
+          <div className="absolute inset-0 bg-linear-to-br from-primary/5 via-transparent to-transparent pointer-events-none rounded-3xl" />
           <div className="shrink-0 mt-0.5 w-9 h-9 md:w-11 md:h-11 rounded-2xl bg-primary/10 flex items-center justify-center border border-primary/20">
             <Info className="h-4 w-4 md:h-5 md:w-5 text-primary" />
           </div>
@@ -1141,7 +1141,7 @@ function AuthorizedClubManagementPage() {
 
       {/* ── Stats Grid ── */}
       <div className="grid grid-cols-2 gap-3 md:gap-5">
-        <Card className="rounded-[1.5rem] md:rounded-[2rem] border-none shadow-md bg-primary text-white p-4 md:p-6 space-y-1">
+        <Card className="rounded-3xl md:rounded-4xl border-none shadow-md bg-primary text-white p-4 md:p-6 space-y-1">
           <p className="text-[9px] font-black uppercase tracking-widest">Pro Squads</p>
           <p className="text-3xl md:text-4xl font-black" aria-live="polite">
             {isHubDataLoading ? <Loader2 className="h-7 w-7 animate-spin" aria-label="Loading squad total" /> : allocatedSquadCount}
@@ -1150,7 +1150,7 @@ function AuthorizedClubManagementPage() {
             {remainingSquadSeats} of {organizationSeatLimit} seats available
           </p>
         </Card>
-        <Card className="rounded-[1.5rem] md:rounded-[2rem] border-none shadow-md bg-black text-white p-4 md:p-6 space-y-2">
+        <Card className="rounded-3xl md:rounded-4xl border-none shadow-md bg-black text-white p-4 md:p-6 space-y-2">
           <p className="text-[9px] font-black uppercase opacity-60 tracking-widest">Fiscal Pulse</p>
           <p className="text-xl md:text-2xl font-black">${fiscalSummary.fiscalPulseTotal.toLocaleString()}</p>
           <Progress value={fiscalSummary.fiscalPulseRate} className="h-1 bg-white/10" />
@@ -1160,11 +1160,11 @@ function AuthorizedClubManagementPage() {
             Donations <span className="text-white/70">${fiscalSummary.totalDonationsConfirmed.toLocaleString()}</span>
           </p>
         </Card>
-        <Card className="rounded-[1.5rem] md:rounded-[2rem] border-none shadow-md bg-white p-4 md:p-6 space-y-1 ring-1 ring-black/5">
+        <Card className="rounded-3xl md:rounded-4xl border-none shadow-md bg-white p-4 md:p-6 space-y-1 ring-1 ring-black/5">
           <p className="text-[9px] font-black uppercase text-muted-foreground tracking-widest">Compliance Rating</p>
           <p className="text-3xl md:text-4xl font-black text-primary">{stats.compliance}%</p>
         </Card>
-        <Card className="rounded-[1.5rem] md:rounded-[2rem] border-none shadow-md bg-muted/20 p-4 md:p-6 space-y-2">
+        <Card className="rounded-3xl md:rounded-4xl border-none shadow-md bg-muted/20 p-4 md:p-6 space-y-2">
           <div className="flex items-center gap-2"><ShieldAlert className="h-4 w-4 text-primary" /><p className="text-[9px] font-black uppercase text-foreground">Safety Oversights</p></div>
           <p className="text-3xl font-black text-foreground">{clubIncidents.length}</p>
         </Card>
@@ -1244,7 +1244,7 @@ function AuthorizedClubManagementPage() {
             </div>
             <div className="grid grid-cols-1 gap-3">
               {filteredTeams.map(team => (
-                <Card key={team.id} className="rounded-[1.5rem] border-none shadow-sm ring-1 ring-black/5 p-4 md:p-5 hover:shadow-xl transition-all group bg-white">
+                <Card key={team.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 p-4 md:p-5 hover:shadow-xl transition-all group bg-white">
                   <div className="flex items-center gap-3 md:gap-5">
                     <Avatar className="h-12 w-12 md:h-14 md:w-14 rounded-2xl shadow-md border-2 border-background shrink-0">
                       <AvatarImage src={team.teamLogoUrl} className="object-cover" />
@@ -1319,7 +1319,7 @@ function AuthorizedClubManagementPage() {
               </div>
               <div className="grid grid-cols-1 gap-3 opacity-75">
                 {clubMembers.filter(m => m.status === 'removed').map(member => (
-                  <Card key={member.id} className="rounded-[1.5rem] border-none shadow-sm ring-1 ring-black/5 p-4 bg-white/50 border-2 border-dashed border-red-100">
+                  <Card key={member.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 p-4 bg-white/50 border-2 border-dashed border-red-100">
                     <div className="flex items-center gap-3">
                       <Avatar className="h-11 w-11 rounded-2xl grayscale shrink-0 opacity-40">
                         <AvatarImage src={member.avatar} className="object-cover" />
@@ -1351,7 +1351,7 @@ function AuthorizedClubManagementPage() {
           <TabsContent value="coaches" className="space-y-4 mt-0">
             <div className="grid grid-cols-1 gap-3">
               {allCoaches.map(coach => (
-                <Card key={coach.id} className="rounded-[1.5rem] border-none shadow-sm ring-1 ring-black/5 p-4 bg-white cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all" onClick={() => setSelectedCoach(coach)}>
+                <Card key={coach.id} className="rounded-3xl border-none shadow-sm ring-1 ring-black/5 p-4 bg-white cursor-pointer hover:ring-2 hover:ring-primary/20 transition-all" onClick={() => setSelectedCoach(coach)}>
                   <div className="flex items-center gap-3 md:gap-4">
                     <Avatar className="h-12 w-12 md:h-14 md:w-14 rounded-2xl shadow-md border-2 border-background shrink-0">
                       <AvatarImage src={coach.avatar} className="object-cover" />
@@ -1378,7 +1378,7 @@ function AuthorizedClubManagementPage() {
         {/* ── ADMINS TAB ── */}
         {schoolHub && (
           <TabsContent value="admins" className="space-y-5 mt-0 animate-in fade-in">
-            <Card className="rounded-[2rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
+            <Card className="rounded-4xl border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
               <CardHeader className="bg-black text-white p-5 md:p-8">
                 <div className="flex items-center gap-3 md:gap-4">
                   <div className="bg-primary p-2.5 md:p-3 rounded-2xl shadow-xl shadow-primary/20 shrink-0">
@@ -1512,7 +1512,7 @@ function AuthorizedClubManagementPage() {
 
         {/* Coach Detail Modal */}
         <Dialog open={!!selectedCoach} onOpenChange={(open) => !open && setSelectedCoach(null)}>
-          <DialogContent className="rounded-[2rem] border-none shadow-2xl p-0 w-[calc(100vw-2rem)] max-w-lg bg-white overflow-y-auto max-h-[90vh]">
+          <DialogContent className="rounded-4xl border-none shadow-2xl p-0 w-[calc(100vw-2rem)] max-w-lg bg-white overflow-y-auto max-h-[90vh]">
             <DialogHeader className="sr-only">
               <DialogTitle>Personnel Dossier: {selectedCoach?.name}</DialogTitle>
               <DialogDescription>Detailed coaching credentials and contact information.</DialogDescription>
@@ -1697,7 +1697,7 @@ function AuthorizedClubManagementPage() {
                   const teamDonationsPending = teamCampaigns.reduce((s: number, c: any) => s + c.donations.filter((d: any) => d.status !== 'verified').reduce((ds: number, d: any) => ds + (d.amount || 0), 0), 0);
                   const grandTotal = teamPaid + teamDonationsConfirmed;
                   return (
-                    <Card key={team.id} className="rounded-[1.5rem] border-none shadow-md bg-white ring-1 ring-black/5 p-4 space-y-4">
+                    <Card key={team.id} className="rounded-3xl border-none shadow-md bg-white ring-1 ring-black/5 p-4 space-y-4">
                       <div className="flex items-center justify-between">
                         <div className="min-w-0 flex-1">
                           <p className="font-black text-xs uppercase tracking-tight truncate">{team.name}</p>
@@ -1745,7 +1745,7 @@ function AuthorizedClubManagementPage() {
                 <span className="ml-1.5">Refresh</span>
               </Button>
             </div>
-            <Card className="rounded-[1.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
+            <Card className="rounded-3xl border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
               {enrollmentEntries.length === 0 ? (
                 <div className="p-12 text-center space-y-3 opacity-30">
                   <DollarSign className="h-8 w-8 mx-auto" />
@@ -1807,7 +1807,7 @@ function AuthorizedClubManagementPage() {
               <p className="text-[9px] font-bold text-muted-foreground uppercase tracking-widest">All campaigns across all squads</p>
             </div>
             {fundraiserData.length === 0 ? (
-              <Card className="rounded-[1.5rem] border-none shadow-xl bg-white ring-1 ring-black/5">
+              <Card className="rounded-3xl border-none shadow-xl bg-white ring-1 ring-black/5">
                 <div className="p-12 text-center space-y-3 opacity-30">
                   <TrendingUp className="h-8 w-8 mx-auto" />
                   <p className="text-xs font-black uppercase tracking-widest">No fundraiser campaigns found</p>
@@ -1816,7 +1816,7 @@ function AuthorizedClubManagementPage() {
             ) : (
               <div className="space-y-4">
                 {fundraiserData.map(campaign => (
-                  <Card key={`${campaign.teamId}-${campaign.id}`} className="rounded-[1.5rem] border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
+                  <Card key={`${campaign.teamId}-${campaign.id}`} className="rounded-3xl border-none shadow-xl bg-white ring-1 ring-black/5 overflow-hidden">
                     <div className="px-5 py-4 bg-primary/5 border-b flex items-center justify-between gap-3">
                       <div className="min-w-0">
                         <p className="font-black text-sm uppercase tracking-tight truncate">{campaign.title || campaign.name || 'Campaign'}</p>
@@ -1905,7 +1905,7 @@ function AuthorizedClubManagementPage() {
 
         {/* ── SAFETY TAB ── */}
         <TabsContent value="safety" className="mt-0">
-          <Card className="rounded-[2rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
+          <Card className="rounded-4xl border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
             <CardHeader className="bg-black text-white p-5 md:p-8">
               <div className="flex items-center gap-3 md:gap-4">
                 <div className="bg-primary p-2.5 md:p-3 rounded-2xl shadow-xl shadow-primary/20 shrink-0">
@@ -1968,7 +1968,7 @@ function AuthorizedClubManagementPage() {
       )}
 
       <Dialog open={!!inspectingGlobalWaiver} onOpenChange={(open) => !open && setInspectingGlobalWaiver(null)}>
-        <DialogContent className="rounded-[2rem] border-none shadow-2xl p-0 overflow-hidden w-[calc(100vw-2rem)] sm:max-w-xl bg-white">
+        <DialogContent className="rounded-4xl border-none shadow-2xl p-0 overflow-hidden w-[calc(100vw-2rem)] sm:max-w-xl bg-white">
           {inspectingGlobalWaiver && (() => {
             const completion = globalWaiverCompletion.get(inspectingGlobalWaiver.deploymentId);
             return (
@@ -2054,7 +2054,7 @@ function AuthorizedClubManagementPage() {
                 </>
               )}
             </div>
-            <DialogFooter><Button className="w-full h-13 rounded-2xl text-base font-black shadow-xl shadow-primary/20 border-none" onClick={handleUpdateClub}>{isSchoolMode ? 'Save School Identity' : 'Synchronize Hub'}</Button></DialogFooter>
+            <DialogFooter><Button className="w-full h-auto rounded-2xl text-base font-black shadow-xl shadow-primary/20 border-none" onClick={handleUpdateClub}>{isSchoolMode ? 'Save School Identity' : 'Synchronize Hub'}</Button></DialogFooter>
           </div>
         </DialogContent>
       </Dialog>
@@ -2117,14 +2117,14 @@ function AuthorizedClubManagementPage() {
                 <p className="text-[10px] font-medium leading-relaxed italic text-muted-foreground">This waiver will be saved globally and pushed to all squad compliance vaults immediately.</p>
               </div>
             </div>
-            <DialogFooter><Button className="w-full h-12 rounded-[1.5rem] text-sm font-black shadow-xl shadow-primary/20 border-none" onClick={handleDeployProtocol} disabled={isCreating || !protocolForm.title}>{isCreating ? <Loader2 className="h-5 w-5 animate-spin" /> : editingDocId ? 'Save Changes' : 'Save & Deploy Waiver'}</Button></DialogFooter>
+            <DialogFooter><Button className="w-full h-12 rounded-3xl text-sm font-black shadow-xl shadow-primary/20 border-none" onClick={handleDeployProtocol} disabled={isCreating || !protocolForm.title}>{isCreating ? <Loader2 className="h-5 w-5 animate-spin" /> : editingDocId ? 'Save Changes' : 'Save & Deploy Waiver'}</Button></DialogFooter>
           </div>
         </DialogContent>
       </Dialog>
 
       {/* Organization seat release */}
       <AlertDialog open={!!teamToDelete} onOpenChange={o => !o && setTeamToDelete(null)}>
-        <AlertDialogContent className="rounded-[2rem] border-none shadow-2xl overflow-hidden p-0 bg-white w-[calc(100vw-2rem)] max-w-md">
+        <AlertDialogContent className="rounded-4xl border-none shadow-2xl overflow-hidden p-0 bg-white w-[calc(100vw-2rem)] max-w-md">
 
           <div className="p-5 sm:p-8 space-y-5">
             <AlertDialogHeader>

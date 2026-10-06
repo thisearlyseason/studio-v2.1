@@ -253,7 +253,7 @@ export default function LoginPage() {
           priority
         />
       </div>
-      <div className="absolute inset-0 bg-gradient-to-b from-black/60 via-transparent to-black/80" />
+      <div className="absolute inset-0 bg-linear-to-b from-black/60 via-transparent to-black/80" />
       
       {!isStoreDistribution && (<div className="relative z-30 w-full max-w-5xl flex items-start pt-4 mb-2">
         <Link href="/">
@@ -268,7 +268,7 @@ export default function LoginPage() {
       </div>
 
       <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-12 items-center relative z-10">
-        <Card className="border-none shadow-2xl rounded-[2rem] sm:rounded-[3rem] animate-in fade-in slide-in-from-left-8 duration-700 bg-white/95 backdrop-blur-sm">
+        <Card className="border-none shadow-2xl rounded-4xl sm:rounded-[3rem] animate-in fade-in slide-in-from-left-8 duration-700 bg-white/95 backdrop-blur-sm">
           <CardHeader className="space-y-2 pt-8 sm:pt-12 text-center">
             <h1 className="text-3xl sm:text-4xl font-black tracking-tighter uppercase">
               {forgotMode ? 'Reset Password' : 'Sign In'}
@@ -445,7 +445,7 @@ export default function LoginPage() {
               <Button 
                 key={demo.id} 
                 variant="outline" 
-                className="h-24 rounded-[2rem] bg-white/5 border-white/10 text-white hover:bg-white/10 hover:border-white/20 transition-all flex items-center justify-between px-8 backdrop-blur-md group"
+                className="h-24 rounded-4xl bg-white/5 border-white/10 text-white hover:bg-white/10 hover:border-white/20 transition-all flex items-center justify-between px-8 backdrop-blur-md group"
                 onClick={() => handleLaunchDemo(demo.id)}
                 disabled={isLoading || isDemoLoading || nativeBusy}
                 aria-label={`Open ${demo.name}: ${demo.desc}`}

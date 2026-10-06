@@ -60,7 +60,7 @@ export function SquadIdentity({
 
   // Logo: show image if URL exists, ShieldAlert placeholder if TBD, nothing if no logo
   const logoNode = hasLogo && !isTBD ? (
-    <div className={cn(sizeClasses[size], "shrink-0 flex items-center justify-center", logoClassName, "!border-0 !bg-transparent !shadow-none")}>
+    <div className={cn(sizeClasses[size], "shrink-0 flex items-center justify-center", logoClassName, "border-0! bg-transparent! shadow-none!")}>
       <img src={logoUrl} alt={safeName} className="w-full h-full object-contain" />
     </div>
   ) : isTBD ? (

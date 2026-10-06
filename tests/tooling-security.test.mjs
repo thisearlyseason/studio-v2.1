@@ -10,30 +10,35 @@ const require=createRequire(import.meta.url);
 const firebaseRoot=path.dirname(require.resolve('firebase-tools/package.json'));
 // Exercise the actual import declarations installed in Firebase, not a parallel
 // mock adapter. A future CLI change must fail these checks for manual review.
-function bindings(file,names){
+async function bindings(file){
  const src=fs.readFileSync(path.join(firebaseRoot,file),'utf8');
- const imports=names.map(name=>src.split('\n').find(line=>line.startsWith('const '+name+' = ')));
- assert.ok(imports.every(Boolean));
- return vm.runInNewContext(imports.join('\n')+'\n({'+names.join(',')+'})',{require:createRequire(path.join(firebaseRoot,file))});
+ const declaration=src.split('\n').find(line=>line.startsWith('const streamJson_1 = '));
+ assert.ok(declaration, 'Expected native upstream streamJson loader import');
+ assert.match(src, /streamJson_1\.loadStreamJson/);
+ const loader=vm.runInNewContext(declaration+'\nstreamJson_1',{require:createRequire(path.join(firebaseRoot,file))});
+ return loader.loadStreamJson();
 }
-async function collect(input,...streams){const out=[];await pipeline(Readable.from([input]),...streams,new Writable({objectMode:true,write(x,_,cb){out.push(x);cb();}}));return out;}
+async function collect(bindings,input,...streams){const out=[];await pipeline(bindings.chain([Readable.from([input]),...streams]),new Writable({objectMode:true,write(x,_,cb){out.push(x);cb();}}));return out;}
 test('Firebase auth import keeps user extraction with the fixed upstream parser',async()=>{
- const {Pick,StreamArray}=bindings('lib/commands/auth-import.js',['Pick','StreamArray']);
- const result=await collect('{"users":[{"localId":"safe"}]}',Pick.withParser({filter:/^users$/}),StreamArray.streamArray());
+ const native=await bindings('lib/commands/auth-import.js');
+ const {pick,streamArray}=native;
+ const result=await collect(native,'{"users":[{"localId":"safe"}]}',pick.withParser({filter:/^users$/}),streamArray());
  assert.deepEqual(result.map(x=>x.value),[{localId:'safe'}]);
- await assert.rejects(collect('{"meta":'.repeat(2000)+'1'+'}'.repeat(2000),Pick.withParser({filter:/^users$/}),StreamArray.streamArray()),/depth/i);
+ await assert.rejects(collect(native,'{"meta":'.repeat(2000)+'1'+'}'.repeat(2000),pick.withParser({filter:/^users$/}),streamArray()),/depth/i);
  require('firebase-tools/lib/commands/auth-import');
 });
 test('Firebase database import keeps filtered object streaming',async()=>{
- const {Filter,StreamObject}=bindings('lib/database/import.js',['Filter','StreamObject']);
- const result=await collect('{"data":{"a":1,"b":2},"ignored":3}',Filter.withParser({filter:'data'}),StreamObject.streamObject());
+ const native=await bindings('lib/database/import.js');
+ const {filter,streamObject}=native;
+ const result=await collect(native,'{"data":{"a":1,"b":2},"ignored":3}',filter.withParser({filter:'data'}),streamObject());
  assert.deepEqual(result.map(x=>({key:x.key,value:x.value})),[{key:'data',value:{a:1,b:2}}]);
- await assert.rejects(collect('{"meta":'.repeat(2000)+'1'+'}'.repeat(2000),Filter.withParser({filter:'data'}),StreamObject.streamObject()),/depth/i);
+ await assert.rejects(collect(native,'{"meta":'.repeat(2000)+'1'+'}'.repeat(2000),filter.withParser({filter:'data'}),streamObject()),/depth/i);
  require('firebase-tools/lib/database/import');
 });
 test('Firebase Next manifest parsing preserves dependency extraction',async()=>{
- const {stream_json_1,Pick_1,StreamObject_1}=bindings('lib/frameworks/next/index.js',['stream_json_1','Pick_1','StreamObject_1']);
- const result=await collect('{"dependencies":{"next":{"version":"15.5.25","dependencies":{"nested":{"version":"1"}}},"react":{"version":"19"}}}',stream_json_1.parser({packValues:false,packKeys:true,streamValues:false}),Pick_1.pick({filter:'dependencies'}),StreamObject_1.streamObject());
+ const native=await bindings('lib/frameworks/next/utils.js');
+ const {parser,pick,streamObject}=native;
+ const result=await collect(native,'{"dependencies":{"next":{"version":"15.5.25","dependencies":{"nested":{"version":"1"}}},"react":{"version":"19"}}}',parser({packValues:false,packKeys:true,streamValues:false}),pick({filter:'dependencies'}),streamObject());
  assert.deepEqual(result.map(x=>x.key),['next','react']);
  require('firebase-tools/lib/frameworks/next/index');
 });

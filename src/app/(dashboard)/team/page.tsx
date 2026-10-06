@@ -703,7 +703,7 @@ export default function TeamProfilePage() {
         </div>
 
         <aside className="space-y-8">
-          <Card className="rounded-[2rem] border-none shadow-xl bg-primary text-primary-foreground overflow-hidden group">
+          <Card className="rounded-4xl border-none shadow-xl bg-primary text-primary-foreground overflow-hidden group">
             <CardContent className="p-8 space-y-6">
               <div className="space-y-1">
                 <Badge className="bg-white/20 text-white border-none font-black uppercase tracking-widest text-[8px] h-5 px-2">Recruitment Hub</Badge>
@@ -803,7 +803,7 @@ export default function TeamProfilePage() {
       <Link href="/roster">
         <Card className="rounded-[2.5rem] border-none shadow-xl bg-white overflow-hidden group hover:shadow-2xl transition-all cursor-pointer ring-1 ring-black/5">
           <CardContent className="p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6">
-            <div className="bg-primary/10 p-5 rounded-[1.5rem] text-primary shadow-inner shrink-0">
+            <div className="bg-primary/10 p-5 rounded-3xl text-primary shadow-inner shrink-0">
               <Users className="h-10 w-10" />
             </div>
             <div className="flex-1 min-w-0 text-center sm:text-left">

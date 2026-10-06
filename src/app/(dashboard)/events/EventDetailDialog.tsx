@@ -170,7 +170,7 @@ export function EventDetailDialog({
   return (
     <Dialog>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent hideClose className="sm:max-w-4xl w-[95vw] sm:w-[100vw] p-0 sm:rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-white text-foreground max-h-[90vh] flex flex-col">
+      <DialogContent hideClose className="sm:max-w-4xl w-[95vw] sm:w-screen p-0 sm:rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-white text-foreground max-h-[90vh] flex flex-col">
         <DialogTitle className="sr-only">Event Intelligence: {event.title}</DialogTitle>
         <DialogDescription className="sr-only">
           Event details, attendance, logistics, registration responses, and staff actions for {event.title}.
@@ -202,7 +202,7 @@ export function EventDetailDialog({
                 <h2 className="text-4xl font-black tracking-tighter leading-tight uppercase italic">{event.title}</h2>
               </div>
 
-              <div className="bg-white/5 p-5 rounded-[2rem] border border-white/10 space-y-4 font-bold text-sm shadow-inner mt-8">
+              <div className="bg-white/5 p-5 rounded-4xl border border-white/10 space-y-4 font-bold text-sm shadow-inner mt-8">
                 <div className="flex items-center gap-4 text-white/80"><CalendarDays className="h-5 w-5 text-primary" />{formatDateRange(event.date, event.endDate)}</div>
                 <div className="flex items-center gap-4 text-white/80"><Clock className="h-5 w-5 text-primary" />{event.startTime ? (() => { try { return format(new Date(`2000-01-01T${event.startTime}`), 'h:mm a'); } catch { return event.startTime; } })() : 'TBD'}</div>
                 <div className="flex items-center gap-4 text-white/80"><MapPin className="h-5 w-5 text-primary" /><span className="truncate">{event.location}</span></div>
@@ -215,7 +215,7 @@ export function EventDetailDialog({
                   {relevantParticipants.map((p) => {
                     const rsvp = event.userRsvps?.[p.id || ''] || 'no_response';
                     return (
-                      <div key={p.id} className="space-y-4 p-5 bg-white/5 rounded-[2rem] border border-white/10 group hover:border-white/20 transition-all">
+                      <div key={p.id} className="space-y-4 p-5 bg-white/5 rounded-4xl border border-white/10 group hover:border-white/20 transition-all">
                         <div className="flex items-center justify-between">
                           <div className="text-[11px] font-black uppercase text-primary tracking-widest flex items-center gap-2">
                             <div className="h-1.5 w-1.5 rounded-full bg-primary animate-pulse" />
@@ -284,7 +284,7 @@ export function EventDetailDialog({
                       {linkedGame.result}
                     </Badge>
                   </div>
-                  <div className="bg-white/10 p-6 rounded-[2rem] border border-white/20 text-center space-y-2 group/game cursor-pointer hover:bg-white/15 transition-all" onClick={() => router.push('/games')}>
+                  <div className="bg-white/10 p-6 rounded-4xl border border-white/20 text-center space-y-2 group/game cursor-pointer hover:bg-white/15 transition-all" onClick={() => router.push('/games')}>
                     <div className="flex items-center justify-center gap-6">
                       <div className="text-center">
                         <p className="text-[10px] font-bold opacity-40 uppercase mb-1">Squad</p>
@@ -306,7 +306,7 @@ export function EventDetailDialog({
                     <Badge variant="outline" className="text-[8px] font-black text-white/40 uppercase h-5 px-3 border-white/10">Pending Result</Badge>
                   </div>
                   <Button 
-                    className="w-full h-14 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-[2rem] font-black uppercase text-[10px] tracking-widest transition-all group"
+                    className="w-full h-14 bg-white/10 hover:bg-white/20 text-white border border-white/20 rounded-4xl font-black uppercase text-[10px] tracking-widest transition-all group"
                     onClick={() => router.push(`/games?recordEventId=${event.id}`)}
                   >
                     Record Match Result <Plus className="ml-2 h-4 w-4 group-hover:rotate-90 transition-transform" />
@@ -357,7 +357,7 @@ export function EventDetailDialog({
               return (
             <Tabs defaultValue={effectiveDefault} className="flex flex-col h-full">
               <div className="px-8 pt-8 shrink-0">
-                <TabsList className="flex w-full justify-start overflow-x-auto bg-muted/50 p-1.5 rounded-[1.5rem] border shadow-inner h-14 no-scrollbar gap-1 custom-scrollbar-hidden">
+                <TabsList className="flex w-full justify-start overflow-x-auto bg-muted/50 p-1.5 rounded-3xl border shadow-inner h-14 no-scrollbar gap-1 custom-scrollbar-hidden">
                   <TabsTrigger value="attendance" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0">Squad Pulse</TabsTrigger>
                   {isParentTournament && (
                     <TabsTrigger value="matches" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0">Matches</TabsTrigger>
@@ -381,7 +381,7 @@ export function EventDetailDialog({
                   </div>
                   <div className="grid grid-cols-1 gap-2">
                     {attendees.length > 0 ? attendees.map((a, i) => (
-                      <div key={i} className="flex items-center justify-between p-4 bg-muted/20 rounded-[1.5rem] border transition-all hover:bg-white hover:shadow-sm group">
+                      <div key={i} className="flex items-center justify-between p-4 bg-muted/20 rounded-3xl border transition-all hover:bg-white hover:shadow-sm group">
                         <div className="flex items-center gap-3">
                           <Badge className={cn(
                             "h-1.5 w-1.5 rounded-full p-0 border-none",
@@ -402,7 +402,7 @@ export function EventDetailDialog({
                         </Badge>
                       </div>
                     )) : (
-                      <div className="py-12 text-center bg-muted/10 rounded-[2rem] border-2 border-dashed">
+                      <div className="py-12 text-center bg-muted/10 rounded-4xl border-2 border-dashed">
                         <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">No Intelligence Data Collected</p>
                       </div>
                     )}
@@ -425,7 +425,7 @@ export function EventDetailDialog({
                       </div>
                       <div className="grid grid-cols-1 gap-3">
                         {games.map((g: any, i: number) => (
-                          <div key={i} className="p-5 border rounded-[2rem] bg-muted/10 group hover:bg-white transition-all shadow-none hover:shadow-lg">
+                          <div key={i} className="p-5 border rounded-4xl bg-muted/10 group hover:bg-white transition-all shadow-none hover:shadow-lg">
                             <div className="flex justify-between items-center mb-4">
                               <Badge className="bg-primary text-white text-[8px] font-black uppercase h-5 px-3 border-none">ROUND: {g.round || 'POOL'}</Badge>
                               <span className="text-[10px] font-black opacity-40">{g.time ? (() => { try { return format(new Date(`2000-01-01T${g.time}`), 'h:mm a'); } catch { return g.time; } })() : 'TBD'}</span>
@@ -591,7 +591,7 @@ export function EventDetailDialog({
                   ) : (
                     <div className="grid grid-cols-1 gap-4">
                       {eventDrills?.map((drill: any) => (
-                        <Card key={drill.id} className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 bg-white overflow-hidden group hover:shadow-lg transition-all cursor-pointer" onClick={() => router.push('/drills')}>
+                        <Card key={drill.id} className="rounded-4xl border-none shadow-sm ring-1 ring-black/5 bg-white overflow-hidden group hover:shadow-lg transition-all cursor-pointer" onClick={() => router.push('/drills')}>
                            <div className="flex flex-col sm:flex-row">
                               <div className="w-full sm:w-32 aspect-video sm:aspect-square bg-black shrink-0 relative">
                                  {drill.coverImageUrl ? (
@@ -627,7 +627,7 @@ export function EventDetailDialog({
                   </div>
                   <div className="grid grid-cols-1 gap-2">
                     {event.assignments && event.assignments.length > 0 ? event.assignments.map((a: any) => (
-                      <div key={a.id} className="flex items-center justify-between p-5 bg-muted/20 rounded-[1.5rem] border group hover:bg-white transition-all">
+                      <div key={a.id} className="flex items-center justify-between p-5 bg-muted/20 rounded-3xl border group hover:bg-white transition-all">
                         <div className="flex flex-col">
                           <span className="text-[11px] font-black uppercase tracking-tight text-foreground">{a.role}</span>
                           <span className="text-[9px] font-bold text-primary uppercase">{a.assignedToName || 'OPEN POSITION'}</span>
@@ -645,7 +645,7 @@ export function EventDetailDialog({
                         )}
                       </div>
                     )) : (
-                      <div className="py-12 text-center bg-muted/10 rounded-[2rem] border-2 border-dashed">
+                      <div className="py-12 text-center bg-muted/10 rounded-4xl border-2 border-dashed">
                         <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">No Logistics Required</p>
                       </div>
                     )}
@@ -691,7 +691,7 @@ export function EventDetailDialog({
                         ))}
                       </div>
                     ) : (
-                      <div className="py-12 text-center bg-muted/10 rounded-[2rem] border-2 border-dashed">
+                      <div className="py-12 text-center bg-muted/10 rounded-4xl border-2 border-dashed">
                         <Inbox className="h-8 w-8 mx-auto mb-3 text-muted-foreground/30" />
                         <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">No registration responses yet</p>
                       </div>
@@ -704,7 +704,7 @@ export function EventDetailDialog({
                     <div className="bg-primary/10 p-2 rounded-xl text-primary"><Zap className="h-5 w-5" /></div>
                     <h3 className="text-xs font-black uppercase tracking-widest text-foreground">Operational Intelligence</h3>
                   </div>
-                  <div className="p-6 bg-muted/20 rounded-[2rem] border border-muted-foreground/10 min-h-[150px]">
+                  <div className="p-6 bg-muted/20 rounded-4xl border border-muted-foreground/10 min-h-[150px]">
                     <p className="text-[11px] font-bold text-foreground leading-relaxed whitespace-pre-wrap italic">
                       {event.description || "No tactical briefing provided for this operation. Awaiting squad leader input."}
                     </p>

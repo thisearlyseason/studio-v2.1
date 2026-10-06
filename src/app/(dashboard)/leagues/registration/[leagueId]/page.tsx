@@ -1109,7 +1109,7 @@ export default function LeagueRegistrationAdminPage() {
                           <p className="text-[9px] font-black uppercase text-muted-foreground tracking-widest mb-1">
                             {key.replace(/_/g, ' ').replace(/\b\w/g, l => l.toUpperCase())}
                           </p>
-                          <p className="text-sm font-bold text-foreground leading-snug break-words">{val?.toString() || '—'}</p>
+                          <p className="text-sm font-bold text-foreground leading-snug wrap-break-word">{val?.toString() || '—'}</p>
                         </div>
                       ))}
                     </div>

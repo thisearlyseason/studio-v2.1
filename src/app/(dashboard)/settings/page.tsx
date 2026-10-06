@@ -655,7 +655,7 @@ export default function SettingsPage() {
           <CardHeader className="bg-muted/30 border-b p-5 sm:p-6 flex flex-row items-center justify-between gap-4 space-y-0">
             <div className="flex min-w-0 items-center gap-3">
               <div className="bg-primary/10 p-2.5 shrink-0 rounded-xl text-primary"><Bell className="h-5 w-5" /></div>
-              <CardTitle className="text-sm font-bold leading-snug break-words">Tactical Alerts</CardTitle>
+              <CardTitle className="text-sm font-bold leading-snug wrap-break-word">Tactical Alerts</CardTitle>
             </div>
             <Switch className="shrink-0" aria-label="Tactical alerts" checked={notifications} onCheckedChange={handleNotificationsToggle} disabled={isNotifLoading || isStoreDistribution || notificationPermission === 'unsupported'} />
           </CardHeader>
@@ -690,7 +690,7 @@ export default function SettingsPage() {
               <div className="flex min-w-0 items-center gap-3">
                 <div className="bg-blue-100 p-2.5 shrink-0 rounded-xl text-blue-700"><Bell className="h-5 w-5" /></div>
                 <div>
-                  <CardTitle className="text-sm font-bold leading-snug break-words">Game-Day Reminders</CardTitle>
+                  <CardTitle className="text-sm font-bold leading-snug wrap-break-word">Game-Day Reminders</CardTitle>
                   <CardDescription className="mt-1 text-[10px] font-bold uppercase tracking-wider">
                     All active squad members
                   </CardDescription>
@@ -721,7 +721,7 @@ export default function SettingsPage() {
           <CardHeader className="bg-muted/30 border-b p-5 sm:p-6 flex flex-row items-center justify-between gap-4 space-y-0">
             <div className="flex min-w-0 items-center gap-3">
               <div className="bg-amber-100 p-2.5 shrink-0 rounded-xl text-amber-600"><ShieldCheck className="h-5 w-5" /></div>
-              <CardTitle className="text-sm font-bold leading-snug break-words">Subscription Intelligence</CardTitle>
+              <CardTitle className="text-sm font-bold leading-snug wrap-break-word">Subscription Intelligence</CardTitle>
             </div>
             <Badge className={cn("font-black uppercase text-[8px] tracking-widest", user.subscription_status === 'active' ? "bg-green-100 text-green-700" : "bg-primary/10 text-primary")}>
               {user.subscription_status || 'Free'}
@@ -792,7 +792,7 @@ export default function SettingsPage() {
                     <div className={cn("p-2 shrink-0 rounded-xl", isEnabled ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>
                       {isEnabled ? <Icon className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                     </div>
-                    <span className={cn("text-sm font-semibold leading-snug break-words", !isEnabled && "text-muted-foreground")}>
+                    <span className={cn("text-sm font-semibold leading-snug wrap-break-word", !isEnabled && "text-muted-foreground")}>
                       {module.name}
                     </span>
                   </div>
@@ -970,7 +970,7 @@ export default function SettingsPage() {
       </AlertDialog>
 
       <AlertDialog open={isNotificationConsentOpen} onOpenChange={setIsNotificationConsentOpen}>
-        <AlertDialogContent className="rounded-[2rem] border-none shadow-2xl">
+        <AlertDialogContent className="rounded-4xl border-none shadow-2xl">
           <AlertDialogHeader>
             <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <Bell className="h-7 w-7" />

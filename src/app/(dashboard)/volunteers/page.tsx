@@ -166,7 +166,7 @@ export default function VolunteerHubPage() {
     <div className="relative min-h-[calc(100vh-10rem)]">
       {!isPro && (
         <div 
-          className="absolute inset-x-[-2rem] inset-y-[-2rem] z-50 flex items-center justify-center p-6 sm:p-10 animate-in fade-in zoom-in duration-500"
+          className="absolute -inset-x-8 -inset-y-8 z-50 flex items-center justify-center p-6 sm:p-10 animate-in fade-in zoom-in duration-500"
           style={{ 
             background: 'radial-gradient(circle at center, rgba(255,255,255,0.2) 0%, rgba(255,255,255,0.8) 100%)',
             backdropFilter: 'blur(12px)'
@@ -175,7 +175,7 @@ export default function VolunteerHubPage() {
           <Card className="max-w-md w-full rounded-[3.5rem] border-none shadow-3xl bg-white overflow-hidden ring-1 ring-black/5">
 
             <CardHeader className="p-12 text-center space-y-8">
-              <div className="bg-primary/10 w-24 h-24 rounded-[2rem] flex items-center justify-center mx-auto shadow-inner group">
+              <div className="bg-primary/10 w-24 h-24 rounded-4xl flex items-center justify-center mx-auto shadow-inner group">
                 <LockIcon className="h-12 w-12 text-primary group-hover:scale-110 transition-transform" />
               </div>
               <div className="space-y-3">
@@ -190,7 +190,7 @@ export default function VolunteerHubPage() {
             <CardFooter className="p-12 pt-0">
               <Button 
                 onClick={purchasePro}
-                className="w-full h-16 rounded-[2rem] text-lg font-black shadow-2xl shadow-primary/30 active:scale-95 transition-all bg-black hover:bg-primary"
+                className="w-full h-16 rounded-4xl text-lg font-black shadow-2xl shadow-primary/30 active:scale-95 transition-all bg-black hover:bg-primary"
               >
                 Unlock Pro Access
               </Button>
@@ -199,7 +199,7 @@ export default function VolunteerHubPage() {
         </div>
       )}
 
-      <div className={cn("space-y-12 pb-20 animate-in fade-in slide-in-from-bottom-4 duration-700", !isPro && "blur-[4px] pointer-events-none grayscale opacity-30 select-none")}>
+      <div className={cn("space-y-12 pb-20 animate-in fade-in slide-in-from-bottom-4 duration-700", !isPro && "blur-xs pointer-events-none grayscale opacity-30 select-none")}>
       <header className="space-y-6 animate-in fade-in slide-in-from-top-4 duration-1000">
         <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
           <div className="space-y-2">
@@ -210,7 +210,7 @@ export default function VolunteerHubPage() {
             <h1 className="text-4xl md:text-7xl font-black uppercase tracking-tight leading-[0.85] italic">Volunteer Intelligence</h1>
           </div>
           {isStaff && (
-            <Button onClick={() => setIsAddOpen(true)} className="h-16 md:h-20 px-8 md:px-12 rounded-[2rem] bg-black text-white hover:bg-black/90 font-black uppercase text-xs tracking-[0.2em] shadow-2xl transition-all active:scale-95 group shrink-0">
+            <Button onClick={() => setIsAddOpen(true)} className="h-16 md:h-20 px-8 md:px-12 rounded-4xl bg-black text-white hover:bg-black/90 font-black uppercase text-xs tracking-[0.2em] shadow-2xl transition-all active:scale-95 group shrink-0">
               <Plus className="h-4 w-4 md:h-5 md:w-5 mr-3 group-hover:rotate-90 transition-transform" /> Deploy Mission
             </Button>
           )}
@@ -246,7 +246,7 @@ export default function VolunteerHubPage() {
 
       <Tabs defaultValue="board" className="space-y-10">
         <div className="overflow-x-auto pb-4 -mx-4 px-4 no-scrollbar">
-          <TabsList className="bg-muted/50 p-1.5 rounded-[2rem] h-auto border-2 border-black/5 inline-flex">
+          <TabsList className="bg-muted/50 p-1.5 rounded-4xl h-auto border-2 border-black/5 inline-flex">
             <TabsTrigger value="board" className="rounded-2xl px-6 md:px-10 py-3 md:py-4 font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-lg transition-all">Mission Board</TabsTrigger>
             {isStaff && (
               <TabsTrigger value="ledger" className="rounded-2xl px-6 md:px-10 py-3 md:py-4 font-black uppercase text-[10px] tracking-widest data-[state=active]:bg-white data-[state=active]:shadow-lg transition-all">Audit Terminal</TabsTrigger>
@@ -311,11 +311,11 @@ export default function VolunteerHubPage() {
                   <CardFooter className="p-10 flex flex-col gap-4">
                     {isStaff ? (
                       <div className="flex gap-2 w-full">
-                        <Button className={cn("flex-1 h-14 rounded-[1.5rem] font-black uppercase text-[10px] tracking-widest shadow-xl transition-all", hasSignedUp ? "bg-muted text-muted-foreground" : "bg-black text-white hover:bg-primary shadow-black/10")} onClick={() => signUpForVolunteer(task.id)} disabled={hasSignedUp || isFull}>
+                        <Button className={cn("flex-1 h-14 rounded-3xl font-black uppercase text-[10px] tracking-widest shadow-xl transition-all", hasSignedUp ? "bg-muted text-muted-foreground" : "bg-black text-white hover:bg-primary shadow-black/10")} onClick={() => signUpForVolunteer(task.id)} disabled={hasSignedUp || isFull}>
                           {hasSignedUp ? "Deployment Confirmed" : isFull ? "Target Met" : "Claim Mission"}
                         </Button>
                         {task.entryType === 'opportunity' && (
-                          <Button variant="outline" size="icon" className="h-14 w-14 rounded-[1.5rem] border-2 group-hover:border-primary/20 transition-all" onClick={() => { setEditingOpp(task as any); setIsEditOpen(true); }}>
+                          <Button variant="outline" size="icon" className="h-14 w-14 rounded-3xl border-2 group-hover:border-primary/20 transition-all" onClick={() => { setEditingOpp(task as any); setIsEditOpen(true); }}>
                             <Edit3 className="h-5 w-5" />
                           </Button>
                         )}
@@ -323,7 +323,7 @@ export default function VolunteerHubPage() {
                     ) : (
                       <Button 
                         disabled={hasSignedUp || isFull || !isParent}
-                        className={cn("w-full h-16 rounded-[2rem] font-black uppercase text-xs tracking-[0.2em] shadow-2xl transition-all active:scale-95", hasSignedUp ? "bg-green-100 text-green-700 shadow-none ring-2 ring-green-500/20" : isFull ? "bg-muted text-muted-foreground grayscale" : "bg-primary text-white shadow-primary/30 hover:bg-black")} 
+                        className={cn("w-full h-16 rounded-4xl font-black uppercase text-xs tracking-[0.2em] shadow-2xl transition-all active:scale-95", hasSignedUp ? "bg-green-100 text-green-700 shadow-none ring-2 ring-green-500/20" : isFull ? "bg-muted text-muted-foreground grayscale" : "bg-primary text-white shadow-primary/30 hover:bg-black")} 
                         onClick={() => {
                           if (isEventTask) claimAssignment((task as any).eventId!, (task as any).assignmentId!);
                           else signUpForVolunteer(task.id);
@@ -442,7 +442,7 @@ export default function VolunteerHubPage() {
                   <Input type="time" value={newOpp.startTime} onChange={e => setNewOpp({...newOpp, startTime: e.target.value})} className="h-14 rounded-2xl border-2 font-black shadow-sm" />
                 </div>
               </div>
-              <div className="flex items-center justify-between p-6 bg-muted/20 rounded-[2rem] border-2 border-transparent hover:border-black/5 transition-all">
+              <div className="flex items-center justify-between p-6 bg-muted/20 rounded-4xl border-2 border-transparent hover:border-black/5 transition-all">
                 <div className="space-y-1">
                   <p className="text-xs font-black uppercase tracking-tight leading-none">Public Outreach</p>
                   <p className="text-[9px] font-bold text-muted-foreground uppercase opacity-60">Allow external enrollment via secure portal</p>

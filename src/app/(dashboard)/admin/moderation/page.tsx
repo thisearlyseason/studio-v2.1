@@ -96,7 +96,7 @@ export default function ModerationPage() {
               {report.kind} by {report.authorName} · {report.createdAt} · Team{" "}
               {report.teamId}
             </p>
-            <blockquote className="whitespace-pre-wrap break-words rounded-md bg-muted p-3">
+            <blockquote className="whitespace-pre-wrap wrap-break-word rounded-md bg-muted p-3">
               {report.contentPreview || "(No text)"}
             </blockquote>
             {report.hasImage && (
@@ -105,7 +105,7 @@ export default function ModerationPage() {
                 content before deciding.
               </p>
             )}
-            <p className="whitespace-pre-wrap break-words">{report.details}</p>
+            <p className="whitespace-pre-wrap wrap-break-word">{report.details}</p>
             <label className="block">
               Moderator note
               <textarea

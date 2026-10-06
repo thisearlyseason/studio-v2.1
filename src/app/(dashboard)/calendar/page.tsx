@@ -149,7 +149,7 @@ function ScheduleAppBanner({ onOpen }: { onOpen: () => void }) {
               </span>
               <span className="text-[8px] font-black uppercase tracking-widest text-white/30 hidden sm:inline">Installable · Works Offline</span>
             </div>
-            <h2 className="text-base md:text-lg font-black uppercase tracking-tight text-white leading-tight">
+            <h2 className="text-base md:text-lg md:leading-7 font-black uppercase tracking-tight text-white leading-tight">
               Offline Schedule &amp; Task List
               <span className="ml-2 text-transparent bg-clip-text" style={{ backgroundImage: 'linear-gradient(90deg, #a78bfa, #60a5fa)' }}>— Always With You</span>
             </h2>
@@ -244,7 +244,7 @@ function ScheduleAppBanner({ onOpen }: { onOpen: () => void }) {
               className="group relative overflow-hidden h-14 px-8 rounded-2xl font-black text-xs uppercase tracking-widest text-white transition-all duration-200 active:scale-95 shadow-2xl"
               style={{ background: 'linear-gradient(135deg, #7c3aed 0%, #6d28d9 50%, #4f46e5 100%)' }}
             >
-              <span className="absolute inset-0 translate-x-[-100%] group-hover:translate-x-[100%] transition-transform duration-700 bg-gradient-to-r from-transparent via-white/20 to-transparent pointer-events-none" />
+              <span className="absolute inset-0 -translate-x-full group-hover:translate-x-full transition-transform duration-700 bg-linear-to-r from-transparent via-white/20 to-transparent pointer-events-none" />
               <span className="relative flex items-center gap-2">
                 <Smartphone className="h-4 w-4" />
                 Open Schedule App
@@ -263,7 +263,7 @@ function ScheduleAppBanner({ onOpen }: { onOpen: () => void }) {
         </div>
 
         {/* Bottom ticker */}
-        <div className="relative z-10 border-t border-white/5 bg-white/[0.02] px-6 py-3 flex items-center gap-6 overflow-hidden">
+        <div className="relative z-10 border-t border-white/5 bg-white/2 px-6 py-3 flex items-center gap-6 overflow-hidden">
           <div className="flex items-center gap-2 shrink-0">
             <div className="h-1.5 w-1.5 rounded-full bg-emerald-400 animate-pulse" />
             <span className="text-[9px] font-black uppercase tracking-[0.2em] text-emerald-400">Live Sync Active</span>
@@ -373,7 +373,7 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl p-0 sm:rounded-[2.5rem] rounded-t-[2rem] border-none shadow-2xl bg-white text-foreground flex flex-col max-h-[92dvh] sm:max-h-[85vh] overflow-hidden">
+      <DialogContent className="sm:max-w-4xl p-0 sm:rounded-[2.5rem] rounded-t-4xl border-none shadow-2xl bg-white text-foreground flex flex-col max-h-[92dvh] sm:max-h-[85vh] overflow-hidden">
         <DialogTitle className="sr-only">Event Details: {event.title}</DialogTitle>
         {/* Sticky close button header */}
         <div className="sticky top-0 z-50 flex justify-end p-3 shrink-0">
@@ -410,7 +410,7 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
                 <h2 className="text-4xl font-black tracking-tighter leading-tight uppercase italic">{event.title}</h2>
               </div>
 
-              <div className="bg-white/5 p-5 rounded-[2rem] border border-white/10 space-y-4 font-bold text-sm shadow-inner mt-8">
+              <div className="bg-white/5 p-5 rounded-4xl border border-white/10 space-y-4 font-bold text-sm shadow-inner mt-8">
                 <div className="flex items-center gap-4 text-white/80"><CalendarDays className="h-5 w-5 text-primary" />{formatDateRange(event.date, event.endDate)}</div>
                 <div className="flex items-center gap-4 text-white/80"><Clock className="h-5 w-5 text-primary" />{event.startTime}</div>
                 <div className="flex items-center gap-4 text-white/80"><MapPin className="h-5 w-5 text-primary" /><span className="truncate">{event.location}</span></div>
@@ -428,7 +428,7 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
                     const isPending = !!pendingStatus[p.id || ''];
 
                     return (
-                      <div key={p.id || 'you'} className="space-y-4 p-5 bg-white/5 rounded-[2rem] border border-white/10 group hover:border-white/20 transition-all">
+                      <div key={p.id || 'you'} className="space-y-4 p-5 bg-white/5 rounded-4xl border border-white/10 group hover:border-white/20 transition-all">
                         <div className="flex items-center justify-between">
                           <span className="text-[11px] font-black uppercase text-primary tracking-widest flex items-center gap-2">
                             <span className={cn("h-1.5 w-1.5 rounded-full bg-primary inline-block", isPending && "animate-ping")} />
@@ -494,7 +494,7 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
           <div className="flex-1 bg-white lg:overflow-hidden overflow-visible flex flex-col h-auto lg:h-full min-h-[500px] lg:min-h-0">
             <Tabs defaultValue="brief" className="flex flex-col h-full">
               <div className="px-8 pt-8 shrink-0">
-                <TabsList className="flex w-full overflow-x-auto bg-muted/50 p-1.5 rounded-[1.5rem] border shadow-inner h-14 no-scrollbar gap-1 custom-scrollbar-hidden">
+                <TabsList className="flex w-full overflow-x-auto bg-muted/50 p-1.5 rounded-3xl border shadow-inner h-14 no-scrollbar gap-1 custom-scrollbar-hidden">
                   <TabsTrigger value="brief" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0">Brief</TabsTrigger>
                   <TabsTrigger value="matches" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0" disabled={!event.isTournament}>Matches</TabsTrigger>
                   <TabsTrigger value="roster" className="rounded-xl font-black uppercase text-[9px] tracking-tight data-[state=active]:bg-white data-[state=active]:shadow-md px-4 shrink-0">Attendance</TabsTrigger>
@@ -544,7 +544,7 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
 
                   <div className="grid grid-cols-1 gap-4">
                     {event.tournamentGames?.map((game: any) => (
-                      <Card key={game.id} className="rounded-[2rem] border-none shadow-sm ring-1 ring-black/5 bg-white overflow-hidden p-6 space-y-4 transition-all hover:shadow-md group">
+                      <Card key={game.id} className="rounded-4xl border-none shadow-sm ring-1 ring-black/5 bg-white overflow-hidden p-6 space-y-4 transition-all hover:shadow-md group">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-3">
                             <Badge className="bg-black text-white border-none text-[8px] font-black uppercase px-2.5 h-6 tracking-widest">{game.time}</Badge>
@@ -750,7 +750,7 @@ function CalendarSubscriptionDialog() {
                     href={`https://calendar.google.com/calendar/r?cid=${encodeURIComponent(url)}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-4 p-4 rounded-2xl border-2 hover:border-primary hover:bg-primary/[0.02] transition-all active:scale-[0.98] cursor-pointer group"
+                    className="flex items-center gap-4 p-4 rounded-2xl border-2 hover:border-primary hover:bg-primary/2 transition-all active:scale-[0.98] cursor-pointer group"
                   >
                     <div className="h-10 w-10 rounded-xl bg-white shadow-md flex items-center justify-center shrink-0 border">
                       <svg viewBox="0 0 24 24" className="h-5 w-5"><path fill="#4285F4" d="M22 12c0-5.52-4.48-10-10-10S2 6.48 2 12s4.48 10 10 10 10-4.48 10-10z"/><path fill="white" d="M12 6v6l4 2-4-8z" opacity="0"/><path fill="#34A853" d="M16.93 15.4L12 12V6h2v5.58l4.27 2.46-.34.59z" opacity="0"/><rect fill="#4285F4" x="10" y="10" width="4" height="4"/><path fill="#FBBC04" d="M6 8h12v2H6z"/><path fill="#34A853" d="M8 10h8v8H8z" opacity=".3"/><text x="12" y="17" textAnchor="middle" fill="white" fontSize="7" fontWeight="bold">G</text></svg>
@@ -765,7 +765,7 @@ function CalendarSubscriptionDialog() {
                   {/* Apple / iOS Calendar */}
                   <a
                     href={`webcal://${url.replace(/^https?:\/\//, '')}`}
-                    className="flex items-center gap-4 p-4 rounded-2xl border-2 hover:border-primary hover:bg-primary/[0.02] transition-all active:scale-[0.98] cursor-pointer group"
+                    className="flex items-center gap-4 p-4 rounded-2xl border-2 hover:border-primary hover:bg-primary/2 transition-all active:scale-[0.98] cursor-pointer group"
                   >
                     <div className="h-10 w-10 rounded-xl bg-white shadow-md flex items-center justify-center shrink-0 border">
                       <CalendarDays className="h-5 w-5 text-blue-600" />
@@ -782,7 +782,7 @@ function CalendarSubscriptionDialog() {
                     href={`https://outlook.live.com/calendar/0/addfromweb?url=${encodeURIComponent(url)}`}
                     target="_blank"
                     rel="noopener noreferrer"
-                    className="flex items-center gap-4 p-4 rounded-2xl border-2 hover:border-primary hover:bg-primary/[0.02] transition-all active:scale-[0.98] cursor-pointer group"
+                    className="flex items-center gap-4 p-4 rounded-2xl border-2 hover:border-primary hover:bg-primary/2 transition-all active:scale-[0.98] cursor-pointer group"
                   >
                     <div className="h-10 w-10 rounded-xl bg-white shadow-md flex items-center justify-center shrink-0 border">
                       <svg viewBox="0 0 24 24" className="h-5 w-5"><path fill="#0078D4" d="M12 2L2 7v10l10 5 10-5V7L12 2zm0 2.18L20 8v8l-8 4-8-4V8l8-3.82z"/><text x="12" y="16" textAnchor="middle" fill="#0078D4" fontSize="8" fontWeight="bold">O</text></svg>
@@ -931,7 +931,7 @@ function LeagueScheduleButton({ events }: { events: TeamEvent[] }) {
             <button
               key={comp.id}
               onClick={() => handleSelect(comp)}
-              className="w-full flex items-center justify-between p-5 rounded-[1.5rem] border-2 hover:border-primary hover:bg-primary/[0.02] transition-all group text-left"
+              className="w-full flex items-center justify-between p-5 rounded-3xl border-2 hover:border-primary hover:bg-primary/2 transition-all group text-left"
             >
               <div className="flex items-center gap-4">
                 <div className="h-10 w-10 rounded-xl bg-muted/50 flex items-center justify-center shrink-0">
@@ -1379,7 +1379,7 @@ export default function MasterCalendarPage() {
           </Button>
           <Popover>
             <PopoverTrigger asChild><Button aria-label="Filters" variant="outline" className="rounded-xl h-10 sm:h-11 border-2 font-black uppercase text-[10px] tracking-widest gap-2 text-foreground"><Filter className="h-4 w-4" /><span className="hidden sm:inline">Filters</span></Button></PopoverTrigger>
-            <PopoverContent className="w-72 sm:w-80 max-h-[var(--radix-popover-content-available-height)] overflow-y-auto overscroll-contain rounded-2xl shadow-2xl p-6" align="end">
+            <PopoverContent className="w-72 sm:w-80 max-h-(--radix-popover-content-available-height) overflow-y-auto overscroll-contain rounded-2xl shadow-2xl p-6" align="end">
               <div className="space-y-4">
                 <p className="text-[10px] font-black uppercase tracking-widest text-primary">Squad Enrollment</p>
                 <ScrollArea className="h-48">
@@ -1468,7 +1468,7 @@ export default function MasterCalendarPage() {
                   const isSelected = selectedDay && isSameDay(day, selectedDay);
 
                   return (
-                    <div key={i} className={cn("p-2 border-r border-b min-h-[120px] transition-all cursor-pointer relative", !isCurrentMonth ? "bg-muted/5 opacity-30" : "bg-white", isTodayDate && "bg-primary/[0.02]", isSelected && "bg-primary/[0.05] ring-2 ring-inset ring-primary/20")} onClick={() => setSelectedDay(day)}>
+                    <div key={i} className={cn("p-2 border-r border-b min-h-[120px] transition-all cursor-pointer relative", !isCurrentMonth ? "bg-muted/5 opacity-30" : "bg-white", isTodayDate && "bg-primary/2", isSelected && "bg-primary/5 ring-2 ring-inset ring-primary/20")} onClick={() => setSelectedDay(day)}>
                       <div className="flex justify-between items-center mb-2">
                         <span className={cn("h-7 w-7 flex items-center justify-center rounded-full text-xs font-black transition-all", isTodayDate ? "bg-primary text-white" : (isSelected ? "bg-black text-white" : "text-muted-foreground"))}>{format(day, 'd')}</span>
                       </div>

@@ -250,7 +250,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
       <div className={cn(
         "h-10 w-10 rounded-xl flex items-center justify-center shrink-0 font-black text-base",
         isActive
-          ? variant === 'elite' ? "bg-gradient-to-br from-amber-500 to-primary text-white" : "bg-primary text-white"
+          ? variant === 'elite' ? "bg-linear-to-br from-amber-500 to-primary text-white" : "bg-primary text-white"
           : variant === 'elite' ? "bg-amber-100 text-amber-700" : "bg-primary/15 text-primary"
       )}>
         {initial}
@@ -681,7 +681,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       <div className="flex flex-col h-full w-full bg-background selection:bg-primary/20">
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <Sidebar 
-            className="absolute inset-y-0 h-full border-r bg-white w-72 shrink-0 shadow-sm [&_[data-sidebar=sidebar]]:overflow-y-auto [&_[data-sidebar=sidebar]]:overscroll-contain [&_[data-sidebar=sidebar]]:touch-pan-y" 
+            className="absolute inset-y-0 h-full border-r bg-white w-72 shrink-0 shadow-sm **:data-[sidebar=sidebar]:overflow-y-auto **:data-[sidebar=sidebar]:overscroll-contain **:data-[sidebar=sidebar]:touch-pan-y" 
             collapsible="offcanvas"
           >
             <SidebarHeader className="shrink-0 p-6 bg-white">
@@ -794,7 +794,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                             </AvatarFallback>
                           ) : isEliteHubMode ? (
                             /* Elite Club hub mode — amber/primary gradient shield */
-                            <AvatarFallback className="bg-gradient-to-br from-amber-500 to-primary text-white font-black text-xs">
+                            <AvatarFallback className="bg-linear-to-br from-amber-500 to-primary text-white font-black text-xs">
                               {(user?.clubName || user?.schoolName || 'E')[0]}
                             </AvatarFallback>
                           ) : isSchoolMode && isPrimaryClubAuthority ? (

@@ -17,6 +17,6 @@ export function PlayerSelfMediaControls({subject,profile,busy,status,onUpload,on
     </div>
     {profile.photoURL&&<div className="flex flex-wrap items-center gap-3"><img src={mediaReadUrl(profile.photoURL,process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET)} alt="My player avatar" width={64} height={64} className="h-16 w-16 rounded-xl object-cover"/><Button variant="outline" size="sm" disabled={busy} onClick={()=>onDelete('avatar',profile.photoURL!)}>Delete player avatar</Button></div>}
     <div className="grid min-w-0 grid-cols-2 gap-3">{(profile.photos||[]).map((url,index)=><div key={url} className="min-w-0 space-y-2"><img src={mediaReadUrl(url,process.env.NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET)} alt={`My gallery photo ${index+1}`} className="h-24 w-full rounded-xl object-cover"/><Button variant="outline" size="sm" className="h-auto min-h-9 w-full whitespace-normal" disabled={busy} onClick={()=>onDelete('gallery',url)}>Delete gallery photo {index+1}</Button></div>)}</div>
-    <p role="status" aria-live="polite" className="break-words text-sm">{status||'Ready to upload'}</p>
+    <p role="status" aria-live="polite" className="wrap-break-word text-sm">{status||'Ready to upload'}</p>
   </section>;
 }

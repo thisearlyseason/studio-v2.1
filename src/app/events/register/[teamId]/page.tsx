@@ -99,7 +99,7 @@ function RegistrationForm() {
 
   if (submitted) return (
     <div className="min-h-screen flex items-center justify-center p-6 bg-muted/30">
-      <Card className="max-w-md w-full text-center p-8 rounded-[2rem] shadow-2xl">
+      <Card className="max-w-md w-full text-center p-8 rounded-4xl shadow-2xl">
         <div className="bg-green-100 h-16 w-16 rounded-full flex items-center justify-center mx-auto mb-6">
           <CheckCircle2 className="h-8 w-8 text-green-600" />
         </div>

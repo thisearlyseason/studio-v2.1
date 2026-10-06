@@ -24,7 +24,7 @@ export function PortalStatus({ status, message, title, onRetry }: PortalStatusPr
 
   return (
     <div className="min-h-screen bg-muted/10 flex items-center justify-center p-6">
-      <Card className="max-w-md w-full text-center p-8 sm:p-10 rounded-[2rem] border-none shadow-xl bg-white">
+      <Card className="max-w-md w-full text-center p-8 sm:p-10 rounded-4xl border-none shadow-xl bg-white">
         <div className="mx-auto mb-5 h-14 w-14 rounded-2xl bg-primary/10 text-primary flex items-center justify-center">
           {isForbidden ? <Lock className="h-7 w-7" /> : isUnavailable ? <ShieldAlert className="h-7 w-7" /> : <AlertCircle className="h-7 w-7" />}
         </div>

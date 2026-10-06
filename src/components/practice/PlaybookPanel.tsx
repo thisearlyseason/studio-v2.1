@@ -446,7 +446,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
     <div className={cn("relative", !embedded && "min-h-[calc(100vh-10rem)]")}>
       {!isPro && (
         <div
-          className="absolute inset-x-[-2rem] inset-y-[-2rem] z-50 flex items-center justify-center p-6 sm:p-10 animate-in fade-in zoom-in duration-500"
+          className="absolute -inset-x-8 -inset-y-8 z-50 flex items-center justify-center p-6 sm:p-10 animate-in fade-in zoom-in duration-500"
           style={{
             background: 'radial-gradient(circle at center, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.8) 100%)',
             backdropFilter: 'blur(12px)'
@@ -455,7 +455,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
           <Card className="max-w-md w-full rounded-[3.5rem] border-none shadow-[0_40px_80px_-15px_rgba(0,0,0,0.15)] bg-white overflow-hidden ring-1 ring-black/5">
 
             <div className="p-10 text-center space-y-6">
-              <div className="mx-auto w-20 h-20 bg-primary/5 rounded-[2rem] flex items-center justify-center ring-1 ring-primary/10 animate-pulse">
+              <div className="mx-auto w-20 h-20 bg-primary/5 rounded-4xl flex items-center justify-center ring-1 ring-primary/10 animate-pulse">
                 <Lock className="h-10 w-10 text-primary" />
               </div>
               <div className="space-y-2">
@@ -475,7 +475,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
         </div>
       )}
 
-      <div className={cn("space-y-8 animate-in fade-in duration-500", embedded ? "pb-8" : "pb-20", !isPro && "blur-[8px] grayscale pointer-events-none")}>
+      <div className={cn("space-y-8 animate-in fade-in duration-500", embedded ? "pb-8" : "pb-20", !isPro && "blur-sm grayscale pointer-events-none")}>
         <div className={cn("flex flex-col xl:flex-row xl:items-center justify-between gap-4")}>
           {(
             <div className="space-y-1">
@@ -528,7 +528,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
             {viewMode === 'drills' ? filteredDrills.map((drill, drillIndex) => (
-              <Card key={drill.id} className="rounded-[2rem] min-w-0 overflow-hidden border-none shadow-sm ring-1 ring-black/5 cursor-pointer bg-white group hover:shadow-xl transition-all" onClick={() => setSelectedDrill(drill)}>
+              <Card key={drill.id} className="rounded-4xl min-w-0 overflow-hidden border-none shadow-sm ring-1 ring-black/5 cursor-pointer bg-white group hover:shadow-xl transition-all" onClick={() => setSelectedDrill(drill)}>
                 <button type="button" aria-label={drill.videoUrl ? `Open ${drill.title}` : `View diagram for ${drill.title}`} className="block w-full aspect-video bg-black relative overflow-hidden focus-visible:outline-none focus-visible:ring-4 focus-visible:ring-inset focus-visible:ring-primary" onClick={(event) => { event.stopPropagation(); if (!drill.videoUrl && drill.coverImageUrl) setLightboxUrl(drill.coverImageUrl); else setSelectedDrill(drill); }}>
                   {drill.coverImageUrl ? (
                     <img src={drill.coverImageUrl} alt={drill.title} className="w-full h-full object-cover opacity-80 group-hover:opacity-100 transition-opacity" />
@@ -559,7 +559,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
                 </button>
                 <CardContent className="p-5 sm:p-6 space-y-4">
                   <div className="space-y-4 min-w-0">
-                    <h3 className="block w-full min-w-0 font-black text-xl leading-snug break-words tracking-tight text-foreground">{drill.title}</h3>
+                    <h3 className="block w-full min-w-0 font-black text-xl leading-snug wrap-break-word tracking-tight text-foreground">{drill.title}</h3>
                     {drill.estimatedTime && <p className="text-sm text-muted-foreground flex items-center gap-2"><Clock className="h-4 w-4 shrink-0" />Estimated practice time: {drill.estimatedTime}</p>}
                     {!drill.videoUrl && drill.coverImageUrl && <Button type="button" variant="outline" className="min-h-11 rounded-full" onClick={(event) => { event.stopPropagation(); setLightboxUrl(drill.coverImageUrl); }}><Search className="h-4 w-4 mr-2" />View diagram</Button>}
                     <div className="flex items-center gap-2 flex-wrap border-t pt-3">
@@ -626,7 +626,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
                 </CardContent>
               </Card>
             )) : filteredFiles.map(file => (
-              <Card key={file.id} className="rounded-[2rem] min-w-0 overflow-hidden border-none shadow-sm ring-1 ring-black/5 cursor-pointer bg-white group hover:shadow-xl transition-all" onClick={() => setSelectedFile(file)}>
+              <Card key={file.id} className="rounded-4xl min-w-0 overflow-hidden border-none shadow-sm ring-1 ring-black/5 cursor-pointer bg-white group hover:shadow-xl transition-all" onClick={() => setSelectedFile(file)}>
                 <div className="aspect-video bg-black flex items-center justify-center relative overflow-hidden">
                   {file.url && (file.url.includes('youtube.com') || file.url.includes('youtu.be/')) && getYoutubeThumbnail(file.url) ? (
                     <img src={getYoutubeThumbnail(file.url)!} alt={file.name} className="w-full h-full object-cover opacity-60 group-hover:opacity-80 transition-opacity" />
@@ -649,7 +649,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
                 </div>
                 <CardContent className="p-5 sm:p-6 space-y-4">
                   <div className="space-y-4 min-w-0">
-                    <h3 className="block w-full min-w-0 font-black text-xl leading-snug break-words tracking-tight text-foreground">{file.name}</h3>
+                    <h3 className="block w-full min-w-0 font-black text-xl leading-snug wrap-break-word tracking-tight text-foreground">{file.name}</h3>
                     <div className="flex items-center gap-2 flex-wrap border-t pt-3">
                       <Badge variant="secondary" className="rounded-lg h-5 text-[8px] font-black uppercase">{(file.comments?.length || 0)} MARKS</Badge>
                       {isStaff && (
@@ -873,7 +873,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
               <Input placeholder="e.g. Regional Finals vs Lancers" className="h-14 rounded-2xl border-2 font-black text-lg" value={newTitle ?? ""} onChange={e => setNewTitle(e.target.value)} />
             </div>
             <div className="space-y-2">
-              <Label className="text-[10px] font-black uppercase tracking-[0.1em] ml-1">Archive Category</Label>
+              <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Archive Category</Label>
               <Select value={uploadCat} onValueChange={setUploadCat}>
                 <SelectTrigger className="h-14 rounded-2xl border-2 font-black uppercase text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent className="rounded-2xl">
@@ -897,7 +897,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
             </div>
           </div>
           <DialogFooter className="p-8 pt-0">
-            <Button onClick={handleAddFilm} disabled={!newTitle || (!newUrl && !fileInputRef.current?.files?.length)} className="w-full h-16 rounded-[2rem] font-black uppercase text-xs shadow-xl shadow-primary/20">Enshrine in Vault</Button>
+            <Button onClick={handleAddFilm} disabled={!newTitle || (!newUrl && !fileInputRef.current?.files?.length)} className="w-full h-16 rounded-4xl font-black uppercase text-xs shadow-xl shadow-primary/20">Enshrine in Vault</Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
@@ -906,7 +906,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
         <DialogContent hideClose className="sm:max-w-[95vw] lg:max-w-7xl h-full sm:h-[90vh] p-0 border-none shadow-2xl overflow-y-auto lg:overflow-hidden bg-white text-foreground flex flex-col rounded-none sm:rounded-[3.5rem]">
           <DialogTitle className="sr-only">Tactical Viewer - {selectedDrill?.title || selectedFile?.name}</DialogTitle>
           <DialogClose asChild>
-            <Button variant="ghost" size="icon" className="absolute top-6 right-6 z-[60] h-12 w-12 rounded-full bg-black/50 hover:bg-black/70 text-white border border-white/20 backdrop-blur-md shadow-2xl transition-all">
+            <Button variant="ghost" size="icon" className="absolute top-6 right-6 z-60 h-12 w-12 rounded-full bg-black/50 hover:bg-black/70 text-white border border-white/20 backdrop-blur-md shadow-2xl transition-all">
               <X className="h-6 w-6" />
             </Button>
           </DialogClose>
@@ -1109,7 +1109,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
                             </div>
                             <div className="space-y-4">
                               {(data.comments || []).map((c: any) => (
-                                <div key={c.id} className="bg-zinc-50 p-6 rounded-[2rem] border-2 border-transparent hover:border-primary/20 hover:bg-white hover:shadow-xl transition-all cursor-pointer group" onClick={() => {
+                                <div key={c.id} className="bg-zinc-50 p-6 rounded-4xl border-2 border-transparent hover:border-primary/20 hover:bg-white hover:shadow-xl transition-all cursor-pointer group" onClick={() => {
                                   seekTo(c.timestamp);
                                   window.scrollTo({ top: 0, behavior: 'smooth' });
                                 }}>
@@ -1177,7 +1177,7 @@ export function PlaybookPanel({ embedded = false }: { embedded?: boolean }) {
           <DialogTitle className="sr-only">Tactical Asset Preview</DialogTitle>
           <button
             aria-label="Close diagram"
-            className="absolute top-6 right-6 z-[60] h-12 w-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
+            className="absolute top-6 right-6 z-60 h-12 w-12 rounded-full bg-white/10 hover:bg-white/20 text-white flex items-center justify-center"
             onClick={() => setLightboxUrl(null)}
           >
             <X className="h-6 w-6" />

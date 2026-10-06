@@ -46,7 +46,7 @@ const ScrollArea = React.forwardRef<
       <ScrollBar />
       <ScrollAreaPrimitive.Corner />
       {showScrollHint && hasMoreBelow && (
-        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center bg-gradient-to-t from-black/80 via-black/40 to-transparent pb-2 pt-10" aria-hidden="true">
+        <div className="pointer-events-none absolute inset-x-0 bottom-0 z-30 flex justify-center bg-linear-to-t from-black/80 via-black/40 to-transparent pb-2 pt-10" aria-hidden="true">
           <div className="flex items-center gap-1.5 rounded-full border border-white/15 bg-black/80 px-3 py-1.5 text-[8px] font-black uppercase tracking-widest text-white/80 shadow-xl backdrop-blur">
             {scrollHintLabel}<ChevronDown className="h-3 w-3 animate-bounce" />
           </div>
@@ -67,9 +67,9 @@ const ScrollBar = React.forwardRef<
     className={cn(
       "flex touch-none select-none transition-colors",
       orientation === "vertical" &&
-        "h-full w-2.5 border-l border-l-transparent p-[1px]",
+        "h-full w-2.5 border-l border-l-transparent p-px",
       orientation === "horizontal" &&
-        "h-2.5 flex-col border-t border-t-transparent p-[1px]",
+        "h-2.5 flex-col border-t border-t-transparent p-px",
       className
     )}
     {...props}

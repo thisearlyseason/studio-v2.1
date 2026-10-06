@@ -386,7 +386,7 @@ export default function SignupPage() {
                         "w-full p-3 sm:p-4 rounded-2xl border-2 transition-all text-left flex items-center justify-between group",
                         isSelected
                           ? "border-primary bg-primary/5 ring-4 ring-primary/10"
-                          : "border-muted bg-white hover:border-primary/30 hover:bg-primary/[0.02]"
+                          : "border-muted bg-white hover:border-primary/30 hover:bg-primary/2"
                       )}
                     >
                       <div className="flex items-center gap-3 min-w-0">
@@ -581,8 +581,8 @@ export default function SignupPage() {
                         isSelected
                           ? "border-primary bg-primary/5 ring-4 ring-primary/10"
                           : plan.highlight
-                            ? "border-primary/30 bg-white hover:border-primary/60 hover:bg-primary/[0.02]"
-                            : "border-muted bg-white hover:border-primary/30 hover:bg-primary/[0.02]"
+                            ? "border-primary/30 bg-white hover:border-primary/60 hover:bg-primary/2"
+                            : "border-muted bg-white hover:border-primary/30 hover:bg-primary/2"
                       )}
                     >
                       {plan.highlight && !isSelected && (
