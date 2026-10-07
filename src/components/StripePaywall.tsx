@@ -28,11 +28,13 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/firebase';
+import { useBillingDisplayPrices } from '@/lib/use-billing-display-prices';
 import { getAuthToken, authHeader } from '@/lib/client-auth';
 import { isStoreDistribution } from '@/lib/app-distribution';
 
 export function StripePaywall() {
   const { isPaywallOpen, setIsPaywallOpen, user, activeTeam, isPro } = useTeam();
+  const displayPrices = useBillingDisplayPrices(!isStoreDistribution);
   const auth = useAuth();
   const [billingCountry, setBillingCountry] = useState('');
   const [billingCountryRequired, setBillingCountryRequired] = useState(false);
@@ -68,6 +70,7 @@ export function StripePaywall() {
     const eligibilityError = schoolPlanEligibilityError(plan.id, user || {}, declaredOrganization);
     if (eligibilityError) { toast({ title: 'Organization declaration required', description: eligibilityError, variant: 'destructive' }); return; }
     const priceId = billingCycle === 'annual' ? plan.annualPriceId : plan.monthlyPriceId;
+    if(displayPrices.quote(priceId)?.currency!=='USD'){toast({title:'Current price unavailable',description:'Refresh prices before subscribing.'});return;}
     setLoadingPlanId(plan.id);
 
     try {
@@ -207,9 +210,9 @@ export function StripePaywall() {
 
                     <div className="flex items-baseline gap-1">
                       <span className="text-3xl font-black tracking-tighter">
-                        {billingCycle === 'annual' ? plan.annualPrice : plan.monthlyPrice}
+                        {displayPrices.label(billingCycle === 'annual' ? plan.annualPriceId : plan.monthlyPriceId)}
                       </span>
-                      <span className="text-[10px] font-black uppercase opacity-40">USD /{billingCycle === 'annual' ? 'yr' : 'mo'}</span>
+                      <span className="text-[10px] font-black uppercase opacity-40">/{billingCycle === 'annual' ? 'yr' : 'mo'}</span>
                     </div>
 
                     <ul className="space-y-2">
@@ -225,7 +228,7 @@ export function StripePaywall() {
                   {plan.id === 'school' && user?.plan_type !== 'school' && <SchoolPlanDeclaration value={declaredOrganization} onChange={setOrganizationDeclaration} />}
                   <Button 
                     onClick={() => handleSelectPlan(plan)}
-                    disabled={loadingPlanId !== null}
+                    disabled={loadingPlanId !== null || displayPrices.quote(billingCycle==='annual'?plan.annualPriceId:plan.monthlyPriceId)?.currency!=='USD'}
                     className={cn(
                       "w-full mt-6 h-12 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all",
                       plan.highlight ? "bg-primary text-white shadow-lg shadow-primary/40" : "bg-black text-white"

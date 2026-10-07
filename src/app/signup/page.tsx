@@ -1,6 +1,7 @@
 
 "use client";
 
+import { useBillingDisplayPrices } from '@/lib/use-billing-display-prices';
 import { PasswordInput } from '@/components/ui/password-input';
 
 
@@ -146,6 +147,7 @@ const ROLE_PLANS: Record<string, PlanChoice[]> = {
 };
 
 export default function SignupPage() {
+  const displayPrices = useBillingDisplayPrices(!isStoreDistribution);
   const [step, setStep] = useState<SignupStep>('target');
   const [regTarget, setRegTarget] = useState<RegTarget>(null);
   const [planChoice, setPlanChoice] = useState<PlanChoice>(null);
@@ -192,6 +194,7 @@ export default function SignupPage() {
 
   const handleSignup = async (e: React.FormEvent) => {
     e.preventDefault();
+    if(!isStoreDistribution && planChoice && planChoice!=='starter' && displayPrices.quote(billingCycle==='annual'?PLAN_DEFS[planChoice].annualPriceId:PLAN_DEFS[planChoice].monthlyPriceId)?.currency!=='USD'){toast({title:'Current price unavailable',description:'Refresh prices before creating a paid plan.'});return;}
 
     const cleanEmail = email.trim().toLowerCase();
     const cleanName = name.trim().replace(/\s+/g, ' ');
@@ -568,13 +571,13 @@ export default function SignupPage() {
                   const displayPrice = plan.id === 'starter'
                     ? 'Free'
                     : billingCycle === 'annual'
-                      ? plan.annualPrice
-                      : plan.monthlyPrice;
+                      ? displayPrices.label(plan.annualPriceId)
+                      : displayPrices.label(plan.monthlyPriceId);
                   const altPrice = plan.id === 'starter'
                     ? null
                     : billingCycle === 'annual'
-                      ? `or ${plan.monthlyPrice}`
-                      : `or ${plan.annualPrice} annually`;
+                      ? `or ${displayPrices.label(plan.monthlyPriceId)} monthly`
+                      : `or ${displayPrices.label(plan.annualPriceId)} annually`;
                   return (
                     <button
                       key={plan.id}
@@ -691,7 +694,7 @@ export default function SignupPage() {
                         {PLAN_DEFS[planChoice]?.label}
                       </span>
                       <span className="text-[8px] text-white/50 uppercase">
-                        · {billingCycle === 'annual' ? PLAN_DEFS[planChoice]?.annualPrice : PLAN_DEFS[planChoice]?.monthlyPrice}
+                        · {displayPrices.label(billingCycle === 'annual' ? PLAN_DEFS[planChoice]?.annualPriceId || '' : PLAN_DEFS[planChoice]?.monthlyPriceId || '')}
                       </span>
                       <span className="text-[8px] text-primary/70 uppercase font-black">
                         {billingCycle === 'annual' ? '· Annual' : '· Monthly'}

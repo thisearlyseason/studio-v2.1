@@ -1,4 +1,5 @@
 "use client";
+import { useBillingDisplayPrices } from "@/lib/use-billing-display-prices";
 import { BillingCountryDeclaration } from '@/components/billing-country-declaration';
 import { SchoolPlanDeclaration } from '@/components/school-plan-declaration';
 import { schoolOrganizationDeclaration, schoolPlanEligibilityError, type SchoolOrganizationDeclaration } from '@/lib/school-plan-eligibility';
@@ -34,6 +35,10 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 
 export default function PricingPage() {
+  const displayPrices = useBillingDisplayPrices();
+  const planPriceId = (plan: Plan) => billingCycle === 'annual' ? plan.annualPriceId : plan.monthlyPriceId;
+  const addonPriceId = () => billingCycle === 'annual' ? EXTRA_TEAM_CONFIG.annualPriceId : EXTRA_TEAM_CONFIG.monthlyPriceId;
+  const priceReady = (id: string) => displayPrices.quote(id)?.currency === 'USD';
   const router = useRouter();
   const auth = useAuth();
   const { user } = useUser();
@@ -69,6 +74,7 @@ export default function PricingPage() {
     }
     const eligibilityError = schoolPlanEligibilityError(plan.id, userProfile || {}, declaredOrganization);
     if (eligibilityError) { toast({ title: 'Organization declaration required', description: eligibilityError, variant: 'destructive' }); return; }
+    if(!isCurrentPlan(plan) && (!priceReady(planPriceId(plan)) || (extraTeams>0 && !priceReady(addonPriceId())))) { toast({title:'Current price unavailable',description:'Refresh prices before subscribing.'}); return; }
     setLoadingPlanId(plan.id);
     const priceId = billingCycle === 'annual' ? plan.annualPriceId : plan.monthlyPriceId;
 
@@ -231,9 +237,9 @@ export default function PricingPage() {
               </div>
               <div className="flex items-baseline gap-1 mb-2">
                 <span className={cn("text-4xl font-black tracking-tighter", plan.highlight ? "text-primary" : "text-foreground")}>
-                  {billingCycle === 'annual' ? plan.annualPrice : plan.monthlyPrice}
+                  {displayPrices.label(planPriceId(plan))}
                 </span>
-                <span className="text-[10px] font-black uppercase opacity-60">USD /{billingCycle === 'annual' ? 'yr' : 'mo'}</span>
+                <span className="text-[10px] font-black uppercase opacity-60">/{billingCycle === 'annual' ? 'yr' : 'mo'}</span>
               </div>
               <CardDescription className={cn("text-xs font-bold font-mono tracking-tight", plan.highlight ? "text-white/60" : "text-muted-foreground")}>
                 {plan.description}
@@ -287,7 +293,7 @@ export default function PricingPage() {
             <CardFooter className="p-8 pt-0">
               <Button 
                 onClick={() => handleCheckout(plan)}
-                disabled={loadingPlanId !== null || (!!user?.uid && (!isCurrentPlan(plan) && !capabilities.planChangesAllowed))}
+                disabled={(!isCurrentPlan(plan) && (!priceReady(planPriceId(plan)) || (extraTeams>0 && !priceReady(addonPriceId())))) || loadingPlanId !== null || (!!user?.uid && (!isCurrentPlan(plan) && !capabilities.planChangesAllowed))}
                 className={cn(
                   "w-full h-14 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all group-hover:gap-4",
                   plan.highlight 
@@ -331,9 +337,9 @@ export default function PricingPage() {
               </p>
               <div className="flex items-baseline gap-2 pt-2">
                 <span className="text-4xl font-black text-foreground">
-                  {billingCycle === 'annual' ? EXTRA_TEAM_CONFIG.annualPrice : EXTRA_TEAM_CONFIG.monthlyPrice}
+                  {displayPrices.label(addonPriceId())}
                 </span>
-                <span className="text-xs font-black uppercase opacity-40">/teamUSD /{billingCycle === 'annual' ? 'yr' : 'mo'}</span>
+                <span className="text-xs font-black uppercase opacity-40">/team/{billingCycle === 'annual' ? 'yr' : 'mo'}</span>
               </div>
             </div>
 

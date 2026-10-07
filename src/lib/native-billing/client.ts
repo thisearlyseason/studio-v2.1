@@ -1,5 +1,6 @@
-export type StorePackage = { id: string; productId: string; title: string; price: string; period: string };
-export type BillingReply = { requestId: string; packages?: StorePackage[]; existingSubscription?: boolean; cancelled?: boolean; error?: string };
+import type { StoreDisplayQuote } from '../billing-display-price';
+export type StorePackage = { id: string; productId: string; title: string; price: string; period: string; currencyCode?: string; priceAmount?: string };
+export type BillingReply = { requestId: string; packages?: StorePackage[]; existingSubscription?: boolean; priceQuoteSupported?: boolean; cancelled?: boolean; error?: string };
 type Bridge = { postMessage(message: string): void; onmessage?: (event: { data: string }) => void };
 type BillingWindow = Window & {
   squadNativeBilling?: Bridge;
@@ -11,13 +12,13 @@ export function hasNativeBilling() {
   const scope = window as BillingWindow;
   return Boolean(scope.webkit?.messageHandlers?.squadNativeBilling || scope.squadNativeBilling);
 }
-export async function nativeBilling(action: 'catalog' | 'purchase' | 'restore' | 'manage', token: string, packageId?: string): Promise<BillingReply> {
+export async function nativeBilling(action: 'catalog' | 'purchase' | 'restore' | 'manage', token: string, packageId?: string, displayPriceQuote?: StoreDisplayQuote): Promise<BillingReply> {
   if (pending) throw new Error('Another store operation is in progress.');
   const scope = window as BillingWindow;
   const ios = scope.webkit?.messageHandlers?.squadNativeBilling, android = scope.squadNativeBilling;
   if (!ios && !android) throw new Error('Update The Squad from your app store to use in-app subscriptions.');
   const requestId = crypto.randomUUID();
-  const message = { version: 1, requestId, action, token, packageId };
+  const message = { version: 1, requestId, action, token, packageId, displayPriceQuote };
   pending = true;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {

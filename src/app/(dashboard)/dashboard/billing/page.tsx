@@ -1,4 +1,5 @@
 "use client";
+import { useBillingDisplayPrices } from "@/lib/use-billing-display-prices";
 import { BillingCountryDeclaration } from '@/components/billing-country-declaration';
 import { SchoolPlanDeclaration } from '@/components/school-plan-declaration';
 import { schoolOrganizationDeclaration, schoolPlanEligibilityError, type SchoolOrganizationDeclaration } from '@/lib/school-plan-eligibility';
@@ -56,6 +57,10 @@ import {
 export default function BillingDashboard() {
   const { user: userProfile, isPro, teams, activeTeam, proQuotaStatus, updateTeamPlan } = useTeam();
   const auth = useAuth();
+  const displayPrices = useBillingDisplayPrices();
+  const planPriceId = (plan: Plan) => billingCycle === 'annual' ? plan.annualPriceId : plan.monthlyPriceId;
+  const addonPriceId = () => billingCycle === 'annual' ? EXTRA_TEAM_CONFIG.annualPriceId : EXTRA_TEAM_CONFIG.monthlyPriceId;
+  const priceReady = (id: string) => displayPrices.quote(id)?.currency === 'USD';
   const router = useRouter();
   const [loading, setLoading] = useState<string | null>(null);
   const [pendingSync, setPendingSync] = useState(false);
@@ -100,6 +105,8 @@ export default function BillingDashboard() {
   // ─── Handlers ────────────────────────────────────────────────────────────
   const handleUpdatePlan = async (newPlan: Plan | null, initialAddons?: number) => {
     if (!userProfile?.id) return;
+    const displayPlan=newPlan || PRICING_CONFIG.find(p=>p.id===userProfile.plan_type) || PRICING_CONFIG[0];
+    if(!priceReady(planPriceId(displayPlan)) || ((initialAddons||0)>0 && !priceReady(addonPriceId()))) { toast({title:'Current price unavailable',description:'Refresh prices before changing your plan.'}); return; }
     if (!capabilities.planChangesAllowed || ((initialAddons || 0) > 0 && !capabilities.addonsAllowed)) {
       toast({ title: 'Plan changes unavailable', description: 'Plan changes and extra squad slots are temporarily unavailable. Please try again later.' });
       return;
@@ -185,7 +192,7 @@ export default function BillingDashboard() {
   };
 
   const handleUpdateAddon = async (qty: number) => {
-    if (!capabilities.addonsAllowed) return;
+    if (!capabilities.addonsAllowed || !priceReady(addonPriceId())) return;
     if (!userProfile?.id) return;
     if (isDemo) {
       toast({
@@ -362,6 +369,8 @@ export default function BillingDashboard() {
           <h1 className="text-4xl lg:text-5xl font-black uppercase tracking-tighter">
             Manage <span className="text-primary italic">Your Plan</span>
           </h1>
+      <p className="text-sm text-muted-foreground">Web prices show the configured catalog currency. Apple and Google storefront prices and taxes may differ by region; review the final confirmation before paying.</p>
+      <button type="button" onClick={displayPrices.refresh} className="text-sm underline">Refresh current prices</button>
           <p className="text-[11px] font-bold text-muted-foreground uppercase tracking-widest">
             {capabilities.planChangesAllowed ? 'Upgrade, downgrade, or cancel at any time' : 'Plan changes are temporarily unavailable. You can still cancel below.'}
           </p>
@@ -526,10 +535,10 @@ export default function BillingDashboard() {
 
                   <div className="flex items-baseline gap-1">
                     <span className={cn('text-2xl font-black', isCurrent ? 'text-primary' : '')}>
-                      {billingCycle === 'annual' ? plan.annualPrice : plan.monthlyPrice}
+                      {displayPrices.label(planPriceId(plan))}
                     </span>
                     <span className="text-[9px] font-black text-muted-foreground uppercase">
-                      USD /{billingCycle === 'annual' ? 'yr' : 'mo'}
+                      /{billingCycle === 'annual' ? 'yr' : 'mo'}
                     </span>
                   </div>
 
@@ -551,7 +560,7 @@ export default function BillingDashboard() {
                           ? 'bg-primary hover:bg-primary/90 text-white'
                           : 'bg-muted hover:bg-muted/80 text-foreground'
                       )}
-                      disabled={isLoading || !capabilities.planChangesAllowed}
+                      disabled={isLoading || !capabilities.planChangesAllowed || !priceReady(planPriceId(plan))}
                       onClick={(e) => { e.stopPropagation(); handleUpdatePlan(plan); }}
                     >
                       {isLoading
@@ -585,7 +594,7 @@ export default function BillingDashboard() {
                 </div>
                 <p className="text-[10px] font-bold text-muted-foreground">
                   {capabilities.addonsAllowed ? 'Add additional team slots beyond your plan limit.' : 'Extra squad slots are temporarily unavailable.'}
-                  {billingCycle === 'annual' ? EXTRA_TEAM_CONFIG.annualPrice : EXTRA_TEAM_CONFIG.monthlyPrice} USD per squad per {billingCycle === 'annual' ? 'year' : 'month'}.
+                  {displayPrices.label(addonPriceId())} per squad per {billingCycle === 'annual' ? 'year' : 'month'}.
                 </p>
               </div>
               <div className="flex items-center gap-4">
@@ -601,14 +610,14 @@ export default function BillingDashboard() {
                   className="w-10 h-10 rounded-xl bg-white border shadow-sm flex items-center justify-center hover:bg-black hover:text-white transition-all"
                 ><Plus className="h-4 w-4" /></button>
                 <Button
-                  disabled={!capabilities.addonsAllowed || addonQty === (userProfile.extra_teams || 0) || loading === 'addon' || loading === 'addon_init'}
+                  disabled={!capabilities.addonsAllowed || !priceReady(addonPriceId()) || addonQty === (userProfile.extra_teams || 0) || loading === 'addon' || loading === 'addon_init'}
                   className="h-10 px-6 rounded-xl font-black uppercase text-[10px]"
                   onClick={() => {
                     const currentQty = userProfile.extra_teams || 0;
                     if (!isStripeLinked) { handleUpdatePlan(null, addonQty); return; }
                     if (addonQty > currentQty) {
                       const diff = addonQty - currentQty;
-                      const price = billingCycle === 'annual' ? EXTRA_TEAM_CONFIG.annualPrice : EXTRA_TEAM_CONFIG.monthlyPrice;
+                      const price = displayPrices.label(addonPriceId());
                       if (!confirm(`Add ${diff} extra squad seat${diff > 1 ? 's' : ''} for ${price}/squad per ${billingCycle === 'annual' ? 'year' : 'month'}? Your Stripe subscription will be updated immediately.`)) return;
                       void handleUpdateAddon(addonQty);
                     } else {

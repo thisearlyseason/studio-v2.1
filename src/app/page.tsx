@@ -1,6 +1,8 @@
 
 "use client"; 
 
+import { useBillingDisplayPrices } from '@/lib/use-billing-display-prices';
+import { PRICING_CONFIG } from '@/lib/pricing';
 import { ParentCompanyBrand } from '@/components/ParentCompanyBrand';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { motion, useScroll, useTransform, useMotionValue, useSpring } from 'framer-motion';
@@ -162,20 +164,22 @@ function PricingToggle() {
   );
 }
 
-function PricingDisplay({ monthly, annual, annualMonthly, color, darkBg }: { monthly: string; annual: string; annualMonthly: string; color: string; darkBg?: boolean }) {
+function PricingDisplay({ planId, color, darkBg }: { planId: string; color: string; darkBg?: boolean }) {
+  const prices = useBillingDisplayPrices();
+  const plan = PRICING_CONFIG.find(p=>p.id===planId);
   const { cycle } = React.useContext(PricingCycleContext);
   const opacityClass = darkBg ? 'opacity-60' : 'text-white/70';
   return (
     <div className="space-y-0.5">
       <div className="flex items-baseline gap-1">
         <span className={cn('text-4xl font-black tracking-tighter transition-all duration-300', color)}>
-          {cycle === 'annual' ? annualMonthly : monthly}
+          {prices.label(cycle==='annual' ? plan?.annualPriceId || '' : plan?.monthlyPriceId || '')}
         </span>
-        <span className={cn('text-[10px] font-black uppercase', darkBg ? 'opacity-60' : 'text-white/70')}>/mo</span>
+        <span className={cn('text-[10px] font-black uppercase', darkBg ? 'opacity-60' : 'text-white/70')}>/{cycle==='annual'?'yr':'mo'}</span>
       </div>
       {cycle === 'annual' && (
         <p className={cn('text-[9px] font-black uppercase tracking-wider', color, 'opacity-70')}>
-          {annual}/yr · billed annually
+          Billed annually
         </p>
       )}
     </div>
@@ -1496,7 +1500,7 @@ export default function LandingPage() {
                     </div>
                     <div className="space-y-1">
                       <CardTitle className="text-2xl font-black uppercase tracking-tight">Squad Pro</CardTitle>
-                      <PricingDisplay monthly="$19.99" annual="$199" annualMonthly="$16.58" color="text-red-400" darkBg />
+                      <PricingDisplay planId="team" color="text-red-400" darkBg />
                     </div>
                     <CardDescription className="text-[10px] font-bold text-white/50 uppercase">Championship tools for one team.</CardDescription>
                   </CardHeader>
@@ -1530,7 +1534,7 @@ export default function LandingPage() {
                   <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 border-primary/30 text-red-400 w-fit">ORGANIZATION</Badge>
                   <div className="space-y-1">
                     <CardTitle className="text-2xl font-black uppercase tracking-tight text-white">Elite Teams</CardTitle>
-                    <PricingDisplay monthly="$119" annual="$1,119" annualMonthly="$93" color="text-red-400" />
+                    <PricingDisplay planId="elite" color="text-red-400" />
                   </div>
                   <CardDescription className="text-[10px] font-bold text-white/70 uppercase">8 Pro Teams + Master Club Hub.</CardDescription>
                 </CardHeader>
@@ -1563,7 +1567,7 @@ export default function LandingPage() {
                   <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 border-primary/30 text-red-400 w-fit">INSTITUTIONAL</Badge>
                   <div className="space-y-1">
                     <CardTitle className="text-2xl font-black uppercase tracking-tight text-white">Elite League</CardTitle>
-                    <PricingDisplay monthly="$279" annual="$2,790" annualMonthly="$233" color="text-red-400" />
+                    <PricingDisplay planId="league" color="text-red-400" />
                   </div>
                   <CardDescription className="text-[10px] font-bold text-white/70 uppercase">18 Pro Teams + Public Hubs.</CardDescription>
                 </CardHeader>
@@ -1593,7 +1597,7 @@ export default function LandingPage() {
                   <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 border-[#10b981]/30 text-[#10b981] w-fit">K-12 DISTRICT</Badge>
                   <div className="space-y-1">
                     <CardTitle className="text-2xl font-black uppercase tracking-tight text-white">School District</CardTitle>
-                    <PricingDisplay monthly="$175" annual="$1,750" annualMonthly="$146" color="text-[#10b981]" />
+                    <PricingDisplay planId="school" color="text-[#10b981]" />
                   </div>
                   <CardDescription className="text-[10px] font-bold text-white/70 uppercase">15 Squads Included · Extras at School Rate.</CardDescription>
                 </CardHeader>
@@ -1623,7 +1627,7 @@ export default function LandingPage() {
             initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }}
             transition={{ duration: 0.8 }}
           >
-            <p className="text-[10px] font-black uppercase text-red-500/60 tracking-widest">All pricing is presented and billed in USD.</p>
+            <p className="text-[10px] font-black uppercase text-red-500/60 tracking-widest">Web prices show the configured catalog currency. App store prices and taxes may differ by region; review the final confirmation before paying.</p>
           </motion.div>
         </div>
       </PricingCycleContext.Provider>
