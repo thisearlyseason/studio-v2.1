@@ -1,5 +1,9 @@
 "use client";
 
+import { PasswordInput } from '@/components/ui/password-input';
+
+
+
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { League, TournamentGame } from '@/components/providers/team-provider';
@@ -193,8 +197,8 @@ export default function PublicLeagueScorekeeperEntryPage() {
                   <Label className="text-[10px] font-black uppercase tracking-widest flex items-center gap-2">
                     <Lock className="h-3 w-3" /> Institutional Entry PIN
                   </Label>
-                  <Input 
-                    type="password" 
+                  <PasswordInput 
+                     
                     placeholder="4-8 Digit Key" 
                     value={pin}
                     onChange={e => setPin(e.target.value)}

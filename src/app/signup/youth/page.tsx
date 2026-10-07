@@ -1,9 +1,12 @@
 "use client";
 
+import { PasswordInput } from '@/components/ui/password-input';
+
+
+
 import React, { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Card } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -18,9 +21,7 @@ import {
   Key,
   ShieldCheck,
   Lock,
-  Eye,
-  EyeOff,
-} from 'lucide-react';
+  } from 'lucide-react';
 
 // ── Inner component that reads searchParams ──
 function YouthSignupContent() {
@@ -34,7 +35,6 @@ function YouthSignupContent() {
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDone, setIsDone] = useState(false);
 
@@ -204,9 +204,10 @@ function YouthSignupContent() {
                 <div className="space-y-2">
                   <Label htmlFor="youth-password" className="text-[10px] font-black uppercase tracking-widest ml-1">Password</Label>
                   <div className="relative">
-                    <Input
+                    <PasswordInput
                       id="youth-password"
-                      type={showPassword ? 'text' : 'password'}
+                      autoComplete="new-password"
+                      
                       required
                       minLength={8}
                       value={password}
@@ -214,21 +215,14 @@ function YouthSignupContent() {
                       className="h-14 rounded-2xl border-2 font-bold pr-12 bg-muted/10"
                       placeholder="Min. 8 characters"
                     />
-                    <button
-                      type="button"
-                      aria-label={showPassword ? 'Hide password' : 'Show password'}
-                      onClick={() => setShowPassword(!showPassword)}
-                      className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground"
-                    >
-                      {showPassword ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
-                    </button>
                   </div>
                 </div>
                 <div className="space-y-2">
                   <Label htmlFor="youth-password-confirmation" className="text-[10px] font-black uppercase tracking-widest ml-1">Confirm Password</Label>
-                  <Input
+                  <PasswordInput
                     id="youth-password-confirmation"
-                    type="password"
+                    autoComplete="new-password"
+                    
                     required
                     value={confirmPassword}
                     onChange={e => setConfirmPassword(e.target.value)}

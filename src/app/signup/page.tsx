@@ -1,6 +1,9 @@
 
 "use client";
 
+import { PasswordInput } from '@/components/ui/password-input';
+
+
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -740,12 +743,12 @@ export default function SignupPage() {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="signup-password" className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Password</Label>
-                  <Input
+                  <PasswordInput
                     id="signup-password"
                     name="password"
                     autoComplete="new-password"
                     required
-                    type="password"
+                    
                     minLength={8}
                     maxLength={128}
                     placeholder="Min. 8 characters"
@@ -756,11 +759,11 @@ export default function SignupPage() {
                 </div>
                 <div className="space-y-1.5">
                   <Label htmlFor="signup-password-confirmation" className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Confirm Password</Label>
-                  <Input
+                  <PasswordInput
                     id="signup-password-confirmation"
                     name="passwordConfirmation"
                     required
-                    type="password"
+                    
                     minLength={8}
                     maxLength={128}
                     autoComplete="new-password"

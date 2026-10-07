@@ -1,5 +1,9 @@
 "use client";
 
+import { PasswordInput } from '@/components/ui/password-input';
+
+
+
 import React, { useState } from 'react';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
@@ -14,7 +18,7 @@ import { signInWithEmailAndPassword, signInAnonymously, signOut, signInWithPopup
 import { toast } from '@/hooks/use-toast';
 import BrandLogo from '@/components/BrandLogo';
 import Image from 'next/image';
-import { Trophy, Users, Zap, Loader2, User, Baby, ChevronRight, ChevronLeft, ShieldAlert, GraduationCap, Eye, EyeOff } from 'lucide-react';
+import { Trophy, Users, Zap, Loader2, User, Baby, ChevronRight, ChevronLeft, ShieldAlert, GraduationCap, } from 'lucide-react';
 import { bootstrapDemoWorkspace, clearBrowserSession, establishBrowserSession } from '@/lib/client-auth';
 import { APP_DISTRIBUTION, isStoreDistribution, safeReturnPath } from '@/lib/app-distribution';
 import { NativeProviderLogin } from '@/components/native-auth/NativeProviderLogin';
@@ -32,7 +36,6 @@ function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: stri
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
-  const [showPassword, setShowPassword] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isDemoLoading, setIsDemoLoading] = useState(false);
@@ -390,9 +393,9 @@ export default function LoginPage() {
                   <button type="button" disabled={nativeBusy} onClick={() => { setForgotMode(true); setForgotEmail(email); }} className="text-[10px] font-black text-primary uppercase hover:underline tracking-widest">Forgot?</button>
                 </div>
                 <div className="relative">
-                  <Input 
+                  <PasswordInput 
                     id="password" 
-                    type={showPassword ? "text" : "password"} 
+                     
                     autoComplete="current-password"
                     required 
                     value={password}
@@ -400,15 +403,6 @@ export default function LoginPage() {
                     onChange={(e) => setPassword(e.target.value)}
                     className="h-14 rounded-2xl bg-muted/50 border-2 border-transparent focus:border-primary/20 focus:bg-white transition-all text-base font-bold pr-12"
                   />
-                  <button 
-                    type="button"
-                    onClick={() => setShowPassword(!showPassword)}
-                    aria-label={showPassword ? 'Hide password' : 'Show password'}
-                    aria-pressed={showPassword}
-                    className="absolute right-4 top-1/2 -translate-y-1/2 text-muted-foreground hover:text-gray-900 transition-colors"
-                  >
-                    {showPassword ? <EyeOff className="h-5 w-5" /> : <Eye className="h-5 w-5" />}
-                  </button>
                 </div>
               </div>
             </CardContent>

@@ -1,4 +1,5 @@
 "use client";
+import { PasswordInput } from "@/components/ui/password-input";
 import type { Resource } from "@/lib/competition/schedule";
 import React, { useCallback, useEffect, useState } from "react";
 import CompetitionWorkspace from "./CompetitionWorkspace";
@@ -263,8 +264,8 @@ export default function CompetitionController({
               <summary>Scorekeeper access</summary>
               <label>
                 Scoring code
-                <input
-                  type="password"
+                <PasswordInput
+                  
                   autoComplete="off"
                   value={code}
                   onChange={(e) => setCode(e.target.value)}

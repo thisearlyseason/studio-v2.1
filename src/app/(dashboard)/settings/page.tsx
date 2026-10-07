@@ -1,5 +1,9 @@
 "use client";
 
+import { PasswordInput } from '@/components/ui/password-input';
+
+
+
 import { ParentCompanyBrand } from '@/components/ParentCompanyBrand';
 import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
@@ -1006,9 +1010,11 @@ export default function SettingsPage() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <div className="space-y-3 py-2">
-            <Label className="text-xs font-black uppercase tracking-widest">Current Password</Label>
-            <Input
-              type="password"
+            <Label htmlFor="reauth-password" className="text-xs font-black uppercase tracking-widest">Current Password</Label>
+            <PasswordInput
+              id="reauth-password"
+              autoComplete="current-password"
+              
               placeholder="Enter your password"
               value={reauthPassword}
               onChange={e => setReauthPassword(e.target.value)}
