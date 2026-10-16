@@ -19,6 +19,8 @@ export async function resolvePageEntity(scope: Scope, ref: EntityRef, actor?: Ac
   const hubId = team?.organizationHubId || team?.schoolId;
   if (hubId) { organization = await scope.get(`teams/${hubId}`); if (!active(organization)) throw new PageError('Organization unavailable.', 404); organizationId = `school~${hubId}`; }
   const billingOwner = organization?.ownerUserId || team?.organizationOwnerUserId || ownerId;
+  // Legacy/incomplete entities must not turn one unusable record into an inventory-wide 500.
+  if (typeof billingOwner !== 'string' || !billingOwner || billingOwner.includes('/')) throw new PageError('Entity billing owner is unavailable.', 409);
   ownerId = ownerId || billingOwner;
   const owner = await scope.get(`users/${billingOwner}`); const plan = canonicalPlanId(owner?.plan_type);
   if (!organizationId) organizationId = ref.kind === 'school' ? `school~${ref.id}` : ['elite', 'league'].includes(plan) || team?.clubId ? `club~${billingOwner}` : entityKey(ref);

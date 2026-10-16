@@ -48,3 +48,10 @@ test('school capacity counts allocated squads across all owner hubs and school d
 test('unknown allocated team plans cannot inherit object keys as paid coverage',async()=>{
  for(const plan of ['unknown-plan','constructor','__proto__','toString']){const records=previewRecords();records['teams/demo-hawks'].planId=plan;const s=memoryStore(records);assert.equal((await editorState(s,entity,owner)).context.covered,false,plan);let r=await save(s);await assert.rejects(mutatePage(s,owner,{entity,action:'publish',expectedVersion:r.version,revision:r.draft.revision}),{status:403});}
 });
+
+test('incomplete legacy team fails closed before an invalid Firestore owner path; valid team remains manageable',async()=>{
+ const records=previewRecords();records['teams/incomplete-team']={name:'Legacy incomplete',type:'adult'};
+ const store=memoryStore(records);const strict={run:work=>store.run(scope=>work({...scope,get:p=>{assert(!p.endsWith('/'),'invalid Firestore document path');return scope.get(p)}}))};
+ await assert.rejects(strict.run(scope=>resolvePageEntity(scope,{kind:'team',id:'incomplete-team'},owner)),{status:409});
+ assert.equal((await editorState(strict,entity,owner)).context.canManage,true);
+});
