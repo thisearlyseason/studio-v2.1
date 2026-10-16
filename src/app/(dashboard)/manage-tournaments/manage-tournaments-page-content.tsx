@@ -1,5 +1,6 @@
 "use client";
 
+import { PageEntityScope, PublicPageEntry } from '@/components/squad-pages/entity-context';
 import TournamentQuickExports from '@/components/tournaments/TournamentQuickExports';
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Card, CardContent, CardHeader, CardTitle, CardDescription, CardFooter } from '@/components/ui/card';
@@ -2450,6 +2451,7 @@ function TournamentDetailView({
           </div>
           <div className="p-8 lg:p-14">
              <TabsContent value="architecture" className="mt-0 space-y-6">
+              {activeTeam && <PublicPageEntry entity={{ kind: 'tournament', teamId: activeTeam.id, id: event.id }} className="mb-4" />}
                 {/* ── Registration Architect (moved to top) ── */}
                 <div className="bg-[#050505] rounded-[3rem] border border-white/10 overflow-hidden">
 
@@ -3239,6 +3241,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
   if (activeEvent) {
     return (
       <div className="p-8 lg:p-14">
+        {activeTeam && <PageEntityScope entity={{ kind: 'tournament', teamId: activeTeam.id, id: activeEvent.id }} />}
         <TournamentDetailView 
           event={activeEvent} 
           onBack={() => setSelectedEventId(null)} 

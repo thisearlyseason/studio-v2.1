@@ -1,4 +1,5 @@
 "use client";
+import { PublicPageEntry, confirmPageContextSwitch } from '@/components/squad-pages/entity-context';
 
 import { AlertsBellButton } from './AlertsBellButton';
 
@@ -278,7 +279,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                 subtitle={user?.institutionTitle || 'Athletic Director'}
                 initial={(user?.schoolName || user?.clubName || primarySchoolTeam.name || 'S')[0]}
                 isActive={activeTeam?.type === 'school'}
-                onClick={() => { setActiveTeam(primarySchoolTeam); router.push('/club'); onClose?.(); }}
+                onClick={() => { if (!confirmPageContextSwitch()) return; setActiveTeam(primarySchoolTeam); router.push('/club'); onClose?.(); }}
                 variant="school"
               />
             </>
@@ -293,7 +294,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                   key={team.id}
                   team={team}
                   isActive={activeTeam?.id === team.id && activeTeam?.type !== 'school'}
-                  onClick={() => { setActiveTeam(team); router.push('/dashboard'); onClose?.(); }}
+                  onClick={() => { if (!confirmPageContextSwitch()) return; setActiveTeam(team); router.push('/dashboard'); onClose?.(); }}
                 />
               ))
             }
@@ -323,7 +324,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                 subtitle={user?.institutionTitle || 'Club Organizer'}
                 initial={(user?.clubName || user?.schoolName || 'E')[0]}
                 isActive={!activeTeam}
-                onClick={() => { setActiveTeam(null); router.push('/club'); onClose?.(); }}
+                onClick={() => { if (!confirmPageContextSwitch()) return; setActiveTeam(null); router.push('/club'); onClose?.(); }}
                 variant="elite"
               />
               <DropdownMenuSeparator className="my-1.5" />
@@ -337,7 +338,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                       team={team}
                       isActive={activeTeam?.id === team.id}
                       tierOverride={squadTier(team, true)}
-                      onClick={() => { setActiveTeam(team); router.push('/dashboard'); onClose?.(); }}
+                      onClick={() => { if (!confirmPageContextSwitch()) return; setActiveTeam(team); router.push('/dashboard'); onClose?.(); }}
                     />
                   ))
                 }
@@ -357,7 +358,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                     key={team.id}
                     team={team}
                     isActive={activeTeam?.id === team.id}
-                    onClick={() => { setActiveTeam(team); onClose?.(); }}
+                    onClick={() => { if (!confirmPageContextSwitch()) return; setActiveTeam(team); onClose?.(); }}
                   />
                 ))}
               </div>
@@ -373,7 +374,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                     team={team}
                     isActive={activeTeam?.id === team.id}
                     tierOverride={squadTier(team, true)}
-                    onClick={() => { setActiveTeam(team); onClose?.(); }}
+                    onClick={() => { if (!confirmPageContextSwitch()) return; setActiveTeam(team); onClose?.(); }}
                   />
                 ))}
               </div>
@@ -856,6 +857,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             </SidebarHeader>
 
             <SidebarContent className="flex-none overflow-visible px-4 py-2 bg-white">
+              {(isStaff || isPrimaryClubAuthority || isSuperAdmin) && <PublicPageEntry className="mb-4 w-full" />}
               {/* School institution mode OR Elite Hub mode: hide all nav items */}
               {(!isSchoolInstitutionMode && !isEliteHubMode) && (
                 <SidebarMenu className="space-y-6">
@@ -1189,6 +1191,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     </SheetHeader>
                     <ScrollArea className="flex-1 px-6 pb-10">
                       <div className="space-y-6 pt-2">
+                        {(isStaff || isPrimaryClubAuthority || isSuperAdmin) && <PublicPageEntry className="w-full" onNavigate={() => setIsMoreMenuOpen(false)} />}
 
                         {/* ── INSTITUTION AUTHORITY BLOCK ─────────────────────────────────
                              Always shown when user is a school admin or elite club organizer,
@@ -1197,7 +1200,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                           <div className="space-y-2">
                             {/* Hub link — clears activeTeam so hub shows in institution mode */}
                             <button
-                              onClick={() => { setActiveTeam(null as any); router.push('/club'); setIsMoreMenuOpen(false); }}
+                              onClick={() => { if (!confirmPageContextSwitch()) return; setActiveTeam(null as any); router.push('/club'); setIsMoreMenuOpen(false); }}
                               className={cn(
                                 "w-full flex items-center justify-between p-4 rounded-2xl border bg-primary text-white transition-all active:scale-[0.98]",
                                 pathname === '/club' ? "ring-2 ring-white ring-offset-2 ring-offset-primary" : ""
