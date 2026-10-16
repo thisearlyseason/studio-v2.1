@@ -67,8 +67,9 @@ function NewTeamForm() {
       }
       
       const teamId = await createNewTeam(teamName, targetType, organizerPosition, description, selectedPlan, customWaiverTitle, customWaiverContent, targetSchoolId);
+      if (!teamId) throw new Error('Unable to create the squad. Please try again.');
+      setActiveTeam({ id: teamId } as any);
       if (!isStoreDistribution && selectedPlan === 'team' && proQuotaStatus.remaining <= 0) {
-        setActiveTeam({ id: teamId } as any);
         router.push('/dashboard/billing');
       } else {
         router.push('/feed');
