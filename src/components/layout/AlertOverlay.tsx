@@ -16,7 +16,6 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { ScrollArea } from '@/components/ui/scroll-area';
 import { Badge } from '@/components/ui/badge';
 import { 
   Select, 
@@ -179,19 +178,19 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 overflow-hidden border-none shadow-2xl bg-white">
+      <DialogContent className="left-1/2! top-1/2! h-auto! max-h-[calc(100dvh-2rem)]! -translate-x-1/2! -translate-y-1/2! w-[calc(100vw-2rem)] max-w-xl rounded-3xl p-0 overflow-hidden border-none shadow-2xl bg-white">
         <DialogTitle className="sr-only">Squad Alert Inbox</DialogTitle>
         <DialogDescription className="sr-only">History of all broadcasts dispatched to you</DialogDescription>
 
-        <DialogHeader className="p-8 pb-2">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center gap-3">
+        <DialogHeader className="shrink-0 p-4 pr-14 pb-3 sm:p-6 sm:pr-16 sm:pb-3 text-left">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex min-w-0 items-center gap-2">
               <div className="bg-primary/5 p-2 rounded-xl text-primary">
                 <History className="h-6 w-6" />
               </div>
-              <DialogTitle className="text-2xl font-black uppercase tracking-tight">Broadcast Inbox</DialogTitle>
+              <DialogTitle className="text-xl font-black uppercase tracking-tight">Broadcast Inbox</DialogTitle>
             </div>
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <Button 
                 variant="outline" 
                 size="sm" 
@@ -222,8 +221,8 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
             </div>
           </div>
         </DialogHeader>
-        <ScrollArea className="max-h-[450px] px-8 pb-10">
-          <div className="space-y-4 pt-4">
+        <div className="min-h-0 overflow-y-auto overscroll-contain px-4 pb-4 sm:px-6 sm:pb-6" aria-label="Broadcast messages">
+          <div className="space-y-3 pt-1">
             {alertHistoryError ? (
               <div role="alert" className="space-y-3 rounded-2xl bg-muted/30 p-4">
                 <p className="text-sm font-medium">{alertHistoryError}</p>
@@ -233,31 +232,31 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
               const isUnread = !seenAlertIds.includes(alert.id);
               return (
                 <div key={alert.id} className={cn(
-                  "group relative p-5 rounded-4xl border-2 transition-all duration-300",
+                  "group relative p-3 sm:p-4 rounded-2xl border-2 transition-all duration-300",
                   isUnread ? "bg-primary/5 border-primary shadow-sm" : "bg-muted/20 border-transparent opacity-60"
                 )}>
                   {isUnread && (
-                    <div className="absolute top-5 right-5 h-2 w-2 bg-primary rounded-full animate-pulse shadow-[0_0_8px_rgba(255,0,0,0.5)]" />
+                    <div className="absolute top-3 right-3 h-2 w-2 bg-primary rounded-full animate-pulse shadow-[0_0_8px_rgba(255,0,0,0.5)]" />
                   )}
-                  <div className="flex items-start gap-4">
+                  <div className="flex items-start gap-2 sm:gap-3">
                     <div className={cn(
-                      "p-3 rounded-2xl shrink-0 transition-colors shadow-sm",
+                      "p-2 rounded-xl shrink-0 transition-colors shadow-sm",
                       isUnread ? "bg-primary text-white" : "bg-white text-muted-foreground"
                     )}>
                       <Megaphone className="h-5 w-5" />
                     </div>
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-center justify-between gap-2 mb-1.5">
-                        <h4 className="font-black text-sm tracking-tight leading-tight uppercase truncate pr-12">{alert.title}</h4>
+                      <div className="flex flex-wrap items-start gap-2 mb-1.5 pr-3">
+                        <h4 className="font-black text-sm tracking-tight leading-tight uppercase [overflow-wrap:anywhere]">{alert.title}</h4>
                         <Badge variant="outline" className={cn(
-                          "text-[7px] font-black uppercase px-1.5 h-4 border-none shrink-0",
+                          "text-[7px] font-black uppercase px-1.5 min-h-4 h-auto whitespace-normal break-words border-none max-w-full",
                           isUnread ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
                         )}>{alertAudienceLabel(alert)}</Badge>
                       </div>
-                      <p className="text-xs font-medium text-foreground/80 leading-relaxed italic pr-4">"{alert.message}"</p>
-                      <div className="flex items-center justify-between mt-4">
-                        <div className="flex items-center gap-1.5 opacity-40">
-                          <Clock className="h-3 w-3" />
+                      <p className="text-xs font-medium text-foreground/80 leading-relaxed italic [overflow-wrap:anywhere]">"{alert.message}"</p>
+                      <div className="flex flex-wrap items-center justify-between gap-2 mt-3">
+                        <div className="flex min-w-0 items-center gap-1.5 opacity-40">
+                          <Clock className="h-3 w-3 shrink-0" />
                           <span className="text-[9px] font-black uppercase tracking-widest">{(() => { try { return formatDistanceToNow(new Date(alert.createdAt)); } catch { return 'recently'; } })()} ago</span>
                         </div>
                         <div className={cn(
@@ -359,7 +358,7 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
                 </div>
               );
             }) : (
-              <div className="text-center py-20 opacity-20 flex flex-col items-center gap-4">
+              <div className="text-center py-10 opacity-20 flex flex-col items-center gap-4">
                 <div className="bg-muted p-6 rounded-4xl">
                   <Bell className="h-12 w-12" />
                 </div>
@@ -367,7 +366,7 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
               </div>
             )}
           </div>
-        </ScrollArea>
+        </div>
       </DialogContent>
     </Dialog>
   );
