@@ -38,6 +38,7 @@ function NewTeamForm() {
     !isStoreDistribution && tierParam === 'pro' ? 'team' : 'free',
   );
   const [isProcessing, setIsProcessing] = useState(false);
+  const [creationError, setCreationError] = useState<string | null>(null);
   const [customWaiverTitle, setCustomWaiverTitle] = useState('');
   const [customWaiverContent, setCustomWaiverContent] = useState('');
 
@@ -52,6 +53,7 @@ function NewTeamForm() {
   const handleCreate = async () => {
     if (!teamName.trim()) return;
 
+    setCreationError(null);
     setIsProcessing(true);
     try {
       let targetType = type;
@@ -64,7 +66,7 @@ function NewTeamForm() {
         targetSchoolId = activeTeam.id;
       }
       
-      const teamId = await createNewTeam(teamName, targetType, organizerPosition, description, 'free', customWaiverTitle, customWaiverContent, targetSchoolId);
+      const teamId = await createNewTeam(teamName, targetType, organizerPosition, description, selectedPlan, customWaiverTitle, customWaiverContent, targetSchoolId);
       if (!isStoreDistribution && selectedPlan === 'team' && proQuotaStatus.remaining <= 0) {
         setActiveTeam({ id: teamId } as any);
         router.push('/dashboard/billing');
@@ -73,9 +75,13 @@ function NewTeamForm() {
       }
     } catch (e: any) {
       console.error(e);
+      const message = typeof e?.message === 'string' && e.message.trim()
+        ? e.message
+        : 'Unable to create the squad. Please try again.';
+      setCreationError(message);
       toast({
         title: 'Squad Creation Failed',
-        description: e?.message || 'Unable to create the squad. Please try again.',
+        description: message,
         variant: 'destructive',
       });
       setIsProcessing(false);
@@ -199,7 +205,14 @@ function NewTeamForm() {
             )}
           </div>
 
-          <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleCreate} disabled={isProcessing || !teamName.trim()} aria-busy={isProcessing}>
+          {creationError && (
+            <div id="team-creation-error" role="alert" className="rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-destructive">
+              <p className="font-semibold">Squad Creation Failed</p>
+              <p>{creationError}</p>
+            </div>
+          )}
+
+          <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleCreate} aria-describedby={creationError ? 'team-creation-error' : undefined} disabled={isProcessing || !teamName.trim()} aria-busy={isProcessing}>
             {isProcessing ? <><Loader2 aria-hidden="true" className="h-6 w-6 animate-spin" /><span>Creating team…</span></> : (
               !isStoreDistribution && selectedPlan === 'team' && proQuotaStatus.remaining <= 0
                 ? 'Create Then Upgrade →'

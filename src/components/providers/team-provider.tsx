@@ -2049,7 +2049,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     // Paid subscriptions may automatically allocate one available seat to a
     // newly created squad. The API derives eligibility and capacity server-side.
     const paidPlanTypes = new Set(['team', 'elite', 'league', 'school', 'squad_pro', 'squad_pro_demo']);
-    if (paidPlanTypes.has((userProfile as any).plan_type) && proQuotaStatus.remaining > 0 && firebaseAuth) {
+    if (planId !== 'free' && paidPlanTypes.has((userProfile as any).plan_type) && proQuotaStatus.remaining > 0 && firebaseAuth) {
       try {
         const token = await getAuthToken(firebaseAuth);
         const allocationResponse = await fetch('/api/teams/allocate-pro', {
@@ -2067,23 +2067,27 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
 
 
-    // Identity sweep: If the user has a name/avatar, update all their memberships to match
-    try {
-      const allMemberships = await getDocs(query(collectionGroup(db, 'members'), where('userId', '==', firebaseUser.uid)));
-      if (!allMemberships.empty) {
-        const sweepBatch = writeBatch(db);
-        let hasUpdates = false;
-        allMemberships.docs.forEach(mDoc => {
-          const mData = mDoc.data();
-          if (mData.name !== userProfile.name || mData.avatar !== userProfile.avatar) {
-            sweepBatch.update(mDoc.ref, { name: userProfile.name, avatar: userProfile.avatar });
-            hasUpdates = true;
-          }
-        });
-        if (hasUpdates) await sweepBatch.commit();
+    // Starter creation must not rewrite memberships on unrelated teams.
+    // Paid and legacy callers retain their existing identity synchronization.
+    if (planId !== 'free') {
+      // Identity sweep: If the user has a name/avatar, update all their memberships to match
+      try {
+        const allMemberships = await getDocs(query(collectionGroup(db, 'members'), where('userId', '==', firebaseUser.uid)));
+        if (!allMemberships.empty) {
+          const sweepBatch = writeBatch(db);
+          let hasUpdates = false;
+          allMemberships.docs.forEach(mDoc => {
+            const mData = mDoc.data();
+            if (mData.name !== userProfile.name || mData.avatar !== userProfile.avatar) {
+              sweepBatch.update(mDoc.ref, { name: userProfile.name, avatar: userProfile.avatar });
+              hasUpdates = true;
+            }
+          });
+          if (hasUpdates) await sweepBatch.commit();
+        }
+      } catch (e) {
+        console.warn("Identity sweep partial failure:", e);
       }
-    } catch (e) {
-      console.warn("Identity sweep partial failure:", e);
     }
 
     toast({ title: "Team Created Successfully!", description: `Your new ${type.replace('_', ' ')} "${name}" is ready.` });
