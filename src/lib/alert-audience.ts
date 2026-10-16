@@ -25,3 +25,13 @@ export function isAlertRelevantToRecipient(
     default: return false;
   }
 }
+
+/** Display scope for server-only signup records; never used to grant access. */
+export function alertAudienceLabel(
+  alert: AlertAudienceRecord & { id?: string; createdBy?: string },
+): string {
+  if (alert.id?.startsWith('signup_') && alert.createdBy === 'system' && alert.targetUserId) {
+    return 'Superadmin only';
+  }
+  return String(alert.audience || '');
+}

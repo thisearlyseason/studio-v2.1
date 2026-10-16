@@ -1,5 +1,6 @@
 
 "use client";
+import { alertAudienceLabel } from '@/lib/alert-audience';
 
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
@@ -121,7 +122,7 @@ export function AlertOverlay() {
               <div className="bg-white p-2 rounded-lg shadow-sm border shrink-0"><Users className="h-4 w-4 text-primary" /></div>
               <div className="min-w-0">
                 <p className="text-[8px] font-black uppercase text-muted-foreground">Audience</p>
-                <p className="text-[10px] font-bold uppercase truncate">{latestAlert.audience}</p>
+                <p className="text-[10px] font-bold uppercase truncate">{alertAudienceLabel(latestAlert)}</p>
               </div>
             </div>
             <div className="bg-muted/20 p-4 rounded-2xl flex items-center gap-3 border border-transparent">
@@ -251,7 +252,7 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
                         <Badge variant="outline" className={cn(
                           "text-[7px] font-black uppercase px-1.5 h-4 border-none shrink-0",
                           isUnread ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground"
-                        )}>{alert.audience}</Badge>
+                        )}>{alertAudienceLabel(alert)}</Badge>
                       </div>
                       <p className="text-xs font-medium text-foreground/80 leading-relaxed italic pr-4">"{alert.message}"</p>
                       <div className="flex items-center justify-between mt-4">
