@@ -123,7 +123,9 @@ test('root route boundary preserves application PWA registration and isolates en
   const require = createRequire(import.meta.url);
   for (const flag of [undefined, 'false', 'true']) {
     for (const pathname of ['/dashboard', '/schedule-app', '/login', '/p/fictional-page', '/squad-pages']) {
-      const marker = name => ({ children }) => React.createElement('div', { 'data-boundary': name }, children);
+      const marker = name => function BoundaryMarker({ children }) {
+        return React.createElement('div', { 'data-boundary': name }, children);
+      };
       const dependencies = {
         'next/navigation': { usePathname: () => pathname },
         '@/components/providers/team-provider': { TeamProvider: marker('team') },
@@ -132,13 +134,13 @@ test('root route boundary preserves application PWA registration and isolates en
         './entity-context': { PageEntityProvider: marker('entity') },
         '@/components/ui/toaster': { Toaster: marker('toaster') },
       };
-      const module = { exports: {} };
+      const loadedModule = { exports: {} };
       vm.runInNewContext(code, {
-        module, exports: module.exports,
+        module: loadedModule, exports: loadedModule.exports,
         require: name => dependencies[name] || require(name),
         process: { env: { NEXT_PUBLIC_SQUAD_PAGES_ENABLED: flag } },
       });
-      const html = renderToStaticMarkup(React.createElement(module.exports.SquadPageBoundary, null, 'Owned child'));
+      const html = renderToStaticMarkup(React.createElement(loadedModule.exports.SquadPageBoundary, null, 'Owned child'));
       const isolated = flag === 'true' && (pathname.startsWith('/p/') || pathname === '/squad-pages');
       assert.equal(html.includes('data-boundary="service-worker"'), !isolated, `${flag}:${pathname}`);
       assert.equal(html.includes('data-boundary="team"'), !isolated, `${flag}:${pathname}`);
