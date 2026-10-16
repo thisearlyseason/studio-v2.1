@@ -25,7 +25,7 @@ export function PageEditor({ fictional = false }: { fictional?: boolean }) {
   const pendingUploads = useRef(new Map<string, { entity: EntityRef; identity: string }>());
   const auth = useAuth(), { user } = useUser(), params = useSearchParams();
   const [actor, setActor] = useState('demo-owner'), [options, setOptions] = useState<Choice[]>([]), [selected, setSelected] = useState(''), [state, setState] = useState<State | null>(null), [content, setContent] = useState<PageContent | null>(null), [saved, setSaved] = useState(''), [busy, setBusy] = useState(false), [loading, setLoading] = useState(true), [error, setError] = useState(''), [notice, setNotice] = useState(''), [panel, setPanel] = useState('Design'), [previewDevice, setPreviewDevice] = useState<PreviewDevice>('desktop'), [onlyPreview, setOnlyPreview] = useState(false), [mobileArea, setMobileArea] = useState<'edit' | 'preview'>('edit'), [imageUrls, setImageUrls] = useState<Record<string, string>>({}), [slugStatus, setSlugStatus] = useState(''), [unusedUploads, setUnusedUploads] = useState<Array<{ id: string; size: number; createdAt: string }>>([]);
-  useEffect(() => { if (window.matchMedia('(max-width: 700px)').matches) workspaceRef.current?.scrollIntoView({ block: 'start', behavior: 'instant' }); }, [mobileArea, onlyPreview]);
+  useEffect(() => { if (window.matchMedia('(max-width: 700px)').matches) workspaceRef.current?.parentElement?.querySelector('header')?.scrollIntoView({ block: 'start', behavior: 'instant' }); }, [mobileArea, onlyPreview]);
   const [inventoryRetry, setInventoryRetry] = useState(0);
   const loadedFor = useRef<{ identity: string; key: string } | null>(null);
   const inventoryIdentity = useRef('');
