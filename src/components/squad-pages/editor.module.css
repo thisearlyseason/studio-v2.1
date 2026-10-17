@@ -49,3 +49,43 @@
 
 /* Dashboard main already owns a bounded viewport below its navigation. */
 .editor.fitParent{height:100%}
+
+/* Compact editor: one persistent full-width preview and an editing drawer.
+   The iframe never unmounts or collapses, preserving its document and scroll. */
+.editor{min-width:0;max-width:100%}.drawerHeader{display:none}
+.editor[data-compact=true] .mobileWorkspaceTabs{display:flex;flex-shrink:0;gap:8px;padding:8px 16px;background:#f9fafb;border-bottom:1px solid #dce3e9}
+.editor[data-compact=true] .mobileWorkspaceTabs button{flex:1;min-height:44px}
+.editor[data-compact=true] .mobileWorkspaceTabs button[aria-pressed=true]{background:hsl(var(--primary));color:white;border-color:hsl(var(--primary))}
+.workspace[data-compact=true]{display:block;position:relative;min-height:0;overflow:hidden}
+.workspace[data-compact=true] .previewPane{display:flex;position:absolute;inset:0;width:100%;height:100%;visibility:visible}
+.workspace[data-compact=true] .controls{display:block;position:absolute;inset:0 auto 0 0;z-index:2;width:min(460px,100%);height:100%;border-right:1px solid #dae1e8;box-shadow:8px 0 24px #17304a20;overflow-y:auto;overscroll-behavior-y:contain;visibility:visible}
+.workspace[data-compact=true][data-mobile-area=preview] .controls{visibility:hidden;pointer-events:none}
+.workspace[data-compact=true][data-mobile-area=edit] .previewPane{visibility:hidden;pointer-events:none}
+.workspace[data-compact=true] .drawerHeader{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:10px 16px;background:white;border-bottom:1px solid #dce3e9;position:sticky;top:0;z-index:3}
+.editor[data-compact=true] button,.editor[data-compact=true] select{min-height:44px}
+.editor[data-compact=true] input:not([type=checkbox]):not([type=range]):not([type=color]){min-height:44px;font-size:16px}
+.editor[data-compact=true] textarea,.editor[data-compact=true] select{font-size:16px}
+.editor[data-compact=true] .previewToolbar{flex-wrap:wrap;gap:8px}
+.editor[data-compact=true] .previewToolbar>div{max-width:100%;flex-wrap:wrap}
+.editor[data-compact=true] .contextbar label{min-width:0}
+.editor[data-compact=true] .contextbar select{min-width:0;max-width:100%;width:100%}
+.editor[data-compact=true] .topbar{flex-wrap:wrap;padding:12px 16px;gap:8px}
+.editor[data-compact=true] .topActions{flex-wrap:wrap;margin-left:auto}
+.editor[data-compact=true] .previewCanvas,.editor[data-compact=true] .viewportScroller{min-height:0;height:auto;flex:1}
+.editor[data-compact=true] .panelTabs{display:none}
+@media(max-width:700px){.workspace[data-compact=true] .controls{width:100%;box-shadow:none}.editor[data-compact=true] .wordmark p{display:none}.editor[data-compact=true] .contextbar{padding:8px 16px}.editor[data-compact=true] .contextbar .pill{font-size:9px;padding:4px 7px}}
+
+@media(max-width:700px){
+ .editor[data-compact=true] .topActions{width:100%;gap:6px;flex-wrap:nowrap}
+ .editor[data-compact=true] .topActions button{flex:1;min-width:0;padding:6px;font-size:10px;white-space:nowrap;gap:4px}
+ .editor[data-compact=true] .topActions button svg{width:14px;flex-shrink:0}
+ .editor[data-compact=true] .wordmark h1{font-size:17px}
+ .editor[data-compact=true] .previewToolbar>div{width:100%;flex-wrap:nowrap}
+ .editor[data-compact=true] .previewToolbar button{min-width:44px;flex:1}
+ .editor[data-compact=true] .previewToolbar button span{display:none}
+}
+/* A software keyboard or short landscape viewport must not crush either pane. */
+@media(max-height:600px){
+ .editor[data-compact=true]{overflow-y:auto;overscroll-behavior-y:contain}
+ .workspace[data-compact=true]{flex:1 0 320px;min-height:320px}
+}

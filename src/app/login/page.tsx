@@ -144,6 +144,9 @@ export default function LoginPage() {
     emailLoginPending.current = true;
     flushSync(() => setIsLoading(true));
     try {
+      // A synchronous commit updates the DOM, but the browser still needs a
+      // rendering opportunity before SDK work or a native account sheet starts.
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       // Firebase owns the request timeout. Racing its promise here would unlock
       // retries while the original sign-in could still authenticate later.
       await signInWithEmailAndPassword(auth, submittedEmail.trim().toLowerCase(), submittedPassword);

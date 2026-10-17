@@ -1,6 +1,6 @@
 'use client';
 /* eslint-disable @next/next/no-img-element -- Authenticated draft blobs and the width-limited page media loader require direct image URLs. */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useId, useRef, useState } from 'react';
 import { useAuth, useUser } from '@/firebase';
 import { useSearchParams } from 'next/navigation';
 import { ArrowDown, ArrowUp, Check, Eye, Globe2, ImagePlus, Laptop, Loader2, Save, Smartphone, Tablet, Trash2 } from 'lucide-react';
@@ -21,6 +21,12 @@ type State = { startingDesign: { content: PageContent; identity: PublicIdentity 
 const uid = () => crypto.randomUUID();
 const menuEntries = (content: PageContent) => content.menu || content.sections.filter(section => section.visible).map(section => ({ id: section.id, label: section.heading, target: `#section-${section.id}`, visible: true }));
 export function PageEditor({ fictional = false, fitParent = false }: { fictional?: boolean; fitParent?: boolean }) {
+  const controlsId = useId();
+  const controlsRef = useRef<HTMLElement | null>(null);
+  const lastControlFocus = useRef<HTMLElement | null>(null);
+  const previewToggle = useRef<HTMLButtonElement | null>(null);
+  const fullPreviewRef = useRef<HTMLDivElement | null>(null);
+  const [compactWorkspace, setCompactWorkspace] = useState(false);
   const workspaceRef = useRef<HTMLDivElement | null>(null);
   const previewReturn = useRef<HTMLButtonElement | null>(null);
   const pageEntity = usePageEntity();
@@ -36,7 +42,7 @@ export function PageEditor({ fictional = false, fitParent = false }: { fictional
   const pendingTeamSwitch = useRef<string | null>(null);
   const selectionRevision = useRef(0);
   const [actor, setActor] = useState('demo-owner'), [options, setOptions] = useState<Choice[]>([]), [selected, setSelected] = useState(''), [state, setState] = useState<State | null>(null), [content, setContent] = useState<PageContent | null>(null), [saved, setSaved] = useState(''), [busy, setBusy] = useState(false), [loading, setLoading] = useState(true), [error, setError] = useState(''), [notice, setNotice] = useState(''), [panel, setPanel] = useState('Design'), [previewDevice, setPreviewDevice] = useState<PreviewDevice>('desktop'), [onlyPreview, setOnlyPreview] = useState(false), [mobileArea, setMobileArea] = useState<'edit' | 'preview'>('edit'), [imageUrls, setImageUrls] = useState<Record<string, string>>({}), [slugStatus, setSlugStatus] = useState(''), [unusedUploads, setUnusedUploads] = useState<Array<{ id: string; size: number; createdAt: string }>>([]);
-  useEffect(() => { if (window.matchMedia('(max-width: 700px)').matches) workspaceRef.current?.parentElement?.querySelector('header')?.scrollIntoView({ block: 'start', behavior: 'instant' }); }, [mobileArea]);
+
   const [inventoryRetry, setInventoryRetry] = useState(0);
   const loadedFor = useRef<{ identity: string; key: string } | null>(null);
   const inventoryIdentity = useRef('');
@@ -48,6 +54,48 @@ export function PageEditor({ fictional = false, fitParent = false }: { fictional
   const currentOptions = useRef(options); currentOptions.current = options;
   const choice = options.find(o => o.key === selected), entity = choice?.ref;
   const ready = !!state && state.context.key === choice?.key && loadedFor.current?.identity === identity;
+  useEffect(() => {
+    const workspace = workspaceRef.current;
+    if (!workspace) return;
+    const update = () => setCompactWorkspace(workspace.clientWidth <= 1100);
+    update();
+    const observer = new ResizeObserver(update);
+    observer.observe(workspace);
+    return () => observer.disconnect();
+  }, [ready, loading]);
+  function showWorkspace(area: 'edit' | 'preview') {
+    setMobileArea(area);
+    requestAnimationFrame(() => {
+      if (area === 'edit') {
+        const previous = lastControlFocus.current;
+        (previous?.isConnected ? previous : controlsRef.current?.querySelector<HTMLElement>('select,button,input,textarea'))?.focus({ preventScroll: true });
+      } else previewToggle.current?.focus({ preventScroll: true });
+    });
+  }
+  useEffect(() => {
+    if (!compactWorkspace || mobileArea !== 'preview' || onlyPreview) return;
+    if (controlsRef.current?.contains(document.activeElement)) previewToggle.current?.focus({ preventScroll: true });
+  }, [compactWorkspace, mobileArea, onlyPreview]);
+  useEffect(() => {
+    if (!onlyPreview) return;
+    const modal = fullPreviewRef.current;
+    if (!modal) return;
+    const focusable = () => [...modal.querySelectorAll<HTMLElement>('button:not(:disabled),a[href],input:not(:disabled),select:not(:disabled),textarea:not(:disabled),[tabindex="0"]')].filter(element => element.getClientRects().length);
+    const first = () => (focusable()[0] || modal).focus({ preventScroll: true });
+    first();
+    const keydown = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') { event.preventDefault(); setOnlyPreview(false); requestAnimationFrame(() => previewReturn.current?.focus({ preventScroll: true })); }
+      if (event.key !== 'Tab') return;
+      const items = focusable(), firstItem = items[0], lastItem = items.at(-1);
+      if (!items.length) { event.preventDefault(); modal.focus(); }
+      else if (event.shiftKey && (document.activeElement === firstItem || !modal.contains(document.activeElement))) { event.preventDefault(); lastItem?.focus(); }
+      else if (!event.shiftKey && (document.activeElement === lastItem || !modal.contains(document.activeElement))) { event.preventDefault(); firstItem?.focus(); }
+    };
+    const focusin = (event: FocusEvent) => { if (!modal.contains(event.target as Node)) first(); };
+    document.addEventListener('keydown', keydown);
+    document.addEventListener('focusin', focusin);
+    return () => { document.removeEventListener('keydown', keydown); document.removeEventListener('focusin', focusin); };
+  }, [onlyPreview]);
   const clearImages = useCallback(() => { Object.values(urls.current).forEach(URL.revokeObjectURL); urls.current = {}; setImageUrls({}); }, []);
   const request = useCallback(async (url: string, init: RequestInit = {}) => {
     if (reviewingStart && (init.method || 'GET').toUpperCase() !== 'GET') throw Error('Starting design review is read-only.');
@@ -144,15 +192,15 @@ export function PageEditor({ fictional = false, fitParent = false }: { fictional
     {error && <p role="alert" className={s.reviewMessage}>{error}</p>}
     {!loading && ready && state && content && <PageView content={content} images={p => imageUrls[p.id] || ''} context={{ ...state.context, identity: state.startingDesign.identity }} preview />}
   </div>;
-  return <><div className={`${s.editor} ${fitParent ? s.fitParent : ''}`} inert={onlyPreview || undefined} aria-hidden={onlyPreview || undefined}>
+  return <><div className={`${s.editor} ${fitParent ? s.fitParent : ''}`} data-compact={compactWorkspace} inert={onlyPreview || undefined} aria-hidden={onlyPreview || undefined}>
     {fictional && <div className={s.localBanner}><span>LOCAL REVIEW · Fictional data only</span><label>Preview as <select aria-label="Fictional role" value={actor} disabled={busy} onChange={e => { if (mayDiscard()) setActor(e.target.value); }}>{previewActors.map(a => <option key={a.uid} value={a.uid}>{a.name}</option>)}</select></label></div>}
     <header className={s.topbar}><div className={s.wordmark}><BrandLogo variant="light-background" className={s.brand} /><div><h1>Squad Pages</h1><p>Your community. Your home page.</p></div></div><div className={s.topActions}><span className={s.saveState}>{dirty ? 'Unsaved changes' : state?.record ? 'All changes saved' : 'Private draft'}</span><button className={s.previewButton} onClick={event => { previewReturn.current = event.currentTarget; setOnlyPreview(true); }}><Eye size={16} /> Full-page preview</button><button className={s.primary} disabled={!ready || !content || busy || !dirty} onClick={() => void action('save')}>{busy ? <Loader2 size={16} className={s.spin} /> : <Save size={16} />} Save draft</button></div></header>
     <div className={s.contextbar}><label>Editing <select aria-label="Entity" value={selected} disabled={busy || !options.length} onChange={e => { if (mayDiscard()) { ++selectionRevision.current; pendingHubSwitch.current = false; pendingTeamSwitch.current = null; selection.current = { identity, query: queryKey, key: e.target.value, origin: 'manual' }; setSelected(e.target.value); } }}>{!selected && <option value="" disabled>Choose an authorized entity</option>}{options.map(o => <option key={o.key} value={o.key}>{o.name} · {o.kind}</option>)}</select></label><span className={`${s.pill} ${ready && state?.context.covered ? s.covered : ''}`}>{!ready ? 'Coverage not checked · select a page' : state?.context.covered ? '✓ Paid coverage verified' : 'Private preview · upgrade to publish'}</span><span className={s.pill}>{ready && state?.record?.status || 'draft'}</span></div>
     {(error || notice) && <div className={error ? s.error : s.notice} role={error ? 'alert' : 'status'}>{error || <><Check size={16} />{notice}</>}{error && <button onClick={() => { if (mayDiscard()) { if (!entity) setInventoryRetry(value => value + 1); else void load(); } }}>{entity ? 'Reload saved draft' : 'Retry loading pages'}</button>}</div>}
     {loading && <div className={s.empty}><Loader2 className={s.spin} /><p>Loading your page…</p></div>}
-    {!loading && ready && content && state && <div className={s.mobileWorkspaceTabs} aria-label="Editor workspace"><button aria-pressed={mobileArea === 'edit'} onClick={() => { setMobileArea('edit'); setOnlyPreview(false); }}>Edit page</button><button aria-pressed={mobileArea === 'preview'} onClick={event => { previewReturn.current = event.currentTarget; setOnlyPreview(true); }}>Preview page</button></div>}
-    {!loading && ready && content && state && <div ref={workspaceRef} data-mobile-area={mobileArea} className={`${s.workspace} `}>
-      {<aside className={s.controls}>    {ready && state && <div className={s.startingDesignEntry}><div><strong>See the updated starting design</strong><p>Compare a complete new design without replacing this draft.</p></div><a data-starting-design-review href={`${fictional ? '/squad-pages' : '/dashboard/public-page'}?entity=${encodeURIComponent(state.context.key)}&startingDesign=1`} target="_blank" rel="noopener noreferrer">Preview new starting design ↗</a></div>}
+    {!loading && ready && content && state && <div className={s.mobileWorkspaceTabs} role="group" aria-label="Editor workspace"><button type="button" aria-pressed={mobileArea === 'edit'} aria-expanded={mobileArea === 'edit'} aria-controls={controlsId} onClick={() => showWorkspace('edit')}>Edit page</button><button type="button" ref={previewToggle} aria-pressed={mobileArea === 'preview'} onClick={() => showWorkspace('preview')}>Preview page</button></div>}
+    {!loading && ready && content && state && <div ref={workspaceRef} data-mobile-area={mobileArea} data-compact={compactWorkspace} className={`${s.workspace} `}>
+      {<aside id={controlsId} ref={controlsRef} className={s.controls} aria-label="Page editing drawer" inert={compactWorkspace && mobileArea === 'preview' || undefined} aria-hidden={compactWorkspace && mobileArea === 'preview' || undefined} onFocusCapture={event => { if (!(event.target as HTMLElement).closest('[data-drawer-close]')) lastControlFocus.current = event.target as HTMLElement; }} onKeyDown={event => { if (compactWorkspace && event.key === 'Escape') { event.preventDefault(); showWorkspace('preview'); } }}><div className={s.drawerHeader}><strong>Edit your page</strong><button type="button" data-drawer-close onClick={() => showWorkspace('preview')}>Close editor · Preview</button></div>    {ready && state && <div className={s.startingDesignEntry}><div><strong>See the updated starting design</strong><p>Compare a complete new design without replacing this draft.</p></div><a data-starting-design-review href={`${fictional ? '/squad-pages' : '/dashboard/public-page'}?entity=${encodeURIComponent(state.context.key)}&startingDesign=1`} target="_blank" rel="noopener noreferrer">Preview new starting design ↗</a></div>}
     {content && hasEditorialImages(content) && <div className={s.sampleNotice} role="note"><strong>Make it yours</strong><span>Built around your squad. Edit any text or image. Included sports photos are editorial.</span></div>}
     {content && hasSampleContent(content) && <div className={s.sampleNotice} role="note"><strong>{content.exampleDetails ? 'Editable example details' : 'Sample content'}</strong><span>{content.exampleDetails ? 'A complete starting page. Update example ages, location, season and contact to match your squad.' : 'Replace or remove placeholders before publishing.'}</span></div>}
 <label className={s.panelPicker}>Edit section<select aria-label="Editor section" value={panel} onChange={e => setPanel(e.target.value)}>{panels.map(p => <option key={p}>{p}</option>)}</select></label><nav aria-label="Editor sections" className={s.panelTabs}>{panels.map(p => <button key={p} aria-current={panel === p ? 'step' : undefined} onClick={() => setPanel(p)}>{p}</button>)}</nav><fieldset className={s.panel} disabled={busy}><div className={s.panelHeading}><span>YOUR PAGE</span><h2>{panel}</h2></div>
@@ -170,9 +218,9 @@ export function PageEditor({ fictional = false, fitParent = false }: { fictional
         {panel === 'Page settings' && <>{content.exampleDetails !== undefined && <label className={s.check}><input type="checkbox" checked={!content.exampleDetails} onChange={e => change(c => { c.exampleDetails = !e.target.checked; })} />I have reviewed and replaced the example team details</label>}{field('Page address', content.slug, v => { change(c => { c.slug = v; }); setSlugStatus(''); }, false, 'thesquad.pro/p/your-name · stable after first publication', !!state.record?.slug)}<button onClick={() => void checkSlug()}>Check availability</button><p role="status" className={s.hint}>{slugStatus}</p>{field('Search title', content.title, v => change(c => { c.title = v; }))}{field('Search description', content.description, v => change(c => { c.description = v; }), true)}<h3>Unused uploads</h3><p className={s.hint}>Review your uploads that are absent from saved, live and previous revisions.</p><button onClick={() => void refreshUnusedUploads()}>Find my unused uploads</button>{unusedUploads.map(item => <div className={s.unusedUpload} key={item.id}>{imageUrls[item.id] && <img src={imageUrls[item.id]} alt="Unused upload preview" />}<small>{new Date(item.createdAt).toLocaleDateString()} · {Math.ceil(item.size / 1024)} KB</small><button aria-label={`Delete unused upload ${item.id}`} onClick={() => void removeUnusedUpload(item.id)}>Delete unused image</button></div>)}<h3>Footer branding</h3><label className={s.check}><input type="checkbox" checked={content.squadBrand} onChange={e => change(c => { c.squadBrand = e.target.checked; })} />Show The Squad branding</label><label className={s.check}><input type="checkbox" checked={content.gamedayBrand} onChange={e => change(c => { c.gamedayBrand = e.target.checked; })} />Show Gameday Sports branding</label><p className={s.hint}>Both choices are included. Your settings stay with this page across templates.</p>{state.context.canSetPolicy && <><h3>Organization publication policy</h3><label className={s.check}><input type="checkbox" checked={!state.approvalRequired} onChange={async e => { const n = epoch.current, direct = e.target.checked; setBusy(true); try { await request('/api/squad-pages', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ entity, action: 'policy', expectedVersion: state.record?.version || 0, direct }) }); if (n === epoch.current) setState({ ...state, approvalRequired: !direct }); } catch (error) { if (n === epoch.current) setError((error as Error).message); } finally { if (n === epoch.current) setBusy(false); } }} />Allow team administrators to publish directly</label><p className={s.hint}>Applies only to page publication. Default: exact saved revision needs owner/admin approval.</p></>}</>}
         {panel === 'Publishing' && <section className={s.publication} aria-label="Publication controls"><div><strong>{state.record?.status === 'published' ? 'Your page is live' : 'Private draft'}</strong><p>{!state.context.covered ? state.context.coverageReason : state.approvalRequired && !state.context.canApprove ? 'Owner/admin approval is required for each saved revision.' : 'Save, preview, then publish your exact revision.'}</p>{state.record?.slug && <a href={`/p/${state.record.slug}`} target="_blank" rel="noopener noreferrer">Open public page ↗</a>}</div><div className={s.publishActions}>{state.record && <>{!state.context.canApprove && <button disabled={busy || dirty} onClick={() => void action('submit')}>Request approval</button>}{state.context.canApprove && state.record.submittedRevision === state.record.draft.revision && <button disabled={busy || dirty} onClick={() => void action('approve')}>Approve revision {state.record.draft.revision}</button>}{state.record.status === 'published' && <button disabled={busy || dirty} onClick={() => void action('unpublish')}>Unpublish</button>}{state.record.previous && <button disabled={busy || dirty} onClick={() => void action('restore')}>Restore previous</button>}<button className={s.primary} disabled={busy || dirty || !state.context.covered || (!state.context.canApprove && state.approvalRequired && state.record.approval?.revision !== state.record.draft.revision)} onClick={() => void action('publish')}><Globe2 size={16} /> Publish revision {state.record.draft.revision}</button></>}</div></section>}
       </fieldset></aside>}
-      <main className={s.previewPane}><div className={s.previewToolbar}><span><span className={s.liveDot} /> LIVE PREVIEW <small>Private · only you can see this draft</small></span><div>{(['desktop', 'tablet', 'mobile'] as const).map(device => <button key={device} aria-label={`${device[0].toUpperCase()}${device.slice(1)} preview`} aria-pressed={previewDevice === device} onClick={() => setPreviewDevice(device)}>{device === 'desktop' ? <Laptop size={17} /> : device === 'tablet' ? <Tablet size={17} /> : <Smartphone size={17} />}<span>{device[0].toUpperCase()}{device.slice(1)}</span></button>)}</div></div><div className={s.previewCanvas}><PreviewSurface device={previewDevice}>{previewDocument => <PageView content={content} images={p => imageUrls[p.id] || ''} context={state.context} preview previewDocument={previewDocument} />}</PreviewSurface></div></main>
+      <main className={s.previewPane} inert={compactWorkspace && mobileArea === 'edit' || undefined} aria-hidden={compactWorkspace && mobileArea === 'edit' || undefined}><div className={s.previewToolbar}><span><span className={s.liveDot} /> LIVE PREVIEW <small>Private · only you can see this draft</small></span><div>{(['desktop', 'tablet', 'mobile'] as const).map(device => <button key={device} aria-label={`${device[0].toUpperCase()}${device.slice(1)} preview`} aria-pressed={previewDevice === device} onClick={() => setPreviewDevice(device)}>{device === 'desktop' ? <Laptop size={17} /> : device === 'tablet' ? <Tablet size={17} /> : <Smartphone size={17} />}<span>{device[0].toUpperCase()}{device.slice(1)}</span></button>)}</div></div><div className={s.previewCanvas}><PreviewSurface device={previewDevice}>{previewDocument => <PageView content={content} images={p => imageUrls[p.id] || ''} context={state.context} preview previewDocument={previewDocument} />}</PreviewSurface></div></main>
     </div>}
-  </div>{onlyPreview && ready && content && state && <div className={s.fullPagePreview} aria-label="Full-page draft preview">
+  </div>{onlyPreview && ready && content && state && <div ref={fullPreviewRef} role="dialog" aria-modal="true" tabIndex={-1} className={s.fullPagePreview} aria-label="Full-page draft preview">
     <header className={s.fullPreviewToolbar}><button type="button" autoFocus onClick={() => { setOnlyPreview(false); requestAnimationFrame(() => previewReturn.current?.focus({ preventScroll: true })); }}>← Back to editor</button><span>Private draft preview · {dirty ? 'includes unsaved changes' : 'current draft'} · nothing is saved or published</span></header>
     <PageView content={content} images={p => imageUrls[p.id] || ''} context={state.context} preview />
   </div>}</>;
