@@ -46,6 +46,30 @@ export function PageView({ content: c, images: suppliedImages, context, preview 
     doc.addEventListener('keydown', key, true); return () => { window.cancelAnimationFrame(frame); doc.removeEventListener('keydown', key, true); };
   }, [linkOpen, galleryOpen, previewDocument, dialogNode]);
   function restoreFocus(target: HTMLElement | null) { const view = target?.ownerDocument.defaultView; if (!target || !view) return; window.requestAnimationFrame(() => window.setTimeout(() => { if (target.isConnected) { const menu = target.closest('details'); const destination = menu && !menu.open ? menu.querySelector('summary') : target; destination?.focus({ preventScroll: true }); } }, 0)); }
+  useEffect(() => {
+    const page = pageRef.current;
+    if (!page || previewDocument || typeof IntersectionObserver === 'undefined' || typeof Element.prototype.animate !== 'function') return;
+    const reduce = window.matchMedia('(prefers-reduced-motion: reduce)');
+    if (reduce.matches) return;
+    const animations = new Set<Animation>();
+    const cancel = () => { animations.forEach(animation => animation.cancel()); animations.clear(); };
+    let observer: IntersectionObserver | undefined;
+    try {
+      observer = new IntersectionObserver(entries => entries.forEach(entry => {
+        if (!entry.isIntersecting) return;
+        observer?.unobserve(entry.target);
+        if (reduce.matches) return;
+        // Nothing is hidden before observation: unsupported/failed observers
+        // and no-JS rendering retain the complete readable page.
+        try { const animation = entry.target.animate([{ opacity: .7, transform: 'translateY(12px)' }, { opacity: 1, transform: 'translateY(0)' }], { duration: 540, easing: 'cubic-bezier(.2,.7,.2,1)' });
+        animations.add(animation); animation.onfinish = () => animations.delete(animation); } catch { /* Animation failure leaves the content fully visible. */ }
+      }), { threshold: .12 });
+      page.querySelectorAll('section > div, section > p, footer').forEach(element => observer?.observe(element));
+    } catch { cancel(); observer?.disconnect(); }
+    const changed = () => { if (reduce.matches) { cancel(); observer?.disconnect(); } };
+    reduce.addEventListener('change', changed);
+    return () => { cancel(); observer?.disconnect(); reduce.removeEventListener('change', changed); };
+  }, [c.template, previewDocument]);
   const formActive = (id?: string) => !id || context.forms.some(f => f.id === id && f.active);
   const registrations = c.registrations.filter(l => l.label && l.url && (!l.formId || context.forms.some(f => f.id === l.formId && f.url === l.url))), first = registrations.find(l => formActive(l.formId)), second = c.links.find(l => l.label && l.url);
   const sampleRegistrations = c.registrations.filter(isSamplePlaceholder);
@@ -63,15 +87,8 @@ export function PageView({ content: c, images: suppliedImages, context, preview 
     const page = pageRef.current;
     if (!page || typeof IntersectionObserver === 'undefined') return;
     const view = page.ownerDocument.defaultView || window;
-    const motion = view.matchMedia('(prefers-reduced-motion: reduce)');
     const targets = [...page.querySelectorAll<HTMLElement>('[data-page-section]')];
-    const reveal = new view.IntersectionObserver(entries => {
-      for (const entry of entries) if (entry.isIntersecting) {
-        (entry.target as HTMLElement).dataset.revealed = 'true';
-        reveal.unobserve(entry.target);
-      }
-    }, { threshold: .08 });
-    if (!motion.matches) targets.forEach(target => reveal.observe(target));
+    try {
     const visibleSections = new Set<Element>();
     const hero = page.querySelector<HTMLElement>('#page-top');
     let heroVisible = !!hero && hero.getBoundingClientRect().bottom > 0 && hero.getBoundingClientRect().top < view.innerHeight;
@@ -93,29 +110,23 @@ export function PageView({ content: c, images: suppliedImages, context, preview 
     targets.filter(target => target.id).forEach(target => navigation.observe(target));
     if (hero) heroNavigation.observe(hero);
     updateNavigation();
-    const stopMotion = () => {
-      if (motion.matches) {
-        reveal.disconnect();
-        targets.forEach(target => delete target.dataset.revealed);
-      }
-    };
-    motion.addEventListener('change', stopMotion);
-    return () => { reveal.disconnect(); navigation.disconnect(); heroNavigation.disconnect(); motion.removeEventListener('change', stopMotion); };
+    return () => { navigation.disconnect(); heroNavigation.disconnect(); };
+    } catch { /* Optional navigation observation must not affect page visibility. */ }
   }, [sectionKey, c.template, c.extra, previewDocument]);
   // Radix's title/description checks and modal focus scope use the parent
   // document. Keep each preview dialog and its semantic title together there,
-  // positioned inside the fitted preview pane rather than in the iframe.
+  // positioned inside the native preview pane rather than in the iframe.
   const dialogContainer = previewDocument?.defaultView?.frameElement?.parentElement;
   const overlayStyle: CSSProperties | undefined = dialogContainer ? { position: 'absolute' } : undefined;
   const galleryStyle: CSSProperties | undefined = dialogContainer ? { position: 'absolute', width: 'min(94%, 1100px)', maxHeight: '94%' } : undefined;
   const destinationStyle: CSSProperties | undefined = dialogContainer ? { position: 'absolute', width: 'min(90%, 520px)', maxHeight: '85%' } : undefined;
   function frameStyle(p: Photo | null) { return { '--photo-size': (p?.size ?? 100) / 100 } as CSSProperties; }
   function closeMenu() { if (menuRef.current) menuRef.current.open = false; }
-  return <article ref={pageRef} className={`${styles.page} ${styles[c.template]} ${c.background ? styles.customBackground : ''}`} onClickCapture={event => { if (!preview && !localReview) return; const target = (event.target as Element).closest('a'); const url = target?.getAttribute('href'); if (url && !url.startsWith('#')) { event.preventDefault(); linkReturn.current = target as HTMLAnchorElement; setActiveLink({ url, label: target?.textContent?.trim() || target?.getAttribute('aria-label') || 'Link destination' }); } }} style={{ ...(c.background ? { '--page-background': c.background, '--page-foreground': textOn(c.background) } : {}), '--ink': c.primary, '--accent': c.secondary, '--heading-accent': headingAccent, '--on-ink': textOn(c.primary), '--on-accent': textOn(c.secondary) } as CSSProperties}>
+  return <article data-page-motion={previewDocument ? undefined : "enabled"} ref={pageRef} className={`${styles.page} ${styles[c.template]} ${c.background ? styles.customBackground : ''}`} onClickCapture={event => { if (!preview && !localReview) return; const target = (event.target as Element).closest('a'); const url = target?.getAttribute('href'); if (url && !url.startsWith('#')) { event.preventDefault(); linkReturn.current = target as HTMLAnchorElement; setActiveLink({ url, label: target?.textContent?.trim() || target?.getAttribute('aria-label') || 'Link destination' }); } }} style={{ ...(c.background ? { '--page-background': c.background, '--page-foreground': textOn(c.background) } : {}), '--ink': c.primary, '--accent': c.secondary, '--heading-accent': headingAccent, '--on-ink': textOn(c.primary), '--on-accent': textOn(c.secondary) } as CSSProperties}>
     <header className={styles.pageHeader}><a href="#page-top" className={styles.identity}>{photo(c.logo, true, true)}<span>{c.name}</span></a><nav aria-label="Page sections">{menu.map(item => <a key={item.id} href={item.target} target={item.target.startsWith('https:') ? '_blank' : undefined} rel="noopener noreferrer" aria-current={activeSection === item.target ? 'location' : undefined}>{item.label}</a>)}</nav><details ref={menuRef} className={styles.mobileNav} onKeyDown={e => { if (e.key === 'Escape') { closeMenu(); menuRef.current?.querySelector('summary')?.focus(); } }}><summary className={styles.menuLabel}><Menu size={19} aria-hidden /><span>Explore</span></summary><nav className={styles.mobileMenu} aria-label="Mobile page sections">{menu.map(item => <a key={item.id} href={item.target} target={item.target.startsWith('https:') ? '_blank' : undefined} rel="noopener noreferrer" aria-current={activeSection === item.target ? 'location' : undefined} onClick={closeMenu}>{item.label}<ArrowUpRight size={16} aria-hidden /></a>)}{headerButton && <div onClick={closeMenu}>{link(headerButton.url, headerButton.label, true)}</div>}<a href="#page-footer" onClick={closeMenu}>Page information<ArrowDown size={16} aria-hidden /></a></nav></details>{headerButton && <div className={styles.headerAction}>{link(headerButton.url, headerButton.label, true)}</div>}</header>
     <section id="page-top" style={frameStyle(c.hero)} className={`${styles.hero} ${!c.hero ? styles.noImage : ''}`}><div className={styles.heroPhoto}>{photo(c.hero, false, true)}{c.template !== 'simple' && c.hero && <span className={styles.overlay} style={{ background: `rgba(0,0,0,${Math.max(.6, c.hero.overlay)})` }} />}</div><div className={styles.heroCopy}><p className={styles.eyebrow}>{c.details.sport || c.name}{c.details.season && ` / ${c.details.season}`}</p><h1>{(c.headline || c.name).split('\n').map((line, index) => <span key={index} className={index ? styles.headlineAccent : styles.headlineLine}>{line}</span>)}</h1>{c.intro && <p className={styles.lead}>{c.intro}</p>}<div className={styles.actions}>{first && link(first.url, first.label, true)}{!first && c.exampleDetails !== undefined && link(sections.some(section => section.id === 'registration') ? '#section-registration' : sections[0] ? `#section-${sections[0].id}` : '#page-footer', sections.some(section => section.id === 'registration') ? 'Join the squad' : 'Explore the squad', true)}{!first && sampleRegistrations.map(placeholder)}{second && link(second.url, second.label)}</div><a className={styles.explore} href={sections[0] ? `#section-${sections[0].id}` : '#page-footer'}><ArrowDown size={18} aria-hidden /> Explore {c.name}</a></div></section>
     {c.exampleDetails && <p className={styles.exampleNote}>Editable example details · update ages, location, season and contact before sharing.</p>}
-    {[c.hero, c.aboutImage, c.joinImage, ...c.gallery].some(p => p?.id.startsWith('squad-editorial-athlete-')) && <p className={styles.stockNote}>Illustrative stock sports photography · athletes shown are not {c.name} members.</p>}
+    {[c.hero, c.aboutImage, c.joinImage, ...c.gallery].some(p => p && /^squad-editorial-(?:athlete-|indoor-|team-huddle|baseball-)/.test(p.id)) && <p className={styles.stockNote}>Illustrative stock sports photography · athletes shown are not {c.name} members.</p>}
     <div className={styles.sections}>{sections.map(s => <section data-page-section id={`section-${s.id}`} className={`${styles.section} ${styles[s.id]}`} key={s.id}>
       {s.id === 'about' && <div className={`${styles.aboutGrid} ${!showAboutImage ? styles.noAboutImage : ''}`}><div><p className={styles.eyebrow}>{s.heading}</p><h2>{c.aboutHeading || s.heading}</h2><Formatted text={c.about} /></div>{showAboutImage && c.aboutImage && <div className={styles.photoFrame} style={frameStyle(c.aboutImage)}>{photo(c.aboutImage)}</div>}</div>}
       {s.id === 'details' && <><p className={styles.eyebrow}>{s.heading}</p><div className={styles.detailGrid}>{detailEntries.map(([k, v]) => <div key={k}>{k === 'ages' ? <Users className={styles.detailIcon} aria-hidden /> : ['location', 'venue'].includes(k) ? <MapPin className={styles.detailIcon} aria-hidden /> : ['season', 'dates', 'deadline'].includes(k) ? <CalendarDays className={styles.detailIcon} aria-hidden /> : <Trophy className={styles.detailIcon} aria-hidden />}<span>{k === 'ages' ? 'Age group' : k}</span><strong>{v}</strong>{c.detailNotes?.[k as 'ages' | 'location' | 'season'] && <p className={styles.detailNote}>{c.detailNotes[k as 'ages' | 'location' | 'season']}</p>}</div>)}</div></>}

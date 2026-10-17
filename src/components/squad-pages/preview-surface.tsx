@@ -95,13 +95,12 @@ export function PreviewSurface({ device, children }: { device: PreviewDevice; ch
     observer.observe(element);
     return () => observer.disconnect();
   }, []);
-  // Scale the viewport itself, not its contents' responsive layout. Its CSS
-  // width remains the selected device width and its own document scrolls.
-  const width = previewWidths[device];
-  const scale = bounds.width > 0 ? Math.min(1, bounds.width / width) : 1;
+  // Render at native CSS pixels. Device choices cap the width; narrow workspaces
+  // exercise responsive layout instead of shrinking desktop text into a miniature.
+  const width = Math.min(previewWidths[device], bounds.width || previewWidths[device]);
   const target = previewDocument?.getElementById('page-preview-root');
   return <div ref={container} className={s.viewportScroller} aria-label={`${device} preview viewport`} tabIndex={0}>
-    <iframe ref={frame} onLoad={load} title={`Private ${device} page preview, ${previewWidths[device]} pixels wide`} srcDoc={previewMarkup} sandbox="allow-same-origin" className={s.previewViewport} style={{ width, height: bounds.height > 0 ? bounds.height / scale : '100%', transform: `scale(${scale})`, transformOrigin: 'top left', left: Math.max(0, (bounds.width - width * scale) / 2), visibility: bounds.width > 0 ? 'visible' : 'hidden' }} />
+    <iframe ref={frame} onLoad={load} title={`Private ${device} page preview, responsive width`} srcDoc={previewMarkup} sandbox="allow-same-origin" className={s.previewViewport} style={{ width, height: bounds.height || '100%', left: Math.max(0, (bounds.width - width) / 2), visibility: bounds.width > 0 ? 'visible' : 'hidden' }} />
     {target && previewDocument && createPortal(children(previewDocument), target)}
   </div>;
 }

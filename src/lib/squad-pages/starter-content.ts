@@ -14,6 +14,13 @@ export function publicIdentity(entity: Record<string, unknown>): PublicIdentity 
 // Static, locally hosted photographs only. Source and reuse evidence travels
 // with the assets. These are sporting atmosphere, never this team's athletes.
 const photographs: Record<string, string> = {
+  'squad-editorial-indoor-action-v1': '/squad-pages/editorial/indoor-action.webp',
+  'squad-editorial-team-huddle-v1': '/squad-pages/editorial/team-huddle.webp',
+  'squad-editorial-indoor-game-v1': '/squad-pages/editorial/indoor-game.webp',
+  'squad-editorial-baseball-run-v1': '/squad-pages/editorial/baseball-run.webp',
+  'squad-editorial-baseball-bat-v1': '/squad-pages/editorial/baseball-bat.webp',
+  'squad-editorial-baseball-ball-v1': '/squad-pages/editorial/baseball-ball.webp',
+
   'squad-editorial-athlete-court-v1': '/squad-pages/editorial/athlete-court.webp',
   'squad-editorial-athlete-shot-v1': '/squad-pages/editorial/athlete-shot.webp',
   'squad-editorial-athlete-hands-v1': '/squad-pages/editorial/athlete-hands.webp',
@@ -33,7 +40,7 @@ export function starterContent(name: string, kind: EntityKind, identity: PublicI
   c.template = 'modern';
   c.exampleDetails = true; c.simpleAboutImage = false;
   c.primary = identity.primary || '#17304a'; c.secondary = identity.secondary || '#f5c451';
-  // Two starter photos form a balanced row; mosaic leaves an empty grid cell.
+  // Three complementary action/team/detail photographs form a complete row.
   c.galleryLayout = 'row';
   c.headline = 'Find your team.\nPlay your game.';
   const exampleSport = identity.sport || 'Basketball';
@@ -46,9 +53,10 @@ export function starterContent(name: string, kind: EntityKind, identity: PublicI
   const scene = /basket|netball/.test(sport) ? 'court' : /soccer|football|rugby|lacrosse|hockey|baseball|softball/.test(sport) ? 'field' : 'track';
   const photo = (scene: string): Photo => ({ id: `squad-editorial-${scene}-v1`, alt: `${scene.startsWith('court') ? 'Basketball court' : scene === 'field' ? 'Sports field' : 'Running track'} · editorial sports photography`, caption: scene.startsWith('court') ? 'A different perspective on the game.' : scene === 'field' ? 'Space to play. Room to grow.' : 'Every line is a new beginning.', x: scene === 'court' ? 28 : 50, y: 50, overlay: .6 });
   const athlete = (id: string, caption: string, x = 50, y = 50): Photo => ({ id: `squad-editorial-${id}-v1`, alt: `${caption} · illustrative stock photography, not squad members`, caption: `${caption} · Stock photo`, x, y, overlay: .6 });
-  c.hero = scene === 'court' ? athlete('athlete-court', 'A basketball layup in motion', 66, 55) : photo(scene);
-  c.aboutImage = scene === 'court' ? athlete('athlete-shot', 'Practice, one shot at a time', 48, 80) : photo(scene);
-  c.joinImage = scene === 'court' ? athlete('athlete-hands', 'The next play starts here') : photo(scene);
+  const baseball = /baseball|softball/.test(sport);
+  c.hero = scene === 'court' ? athlete('indoor-action', 'Indoor basketball, in the thick of the game', 48, 32) : baseball ? athlete('baseball-run', 'Baseball, every play in motion', 50, 52) : photo(scene);
+  c.aboutImage = scene === 'court' ? athlete('team-huddle', 'Together, before the next play', 50, 62) : baseball ? athlete('baseball-bat', 'Ready for the next pitch', 50, 50) : photo(scene);
+  c.joinImage = scene === 'court' ? athlete('athlete-hands', 'The next play starts here') : baseball ? athlete('baseball-ball', 'A new season in your hands', 70, 50) : photo(scene);
   if (identity.logoUrl) c.logo = { id: ENTITY_LOGO_ID, alt: `${name} logo`, caption: '', x: 50, y: 50, overlay: 0 };
   c.details = { ...c.details, sport: exampleSport, ages: audience === 'adults 18+' ? 'Ages 18+' : 'All ages & abilities', location: 'River City', season: '2027 Season' };
   c.detailNotes = { ages: audience === 'adults 18+' ? 'Open to adult players 18+ of all skill levels. Everyone is welcome.' : 'A welcoming place for players of all ages and abilities.', location: 'Based in River City, with local games, practices and events.', season: 'Register for the 2027 season. Games start in Spring 2027.' };
@@ -56,7 +64,7 @@ export function starterContent(name: string, kind: EntityKind, identity: PublicI
   c.contact = { heading: 'Get in touch', text: 'Have questions? We would love to hear from you.', email: `hello@${emailName}.example`, phone: '' };
   c.joinHeading = `Join ${name}`;
   c.joinText = `Be part of a welcoming ${exampleSport.toLowerCase()} community. Explore registration for the next season, or get in touch to find your place on the squad.`;
-  c.gallery = scene === 'court' ? [athlete('athlete-court', 'A basketball layup in motion', 66, 55), athlete('athlete-shot', 'Practice, one shot at a time', 48, 80), athlete('athlete-hands', 'The next play starts here')] : scene === 'track' ? [photo('track'), photo('track-detail'), photo('field')] : [photo('field'), photo('track'), photo('track-detail')];
+  c.gallery = scene === 'court' ? [athlete('indoor-action', 'The game in motion', 48, 35), athlete('team-huddle', 'One team, one next play', 50, 62), athlete('indoor-game', 'Under the lights', 60, 55)] : baseball ? [athlete('baseball-run', 'Between the bases', 50, 55), athlete('baseball-bat', 'Meet the next pitch', 50, 50), athlete('baseball-ball', 'The details of the game', 70, 50)] : scene === 'track' ? [photo('track'), photo('track-detail'), photo('field')] : [photo('field'), photo('track'), photo('track-detail')];
   c.headerButton = { label: 'Join the squad', target: '#section-registration', visible: true };
   c.extra = [];
   c.sections = c.sections.map(s => ({ ...s, visible: ['about', 'details', 'registration', 'directory', 'gallery', 'resources', 'contact'].includes(s.id), heading: s.id === 'gallery' ? 'Team gallery' : s.id === 'about' ? `Meet ${name}`.slice(0, 120) : s.heading }));
