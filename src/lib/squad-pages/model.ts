@@ -8,6 +8,8 @@ export type Photo = { id: string; alt: string; caption: string; x: number; y: nu
 export type PageLink = { id: string; label: string; url: string; formId?: string };
 export type PageContent = {
   template: Template; name: string; slug: string; title: string; description: string;
+  detailNotes?: { ages: string; location: string; season: string };
+  exampleDetails?: boolean; simpleAboutImage?: boolean;
   background?: string; galleryLayout?: 'row' | 'mosaic' | 'staggered'; galleryLightbox?: boolean;
   headerButton?: { label: string; target: string; visible: boolean };
   menu?: { id: string; label: string; target: string; visible: boolean }[];
@@ -68,6 +70,8 @@ export function validateContent(input: unknown): PageContent {
   for (const key of ['slug', 'title', 'description', 'headline', 'intro', 'aboutHeading', 'about', 'joinHeading', 'joinText'] as const) out[key] = cleanText(x[key], key === 'about' ? 6000 : key === 'slug' ? 60 : 1200);
   if (out.slug) validateSlug(out.slug);
   for (const key of ['primary', 'secondary'] as const) { if (!/^#[0-9a-fA-F]{6}$/.test(x[key])) throw new PageError('Choose a valid colour.'); out[key] = x[key]; }
+  if (x.detailNotes !== undefined) { if (!x.detailNotes || typeof x.detailNotes !== 'object' || Array.isArray(x.detailNotes) || Object.keys(x.detailNotes).some(key => !['ages', 'location', 'season'].includes(key))) throw new PageError('Use valid detail descriptions.'); out.detailNotes = { ages: cleanText(x.detailNotes.ages ?? '', 600), location: cleanText(x.detailNotes.location ?? '', 600), season: cleanText(x.detailNotes.season ?? '', 600) }; }
+  for (const key of ['exampleDetails', 'simpleAboutImage'] as const) { if (x[key] !== undefined) { if (typeof x[key] !== 'boolean') throw new PageError('Choose valid example and image settings.'); out[key] = x[key]; } }
   if (x.background !== undefined) { if (typeof x.background !== 'string' || !/^#[0-9a-fA-F]{6}$/.test(x.background)) throw new PageError('Choose a valid page background.'); out.background = x.background; }
   if (x.galleryLayout !== undefined) { if (!['row', 'mosaic', 'staggered'].includes(x.galleryLayout)) throw new PageError('Choose a valid gallery layout.'); out.galleryLayout = x.galleryLayout; }
   if (x.galleryLightbox !== undefined) { if (typeof x.galleryLightbox !== 'boolean') throw new PageError('Choose whether gallery images expand.'); out.galleryLightbox = x.galleryLightbox; }

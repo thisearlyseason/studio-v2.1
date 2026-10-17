@@ -7,7 +7,7 @@ const illustrations: Record<string, string> = {
 export function sampleImageUrl(id: string): string { return Object.hasOwn(illustrations, id) ? illustrations[id] : ''; }
 const placeholderIds = new Set(['squad-sample-registration-v1', 'squad-sample-link-v1', 'squad-sample-resource-v1']);
 export function isSamplePlaceholder(link: PageLink) { return placeholderIds.has(link.id) && !link.url && !link.formId && !!link.label; }
-export function hasSampleContent(content: PageContent) { return JSON.stringify(content).includes('[Sample]') || photoIds(content).some(id => !!sampleImageUrl(id)) || [...content.registrations, ...content.links, ...(content.resources || [])].some(isSamplePlaceholder); }
+export function hasSampleContent(content: PageContent) { return content.exampleDetails === true || JSON.stringify(content).includes('[Sample]') || photoIds(content).some(id => !!sampleImageUrl(id)) || [...content.registrations, ...content.links, ...(content.resources || [])].some(isSamplePlaceholder); }
 /** Pure new-draft defaults only: no writes, external media, contacts or registration destinations. */
 export function sampleContent(name: string, kind: EntityKind): PageContent {
   const c = emptyContent(name);

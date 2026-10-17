@@ -1,6 +1,6 @@
 {
   "licenseSummary": "Standard Unsplash license permits downloading, copying, modifying and using photos including commercial use. Attribution appreciated; do not resell unmodified images or compile a competing image service.",
-  "scope": "Curated theme photography for Squad starter pages, not actual customer/team/location photos. No model releases needed for identified people because none are visible in inspected assets. No claim about a real team using these venues.",
+  "scope": "Curated public stock sports photography. Legacy venue photographs contain no identifiable people. New athlete photographs are illustrative stock, not customer squad members; visible stock labeling accompanies their use. No endorsement is implied.",
   "assets": [
     {
       "file": "court.webp",
@@ -107,6 +107,66 @@
       "originalFile": "field-grass.jpg",
       "originalSHA256": "0dc4dff495558839afeb769524dca6297b28bda1a8048e9701b9fa06a3a2ca71",
       "transform": "auto-orient, fit1600 without enlargement, WebP82, strip metadata; no content synthesis"
+    },
+    {
+      "file": "athlete-court.webp",
+      "sha256": "edd0cb5b2598eed0d2deb56dc49e3f94bf4b6adba2fba7f72b1a51ba9cf204c9",
+      "bytes": 197086,
+      "sourceURL": "https://unsplash.com/photos/R7t1RCmlxU4",
+      "photographer": "Mira Kireeva",
+      "photoId": "R7t1RCmlxU4",
+      "license": "Unsplash standard free license, not Unsplash+",
+      "licenseURL": "https://unsplash.com/license",
+      "licenseCatalogURL": "https://unsplash.com/s/photos/basketball-training",
+      "licenseEvidence": "Official catalog lists named photographer with standard Download link, not marked Unsplash+. Download maps exact photoId to this CDN asset; standard license verified on official license page. Individual short photo pages unavailable to reader; catalog/download mapping retained.",
+      "downloadURL": "https://images.unsplash.com/photo-1612768875331-0447b960fa40?w=1800&q=85&fm=jpg&fit=max",
+      "originalFile": "basketball-street.jpg",
+      "originalSHA256": "a8e7c324fc7b1f43a4d88e655b28bfcbed0e3c7e588d947196f1f6b7ff7e5135",
+      "transform": "Auto-orient, fit1600x1600 without enlargement, WebP84, strip metadata; no content synthesis",
+      "pixelsInspected": true,
+      "pixelInspection": "Athlete attempting an outdoor basketball layup; inspected full photo. No claim of customer/team affiliation; incidental clothing marks not used as branding.",
+      "visibleDisclosureRequired": true,
+      "generatedImage": false
+    },
+    {
+      "file": "athlete-shot.webp",
+      "sha256": "c9c1c8bd9756127b0560bf2d068a23693b70bab2cf71a6cd8b602a3f5c097048",
+      "bytes": 118892,
+      "sourceURL": "https://unsplash.com/photos/YFIcazN-Sw4",
+      "photographer": "Mira Kireeva",
+      "photoId": "YFIcazN-Sw4",
+      "license": "Unsplash standard free license, not Unsplash+",
+      "licenseURL": "https://unsplash.com/license",
+      "licenseCatalogURL": "https://unsplash.com/s/photos/basketball-training",
+      "licenseEvidence": "Official catalog lists named photographer with standard Download link, not marked Unsplash+. Download maps exact photoId to this CDN asset; standard license verified on official license page. Individual short photo pages unavailable to reader; catalog/download mapping retained.",
+      "downloadURL": "https://images.unsplash.com/photo-1610561870937-c51dcf9dd314?w=1800&q=85&fm=jpg&fit=max",
+      "originalFile": "basketball-athlete.jpg",
+      "originalSHA256": "c6844d92dc21bf05dab7488625c5b2282a26130eaebc0fb066636a77ccd48f83",
+      "transform": "Auto-orient, fit1600x1600 without enlargement, WebP84, strip metadata; no content synthesis",
+      "pixelsInspected": true,
+      "pixelInspection": "Basketball athlete viewed from behind taking a shot on the same outdoor court; no team-name jersey or claimed affiliation.",
+      "visibleDisclosureRequired": true,
+      "generatedImage": false
+    },
+    {
+      "file": "athlete-hands.webp",
+      "sha256": "7b40b71dbc40db1756431b86ffb6b6957c60c937f654ab8b1198eeae32252263",
+      "bytes": 116406,
+      "sourceURL": "https://unsplash.com/photos/HCi8OFNa_F8",
+      "photographer": "Abhay siby Mathew",
+      "photoId": "HCi8OFNa_F8",
+      "license": "Unsplash standard free license, not Unsplash+",
+      "licenseURL": "https://unsplash.com/license",
+      "licenseCatalogURL": "https://unsplash.com/s/photos/basketball-training",
+      "licenseEvidence": "Official catalog lists named photographer with standard Download link, not marked Unsplash+. Download maps exact photoId to this CDN asset; standard license verified on official license page. Individual short photo pages unavailable to reader; catalog/download mapping retained.",
+      "downloadURL": "https://images.unsplash.com/photo-1653015503992-347de54a8125?w=1800&q=85&fm=jpg&fit=max",
+      "originalFile": "basketball-community.jpg",
+      "originalSHA256": "929527c85e8b0518d2e3610b6610a38deb171e11cb07f808e4820658f8143881",
+      "transform": "Auto-orient, fit1600x1600 without enlargement, WebP84, strip metadata; no content synthesis",
+      "pixelsInspected": true,
+      "pixelInspection": "Hands holding a basketball near the hoop; no face, actual team or endorsement claimed.",
+      "visibleDisclosureRequired": true,
+      "generatedImage": false
     }
   ]
 }
