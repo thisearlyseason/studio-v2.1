@@ -26,4 +26,4 @@ export function PublicPageEntry({ entity, className = '', onNavigate }: { entity
 }
 
 export const usePageEntity = () => useContext(Context);
-export function confirmPageContextSwitch() { return process.env.NEXT_PUBLIC_SQUAD_PAGES_ENABLED !== 'true' || window.dispatchEvent(new Event('squad-pages-before-context-change', { cancelable: true })); }
+export function confirmPageContextSwitch(targetTeamId?: string | null) { return process.env.NEXT_PUBLIC_SQUAD_PAGES_ENABLED !== 'true' || window.dispatchEvent(new CustomEvent('squad-pages-before-context-change', { cancelable: true, detail: targetTeamId === undefined ? undefined : { targetTeamId } })); }

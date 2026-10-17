@@ -30,6 +30,11 @@ export function PageEditor({ fictional = false }: { fictional?: boolean }) {
   const pendingUploads = useRef(new Map<string, { entity: EntityRef; identity: string }>());
   const auth = useAuth(), { user } = useUser(), params = useSearchParams();
   const reviewingStart = params.get('startingDesign') === '1';
+  const queryKey = params.get('entity') || '';
+  const selection = useRef({ identity: '', query: '', key: '', origin: 'automatic' as 'automatic' | 'explicit' | 'manual' });
+  const pendingHubSwitch = useRef(false);
+  const pendingTeamSwitch = useRef<string | null>(null);
+  const selectionRevision = useRef(0);
   const [actor, setActor] = useState('demo-owner'), [options, setOptions] = useState<Choice[]>([]), [selected, setSelected] = useState(''), [state, setState] = useState<State | null>(null), [content, setContent] = useState<PageContent | null>(null), [saved, setSaved] = useState(''), [busy, setBusy] = useState(false), [loading, setLoading] = useState(true), [error, setError] = useState(''), [notice, setNotice] = useState(''), [panel, setPanel] = useState('Design'), [previewDevice, setPreviewDevice] = useState<PreviewDevice>('desktop'), [onlyPreview, setOnlyPreview] = useState(false), [mobileArea, setMobileArea] = useState<'edit' | 'preview'>('edit'), [imageUrls, setImageUrls] = useState<Record<string, string>>({}), [slugStatus, setSlugStatus] = useState(''), [unusedUploads, setUnusedUploads] = useState<Array<{ id: string; size: number; createdAt: string }>>([]);
   useEffect(() => { if (window.matchMedia('(max-width: 700px)').matches) workspaceRef.current?.parentElement?.querySelector('header')?.scrollIntoView({ block: 'start', behavior: 'instant' }); }, [mobileArea]);
   const [inventoryRetry, setInventoryRetry] = useState(0);
@@ -38,6 +43,9 @@ export function PageEditor({ fictional = false }: { fictional?: boolean }) {
   const formsEpoch = useRef(0);
   const epoch = useRef(0), urls = useRef<Record<string, string>>({}), controllers = useRef(new Set<AbortController>());
   const identity = fictional ? actor : user?.uid || '', dirty = !reviewingStart && !!content && JSON.stringify(content) !== saved;
+  const currentIdentity = useRef(identity); currentIdentity.current = identity;
+  const currentQuery = useRef(queryKey); currentQuery.current = queryKey;
+  const currentOptions = useRef(options); currentOptions.current = options;
   const choice = options.find(o => o.key === selected), entity = choice?.ref;
   const ready = !!state && state.context.key === choice?.key && loadedFor.current?.identity === identity;
   const clearImages = useCallback(() => { Object.values(urls.current).forEach(URL.revokeObjectURL); urls.current = {}; setImageUrls({}); }, []);
@@ -48,21 +56,59 @@ export function PageEditor({ fictional = false }: { fictional?: boolean }) {
       const response = await fetch(url, { ...init, headers, signal: controller.signal, cache: 'no-store' }); if (!response.ok) { const data = await response.json().catch(() => ({})); throw Error(data.error || `Request failed (${response.status}).`); } return response;
     } finally { controllers.current.delete(controller); }
   }, [fictional, identity, auth, reviewingStart]);
-  useEffect(() => { ++epoch.current; let active = true; const activeControllers = controllers.current; inventoryIdentity.current = ''; loadedFor.current = null; controllers.current.forEach(c => c.abort()); clearImages(); setState(null); setContent(null); setSaved(''); setSelected(''); setOptions([]); setUnusedUploads([]); setError(''); setNotice(''); setBusy(false); setLoading(true);
+  useEffect(() => { if (selection.current.identity !== identity || selection.current.query !== queryKey) { ++selectionRevision.current; selection.current = { identity, query: queryKey, key: queryKey, origin: queryKey ? 'explicit' : 'automatic' }; pendingHubSwitch.current = false; pendingTeamSwitch.current = null; } ++epoch.current; let active = true; const activeControllers = controllers.current; inventoryIdentity.current = ''; loadedFor.current = null; controllers.current.forEach(c => c.abort()); clearImages(); setState(null); setContent(null); setSaved(''); setSelected(''); setOptions([]); setUnusedUploads([]); setError(''); setNotice(''); setBusy(false); setLoading(true);
     if (!identity) { setLoading(false); setError('Sign in to manage your public page.'); return; }
-    request('/api/squad-pages/entities').then(r => r.json()).then(data => { if (!active) return; inventoryIdentity.current = identity; setOptions(data.entities); const query = params.get('entity'); const match = data.entities.find((o: Choice) => o.key === (query || currentScope.current)); if (reviewingStart && (!query || !match)) { setLoading(false); setError('The selected squad is unavailable. Open the starting design from its page editor.'); return; } setSelected(match?.key || (!(query || currentScope.current) ? data.entities[0]?.key : '') || ''); if ((query || currentScope.current) && !match) { setLoading(false); setError('The selected context has no manageable public page. Choose an authorized entity.'); } if (!data.entities.length) { setLoading(false); setError('No entities are available to this account. Page access requires entity administrator permission.'); } }).catch(e => { if (active && e.name !== 'AbortError') { setError(e.message); setLoading(false); } });
+    request('/api/squad-pages/entities').then(r => r.json()).then(data => { if (!active) return; inventoryIdentity.current = identity; setOptions(data.entities); const query = queryKey; const requested = selection.current.origin === 'automatic' ? currentScope.current : selection.current.key; const match = pendingTeamSwitch.current ? data.entities.find((o: Choice) => ['team', 'program', 'school'].includes(o.ref.kind) && o.ref.id === pendingTeamSwitch.current) : data.entities.find((o: Choice) => o.key === requested); if (pendingTeamSwitch.current) { if (match) selection.current.key = match.key; pendingTeamSwitch.current = null; } if (reviewingStart && (!query || !match)) { setLoading(false); setError('The selected squad is unavailable. Open the starting design from its page editor.'); return; } setSelected(match?.key || ''); if (!match) { setLoading(false); if (requested) setError('The selected context has no manageable public page. Choose an authorized entity.'); else setNotice('Choose a page from Editing to start a private preview.'); } if (!data.entities.length) { setLoading(false); setError('No entities are available to this account. Page access requires entity administrator permission.'); } }).catch(e => { if (active && e.name !== 'AbortError') { setError(e.message); setLoading(false); } });
     // Sequence cancellation must advance the current counter, not its captured value.
     // eslint-disable-next-line react-hooks/exhaustive-deps
     return () => { active = false; ++epoch.current; activeControllers.forEach(c => c.abort()); };
     // Selection is retained independently after this account-bound inventory load.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [identity, request, clearImages, inventoryRetry]);
+  }, [identity, queryKey, request, clearImages, inventoryRetry]);
   const load = useCallback(async () => { if (inventoryIdentity.current !== identity) return; const n = ++epoch.current; loadedFor.current = null; controllers.current.forEach(c => c.abort()); clearImages(); setState(null); setContent(null); setSaved(''); setError(''); setNotice(''); setSlugStatus(''); setUnusedUploads([]); setBusy(false); setLoading(true); setOnlyPreview(false);
     if (!entity) { setLoading(false); setError('The selected context has no manageable public page. Choose an authorized entity.'); return; }
     try { const data: State = await (await request(`/api/squad-pages?entity=${encodeURIComponent(JSON.stringify(entity))}`)).json(); if (n !== epoch.current) return; if (reviewingStart && !data.startingDesign) throw Error('This version does not provide a new starting design preview. Your draft is unchanged.'); loadedFor.current = { identity, key: data.context.key }; setState(data); const c = reviewingStart ? data.startingDesign.content : { ...data.initial, ...(data.record?.draft.content || {}) }; setContent(c); setSaved(JSON.stringify(c)); } catch (e) { if (n === epoch.current && (e as Error).name !== 'AbortError') setError((e as Error).message); } finally { if (n === epoch.current) setLoading(false); }
   }, [entity, identity, request, clearImages, reviewingStart]);
   useEffect(() => { void load(); }, [load]);
-  useEffect(() => { if (reviewingStart || fictional || scopeKey === previousScope.current || !options.length) return; previousScope.current = scopeKey; const match = options.find(o => o.key === scopeKey); setSelected(match?.key || ''); }, [scopeKey, fictional, options, reviewingStart]);
+  // Only a deliberate, approved team selection can supersede explicit/manual page intent.
+  // The same cancellable event still protects Shell navigation; targetless navigation
+  // must not be mistaken for a team change or unlock a later hydration replacement.
+  useEffect(() => {
+    let active = true;
+    const requestedSwitch = (event: Event) => {
+      const detail = (event as CustomEvent<{ targetTeamId?: string | null }>).detail;
+      if (!detail || !Object.prototype.hasOwnProperty.call(detail, 'targetTeamId') || (detail.targetTeamId !== null && typeof detail.targetTeamId !== 'string')) return;
+      const revision = selectionRevision.current;
+      queueMicrotask(() => {
+        if (!active || event.defaultPrevented || currentIdentity.current !== identity || currentQuery.current !== queryKey || selectionRevision.current !== revision || reviewingStart) return;
+        const target = detail.targetTeamId;
+        if (target === null && !/^(club|school)~/.test(currentScope.current)) { pendingHubSwitch.current = true; return; }
+        const match = target === null ? currentOptions.current.find(o => o.key === currentScope.current) : currentOptions.current.find(o => ['team', 'program', 'school'].includes(o.ref.kind) && o.ref.id === target);
+        pendingHubSwitch.current = false;
+        selection.current = { identity, query: queryKey, key: match?.key || (target ? `team~${target}` : currentScope.current), origin: 'manual' };
+        pendingTeamSwitch.current = target && !match ? target : null;
+        setSelected(match?.key || '');
+      });
+    };
+    window.addEventListener('squad-pages-before-context-change', requestedSwitch);
+    return () => { active = false; window.removeEventListener('squad-pages-before-context-change', requestedSwitch); };
+  }, [identity, queryKey, reviewingStart]);
+  useEffect(() => {
+    if (reviewingStart || fictional || !options.length) return;
+    const approvedHub = pendingHubSwitch.current && /^(club|school)~/.test(scopeKey);
+    if (!approvedHub && scopeKey === previousScope.current) return;
+    previousScope.current = scopeKey;
+    if (!approvedHub && selection.current.origin !== 'automatic') return;
+    if (!approvedHub && dirty) {
+      selection.current = { identity, query: queryKey, key: selected, origin: 'manual' };
+      setNotice('Your unsaved page remains selected while the team context changes. Choose a page in Editing when you are ready.');
+      return;
+    }
+    pendingHubSwitch.current = false;
+    const match = options.find(o => o.key === scopeKey);
+    if (approvedHub) selection.current = { identity, query: queryKey, key: match?.key || '', origin: 'manual' };
+    setSelected(match?.key || '');
+  }, [scopeKey, fictional, options, reviewingStart, dirty, identity, queryKey, selected]);
   useUnsavedPageGuard(dirty);
   useEffect(() => () => { Object.values(urls.current).forEach(URL.revokeObjectURL); controllers.current.forEach(c => c.abort()); }, []);
   const ids = content ? photoIds(content).sort().join(',') : '';
@@ -101,7 +147,7 @@ export function PageEditor({ fictional = false }: { fictional?: boolean }) {
   return <><div className={s.editor} inert={onlyPreview || undefined} aria-hidden={onlyPreview || undefined}>
     {fictional && <div className={s.localBanner}><span>LOCAL REVIEW · Fictional data only</span><label>Preview as <select aria-label="Fictional role" value={actor} disabled={busy} onChange={e => { if (mayDiscard()) setActor(e.target.value); }}>{previewActors.map(a => <option key={a.uid} value={a.uid}>{a.name}</option>)}</select></label></div>}
     <header className={s.topbar}><div className={s.wordmark}><BrandLogo variant="light-background" className={s.brand} /><div><h1>Squad Pages</h1><p>Your community. Your home page.</p></div></div><div className={s.topActions}><span className={s.saveState}>{dirty ? 'Unsaved changes' : state?.record ? 'All changes saved' : 'Private draft'}</span><button className={s.previewButton} onClick={event => { previewReturn.current = event.currentTarget; setOnlyPreview(true); }}><Eye size={16} /> Full-page preview</button><button className={s.primary} disabled={!ready || !content || busy || !dirty} onClick={() => void action('save')}>{busy ? <Loader2 size={16} className={s.spin} /> : <Save size={16} />} Save draft</button></div></header>
-    <div className={s.contextbar}><label>Editing <select aria-label="Entity" value={selected} disabled={busy || !options.length} onChange={e => { if (mayDiscard()) setSelected(e.target.value); }}>{!selected && <option value="" disabled>Choose an authorized entity</option>}{options.map(o => <option key={o.key} value={o.key}>{o.name} · {o.kind}</option>)}</select></label><span className={`${s.pill} ${ready && state?.context.covered ? s.covered : ''}`}>{ready && state?.context.covered ? '✓ Paid coverage verified' : 'Private preview · upgrade to publish'}</span><span className={s.pill}>{ready && state?.record?.status || 'draft'}</span></div>
+    <div className={s.contextbar}><label>Editing <select aria-label="Entity" value={selected} disabled={busy || !options.length} onChange={e => { if (mayDiscard()) { ++selectionRevision.current; pendingHubSwitch.current = false; pendingTeamSwitch.current = null; selection.current = { identity, query: queryKey, key: e.target.value, origin: 'manual' }; setSelected(e.target.value); } }}>{!selected && <option value="" disabled>Choose an authorized entity</option>}{options.map(o => <option key={o.key} value={o.key}>{o.name} · {o.kind}</option>)}</select></label><span className={`${s.pill} ${ready && state?.context.covered ? s.covered : ''}`}>{!ready ? 'Coverage not checked · select a page' : state?.context.covered ? '✓ Paid coverage verified' : 'Private preview · upgrade to publish'}</span><span className={s.pill}>{ready && state?.record?.status || 'draft'}</span></div>
     {(error || notice) && <div className={error ? s.error : s.notice} role={error ? 'alert' : 'status'}>{error || <><Check size={16} />{notice}</>}{error && <button onClick={() => { if (mayDiscard()) { if (!entity) setInventoryRetry(value => value + 1); else void load(); } }}>{entity ? 'Reload saved draft' : 'Retry loading pages'}</button>}</div>}
     {ready && state && <div className={s.startingDesignEntry}><div><strong>See the updated starting design</strong><p>Compare a complete new design without replacing this draft.</p></div><a data-starting-design-review href={`${fictional ? '/squad-pages' : '/dashboard/public-page'}?entity=${encodeURIComponent(state.context.key)}&startingDesign=1`} target="_blank" rel="noopener noreferrer">Preview new starting design ↗</a></div>}
     {content && hasEditorialImages(content) && <div className={s.sampleNotice} role="note"><strong>Make it yours</strong><span>Built around your squad. Edit any text or image. Included sports photos are editorial.</span></div>}
