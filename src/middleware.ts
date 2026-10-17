@@ -11,12 +11,13 @@ const PROTECTED_ROOTS = new Set([
   'admin', 'calendar', 'chats', 'club', 'coaches-corner', 'competition',
   'dashboard', 'drills', 'equipment', 'events', 'facilities', 'family',
   'feed', 'files', 'fundraising', 'games', 'manage-tournaments', 'practice',
-  'roster', 'settings', 'team', 'teams', 'volunteers',
+  'pricing', 'roster', 'settings', 'subscriptions', 'team', 'teams', 'volunteers',
 ]);
 
 function isProtectedPath(pathname: string) {
   if (pathname.startsWith('/events/register/')) return false;
   if (pathname === '/leagues' || pathname === '/leagues/') return true;
+  if (pathname === '/leagues/registration' || pathname.startsWith('/leagues/registration/')) return true;
   if (pathname === '/tournaments' || pathname === '/tournaments/') return true;
   const root = pathname.split('/').filter(Boolean)[0] || '';
   return PROTECTED_ROOTS.has(root);

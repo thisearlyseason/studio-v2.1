@@ -28,7 +28,7 @@ import { shouldRedirectParentFromDashboard } from '@/lib/demo-plan-config';
 
 const DEMO_TIMEOUT_MS = 15 * 60 * 1000;
 const SEEDING_ATTEMPTED_KEY = 'squad_seeding_attempted'; // sessionStorage – survives remounts, cleared on tab close
-const LOADING_HARD_TIMEOUT_MS = 30_000; // 30 s max wait before forcing the loading state to resolve
+const LOADING_HARD_TIMEOUT_MS = 30_000; // Offer recovery after 30 s; never bypass authentication.
 
 function DemoSeedWrapper({ 
   user, 
@@ -291,8 +291,8 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   const syncAttempted = useRef(false);
   const [timeLeft, setTimeLeft] = useState<number | null>(null);
   const heartbeatInterval = useRef<NodeJS.Timeout | null>(null);
-  // Hard timeout: if loading lasts more than LOADING_HARD_TIMEOUT_MS, force-unblock so the
-  // UI never gets permanently stuck (e.g. Firestore listener never fires on a bad network).
+  // A timeout permits recovery from secondary loading, not entry without a
+  // resolved identity and profile (including after sign-out or session loss).
   const [loadingTimedOut, setLoadingTimedOut] = useState(false);
   const hardTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
@@ -515,7 +515,9 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   
   // We only show the full-screen gate if we aren't 'essentially loaded' OR if we haven't mounted yet.
   // But if we HAVE a userProfile, we skip the !mounted requirement to break the Suspense Trap.
-  const isLoadingState = !loadingTimedOut && (isEssentiallyLoading || (!mounted && !userProfile));
+  const hasAuthenticatedProfile = !!user && isAuthResolved && !isUserLoading && userProfile?.id === user.uid;
+  const isLoadingState = !hasAuthenticatedProfile ||
+    (!loadingTimedOut && (isEssentiallyLoading || (!mounted && !userProfile)));
 
   if (isLoadingState || deniedRoute) {
     return (
@@ -542,14 +544,16 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
           <div className="text-center space-y-4 max-w-md px-6">
             <div className="space-y-1">
               <p className="text-lg font-black uppercase tracking-widest text-primary">
-                {isSyncingPlan
+                {!hasAuthenticatedProfile
+                  ? 'Checking your sign-in...'
+                  : isSyncingPlan
                   ? 'Synchronizing Upgraded Protocol...'
                   : isDemoInitializing || isSeedingDemo
                   ? 'Building Demo Environment...'
                   : 'Synchronizing Secure Hub...'}
               </p>
               <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-[0.2em]">
-                System Architecture Optimization in Progress
+                {hasAuthenticatedProfile ? 'Preparing your workspace...' : 'Private team tools require a confirmed sign-in.'}
               </p>
             </div>
 
@@ -580,7 +584,14 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
               </p>
             )}
 
-            {mounted && (
+            {mounted && loadingTimedOut && !hasAuthenticatedProfile && (
+              <div className="space-y-3">
+                <p role="status" className="text-sm text-muted-foreground">We couldn’t confirm your sign-in. Sign in again to continue.</p>
+                <Link href={`/login?returnTo=${encodeURIComponent(safeReturnPath(pathname + (searchParams.toString() ? `?${searchParams.toString()}` : '')))}`} className="inline-block text-sm font-bold underline">Go to sign in</Link>
+              </div>
+            )}
+
+            {mounted && hasAuthenticatedProfile && (
               <Button 
                 variant="ghost" 
                 size="sm" 
