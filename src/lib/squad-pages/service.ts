@@ -21,7 +21,25 @@ const privatePath = (key: string) => `squadPagesPrivate/${key}`;
 const graceMs = () => { const days = Number(process.env.SQUAD_PAGES_GRACE_DAYS ?? 7); return Math.max(0, Math.min(30, Number.isFinite(days) ? days : 7)) * 86400000; };
 async function verifyMedia(scope: Scope, key: string, content: PageContent, context: EntityContext) { for (const id of photoIds(content)) { if (sampleImageUrl(id) || starterImageUrl(id, context.identity)) continue; const meta = await scope.get(`squadPageMedia/${key}/items/${id}`); if (!meta || meta.retired === true) throw new PageError('An image is missing or belongs to another entity.', 403); } }
 export async function editorState(store: PageStore, entity: unknown, actor: Actor) {
-  const ref = parseEntity(entity); return store.run(async scope => { const context = await resolvePageEntity(scope, ref, actor); if (!context.canManage) throw new PageError('Entity administrator access required.', 403); const record = await scope.get(privatePath(context.key)) as PageRecord | null; const policy = await scope.get(`squadPagePolicies/${context.organizationId}`); const initial = record ? emptyContent(context.name) : starterContent(context.name, ref.kind, context.identity!); if (!record) initial.resources = context.resources.map(r => ({ ...r })); const openForms = context.forms.filter(f => f.active); if (!record && openForms.length === 1) { const form = openForms[0]; initial.registrations = [{ id: 'linked-registration', formId: form.id, label: form.label, url: form.url }]; } return { context: contextForPage(context, record), record, approvalRequired: policy?.directTeamPublication !== true, initial }; });
+  const ref = parseEntity(entity);
+  return store.run(async scope => {
+    const context = await resolvePageEntity(scope, ref, actor);
+    if (!context.canManage) throw new PageError('Entity administrator access required.', 403);
+    const record = await scope.get(privatePath(context.key)) as PageRecord | null;
+    const policy = await scope.get(`squadPagePolicies/${context.organizationId}`);
+    // A separately inspectable proposal, never merged into an existing revision.
+    const proposed = starterContent(context.name, ref.kind, context.identity!);
+    proposed.resources = context.resources.map(r => ({ ...r }));
+    const openForms = context.forms.filter(f => f.active);
+    if (openForms.length === 1) {
+      const form = openForms[0];
+      proposed.registrations = [{ id: 'linked-registration', formId: form.id, label: form.label, url: form.url }];
+    }
+    return { context: contextForPage(context, record), record,
+      approvalRequired: policy?.directTeamPublication !== true,
+      initial: record ? emptyContent(context.name) : structuredClone(proposed),
+      startingDesign: { content: proposed, identity: context.identity! } };
+  });
 }
 export async function slugAvailable(store: PageStore, slug: string, entity: unknown, actor: Actor) { validateSlug(slug); const ref = parseEntity(entity); return store.run(async scope => { const ctx = await resolvePageEntity(scope, ref, actor); if (!ctx.canManage) throw new PageError('Entity administrator access required.', 403); const held = await scope.get(`squadPageSlugs/${slug}`); return { available: !held || held.key === ctx.key }; }); }
 export async function mutatePage(store: PageStore, actor: Actor, input: Data, now = Date.now()) {
