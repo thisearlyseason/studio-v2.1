@@ -1,3 +1,4 @@
+import { publicIdentity, type PublicIdentity } from './starter-content';
 import { pageRegistrationForms } from './registration-forms';
 import { hasCurrentPaidSubscription } from '@/lib/native-billing/entitlements';
 import { canonicalPlanId } from '@/lib/plan-catalog';
@@ -5,7 +6,7 @@ import { isBillableSquadSeat } from '@/lib/team-seat-policy';
 import { EntityRef, PageError, entityKey } from './model';
 import type { Scope, Data } from './store';
 export type Actor = { uid: string; role?: string };
-export type EntityContext = { ref: EntityRef; key: string; name: string; ownerId: string; organizationId: string; canManage: boolean; canApprove: boolean; canSetPolicy: boolean; covered: boolean; coverageReason: string; coverageEndedAt: string | null; usesExistingNativeGrace: boolean; resources: { id: string; label: string; url: string }[]; forms: { id: string; label: string; url: string; active: boolean }[]; directory: { name: string; url: string }[]; };
+export type EntityContext = { identity?: PublicIdentity; ref: EntityRef; key: string; name: string; ownerId: string; organizationId: string; canManage: boolean; canApprove: boolean; canSetPolicy: boolean; covered: boolean; coverageReason: string; coverageEndedAt: string | null; usesExistingNativeGrace: boolean; resources: { id: string; label: string; url: string }[]; forms: { id: string; label: string; url: string; active: boolean }[]; directory: { name: string; url: string }[]; };
 const active = (d: Data | null) => Boolean(d && d.status !== 'removed' && d.status !== 'deleted' && d.isDeleted !== true && d.isArchived !== true && d.isActive !== false && d.is_active !== false);
 const includes = (v: unknown, uid: string) => Array.isArray(v) && v.includes(uid);
 async function member(scope: Scope, teamId: string, actor?: Actor) { if (!actor) return null; const direct = await scope.get(`teams/${teamId}/members/${actor.uid}`); if (active(direct) && (!direct!.userId || direct!.userId === actor.uid)) return direct; return (await scope.list(`teams/${teamId}/members`, 'userId', actor.uid)).find(active) || null; }
@@ -63,5 +64,5 @@ export async function resolvePageEntity(scope: Scope, ref: EntityRef, actor?: Ac
   // Observe the transition once and persist it on the page; native billing already applies its own grace.
   const ended = null;
   const canonical = ref.kind === 'club' ? { kind: 'club' as const, id: ownerId } : ref;
-  return { ref: canonical, key: entityKey(canonical), name: String(entity!.name || entity!.title || entity!.teamName || 'Squad'), ownerId, organizationId, canManage, canApprove, canSetPolicy, covered, coverageReason: covered ? 'Existing paid allocation verified' : 'Publishing requires current paid coverage and an allocated team/program slot where applicable.', usesExistingNativeGrace: ['app_store', 'play_store'].includes(owner?.billing_provider), coverageEndedAt: typeof ended === 'string' && Number.isFinite(Date.parse(ended)) && Date.parse(ended) <= now ? ended : null, forms, resources, directory };
+  return { identity: publicIdentity(entity!), ref: canonical, key: entityKey(canonical), name: String(entity!.name || entity!.title || entity!.teamName || 'Squad'), ownerId, organizationId, canManage, canApprove, canSetPolicy, covered, coverageReason: covered ? 'Existing paid allocation verified' : 'Publishing requires current paid coverage and an allocated team/program slot where applicable.', usesExistingNativeGrace: ['app_store', 'play_store'].includes(owner?.billing_provider), coverageEndedAt: typeof ended === 'string' && Number.isFinite(Date.parse(ended)) && Date.parse(ended) <= now ? ended : null, forms, resources, directory };
 }

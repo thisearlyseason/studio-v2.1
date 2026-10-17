@@ -22,6 +22,7 @@ export type PageContent = {
 };
 export type Revision = { revision: number; content: PageContent; author: string; savedAt: string };
 export type PageRecord = {
+  identityLogoUrl?: string;
   entity: EntityRef; key: string; version: number; draft: Revision; live: Revision | null; previous: Revision | null;
   status: 'draft' | 'published' | 'unpublished' | 'expired'; slug: string | null;
   approval: { revision: number; by: string; at: string } | null; submittedRevision: number | null;
