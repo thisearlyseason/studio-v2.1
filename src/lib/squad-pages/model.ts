@@ -43,13 +43,13 @@ export function validateSlug(slug: string) {
   if (!/^[a-z0-9](?:[a-z0-9-]{1,58}[a-z0-9])$/.test(slug) || reserved.has(slug) || slug.startsWith('demo-')) throw new PageError('Use 3–60 lowercase letters, numbers or hyphens; this address may be reserved.');
   return slug;
 }
-export function safeLink(input: string, allowRelative = false) {
+export function safeLink(input: string, allowRelative = false, allowHttp = false) {
   if (typeof input !== 'string') throw new PageError('Use a valid link.');
   if (!input) return '';
   if (input.length > 1000 || /[\u0000-\u0020\\]/.test(input)) throw new PageError('Use a valid HTTPS link without spaces.');
   if (allowRelative && /^\/(register\/(league|tournament|squad)|events\/register|leagues\/spectator|tournaments\/(public|spectator))\//.test(input) && !input.includes('..')) return input;
   let url: URL; try { url = new URL(input); } catch { throw new PageError('Use a valid HTTPS link.'); }
-  if (url.protocol !== 'https:' || url.username || url.password || !url.hostname.includes('.') || /(^|\.)(localhost|local|internal|test)$/.test(url.hostname) || /^\d/.test(url.hostname) || url.hostname.includes(':')) throw new PageError('Use a public HTTPS link.');
+  if ((url.protocol !== 'https:' && !(allowHttp && url.protocol === 'http:')) || url.username || url.password || !url.hostname.includes('.') || /(^|\.)(localhost|local|internal|test)$/.test(url.hostname) || /^\d/.test(url.hostname) || url.hostname.includes(':')) throw new PageError('Use a public HTTPS link.');
   if (allowRelative && ['thesquad.pro', 'www.thesquad.pro'].includes(url.hostname)) {
     if (url.port || url.hash) throw new PageError('Use an eligible registration form.');
     return safeLink(url.pathname + url.search, true);
@@ -93,7 +93,7 @@ export function validateContent(input: unknown): PageContent {
   for (const key of Object.keys(out.details) as Array<keyof PageContent['details']>) out.details[key] = cleanText(x.details?.[key] ?? '', 300);
   for (const key of Object.keys(out.contact) as Array<keyof PageContent['contact']>) out.contact[key] = cleanText(x.contact?.[key], 600);
   if (out.contact.email && !/^[^\s@<>]+@[^\s@<>]+\.[^\s@<>]+$/.test(out.contact.email)) throw new PageError('Use a valid public email.');
-  function links(items: PageLink[], forms = false) { if (!Array.isArray(items) || items.length > 12) throw new PageError('Use up to twelve links.'); if (items.some(l => !l || !validId(l.id)) || new Set(items.map(l => l.id)).size !== items.length) throw new PageError('Use unique valid link identifiers.'); return items.map(l => ({ id: cleanText(l.id, 120), label: cleanText(l.label, 100), url: safeLink(l.url, forms), ...(l.formId ? { formId: cleanText(l.formId, 120) } : {}) })); }
+  function links(items: PageLink[], forms = false) { if (!Array.isArray(items) || items.length > 12) throw new PageError('Use up to twelve links.'); if (items.some(l => !l || !validId(l.id)) || new Set(items.map(l => l.id)).size !== items.length) throw new PageError('Use unique valid link identifiers.'); return items.map(l => { if (forms && !(l.id === 'squad-sample-registration-v1' && l.url === '') && (!cleanText(l.label, 100) || !l.url)) throw new PageError('Registration buttons need a label and a valid public HTTP or HTTPS destination.'); return ({ id: cleanText(l.id, 120), label: cleanText(l.label, 100), url: safeLink(l.url, forms, forms), ...(l.formId ? { formId: cleanText(l.formId, 120) } : {}) }); }); }
   out.links = links(x.links); out.resources = links(x.resources ?? []); out.registrations = links(x.registrations, true);
   if (!Array.isArray(x.sponsors) || x.sponsors.length > 12 || x.sponsors.some(s => !s)) throw new PageError('Use up to twelve sponsors.'); out.sponsors = x.sponsors.map(s => ({ name: cleanText(s.name, 120), image: photo(s.image), url: safeLink(s.url) }));
   if (!Array.isArray(x.sections) || x.sections.length !== SECTIONS.length || x.sections.some(s => !s) || new Set(x.sections.map(s => s.id)).size !== SECTIONS.length || x.sections.some(s => !SECTIONS.includes(s.id))) throw new PageError('Invalid section order.'); out.sections = x.sections.map(s => ({ id: s.id, visible: s.visible === true, heading: cleanText(s.heading, 120) }));

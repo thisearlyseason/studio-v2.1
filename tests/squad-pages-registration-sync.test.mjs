@@ -22,3 +22,29 @@ test('legacy team_config respects bracket lock and event capacity even without t
 test('historical closed event volume is not scanned and selected form lists remain bounded',async()=>{const r=records();for(let i=0;i<300;i++)r['teams/demo-hawks/events/old-'+i]={title:'Old',date:'2020-01-01',registrationOpen:false};const s=m.memoryStore(r);let broad=false;const bounded={run:fn=>s.run(q=>fn({...q,list:async(p,f,v)=>{if(p==='teams/demo-hawks/events'&&!f){broad=true;throw Error('Broad event scan forbidden')};return q.list(p,f,v)}}))};assert.equal((await ctx(bounded)).forms.length,3);assert.equal(broad,false);});
 
 test('canonical absolute cross-entity form destination without reference is rejected',async()=>{const s=m.memoryStore(records()),c=m.fictionalContent();c.registrations=[{id:'foreign',label:'Foreign',url:'https://www.thesquad.pro/events/register/foreign-team?eventId=foreign'}];await assert.rejects(m.mutatePage(s,owner,{entity:team,action:'save',expectedVersion:0,content:c},now),{status:403});});
+
+test('custom HTTP and HTTPS buttons save and publish with labels while internal absolute foreign destinations cannot bypass entity checks',async()=>{
+ for(const url of ['http://registration.example.com/join','https://registration.example.com/join']) {
+  const s=m.memoryStore(records()),c=m.fictionalContent();c.registrations=[{id:'external',label:'Register with our organizer',url}];
+  let r=(await m.mutatePage(s,owner,{entity:team,action:'save',expectedVersion:0,content:c},now)).record;
+  r=(await m.mutatePage(s,owner,{entity:team,action:'publish',expectedVersion:r.version,revision:r.draft.revision},now)).record;
+  const p=await m.publicPage(s,r.slug,now);assert.equal(p.content.registrations[0].url,url);assert.equal(p.content.registrations[0].label,c.registrations[0].label);
+ }
+ for(const url of ['http://thesquad.pro/events/register/foreign?eventId=x','https://www.thesquad.pro/register/league/foreign?protocol=x']){
+  const c=m.fictionalContent();c.registrations=[{id:'foreign',label:'Foreign',url}];await assert.rejects(m.mutatePage(m.memoryStore(records()),owner,{entity:team,action:'save',expectedVersion:0,content:c},now),{status:403});
+ }
+});
+test('custom registration rejects unsafe protocols private addresses credentials malformed URLs and unlabeled destinations',async()=>{
+ for(const url of ['javascript:alert(1)','data:text/html,x','ftp://example.com/join','//example.com/join','http://127.0.0.1/join','http://localhost/join','http://service.internal/join','https://u:p@example.com/join','https://example.com/a b','https://example.com/\\escape','not-a-url']){
+  const c=m.fictionalContent();c.registrations=[{id:'external',label:'Register',url}];await assert.rejects(m.mutatePage(m.memoryStore(records()),owner,{entity:team,action:'save',expectedVersion:0,content:c},now),{status:400});
+ }
+ const c=m.fictionalContent();c.registrations=[{id:'external',label:'  ',url:'https://example.com/join'}];await assert.rejects(m.mutatePage(m.memoryStore(records()),owner,{entity:team,action:'save',expectedVersion:0,content:c},now),{status:400});
+});
+test('switching entity server state never returns prior forms or drafts, even for the same authorized owner',async()=>{
+ const r=records();r['teams/sibling']={...r['teams/demo-hawks'],name:'Sibling'};r['teams/sibling/events/only-b']={title:'Sibling public form',date:'2027-01-01',registrationOpen:true};
+ r['teams/sibling/events/secret']={title:'PRIVATE_TITLE',date:'2027-01-01',registrationOpen:true,isPublished:false,customFormFields:[{id:'PRIVATE_FIELD'}]};
+ const s=m.memoryStore(r);let a=await m.editorState(s,team,owner),b=await m.editorState(s,{kind:'team',id:'sibling'},owner);
+ assert.equal(b.record,null);assert.equal(b.context.forms.length,1);assert(b.context.forms[0].url.includes('/sibling?'));assert(!JSON.stringify(b).includes('PRIVATE_'));assert(!b.context.forms.some(f=>a.context.forms.some(x=>x.url===f.url)));
+ assert.deepEqual((await m.editorState(s,team,owner)).context.forms,a.context.forms);
+ await assert.rejects(m.editorState(s,{kind:'team',id:'demo-free-team'},owner),{status:403});
+});

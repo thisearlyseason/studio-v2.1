@@ -55,3 +55,16 @@ test('incomplete legacy team fails closed before an invalid Firestore owner path
  await assert.rejects(strict.run(scope=>resolvePageEntity(scope,{kind:'team',id:'incomplete-team'},owner)),{status:409});
  assert.equal((await editorState(strict,entity,owner)).context.canManage,true);
 });
+
+test('tournament participation alone never grants coverage or publishing even to superadmin; independent paid allocation qualifies',async()=>{
+ const now=Date.now(),r=previewRecords(),ref={kind:'team',id:'demo-free-team'};r['teams/demo-free-team'].participatingTournamentIds=['demo-tournament'];
+ const s=memoryStore(r),superadmin={uid:'audit-superadmin',role:'superadmin'};
+ for(const actor of [{uid:'demo-free'},superadmin]) {
+  const st=await editorState(s,ref,actor);assert(st.context.canManage);assert.equal(st.context.covered,false);
+ }
+ let draft=await save(s,ref,superadmin);await assert.rejects(mutatePage(s,superadmin,{entity:ref,action:'publish',expectedVersion:draft.version,revision:draft.draft.revision},now),{status:403});
+ await s.run(async q=>{q.set('users/demo-free',{...r['users/demo-free'],plan_type:'team',subscription_status:'active',team_limit:1});q.set('teams/demo-free-team',{...r['teams/demo-free-team'],isPro:true,planId:'team'});});
+ assert.equal((await editorState(s,ref,{uid:'demo-free'})).context.covered,true);
+ draft=(await mutatePage(s,{uid:'demo-free'},{entity:ref,action:'publish',expectedVersion:draft.version,revision:draft.draft.revision},now)).record;assert(await publicPage(s,draft.slug,now));
+ const org=previewRecords();org['teams/demo-hawks'].participatingTournamentIds=['demo-tournament'];assert.equal((await editorState(memoryStore(org),entity,owner)).context.covered,true);
+});

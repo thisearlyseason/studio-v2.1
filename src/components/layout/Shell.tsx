@@ -301,15 +301,15 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
           </div>
           <DropdownMenuSeparator className="my-1.5" />
           {isPrimaryClubAuthority && (
-            <DropdownMenuItem onClick={() => router.push('/club')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all">
+            <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/club'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all">
               <Building className="h-3.5 w-3.5" /> School Hub
             </DropdownMenuItem>
           )}
           <DropdownMenuSeparator className="my-1.5" />
-          <DropdownMenuItem onClick={() => router.push('/team')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+          <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/team'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
             <Settings className="h-3.5 w-3.5 text-primary" /> View Team Profile
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push('/teams/join')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+          <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/teams/join'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
             <UserPlus className="h-3.5 w-3.5 text-primary" /> Portals
           </DropdownMenuItem>
         </>
@@ -344,7 +344,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                 }
               </div>
               <DropdownMenuSeparator className="my-1.5" />
-              <DropdownMenuItem onClick={() => router.push('/club')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all">
+              <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/club'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all">
                 <Building className="h-3.5 w-3.5" /> Club Hub
               </DropdownMenuItem>
               <DropdownMenuSeparator className="my-1.5" />
@@ -383,17 +383,17 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
           )}
 
           {/* Footer — always visible */}
-          <DropdownMenuItem onClick={() => router.push('/team')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+          <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/team'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
             <Settings className="h-3.5 w-3.5 text-primary" /> View Team Profile
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push('/teams/join')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+          <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/teams/join'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
             <UserPlus className="h-3.5 w-3.5 text-primary" /> Portals
           </DropdownMenuItem>
           <DropdownMenuSeparator className="my-1.5" />
-          <DropdownMenuItem onClick={() => router.push('/teams/new?tier=starter')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+          <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/teams/new?tier=starter'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
             <PlusCircle className="h-3.5 w-3.5 text-primary" /> Create Free Team
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push('/teams/new?tier=pro')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+          <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/teams/new?tier=pro'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
             <Zap className="h-3.5 w-3.5 text-amber-500" /> Create Pro Team
           </DropdownMenuItem>
         </>
@@ -627,6 +627,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   if (!activeTeam && !user) return null;
 
   const handleLogout = async () => {
+    if (!confirmPageContextSwitch()) return;
     // Demo cleanup is an authentication-lifecycle operation. Profile flags can
     // legitimately remain on migrated beta accounts, so only Firebase's
     // anonymous identity may enter the destructive demo cleanup route.
@@ -1032,17 +1033,17 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     
                     <DropdownMenuSeparator className="my-1 mx-2" />
                     
-                    <DropdownMenuItem onClick={() => router.push('/settings')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+                    <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/settings'); }} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
                       <User className="h-4 w-4 text-primary" /> Profile Settings
                     </DropdownMenuItem>
 
                     {isSuperAdmin && (
-                      <DropdownMenuItem onClick={() => router.push('/admin')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest text-primary focus:text-primary">
+                      <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/admin'); }} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest text-primary focus:text-primary">
                         <ShieldCheck className="h-4 w-4" /> Go to Admin Page
                       </DropdownMenuItem>
                     )}
                     
-                    <DropdownMenuItem onClick={() => router.push('/how-to')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+                    <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/how-to'); }} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
                       <BookOpen className="h-4 w-4 text-primary" /> Help Guide
                     </DropdownMenuItem>
 
