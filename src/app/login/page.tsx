@@ -38,6 +38,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
   const emailLoginPending = React.useRef(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isDemoLoading, setIsDemoLoading] = useState(false);
@@ -58,6 +59,7 @@ export default function LoginPage() {
   const router = useRouter();
 
   React.useEffect(() => {
+    setIsHydrated(true);
     const returnTo = new URLSearchParams(window.location.search).get('returnTo');
     if (returnTo) {
       sessionStorage.setItem('squad_return_path', safeReturnPath(returnTo, APP_DISTRIBUTION));
@@ -81,6 +83,7 @@ export default function LoginPage() {
         } catch {
           await clearBrowserSession();
           await signOut(auth).catch(() => undefined);
+          emailLoginPending.current = false;
           setIsLoading(false);
           toast({
             title: 'Session Setup Failed',
@@ -119,9 +122,8 @@ export default function LoginPage() {
           }
         } catch (e) {
           router.push('/onboarding');
-        } finally {
-          setIsLoading(false);
         }
+        // Keep feedback active until navigation unmounts this page.
       };
       fetchRole();
     }
@@ -129,30 +131,33 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (emailLoginPending.current || isLoading || isDemoLoading || nativeBrowserAuthGate.busy()) return;
+    if (!isHydrated || emailLoginPending.current || isLoading || isDemoLoading || nativeBrowserAuthGate.busy()) return;
     if (!e.currentTarget.checkValidity()) {
       e.currentTarget.reportValidity();
       return;
     }
+    // Read the submitted DOM values as browsers/password managers can autofill
+    // without updating React state before submitting.
+    const submittedEmail = (e.currentTarget.elements.namedItem('email') as HTMLInputElement).value;
+    const submittedPassword = (e.currentTarget.elements.namedItem('password') as HTMLInputElement).value;
     // Lock synchronously: a second submit can arrive before React renders.
     emailLoginPending.current = true;
     flushSync(() => setIsLoading(true));
     try {
-      await withTimeout(
-        signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password),
-        15000,
-        'Login request timed out. Check your connection and try again.',
-      );
+      // Firebase owns the request timeout. Racing its promise here would unlock
+      // retries while the original sign-in could still authenticate later.
+      await signInWithEmailAndPassword(auth, submittedEmail.trim().toLowerCase(), submittedPassword);
     } catch (error: any) {
       toast({
         title: "Login Failed",
         description: "The email or password is incorrect, or this account is unavailable.",
         variant: "destructive",
       });
-    } finally {
       emailLoginPending.current = false;
       setIsLoading(false);
     }
+    // Firebase success starts session/profile setup in the user effect above.
+    // Releasing here creates an enabled, idle-looking form during that work.
   };
 
   const handleGoogleLogin = async () => {
@@ -290,6 +295,11 @@ export default function LoginPage() {
             </CardDescription>
           </CardHeader>
 
+          {/* Keep announcements outside the busy form so they are not deferred. */}
+          <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+            {!isHydrated ? "Preparing sign-in." : isLoading ? "Logging in. Please wait." : ""}
+          </p>
+
           {/* ── Forgot Password flow ── */}
           {forgotMode ? (
             <form onSubmit={handleForgotPassword}>
@@ -333,7 +343,7 @@ export default function LoginPage() {
               </CardFooter>
             </form>
           ) : (
-          <form onSubmit={handleLogin} aria-busy={isLoading}>
+          <form onSubmit={handleLogin} aria-busy={!isHydrated || isLoading}>
             <CardContent className="space-y-6 px-6 sm:px-10">
               
               {isStoreDistribution && process.env.NEXT_PUBLIC_NATIVE_AUTH_ENABLED === 'true' ? (
@@ -391,7 +401,7 @@ export default function LoginPage() {
                   placeholder="name@organization.com" 
                   required 
                   value={email}
-                  disabled={nativeBusy}
+                  disabled={!isHydrated || nativeBusy}
                   onChange={(e) => setEmail(e.target.value)}
                   className="h-14 rounded-2xl bg-muted/50 border-2 border-transparent focus:border-primary/20 focus:bg-white transition-all text-base font-bold"
                 />
@@ -399,7 +409,7 @@ export default function LoginPage() {
               <div className="space-y-2">
                 <div className="flex justify-between items-center px-1">
                   <Label htmlFor="password" className="font-black text-[10px] uppercase tracking-widest ml-1 text-muted-foreground">Password</Label>
-                  <button type="button" disabled={nativeBusy} onClick={() => { setForgotMode(true); setForgotEmail(email); }} className="text-[10px] font-black text-primary uppercase hover:underline tracking-widest">Forgot?</button>
+                  <button type="button" disabled={!isHydrated || isLoading || isDemoLoading || nativeBusy} onClick={() => { setForgotMode(true); setForgotEmail(email); }} className="text-[10px] font-black text-primary uppercase hover:underline tracking-widest">Forgot?</button>
                 </div>
                 <div className="relative">
                   <PasswordInput 
@@ -408,7 +418,7 @@ export default function LoginPage() {
                     autoComplete="current-password"
                     required 
                     value={password}
-                    disabled={nativeBusy}
+                    disabled={!isHydrated || nativeBusy}
                     onChange={(e) => setPassword(e.target.value)}
                     className="h-14 rounded-2xl bg-muted/50 border-2 border-transparent focus:border-primary/20 focus:bg-white transition-all text-base font-bold pr-12"
                   />
@@ -416,12 +426,9 @@ export default function LoginPage() {
               </div>
             </CardContent>
             <CardFooter className="flex flex-col space-y-6 pb-10 sm:pb-12 px-6 sm:px-10 pt-4">
-              <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" type="submit" disabled={isLoading || isDemoLoading || nativeBusy}>
-                {isLoading ? <><Loader2 aria-hidden="true" className="h-6 w-6 animate-spin motion-reduce:animate-none mr-2" />Signing in…</> : "Sign In"}
+              <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" type="submit" disabled={!isHydrated || isLoading || isDemoLoading || nativeBusy}>
+                {!isHydrated ? "Preparing sign-in…" : isLoading ? <><Loader2 aria-hidden="true" className="h-6 w-6 animate-spin motion-reduce:animate-none mr-2" />Logging in…</> : "Sign In"}
               </Button>
-              <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">
-                {isLoading ? "Signing in. Please wait." : ""}
-              </p>
               <div className="text-center space-y-2">
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
                   {BETA_MODE ? 'Private beta — use email & password above' : <>Need an account? <Link href="/signup" className="text-primary hover:underline font-black">Create One</Link></>}

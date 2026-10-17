@@ -39,7 +39,9 @@ test('email-password signup requires verification before plan or tenant access',
 test('login preserves password whitespace and returns a non-enumerating error', async () => {
   const login = await source('../src/app/login/page.tsx');
 
-  assert.match(login, /signInWithEmailAndPassword\(auth, email\.trim\(\)\.toLowerCase\(\), password\)/);
+  assert.match(login, /signInWithEmailAndPassword\(auth, submittedEmail\.trim\(\)\.toLowerCase\(\), submittedPassword\)/);
+  assert.match(login, /submittedPassword = \(e\.currentTarget\.elements\.namedItem\('password'\) as HTMLInputElement\)\.value/);
+  assert.doesNotMatch(login, /submittedPassword\.trim/);
   assert.doesNotMatch(login, /signInWithEmailAndPassword\([^)]*password\.trim\(\)/);
   assert.match(login, /The email or password is incorrect, or this account is unavailable/);
 });
