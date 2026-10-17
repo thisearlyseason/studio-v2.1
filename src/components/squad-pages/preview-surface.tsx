@@ -97,7 +97,7 @@ export function PreviewSurface({ device, children }: { device: PreviewDevice; ch
   }, []);
   // Render at native CSS pixels. Device choices cap the width; narrow workspaces
   // exercise responsive layout instead of shrinking desktop text into a miniature.
-  const width = Math.min(previewWidths[device], bounds.width || previewWidths[device]);
+  const width = device === 'desktop' ? bounds.width || previewWidths.desktop : Math.min(previewWidths[device], bounds.width || previewWidths[device]);
   const target = previewDocument?.getElementById('page-preview-root');
   return <div ref={container} className={s.viewportScroller} aria-label={`${device} preview viewport`} tabIndex={0}>
     <iframe ref={frame} onLoad={load} title={`Private ${device} page preview, responsive width`} srcDoc={previewMarkup} sandbox="allow-same-origin" className={s.previewViewport} style={{ width, height: bounds.height || '100%', left: Math.max(0, (bounds.width - width) / 2), visibility: bounds.width > 0 ? 'visible' : 'hidden' }} />
