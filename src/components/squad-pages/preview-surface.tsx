@@ -86,21 +86,35 @@ export function PreviewSurface({ device, children }: { device: PreviewDevice; ch
   useEffect(() => {
     const element = container.current;
     if (!element) return;
-    const update = () => setBounds(previous => {
-      const width = element.clientWidth, height = element.clientHeight;
-      return previous.width === width && previous.height === height ? previous : { width, height };
-    });
+    let measureFrame = 0, settleFrame = 0;
+    const update = () => {
+      window.cancelAnimationFrame(measureFrame);
+      window.cancelAnimationFrame(settleFrame);
+      // Rotation can first resize the split layout, then open the compact
+      // drawer. Measure the settled pane so an intermediate narrow width
+      // cannot create a huge iframe height and clamp its scroll to zero.
+      measureFrame = window.requestAnimationFrame(() => {
+        settleFrame = window.requestAnimationFrame(() => setBounds(previous => {
+          const width = element.clientWidth, height = element.clientHeight;
+          return previous.width === width && previous.height === height ? previous : { width, height };
+        }));
+      });
+    };
     update();
     const observer = new ResizeObserver(update);
     observer.observe(element);
-    return () => observer.disconnect();
+    return () => { observer.disconnect(); window.cancelAnimationFrame(measureFrame); window.cancelAnimationFrame(settleFrame); };
   }, []);
-  // Render at native CSS pixels. Device choices cap the width; narrow workspaces
-  // exercise responsive layout instead of shrinking desktop text into a miniature.
-  const width = device === 'desktop' ? bounds.width || previewWidths.desktop : Math.min(previewWidths[device], bounds.width || previewWidths[device]);
+  // The iframe owns the selected CSS viewport, so media/container queries use
+  // the requested device width even on a smaller iPad or editor workspace.
+  // Scale the entire viewport, and compensate its CSS height so the iframe's
+  // own vertical scroller still fills the available preview pane.
+  const width = previewWidths[device];
+  const scale = bounds.width > 0 ? Math.min(1, bounds.width / width) : 1;
+  const height = bounds.height > 0 ? Math.ceil(bounds.height / scale) : '100%';
   const target = previewDocument?.getElementById('page-preview-root');
   return <div ref={container} className={s.viewportScroller} aria-label={`${device} preview viewport`} tabIndex={0}>
-    <iframe ref={frame} onLoad={load} title={`Private ${device} page preview, responsive width`} srcDoc={previewMarkup} sandbox="allow-same-origin" className={s.previewViewport} style={{ width, height: bounds.height || '100%', left: Math.max(0, (bounds.width - width) / 2), visibility: bounds.width > 0 ? 'visible' : 'hidden' }} />
+    <iframe ref={frame} onLoad={load} title={`Private ${device} page preview, ${width} CSS pixels`} srcDoc={previewMarkup} sandbox="allow-same-origin" className={s.previewViewport} data-preview-css-width={width} data-preview-scale={scale} style={{ width, height, transform: `scale(${scale})`, transformOrigin: 'top left', left: Math.max(0, (bounds.width - width * scale) / 2), visibility: bounds.width > 0 ? 'visible' : 'hidden' }} />
     {target && previewDocument && createPortal(children(previewDocument), target)}
   </div>;
 }
