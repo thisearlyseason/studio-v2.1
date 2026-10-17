@@ -5,6 +5,7 @@ import { PasswordInput } from '@/components/ui/password-input';
 
 
 import React, { useState } from 'react';
+import { flushSync } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -37,6 +38,7 @@ export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const emailLoginPending = React.useRef(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isDemoLoading, setIsDemoLoading] = useState(false);
   const [forgotMode, setForgotMode] = useState(false);
@@ -125,10 +127,16 @@ export default function LoginPage() {
     }
   }, [user, isUserLoading, db, router, auth, isDemoLoading, nativeBusy]);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (nativeBrowserAuthGate.busy()) return;
-    setIsLoading(true);
+    if (emailLoginPending.current || isLoading || isDemoLoading || nativeBrowserAuthGate.busy()) return;
+    if (!e.currentTarget.checkValidity()) {
+      e.currentTarget.reportValidity();
+      return;
+    }
+    // Lock synchronously: a second submit can arrive before React renders.
+    emailLoginPending.current = true;
+    flushSync(() => setIsLoading(true));
     try {
       await withTimeout(
         signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password),
@@ -142,6 +150,7 @@ export default function LoginPage() {
         variant: "destructive",
       });
     } finally {
+      emailLoginPending.current = false;
       setIsLoading(false);
     }
   };
@@ -324,7 +333,7 @@ export default function LoginPage() {
               </CardFooter>
             </form>
           ) : (
-          <form onSubmit={handleLogin}>
+          <form onSubmit={handleLogin} aria-busy={isLoading}>
             <CardContent className="space-y-6 px-6 sm:px-10">
               
               {isStoreDistribution && process.env.NEXT_PUBLIC_NATIVE_AUTH_ENABLED === 'true' ? (
@@ -408,8 +417,11 @@ export default function LoginPage() {
             </CardContent>
             <CardFooter className="flex flex-col space-y-6 pb-10 sm:pb-12 px-6 sm:px-10 pt-4">
               <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" type="submit" disabled={isLoading || isDemoLoading || nativeBusy}>
-                {isLoading ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Sign In"}
+                {isLoading ? <><Loader2 aria-hidden="true" className="h-6 w-6 animate-spin motion-reduce:animate-none mr-2" />Signing in…</> : "Sign In"}
               </Button>
+              <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+                {isLoading ? "Signing in. Please wait." : ""}
+              </p>
               <div className="text-center space-y-2">
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
                   {BETA_MODE ? 'Private beta — use email & password above' : <>Need an account? <Link href="/signup" className="text-primary hover:underline font-black">Create One</Link></>}
