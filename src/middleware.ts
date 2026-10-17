@@ -1,4 +1,5 @@
 import { squadPageRouteUnavailable } from '@/lib/squad-pages/route-gate';
+import { squadPublicRouteExists, squadPageNotFoundResponse } from '@/lib/squad-pages/route-status';
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import * as admin from 'firebase-admin'
@@ -181,7 +182,12 @@ function shouldNoIndex(pathname: string) {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
-  if (squadPageRouteUnavailable(pathname, request.nextUrl.hostname)) return new NextResponse(null, { status: 404, headers: { 'Cache-Control': 'no-store', 'X-Robots-Tag': 'noindex, nofollow' } });
+  if (squadPageRouteUnavailable(pathname, request.nextUrl.hostname)) return squadPageNotFoundResponse();
+
+  // Resolve public-page availability before any layout or metadata can stream.
+  if ((request.method === 'GET' || request.method === 'HEAD') && (pathname === '/p' || pathname.startsWith('/p/'))) {
+    if (!await squadPublicRouteExists(pathname)) return squadPageNotFoundResponse();
+  }
 
   if (isStoreDistribution && pathname === '/') {
     const loginUrl = request.nextUrl.clone();
