@@ -1,10 +1,10 @@
 "use client";
-import { PublicPageEntry, confirmPageContextSwitch } from '@/components/squad-pages/entity-context';
+import { PublicPageEntry, confirmPageContextSwitch as confirmUnsavedPageContextSwitch } from '@/components/squad-pages/entity-context';
 
 import { AlertsBellButton } from './AlertsBellButton';
 
 import React, { useState, useEffect, memo, useMemo } from 'react';
-import { NavigationFeedback, NavigationLink as Link, useNavigationRouter } from './navigation-feedback';
+import { NavigationFeedback, NavigationLink as Link, useNavigationRouter, useNavigationAllowed } from './navigation-feedback';
 import { usePathname } from 'next/navigation';
 import { 
   LayoutDashboard, 
@@ -122,6 +122,12 @@ import { deletePushDevice } from '@/lib/client-push-registration';
 import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
 import { isTeamModuleRouteDisabled } from '@/lib/team-module-visibility';
 import { isStoreDistribution } from '@/lib/app-distribution';
+// Check before confirmation or context mutation, including Radix portal menus.
+function usePageContextSwitch() {
+  const canNavigate = useNavigationAllowed();
+  return (targetTeamId?: string | null) => canNavigate() && confirmUnsavedPageContextSwitch(targetTeamId);
+}
+
 const coordinationTabs = [
   { name: 'Feed', href: '/feed', icon: Radio, pro: true },
   { name: 'Schedule', href: '/events', icon: CalendarDays, pro: false },
@@ -186,6 +192,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
   isSchoolMode?: boolean; isPrimaryClubAuthority?: boolean; isEliteAccount?: boolean; isEliteClubMode?: boolean;
   onClose?: () => void;
 }) {
+  const confirmPageContextSwitch = usePageContextSwitch();
   const primarySchoolTeam = isSchoolMode ? teams.find(t => t.type === 'school') : null;
   const squadList = isSchoolMode ? teams.filter(t => t.type !== 'school') : teams;
 
@@ -408,6 +415,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 }
 
 function ShellContent({ children }: { children: React.ReactNode }) {
+  const confirmPageContextSwitch = usePageContextSwitch();
   const pathname = usePathname();
   const router = useNavigationRouter();
   const { 

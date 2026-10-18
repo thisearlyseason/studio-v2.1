@@ -2,11 +2,12 @@
 
 import React, { createContext, forwardRef, useContext, useEffect, useRef, useState, useTransition } from 'react';
 import NextLink from 'next/link';
+import { createPortal } from 'react-dom';
 import { useRouter } from 'next/navigation';
 
 type Router = ReturnType<typeof useRouter>;
 type Navigate = (href: string, options?: Parameters<Router['push']>[1], replace?: boolean) => void;
-const NavigationContext = createContext<Navigate | null>(null);
+const NavigationContext = createContext<{ navigate: Navigate; canNavigate: () => boolean } | null>(null);
 
 export function NavigationFeedback({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -60,23 +61,27 @@ export function NavigationFeedback({ children }: { children: React.ReactNode }) 
   };
 
   return (
-    <NavigationContext.Provider value={navigate}>
+    <NavigationContext.Provider value={{ navigate, canNavigate: () => !busy.current }}>
       <div style={{ display: 'contents' }} inert={pending || undefined} aria-busy={pending || undefined}>
         {children}
       </div>
-      {(pending || failed) && (
+      {(pending || failed) && createPortal(
         <div ref={status} role="status" aria-live="polite" tabIndex={-1}
           className="fixed bottom-24 left-1/2 z-[200] w-max max-w-[90vw] -translate-x-1/2 rounded-xl border bg-background px-5 py-3 text-sm font-semibold text-foreground shadow-lg outline-none">
           {pending ? (slow ? 'Still opening… Please wait.' : 'Opening section…') : 'Unable to open this section. Please try again.'}
-        </div>
+        </div>, document.body
       )}
     </NavigationContext.Provider>
   );
 }
 
+export function useNavigationAllowed(): () => boolean {
+  return useContext(NavigationContext)?.canNavigate ?? (() => true);
+}
+
 export function useNavigationRouter(): Router {
   const router = useRouter();
-  const navigate = useContext(NavigationContext);
+  const navigate = useContext(NavigationContext)?.navigate;
   return navigate ? { ...router, push: (href, options) => navigate(href, options), replace: (href, options) => navigate(href, options, true) } : router;
 }
 
@@ -84,7 +89,7 @@ export function useNavigationRouter(): Router {
 // after capture-phase draft guards and modified/external click handling.
 export const NavigationLink = forwardRef<HTMLAnchorElement, React.ComponentProps<typeof NextLink>>(
   function NavigationLink({ onNavigate, href, replace, scroll, ...props }, ref) {
-    const navigate = useContext(NavigationContext);
+    const navigate = useContext(NavigationContext)?.navigate;
     return <NextLink {...props} ref={ref} href={href} replace={replace} scroll={scroll} onNavigate={event => {
       let canceled = false;
       onNavigate?.({ preventDefault() { canceled = true; event.preventDefault(); } });
