@@ -4,8 +4,8 @@ import { PublicPageEntry, confirmPageContextSwitch } from '@/components/squad-pa
 import { AlertsBellButton } from './AlertsBellButton';
 
 import React, { useState, useEffect, memo, useMemo } from 'react';
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { NavigationFeedback, NavigationLink as Link, useNavigationRouter } from './navigation-feedback';
+import { usePathname } from 'next/navigation';
 import { 
   LayoutDashboard, 
   CalendarDays, 
@@ -404,8 +404,12 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
 
 
 export default function Shell({ children }: { children: React.ReactNode }) {
+  return <NavigationFeedback><ShellContent>{children}</ShellContent></NavigationFeedback>;
+}
+
+function ShellContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
+  const router = useNavigationRouter();
   const { 
     activeTeam, setActiveTeam, teams, user, isPro, 
     isPrimaryClubAuthority, isStaff, isParent, isPlayer, hasFeature, alerts,
