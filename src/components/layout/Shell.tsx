@@ -82,7 +82,8 @@ import {
   SidebarMenuItem, 
   SidebarProvider,
   SidebarSeparator,
-  SidebarTrigger
+  SidebarTrigger,
+  useSidebar
 } from "@/components/ui/sidebar";
 import {
   Sheet,
@@ -410,6 +411,13 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
 }
 
 
+function SidebarRouteClose() {
+  const pathname = usePathname();
+  const { setOpenMobile } = useSidebar();
+  useEffect(() => { setOpenMobile(false); }, [pathname, setOpenMobile]);
+  return null;
+}
+
 export default function Shell({ children }: { children: React.ReactNode }) {
   return <NavigationFeedback><ShellContent>{children}</ShellContent></NavigationFeedback>;
 }
@@ -692,11 +700,12 @@ function ShellContent({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <SidebarProvider className="relative h-full min-h-0">
+    <SidebarProvider mobileBreakpoint={1280} style={{ "--sidebar-width": "18rem" } as React.CSSProperties} className="relative h-full min-h-0">
+      <SidebarRouteClose />
       <div className="flex flex-col h-full w-full bg-background selection:bg-primary/20">
         <div className="flex min-h-0 flex-1 overflow-hidden">
           <Sidebar 
-            className="absolute inset-y-0 h-full border-r bg-white w-72 shrink-0 shadow-sm **:data-[sidebar=sidebar]:overflow-y-auto **:data-[sidebar=sidebar]:overscroll-contain **:data-[sidebar=sidebar]:touch-pan-y"
+            className="absolute inset-y-0 h-full border-r bg-white shrink-0 shadow-sm **:data-[sidebar=sidebar]:overflow-y-auto **:data-[sidebar=sidebar]:overscroll-contain **:data-[sidebar=sidebar]:touch-pan-y"
             collapsible="offcanvas"
           >
             <SidebarHeader className="shrink-0 p-6 bg-white">
@@ -993,7 +1002,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
           <div className="flex min-w-0 flex-col flex-1 min-h-0">
             <header className="sticky top-0 z-40 w-full bg-background/80 backdrop-blur-md border-b h-16 md:h-20 flex items-center px-4 md:px-10 justify-between text-foreground">
               <div className="flex items-center gap-4">
-                <div className="md:hidden h-10 w-10" aria-hidden="true" />
+                <SidebarTrigger className="h-11 w-11 shrink-0" />
                 <div className="hidden md:block">
                   <h2 className="text-xl lg:text-2xl font-black uppercase tracking-tighter text-foreground">
                     {user?.role === 'league_creator' && pathname === '/competition' ? 'Competition Hub' :

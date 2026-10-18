@@ -1,5 +1,6 @@
 "use client";
 
+import { authFailureMessage } from '@/lib/auth-form-feedback';
 import { PasswordInput } from '@/components/ui/password-input';
 
 
@@ -37,6 +38,7 @@ function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: stri
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [formError, setFormError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [isHydrated, setIsHydrated] = useState(false);
   const emailLoginPending = React.useRef(false);
@@ -46,6 +48,8 @@ export default function LoginPage() {
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotSent, setForgotSent] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
+  const [resetError, setResetError] = useState('');
+  const resetPending = React.useRef(false);
   const nativeBusy = React.useSyncExternalStore(nativeBrowserAuthGate.subscribe, nativeBrowserAuthGate.busy, () => false);
   const nativeSessionVerified = React.useRef(false);
 
@@ -85,6 +89,8 @@ export default function LoginPage() {
           await signOut(auth).catch(() => undefined);
           emailLoginPending.current = false;
           setIsLoading(false);
+          setIsGoogleLoading(false);
+          setFormError('Your login could not be secured. Please try again.');
           toast({
             title: 'Session Setup Failed',
             description: 'Your login could not be secured. Please try again.',
@@ -141,6 +147,7 @@ export default function LoginPage() {
     const submittedEmail = (e.currentTarget.elements.namedItem('email') as HTMLInputElement).value;
     const submittedPassword = (e.currentTarget.elements.namedItem('password') as HTMLInputElement).value;
     // Lock synchronously: a second submit can arrive before React renders.
+    setFormError('');
     emailLoginPending.current = true;
     flushSync(() => setIsLoading(true));
     try {
@@ -151,9 +158,11 @@ export default function LoginPage() {
       // retries while the original sign-in could still authenticate later.
       await signInWithEmailAndPassword(auth, submittedEmail.trim().toLowerCase(), submittedPassword);
     } catch (error: any) {
+      const message = authFailureMessage(error);
+      setFormError(message);
       toast({
         title: "Login Failed",
-        description: "The email or password is incorrect, or this account is unavailable.",
+        description: message,
         variant: "destructive",
       });
       emailLoginPending.current = false;
@@ -164,7 +173,11 @@ export default function LoginPage() {
   };
 
   const handleGoogleLogin = async () => {
-    setIsLoading(true);
+    if (emailLoginPending.current || nativeBrowserAuthGate.busy()) return;
+    emailLoginPending.current = true;
+    setFormError('');
+    flushSync(() => setIsLoading(true));
+    let signedIn = false;
     setIsGoogleLoading(true);
     try {
       const provider = new GoogleAuthProvider();
@@ -175,31 +188,36 @@ export default function LoginPage() {
       // reports cancellation/network failures; a request timer cannot safely
       // cancel the popup and would falsely fail a still-active sign-in.
       await signInWithPopup(auth, provider, browserPopupRedirectResolver);
+      signedIn = true;
     } catch (error: any) {
       if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') return;
-      toast({
-        title: "Google Login Failed",
-        description: error.code === 'auth/popup-blocked'
+      const message = error.code === 'auth/popup-blocked'
           ? 'Allow pop-ups for The Squad in your browser, then try again.'
           : error.code === 'auth/network-request-failed'
             ? 'Check your connection, then try signing in with Google again.'
-            : 'Could not sign in with Google. Please try again or use your email and password.',
-        variant: "destructive",
-      });
+            : 'Could not sign in with Google. Please try again or use your email and password.';
+      setFormError(message);
+      toast({ title: "Google Login Failed", description: message, variant: "destructive" });
     } finally {
-      setIsLoading(false);
-      setIsGoogleLoading(false);
+      if (!signedIn) {
+        emailLoginPending.current = false;
+        setIsLoading(false);
+        setIsGoogleLoading(false);
+      }
     }
   };
 
-  const handleForgotPassword = async (e: React.FormEvent) => {
+  const handleForgotPassword = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const target = (forgotEmail || email).trim();
+    if (resetPending.current) return;
+    setResetError('');
+    const target = (e.currentTarget.elements.namedItem('resetEmail') as HTMLInputElement).value.trim();
     if (!target) {
       toast({ title: "Email Required", description: "Enter the email address tied to your account.", variant: "destructive" });
       return;
     }
-    setForgotLoading(true);
+    resetPending.current = true;
+    flushSync(() => setForgotLoading(true));
     try {
       // Use our branded Resend email instead of Firebase's default template
       const res = await fetch('/api/email/reset-password', {
@@ -213,8 +231,9 @@ export default function LoginPage() {
       }
       setForgotSent(true);
     } catch (error: any) {
-      toast({ title: "Reset Failed", description: error.message || "Could not send reset email. Try again.", variant: "destructive" });
+      setResetError("Reset request could not be completed. Check your connection and try again.");
     } finally {
+      resetPending.current = false;
       setForgotLoading(false);
     }
   };
@@ -300,24 +319,27 @@ export default function LoginPage() {
 
           {/* Keep announcements outside the busy form so they are not deferred. */}
           <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">
-            {!isHydrated ? "Preparing sign-in." : isLoading ? "Logging in. Please wait." : ""}
+            {!isHydrated ? "Preparing sign-in." : isLoading ? "Logging in. Please wait." : forgotLoading ? "Sending reset link. Please wait." : ""}
           </p>
 
+          {forgotMode && resetError && <p role="alert" className="mx-6 text-sm text-destructive">{resetError}</p>}
           {/* ── Forgot Password flow ── */}
           {forgotMode ? (
-            <form onSubmit={handleForgotPassword}>
+            <form onSubmit={handleForgotPassword} aria-busy={forgotLoading}>
               <CardContent className="space-y-6 px-10">
                 {forgotSent ? (
                   <div className="text-center space-y-4 py-6">
                     <div className="text-5xl">📬</div>
                     <p className="font-black text-lg uppercase tracking-tight">Check your inbox!</p>
-                    <p className="text-sm text-muted-foreground font-medium">A reset link was sent. Check spam if you don't see it within a minute.</p>
+                    <p role="status" className="text-sm text-muted-foreground font-medium">If an account uses this email, a reset link will be sent. Check your inbox and spam folder.</p>
                   </div>
                 ) : (
                   <div className="space-y-2">
                     <Label htmlFor="forgot-email" className="font-black text-[10px] uppercase tracking-widest px-1 ml-1 text-muted-foreground">Account Email</Label>
                     <Input
                       id="forgot-email"
+                      name="resetEmail"
+                      disabled={forgotLoading}
                       type="email"
                       autoComplete="email"
                       placeholder="name@organization.com"
@@ -333,12 +355,13 @@ export default function LoginPage() {
               <CardFooter className="flex flex-col space-y-4 pb-12 px-10 pt-4">
                 {!forgotSent && (
                   <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" type="submit" disabled={forgotLoading}>
-                    {forgotLoading ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : 'Send Reset Link'}
+                    {forgotLoading ? <><Loader2 aria-hidden="true" className="h-6 w-6 animate-spin mr-2" />Sending reset link…</> : 'Send Reset Link'}
                   </Button>
                 )}
                 <button
                   type="button"
-                  onClick={() => { setForgotMode(false); setForgotSent(false); setForgotEmail(''); }}
+                  disabled={forgotLoading}
+                  onClick={() => { setForgotMode(false); setForgotSent(false); setForgotEmail(''); setResetError(''); }}
                   className="text-[10px] font-black text-primary uppercase hover:underline tracking-widest"
                 >
                   ← Back to Login
@@ -346,7 +369,8 @@ export default function LoginPage() {
               </CardFooter>
             </form>
           ) : (
-          <form onSubmit={handleLogin} aria-busy={!isHydrated || isLoading}>
+          <form onSubmit={handleLogin} aria-busy={!isHydrated || isLoading} onInvalid={() => setFormError('Enter a valid email address and your password.')}>
+            {formError && <p id="login-error" role="alert" className="mx-6 mb-4 text-sm text-destructive">{formError}</p>}
             <CardContent className="space-y-6 px-6 sm:px-10">
               
               {isStoreDistribution && process.env.NEXT_PUBLIC_NATIVE_AUTH_ENABLED === 'true' ? (
@@ -398,13 +422,18 @@ export default function LoginPage() {
               <div className="space-y-2">
                 <Label htmlFor="email" className="font-black text-[10px] uppercase tracking-widest px-1 ml-1 text-muted-foreground">Email Address</Label>
                 <Input 
-                  id="email" 
+                  id="email"
+                  name="email"
+                  maxLength={254}
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  aria-describedby={formError ? "login-error" : undefined} 
                   type="email" 
                   autoComplete="email"
                   placeholder="name@organization.com" 
                   required 
                   value={email}
-                  disabled={!isHydrated || nativeBusy}
+                  disabled={!isHydrated || isLoading || nativeBusy}
                   onChange={(e) => setEmail(e.target.value)}
                   className="h-14 rounded-2xl bg-muted/50 border-2 border-transparent focus:border-primary/20 focus:bg-white transition-all text-base font-bold"
                 />
@@ -416,12 +445,14 @@ export default function LoginPage() {
                 </div>
                 <div className="relative">
                   <PasswordInput 
-                    id="password" 
+                    id="password"
+                    name="password"
+                    aria-describedby={formError ? "login-error" : undefined} 
                      
                     autoComplete="current-password"
                     required 
                     value={password}
-                    disabled={!isHydrated || nativeBusy}
+                    disabled={!isHydrated || isLoading || nativeBusy}
                     onChange={(e) => setPassword(e.target.value)}
                     className="h-14 rounded-2xl bg-muted/50 border-2 border-transparent focus:border-primary/20 focus:bg-white transition-all text-base font-bold pr-12"
                   />
