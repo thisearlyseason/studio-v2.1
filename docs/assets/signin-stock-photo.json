@@ -1,0 +1,50 @@
+{
+  "schema": "squad-signin-stock-photo-provenance-v1",
+  "verifiedUTC": "2026-10-18T05:32:17.551719+00:00",
+  "type": "Real licensed stock venue photograph; not generated, not customer/member imagery",
+  "asset": {
+    "file": "court.webp",
+    "sha256": "9a2c8baa45742c0549113c77ab06c1b52ba71c047a9f5dc2fbc3e138c6d68a7e",
+    "bytes": 47928,
+    "sourceURL": "https://unsplash.com/photos/basketball-court-near-body-of-water-itqkcMEix64",
+    "photographer": "JC Dela Cuesta",
+    "photoId": "itqkcMEix64",
+    "publishedDate": "2017-08-14",
+    "license": "Unsplash License (standard free license, not Unsplash+)",
+    "licenseURL": "https://unsplash.com/license",
+    "licenseEvidence": "Official photo page explicitly states free use under Unsplash License; verified through web source reader.",
+    "downloadURL": "https://images.unsplash.com/photo-1502736393269-6ca11b688701?w=1920&q=85&fm=jpg&fit=max",
+    "downloadTransform": "Public CDN resize to width1920, JPEG quality85; no local image alteration.",
+    "pixelsInspected": true,
+    "pixelInspection": "Empty oceanfront basketball court and hoop; no identifiable people or visible brands.",
+    "recommendedUse": "Hero: wide landscape; hoop around30% across, horizon76% down.",
+    "generatedImage": false,
+    "originalFile": "court-ocean.jpg",
+    "originalSHA256": "0342ee13259c2709d714df2ba135883c705873f83b7bddf5b1998964a5926a88",
+    "transform": "auto-orient, fit1600 without enlargement, WebP82, strip metadata; no content synthesis"
+  },
+  "reuse": "Existing first-party public/squad-pages/editorial/court.webp; no new stock download or paid license purchase",
+  "currentOfficialVerification": {
+    "sourceURL": "https://unsplash.com/photos/basketball-court-near-body-of-water-itqkcMEix64",
+    "sourcePageResult": "Official photo page accessible; JC Dela Cuesta; Free to use under Unsplash License",
+    "licenseURL": "https://unsplash.com/license",
+    "permitted": "Commercial use and modification under standard Unsplash license; no stock resale or competing library"
+  },
+  "desktop": {
+    "path": "public/squad-pages/editorial/court.webp",
+    "bytes": 47928,
+    "width": 1600,
+    "height": 900,
+    "sha256": "9a2c8baa45742c0549113c77ab06c1b52ba71c047a9f5dc2fbc3e138c6d68a7e"
+  },
+  "mobile": {
+    "path": "public/images/auth/signin-court-mobile.webp",
+    "bytes": 18312,
+    "width": 540,
+    "height": 680,
+    "transform": "Existing1600x900WebP:extractleft190/top220/width540/height680, WebPquality80; no synthesis/enlargement",
+    "sha256": "5fcd6522acde388a26a3f5ec3b5cdc9a65adebfbcf54170eb66645d93c6cb5be"
+  },
+  "browserDelivery": "picture selects single18.3KB source at<=520px, otherwise48KB; first-party paths, eager image/high fetchPriority, decorative emptyalt/ariahidden; visible photographer credit",
+  "privacy": "Empty stock court; no visible people, private rosters/member photographs or implied customer facility ownership"
+}

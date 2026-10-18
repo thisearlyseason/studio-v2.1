@@ -19,7 +19,7 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { signInWithEmailAndPassword, signInAnonymously, signOut, signInWithPopup, GoogleAuthProvider, sendPasswordResetEmail, browserPopupRedirectResolver } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
 import BrandLogo from '@/components/BrandLogo';
-import Image from 'next/image';
+import styles from './login-visual.module.css';
 import { Trophy, Users, Zap, Loader2, User, Baby, ChevronRight, ChevronLeft, ShieldAlert, GraduationCap, } from 'lucide-react';
 import { bootstrapDemoWorkspace, clearBrowserSession, establishBrowserSession } from '@/lib/client-auth';
 import { APP_DISTRIBUTION, isStoreDistribution, safeReturnPath } from '@/lib/app-distribution';
@@ -281,20 +281,17 @@ export default function LoginPage() {
   ];
 
   return (
-    <div className="flex flex-col items-center justify-start lg:justify-center min-h-screen bg-black p-4 sm:p-6 relative overflow-y-auto overflow-x-hidden">
-      <div className="absolute inset-0 w-full h-full">
-        <Image 
-          src="https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?auto=format&fit=crop&q=80&w=1600" 
-          alt="Stadium Atmosphere" 
-          fill
-          className="object-cover opacity-50 animate-in fade-in duration-1000"
-          data-ai-hint="stadium lights"
-          priority
-        />
+    <div className={styles.page}>
+      <div className={styles.background} aria-hidden="true">
+        <picture>
+          <source media="(max-width: 520px)" srcSet="/images/auth/signin-court-mobile.webp" />
+          {/* Precompressed local stock assets avoid third-party requests and large mobile downloads. */}
+          <img src="/squad-pages/editorial/court.webp" alt="" width={1600} height={900} fetchPriority="high" decoding="async" />
+        </picture>
       </div>
-      <div className="absolute inset-0 bg-linear-to-b from-black/60 via-transparent to-black/80" />
-      
-      {!isStoreDistribution && (<div className="relative z-30 w-full max-w-5xl flex items-start pt-4 mb-2">
+      <div className={styles.overlay} aria-hidden="true" />
+
+      {!isStoreDistribution && (<div className={styles.homeNav}>
         <Link href="/">
           <Button variant="ghost" className="text-white hover:bg-white/10 font-black uppercase text-[10px] tracking-widest h-10 px-4 rounded-full border border-white/10 backdrop-blur-sm">
             <ChevronLeft className="mr-2 h-4 w-4" /> Back to Home
@@ -302,17 +299,22 @@ export default function LoginPage() {
         </Link>
       </div>)}
 
-      <div className="relative z-20 mb-8 flex flex-col items-center gap-2 animate-in fade-in slide-in-from-top-4 duration-1000">
+      <div className={styles.brand}>
         <BrandLogo variant="dark-background" className="h-16 w-48 drop-shadow-2xl" priority />
       </div>
 
-      <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-12 items-center relative z-10">
-        <Card className="border-none shadow-2xl rounded-4xl sm:rounded-[3rem] animate-in fade-in slide-in-from-left-8 duration-700 bg-white/95 backdrop-blur-sm">
+      <div className={styles.layout}>
+        <section className={styles.story} aria-label="Welcome to The Squad">
+          <p className={styles.eyebrow}>Built for the whole team</p>
+          <h2 className={styles.headline}>Your team.<br /><span>Your next level.</span></h2>
+          <p className={styles.caption}>Bring your season together. Plan, connect, and compete with The Squad.</p>
+        </section>
+        <Card className={`border-none shadow-2xl rounded-4xl sm:rounded-[3rem] animate-in fade-in slide-in-from-left-8 duration-700 bg-white/95 backdrop-blur-sm ${styles.card}`}>
           <CardHeader className="space-y-2 pt-8 sm:pt-12 text-center">
             <h1 className="text-3xl sm:text-4xl font-black tracking-tighter uppercase">
               {forgotMode ? 'Reset Password' : 'Sign In'}
             </h1>
-            <CardDescription className="text-base font-bold uppercase tracking-widest text-primary/60 text-[10px]">
+            <CardDescription className="text-base font-bold uppercase tracking-widest text-muted-foreground text-[10px]">
               {forgotMode ? 'Enter your email to receive a reset link' : 'Use your account credentials'}
             </CardDescription>
           </CardHeader>
@@ -473,7 +475,9 @@ export default function LoginPage() {
           )}
         </Card>
 
-        <div id="demos" className="space-y-6 animate-in fade-in slide-in-from-right-8 duration-1000 lg:overflow-y-auto lg:max-h-[80vh] custom-scrollbar lg:pr-4">
+        <details id="demos" className={styles.demos}>
+          <summary>Explore demo workspaces</summary>
+          <div className={styles.demoContent}>
           <div className="bg-primary text-white p-10 rounded-[3rem] shadow-2xl relative overflow-hidden group">
             <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700">
               <ShieldAlert className="h-48 w-48" />
@@ -510,11 +514,13 @@ export default function LoginPage() {
               </Button>
             ))}
           </div>
-        </div>
+          </div>
+        </details>
       </div>
 
-      <div className="text-center pt-12 relative z-10 opacity-40">
+      <div className={styles.footer}>
         <p className="text-[10px] text-white font-black uppercase tracking-[0.3em]">The Squad • thesquad.pro</p>
+        <p>Stock photo: <a href="https://unsplash.com/photos/basketball-court-near-body-of-water-itqkcMEix64" target="_blank" rel="noopener noreferrer">JC Dela Cuesta / Unsplash</a></p>
       </div>
     </div>
   );
