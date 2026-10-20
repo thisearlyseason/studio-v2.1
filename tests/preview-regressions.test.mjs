@@ -969,7 +969,7 @@ test('household realtime listeners ignore permission errors after authentication
   assert.match(collectionHook, /let snapshotPaused = localStorage\.getItem\(DEMO_EXIT_PENDING_KEY\) === 'true'/);
   assert.match(collectionHook, /if \(!snapshotPaused\) subscribeSnapshot\(\)/);
   assert.match(collectionHook, /const pauseSnapshot = \(\) => \{\s+snapshotPaused = true;\s+unsubscribeSnapshot\?\.\(\);\s+unsubscribeSnapshot = null;/);
-  assert.match(collectionHook, /if \(!isMounted \|\| snapshotPaused\) return;/);
+  assert.match(collectionHook, /if \(!isMounted \|\| snapshotPaused \|\| !isCurrent\(\)\) return;/);
   assert.match(collectionHook, /window\.removeEventListener\(DEMO_EXIT_EVENT, pauseSnapshot\)/);
   assert.match(firebaseProvider, /if \(localStorage\.getItem\(DEMO_EXIT_RETRY_REQUIRED_KEY\) !== 'true' && sessionStorage\.getItem\(DEMO_START_KEY\)\) \{\s+cancelDemoExitPending\(\);/);
 });
