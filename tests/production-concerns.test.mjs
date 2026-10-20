@@ -179,7 +179,7 @@ test('anonymous demos survive reloads and clean up visible exits and abandoned s
   assert.ok(shell.indexOf('requireDemoExitRetry()') < shell.indexOf("await fetch('/api/demo/exit'"));
   assert.match(shell, /if \(isDemoLogout\) \{\s+const response = await fetch\('\/api\/demo\/exit', \{ method: 'POST' \}\);\s+if \(!response\.ok\) \{\s+demoCleanupRejectedBeforeMutation = response\.status === 403;\s+throw new Error\('Demo cleanup failed'\);\s+\}\s+\}/);
   assert.match(shell, /finally \{\s+if \(isDemoLogout\) \{\s+if \(logoutCompleted\) clearDemoExitPending\(\);\s+else if \(demoCleanupRejectedBeforeMutation\) cancelDemoExitPending\(\);/);
-  assert.ok(shell.indexOf("await fetch('/api/demo/exit'") < shell.indexOf('await clearBrowserSession()'));
+  assert.ok(shell.indexOf("await fetch('/api/demo/exit'") < shell.indexOf('await clearBrowserSession(assertAuthority)'));
   assert.match(cleanup, /user\.providerData\.length > 0/);
   assert.match(cleanup, /collection\('publicLeagueViews'\)\.doc\(league\.id\)\.delete\(\)/);
   assert.ok(cleanup.indexOf("recursiveDelete(adminDb.collection('users').doc(uid))") < cleanup.indexOf('auth.deleteUser(uid)'));
@@ -193,21 +193,21 @@ test('every visible logout unregisters push while the user is still authenticate
     source('../src/lib/client-push-registration.ts'),
   ]);
 
-  const settingsLogout = settings.match(/const handleLogout = async \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
+  const settingsLogout = settings.match(/const performLogout = async [\s\S]*?\n  \};/)?.[0] || '';
   assert.match(settings, /import \{ deletePushDevice/);
   assert.match(settingsLogout, /const isDemoLogout = auth\.currentUser\?\.isAnonymous === true;/);
   assert.doesNotMatch(settingsLogout, /user\?\.isDemo/);
   assert.match(settingsLogout, /const authenticatedUserId = auth\.currentUser\?\.uid/);
-  assert.match(settingsLogout, /if \(authenticatedUserId && !isDemoLogout\) \{\s+await deletePushDevice\(authenticatedUserId\)\.catch/);
+  assert.match(settingsLogout, /if \(authenticatedUserId && !isDemoLogout\) \{\s+assertAuthority\(\);\s+await deletePushDevice\(authenticatedUserId\)\.catch/);
   assert.match(settingsLogout, /if \(isDemoLogout\) \{\s+const response = await fetch\('\/api\/demo\/exit', \{ method: 'POST' \}\)/);
-  assert.ok(settingsLogout.indexOf('await deletePushDevice(authenticatedUserId)') < settingsLogout.indexOf('await clearBrowserSession()'));
-  assert.ok(settingsLogout.indexOf("await fetch('/api/demo/exit'") < settingsLogout.indexOf('await clearBrowserSession()'));
-  assert.ok(settingsLogout.indexOf('await clearBrowserSession()') < settingsLogout.indexOf('await signOut(auth)'));
-  const shellLogout = shell.match(/const handleLogout = async \(\) => \{[\s\S]*?\n  \};/)?.[0] || '';
+  assert.ok(settingsLogout.indexOf('await deletePushDevice(authenticatedUserId)') < settingsLogout.indexOf('await clearBrowserSession(assertAuthority)'));
+  assert.ok(settingsLogout.indexOf("await fetch('/api/demo/exit'") < settingsLogout.indexOf('await clearBrowserSession(assertAuthority)'));
+  assert.ok(settingsLogout.indexOf('await clearBrowserSession(assertAuthority)') < settingsLogout.indexOf('await signOut(auth)'));
+  const shellLogout = shell.match(/const performLogout = async [\s\S]*?\n  \};/)?.[0] || '';
   assert.match(shellLogout, /const isDemoLogout = auth\.currentUser\?\.isAnonymous === true;/);
   assert.doesNotMatch(shellLogout, /hasDemoBanner/);
   assert.match(shellLogout, /const authenticatedUserId = auth\.currentUser\?\.uid/);
-  assert.match(shellLogout, /if \(authenticatedUserId && !isDemoLogout\) \{\s+await deletePushDevice\(authenticatedUserId\)\.catch/);
+  assert.match(shellLogout, /if \(authenticatedUserId && !isDemoLogout\) \{\s+assertAuthority\(\);\s+await deletePushDevice\(authenticatedUserId\)\.catch/);
   assert.ok(shellLogout.indexOf('await deletePushDevice(authenticatedUserId)') < shellLogout.indexOf("await fetch('/api/demo/exit'"));
   const deletion = pushRegistration.match(/export async function deletePushDevice[\s\S]*?\n\}/)?.[0] || '';
   assert.match(deletion, /currentUser\.uid !== userId/);

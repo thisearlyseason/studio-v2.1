@@ -3,6 +3,8 @@ import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { syncFromFirestore, SyncEvent, SyncResult, watchScheduleUser } from './sync';
 import { loadScopedTodos, saveScopedTodos, type ScheduleTodo } from './storage';
 
+import { TodoSyncPanel } from './todo-sync-panel';
+
 const THEME_KEY = 'squad_schedule_theme';
 
 type TodoItem = ScheduleTodo;
@@ -279,6 +281,7 @@ export default function ScheduleApp() {
         {/* TODOS TAB */}
         {tab === 'todos' && (
           <div>
+            {process.env.NEXT_PUBLIC_SCHEDULE_TODOS_SYNC_ENABLED === 'true' && <TodoSyncPanel />} 
             {!storageUserId && (
               <div style={{ ...S.card, marginBottom: 16 }}>
                 <p style={{ color: text }}>Sign in to keep a private task list on this device.</p>

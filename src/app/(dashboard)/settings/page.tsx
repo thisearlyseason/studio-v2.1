@@ -1,4 +1,5 @@
 "use client";
+import { coordinateTodoLogout } from '@/lib/schedule-todos/logout';
 
 import { PasswordInput } from '@/components/ui/password-input';
 
@@ -338,7 +339,8 @@ export default function SettingsPage() {
     }
   };
 
-  const handleLogout = async () => {
+  const performLogout = async (assertAuthority: () => void = () => {}) => {
+    assertAuthority();
     // A legacy profile can retain isDemo after becoming a registered beta
     // account. Only Firebase's anonymous identity is allowed to invoke the
     // destructive demo cleanup endpoint.
@@ -352,10 +354,12 @@ export default function SettingsPage() {
     }
     try {
       if (authenticatedUserId && !isDemoLogout) {
+        assertAuthority();
         await deletePushDevice(authenticatedUserId).catch(error => {
           console.warn('[Logout] Notification cleanup was unavailable; continuing sign-out.', error);
         });
       }
+      assertAuthority();
       if (isDemoLogout) {
         const response = await fetch('/api/demo/exit', { method: 'POST' });
         if (!response.ok) {
@@ -363,10 +367,12 @@ export default function SettingsPage() {
           throw new Error('Demo cleanup failed');
         }
       }
-      await clearBrowserSession();
+      assertAuthority();
+      await clearBrowserSession(assertAuthority);
+      assertAuthority();
       await signOut(auth);
       logoutCompleted = true;
-      router.push('/login');
+      if (!auth.currentUser) router.push('/login');
     } catch (error) {
       toast({ title: "Logout Failed", variant: "destructive" });
     } finally {
@@ -375,6 +381,12 @@ export default function SettingsPage() {
         else if (demoCleanupRejectedBeforeMutation) cancelDemoExitPending();
       }
     }
+  };
+
+  const handleLogout = async () => {
+    if (auth.currentUser?.isAnonymous === true || process.env.NEXT_PUBLIC_SCHEDULE_TODOS_SYNC_ENABLED !== 'true') return performLogout();
+    try { await coordinateTodoLogout(auth, performLogout); }
+    catch (error) { toast({ title: 'Logout paused', description: error instanceof Error ? error.message : 'Review pending task edits before logout.', variant: 'destructive' }); }
   };
 
   const enableNotifications = async () => {

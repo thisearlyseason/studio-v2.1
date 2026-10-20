@@ -105,7 +105,9 @@ export async function bootstrapDemoWorkspace(user: User, planId: string): Promis
   throw new Error(payload.error || 'Unable to initialize the demo workspace.');
 }
 
-export async function clearBrowserSession(): Promise<void> {
+export async function clearBrowserSession(assertCurrent: () => void = () => {}): Promise<void> {
+  assertCurrent();
   await clearDeviceNotifications();
+  assertCurrent();
   await fetch('/api/auth/session', { method: 'DELETE' }).catch(() => {});
 }

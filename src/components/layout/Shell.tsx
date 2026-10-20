@@ -1,4 +1,5 @@
 "use client";
+import { coordinateTodoLogout } from '@/lib/schedule-todos/logout';
 import { PublicPageEntry, confirmPageContextSwitch as confirmUnsavedPageContextSwitch } from '@/components/squad-pages/entity-context';
 
 import { AlertsBellButton } from './AlertsBellButton';
@@ -646,8 +647,8 @@ function ShellContent({ children }: { children: React.ReactNode }) {
 
   if (!activeTeam && !user) return null;
 
-  const handleLogout = async () => {
-    if (!confirmPageContextSwitch()) return;
+  const performLogout = async (assertAuthority: () => void = () => {}) => {
+    assertAuthority();
     // Demo cleanup is an authentication-lifecycle operation. Profile flags can
     // legitimately remain on migrated beta accounts, so only Firebase's
     // anonymous identity may enter the destructive demo cleanup route.
@@ -663,10 +664,12 @@ function ShellContent({ children }: { children: React.ReactNode }) {
       // Anonymous demo accounts cannot own notification endpoints. The device
       // route intentionally rejects them, so let demo cleanup handle logout.
       if (authenticatedUserId && !isDemoLogout) {
+        assertAuthority();
         await deletePushDevice(authenticatedUserId).catch(error => {
           console.warn('[Logout] Notification cleanup was unavailable; continuing sign-out.', error);
         });
       }
+      assertAuthority();
       if (isDemoLogout) {
         const response = await fetch('/api/demo/exit', { method: 'POST' });
         if (!response.ok) {
@@ -674,10 +677,12 @@ function ShellContent({ children }: { children: React.ReactNode }) {
           throw new Error('Demo cleanup failed');
         }
       }
-      await clearBrowserSession();
+      assertAuthority();
+      await clearBrowserSession(assertAuthority);
+      assertAuthority();
       await signOut(auth);
       logoutCompleted = true;
-      router.push('/login');
+      if (!auth.currentUser) router.push('/login');
     } catch (error) {
       toast({ title: "Logout Failed", variant: "destructive" });
     } finally {
@@ -686,6 +691,14 @@ function ShellContent({ children }: { children: React.ReactNode }) {
         else if (demoCleanupRejectedBeforeMutation) cancelDemoExitPending();
       }
     }
+  };
+
+  const handleLogout = async () => {
+    if (!confirmPageContextSwitch()) return;
+    if (auth.currentUser?.isAnonymous === true) return performLogout();
+    if (process.env.NEXT_PUBLIC_SCHEDULE_TODOS_SYNC_ENABLED !== 'true') return performLogout();
+    try { await coordinateTodoLogout(auth, performLogout); }
+    catch (error) { toast({ title: 'Logout paused', description: error instanceof Error ? error.message : 'Review pending task edits before logout.', variant: 'destructive' }); }
   };
 
   const handleDeleteTeam = async () => {

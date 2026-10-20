@@ -1,0 +1,14 @@
+import type{Firestore,FieldPath}from'firebase-admin/firestore';
+import type{TodoStore,Meta,Receipt,Marker}from'./service';
+import type{CloudTodo}from'./model';
+import{isAccountAccessBlocked}from'@/lib/account-access-policy';
+import{TODO_RETENTION as P}from'./retention';
+/** Dependency injection lets isolated tests exercise these exact transaction paths. */
+export function createScheduleTodoStore(db:Firestore,documentId:()=>FieldPath):TodoStore{
+ return{run:(uid,work)=>db.runTransaction(async(transaction)=>{const root=db.collection('scheduleTodoAccounts').doc(uid),tasks=root.collection('tasks'),metadata=root.collection('metadata'),writes:Array<()=>void>=[];const result=await work({profile:async()=>{const s=await transaction.get(db.collection('users').doc(uid));return s.exists?s.data()!:null},meta:async()=>{const s=await transaction.get(root);return s.exists?s.data()as Meta:null},task:async id=>{const s=await transaction.get(tasks.doc(id));return s.exists?s.data()as CloudTodo:null},receipt:async(g,id)=>{const s=await transaction.get(metadata.doc(`g${g}_r_${id}`));return s.exists?s.data()as Receipt:null},marker:async(g,id)=>{const s=await transaction.get(metadata.doc(`g${g}_d_${id}`));return s.exists?s.data()as Marker:null},list:async(cursor,limit)=>{let q=tasks.orderBy(documentId()).limit(limit);if(cursor)q=q.startAfter(cursor);return(await transaction.get(q)).docs.map(d=>d.data()as CloudTodo)},setMeta:m=>writes.push(()=>transaction.set(root,m)),setTask:r=>writes.push(()=>transaction.set(tasks.doc(r.id),r)),deleteTask:id=>writes.push(()=>transaction.delete(tasks.doc(id))),setReceipt:(g,id,r)=>writes.push(()=>transaction.set(metadata.doc(`g${g}_r_${id}`),r)),setMarker:(g,id,r)=>writes.push(()=>transaction.set(metadata.doc(`g${g}_d_${id}`),r))});for(const write of writes)write();return result}),
+ cleanup:(uid,context)=>db.runTransaction(async(transaction)=>{const root=db.collection('scheduleTodoAccounts').doc(uid);const profile=await transaction.get(db.collection('users').doc(uid)),snapshot=await transaction.get(root);if(!profile.exists||isAccountAccessBlocked(profile.data())||!snapshot.exists)return 0;const m=snapshot.data()as Meta;if(m.protocol!==2||m.incarnation!==context.incarnation)return 0;
+ // Query is fenced by the CURRENT committed root, not a caller-provided epoch.
+ const rows=await transaction.get(root.collection('metadata').where('generation','<',m.generation).orderBy('generation').limit(P.cleanupBatch));for(const row of rows.docs)transaction.delete(row.ref);if(rows.size)transaction.set(root,{...m,totalMetadataCount:Math.max(m.metadataCount,m.totalMetadataCount-rows.size)});return rows.size;
+ })};
+}
+export async function scheduleTodoStore():Promise<TodoStore>{const{adminDb}=await import('@/lib/firebase-admin');const{FieldPath}=await import('firebase-admin/firestore');return createScheduleTodoStore(adminDb,FieldPath.documentId)}
