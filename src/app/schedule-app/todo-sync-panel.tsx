@@ -9,7 +9,7 @@ import { contextPrefix, type CloudTodo } from '@/lib/schedule-todos/model';
 type Box = ReturnType<typeof createTodoOutbox>;
 const newId = () => crypto.randomUUID();
 /** Separate cloud list: the device-only list is never silently uploaded/replaced. */
-export function TodoSyncPanel() {
+export function TodoSyncPanel({ onExitBlockedChange }: { onExitBlockedChange?: (blocked: boolean) => void } = {}) {
   const epoch = useRef(0);
   const operation = useRef<symbol | null>(null);
   const actor = useRef<User | null>(null);
@@ -22,6 +22,10 @@ export function TodoSyncPanel() {
   const [date, setDate] = useState('');
   const [review, setReview] = useState<{ uid: string; items: ReturnType<typeof loadScopedTodos> } | null>(null);
   const [confirmed, setConfirmed] = useState(false);
+  useEffect(() => {
+    onExitBlockedChange?.(busy || Boolean(text) || Boolean(date));
+  }, [busy, text, date, onExitBlockedChange]);
+  useEffect(() => () => onExitBlockedChange?.(false), [onExitBlockedChange]);
   useEffect(() => {
     let active = true;
     try {
@@ -62,9 +66,9 @@ export function TodoSyncPanel() {
       <button disabled={busy} onClick={() => void run(c => c.refresh(), 'Saved account tasks refreshed.')}>Refresh saved tasks</button>
       <button disabled={busy} onClick={() => void run(async c => { await c.flush(); }, 'Send finished. Review pending items and conflicts below.')}>Send pending</button>
       <button disabled={busy} onClick={() => void run(c => c.retryBlocked(), 'Blocked items queued again; Send pending to retry.')}>Retry blocked items</button>
-      <form onSubmit={e => { e.preventDefault(); void run(async c => { if(!view.context)throw Error('Refresh saved account tasks first.');const generation=epoch.current;await c.queue({ id: contextPrefix(view.context)+newId(), requestId: newId(), kind: 'create', expectedVersion: 0, fields: { text, dueDate: date, completed: false } }); if(epoch.current===generation)setText(''); }, 'New task queued on this browser.'); }}>
-        <label>New cloud task<input maxLength={500} required value={text} onChange={e => setText(e.target.value)} /></label>
-        <label>Due date<input type="date" required value={date} onChange={e => setDate(e.target.value)} /></label>
+      <form onSubmit={e => { e.preventDefault(); void run(async c => { if(!view.context)throw Error('Refresh saved account tasks first.');const generation=epoch.current;await c.queue({ id: contextPrefix(view.context)+newId(), requestId: newId(), kind: 'create', expectedVersion: 0, fields: { text, dueDate: date, completed: false } }); if(epoch.current===generation){setText('');setDate('');} }, 'New task queued on this browser.'); }}>
+        <label>New cloud task<input disabled={busy} maxLength={500} required value={text} onChange={e => setText(e.target.value)} /></label>
+        <label>Due date<input disabled={busy} type="date" required value={date} onChange={e => setDate(e.target.value)} /></label>
         <button disabled={busy}>Queue new task</button>
       </form>
       <button disabled={busy} onClick={() => void run(() => { const uid = actor.current!.uid; const items = loadScopedTodos(localStorage, uid); setReview({ uid, items }); setConfirmed(false); })}>Review this account’s device tasks for import</button>

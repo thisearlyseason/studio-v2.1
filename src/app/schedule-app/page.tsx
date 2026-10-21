@@ -4,6 +4,7 @@ import { syncFromFirestore, SyncEvent, SyncResult, watchScheduleUser } from './s
 import { loadScopedTodos, saveScopedTodos, type ScheduleTodo } from './storage';
 
 import { TodoSyncPanel } from './todo-sync-panel';
+import { verifyTasksBeforeExit } from './exit';
 
 const THEME_KEY = 'squad_schedule_theme';
 
@@ -57,8 +58,11 @@ export default function ScheduleApp() {
   const [installed, setInstalled] = useState(false);
   const [selectedEvent, setSelectedEvent] = useState<SyncEvent | null>(null);
   const [newText, setNewText] = useState('');
-  const [newDue, setNewDue] = useState(todayStr());
+  const defaultDue = useRef(todayStr());
+  const [newDue, setNewDue] = useState(defaultDue.current);
   const [addOpen, setAddOpen] = useState(false);
+  const [exitError, setExitError] = useState('');
+  const [cloudExitBlocked, setCloudExitBlocked] = useState(false);
   const textRef = useRef<HTMLInputElement>(null);
   const isIOS = typeof navigator !== 'undefined' && /iphone|ipad|ipod/i.test(navigator.userAgent);
 
@@ -139,7 +143,26 @@ export default function ScheduleApp() {
   const addTodo = () => {
     if (!storageUserId || !todosHydrated || !newText.trim()) return;
     setTodos(p => [...p, { id: genId(), text: newText.trim(), dueDate: newDue || todayStr(), completed: false, createdAt: new Date().toISOString() }]);
-    setNewText(''); setNewDue(todayStr()); setAddOpen(false);
+    setNewText(''); defaultDue.current = todayStr(); setNewDue(defaultDue.current); setAddOpen(false);
+  };
+
+  const leaveSchedule = (event: React.MouseEvent<HTMLAnchorElement>) => {
+    if (newText || newDue !== defaultDue.current || cloudExitBlocked) {
+      event.preventDefault();
+      setExitError('Finish or clear your unfinished task and wait for any current operation before returning. Nothing has been discarded.');
+      setTab('todos');
+      if (newText || newDue !== defaultDue.current) {
+        setAddOpen(true);
+        requestAnimationFrame(() => textRef.current?.focus());
+      }
+      return;
+    }
+    try {
+      if (storageUserId) verifyTasksBeforeExit(localStorage, storageUserId, todos);
+    } catch {
+      event.preventDefault();
+      setExitError('Device tasks are not confirmed saved. Stay here and review before leaving.');
+    }
   };
 
   const S = {
@@ -154,11 +177,17 @@ export default function ScheduleApp() {
 
   return (
     <div style={S.root}>
-      <style>{`@keyframes spin{to{transform:rotate(360deg)}} @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}`}</style>
+      <style>{`.schedule-exit:focus-visible{outline:3px solid ${RED};outline-offset:3px}@keyframes spin{to{transform:rotate(360deg)}} @keyframes pulse{0%,100%{opacity:1}50%{opacity:0.5}}`}</style>
       <div style={{ height: 'env(safe-area-inset-top)' }} />
 
       {/* Header */}
       <header style={S.header}>
+        <nav aria-label="Schedule navigation" style={{ maxWidth: 600, margin: '0 auto 8px' }}>
+          <a href="/dashboard" onClick={leaveSchedule} className="schedule-exit" aria-describedby={exitError ? 'schedule-exit-error' : undefined} style={{ display: 'inline-flex', alignItems: 'center', gap: 8, minHeight: 44, padding: '0 12px', border: `1px solid ${border}`, borderRadius: 12, color: text, fontSize: 14, fontWeight: 800, textDecoration: 'none' }}>
+            <span aria-hidden="true">←</span> Back to Squad
+          </a>
+          {exitError && <p id="schedule-exit-error" role="alert" style={{ margin: '8px 0 0', fontSize: 14 }}>{exitError}</p>}
+        </nav>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', maxWidth: 600, margin: '0 auto' }}>
           <div>
             <p style={{ fontSize: 10, fontWeight: 800, letterSpacing: '0.15em', textTransform: 'uppercase', color: RED, margin: 0 }}>{teamName || 'Squad'}</p>
@@ -279,9 +308,8 @@ export default function ScheduleApp() {
         )}
 
         {/* TODOS TAB */}
-        {tab === 'todos' && (
-          <div>
-            {process.env.NEXT_PUBLIC_SCHEDULE_TODOS_SYNC_ENABLED === 'true' && <TodoSyncPanel />} 
+          <div hidden={tab !== 'todos'}>
+            {process.env.NEXT_PUBLIC_SCHEDULE_TODOS_SYNC_ENABLED === 'true' && <TodoSyncPanel onExitBlockedChange={setCloudExitBlocked} />} 
             {!storageUserId && (
               <div style={{ ...S.card, marginBottom: 16 }}>
                 <p style={{ color: text }}>Sign in to keep a private task list on this device.</p>
@@ -346,7 +374,6 @@ export default function ScheduleApp() {
               </div>
             )}
           </div>
-        )}
       </main>
 
       {/* Event Detail Modal */}
