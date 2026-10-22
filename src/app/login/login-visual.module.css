@@ -1,0 +1,45 @@
+.page { position:relative; isolation:isolate; min-height:100svh; background:#141413; padding:24px clamp(16px,4vw,64px) 20px; overflow-x:clip; color:white; }
+.background { position:fixed; inset:0; z-index:-2; pointer-events:none; }
+.background img { width:100%; height:100%; object-fit:cover; object-position:30% 65%; }
+.overlay { position:fixed; inset:0; z-index:-1; pointer-events:none; background:linear-gradient(90deg,rgba(10,13,15,.67),rgba(10,13,15,.18) 55%,rgba(10,13,15,.42)),linear-gradient(0deg,rgba(10,13,15,.78),transparent 65%); }
+.homeNav,.brand,.layout,.footer { width:100%; max-width:1180px; margin-inline:auto; }
+.homeNav { position:relative; margin-bottom:12px; }
+.brand { display:flex; justify-content:flex-start; margin-bottom:24px; }
+.layout { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,440px); gap:24px 64px; align-items:center; }
+.story { align-self:start; padding-top:32px; text-shadow:0 2px 24px #0008; }
+.eyebrow { font-size:12px; font-weight:800; letter-spacing:.2em; text-transform:uppercase; margin-bottom:18px; }
+.headline { font-size:clamp(40px,5.6vw,76px); font-weight:900; letter-spacing:-.055em; line-height:1.02; max-width:620px; text-wrap:balance; }
+.headline span { color:#ffb4b4; }
+.caption { max-width:400px; font-size:16px; line-height:1.6; margin-top:24px; color:#fff; }
+.layout .card { width:100%; border-radius:28px; background:#fff; color:#171717; box-shadow:0 24px 80px #0005; backdrop-filter:none; animation:none; }
+.card > :first-child { padding-top:28px; padding-bottom:20px; }
+.card form > div { padding-left:28px; padding-right:28px; }
+.card form > div:last-child { padding-bottom:28px; }
+.card input { height:48px; min-height:48px; }
+.card form > div > * + * { margin-top:18px; }
+.card button[type="submit"] { height:52px; }
+.card button { min-height:44px; }
+.card label { color:#525252; }
+.demos { grid-column:2; width:100%; align-self:start; border:1px solid #ffffff50; border-radius:16px; background:#13171ee8; }
+.demos summary { padding:16px 20px; cursor:pointer; font-weight:700; font-size:14px; list-style:revert; }
+.demos summary:focus-visible { outline:3px solid #ffb170; outline-offset:4px; border-radius:12px; }
+.demoContent { padding:4px 12px 12px; }
+.demoContent > div:first-child { padding:20px; border-radius:16px; }
+.demoContent h3 { font-size:24px; }
+.demoContent > div:last-child { margin-top:12px; }
+.footer { position:relative; display:flex; justify-content:space-between; gap:12px; flex-wrap:wrap; padding-top:32px; font-size:11px; color:#f5f5f5; }
+.footer a { text-decoration:underline; text-underline-offset:3px; }
+.footer a:focus-visible { outline:2px solid #ffb170; outline-offset:4px; }
+@media (max-width:900px) { .page { padding-top:20px; } .brand { margin-bottom:20px; } .layout { grid-template-columns:minmax(0,440px); justify-content:center; gap:20px; } .story { padding-top:0; text-align:center; } .eyebrow { margin-bottom:12px; } .headline { font-size:40px; } .caption { display:none; } .demos { grid-column:1; } .overlay { background:linear-gradient(180deg,#0a0d0f99,#0a0d0f30 35%,#0a0d0fbb); } .footer { justify-content:center; text-align:center; padding-top:24px; } }
+@media (max-width:520px) { .brand { justify-content:center; } .headline { font-size:34px; } .eyebrow { font-size:10px; } .card form > div { padding-left:24px; padding-right:24px; } .background img { object-position:50% 50%; } .homeNav { margin-bottom:16px; } }
+@media (prefers-reduced-motion:reduce) { .page *, .page *::before, .page *::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; } }
+
+.demoContent button { height:auto; min-height:88px; padding:16px; white-space:normal; }
+.demoContent button > div { flex:1; min-width:0; gap:12px; }
+.demoContent button > div > div:first-child { flex-shrink:0; padding:12px; }
+.demoContent button > div > div:last-child { min-width:0; }
+.demoContent button p { white-space:normal; overflow-wrap:anywhere; }
+
+.demos { background:#13171e; }
+.demoContent button p:last-child { color:#e5e7eb; }
+.demoContent > div:first-child p { color:#fff; }

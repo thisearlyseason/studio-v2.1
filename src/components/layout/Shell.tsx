@@ -1,11 +1,13 @@
 "use client";
+import { coordinateTodoLogout } from '@/lib/schedule-todos/logout';
+import { PublicPageEntry, confirmPageContextSwitch as confirmUnsavedPageContextSwitch } from '@/components/squad-pages/entity-context';
+
+import { AlertsBellButton } from './AlertsBellButton';
 
 import '@/components/team-home/modern-team-home.css';
-
-
 import React, { useState, useEffect, memo, useMemo, useRef } from 'react';
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { NavigationFeedback, NavigationLink as Link, useNavigationRouter, useNavigationAllowed } from './navigation-feedback';
+import { usePathname } from 'next/navigation';
 import { 
   LayoutDashboard, 
   CalendarDays, 
@@ -15,7 +17,6 @@ import {
   ChevronDown,
   PlusCircle,
   Trophy,
-  Bell,
   Lock,
   Dumbbell,
   CreditCard,
@@ -83,7 +84,8 @@ import {
   SidebarMenuItem, 
   SidebarProvider,
   SidebarSeparator,
-  SidebarTrigger
+  SidebarTrigger,
+  useSidebar
 } from "@/components/ui/sidebar";
 import {
   Sheet,
@@ -123,6 +125,12 @@ import { cancelDemoExitPending, clearBrowserSession, clearDemoExitPending, markD
 import { deletePushDevice } from '@/lib/client-push-registration';
 import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
 import { isStoreDistribution } from '@/lib/app-distribution';
+// Check before confirmation or context mutation, including Radix portal menus.
+function usePageContextSwitch() {
+  const canNavigate = useNavigationAllowed();
+  return (targetTeamId?: string | null) => canNavigate() && confirmUnsavedPageContextSwitch(targetTeamId);
+}
+
 
 const SidebarItem = memo(({ tab, isActive, isLocked }: { tab: any, isActive: boolean, isLocked: boolean }) => {
   const Icon = tab.icon;
@@ -167,6 +175,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
   isSchoolMode?: boolean; isPrimaryClubAuthority?: boolean; isEliteAccount?: boolean; isEliteClubMode?: boolean;
   onClose?: () => void;
 }) {
+  const confirmPageContextSwitch = usePageContextSwitch();
   const primarySchoolTeam = isSchoolMode ? teams.find(t => t.type === 'school') : null;
   const squadList = isSchoolMode ? teams.filter(t => t.type !== 'school') : teams;
 
@@ -260,7 +269,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                 subtitle={user?.institutionTitle || 'Athletic Director'}
                 initial={(user?.schoolName || user?.clubName || primarySchoolTeam.name || 'S')[0]}
                 isActive={activeTeam?.type === 'school'}
-                onClick={() => { setActiveTeam(primarySchoolTeam); router.push('/club'); onClose?.(); }}
+                onClick={() => { if (!confirmPageContextSwitch(primarySchoolTeam.id)) return; setActiveTeam(primarySchoolTeam); router.push('/club'); onClose?.(); }}
                 variant="school"
               />
             </>
@@ -275,22 +284,22 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                   key={team.id}
                   team={team}
                   isActive={activeTeam?.id === team.id && activeTeam?.type !== 'school'}
-                  onClick={() => { setActiveTeam(team); router.push('/dashboard'); onClose?.(); }}
+                  onClick={() => { if (!confirmPageContextSwitch(team.id)) return; setActiveTeam(team); router.push('/dashboard'); onClose?.(); }}
                 />
               ))
             }
           </div>
           <DropdownMenuSeparator className="my-1.5" />
           {isPrimaryClubAuthority && (
-            <DropdownMenuItem onClick={() => router.push('/club')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all">
+            <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/club'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all">
               <Building className="h-3.5 w-3.5" /> School Hub
             </DropdownMenuItem>
           )}
           <DropdownMenuSeparator className="my-1.5" />
-          <DropdownMenuItem onClick={() => router.push('/team')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+          <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/team'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
             <Settings className="h-3.5 w-3.5 text-primary" /> View Team Profile
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push('/teams/join')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+          <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/teams/join'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
             <UserPlus className="h-3.5 w-3.5 text-primary" /> Portals
           </DropdownMenuItem>
         </>
@@ -305,7 +314,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                 subtitle={user?.institutionTitle || 'Club Organizer'}
                 initial={(user?.clubName || user?.schoolName || 'E')[0]}
                 isActive={!activeTeam}
-                onClick={() => { setActiveTeam(null); router.push('/club'); onClose?.(); }}
+                onClick={() => { if (!confirmPageContextSwitch(null)) return; setActiveTeam(null); router.push('/club'); onClose?.(); }}
                 variant="elite"
               />
               <DropdownMenuSeparator className="my-1.5" />
@@ -319,13 +328,13 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                       team={team}
                       isActive={activeTeam?.id === team.id}
                       tierOverride={squadTier(team, true)}
-                      onClick={() => { setActiveTeam(team); router.push('/dashboard'); onClose?.(); }}
+                      onClick={() => { if (!confirmPageContextSwitch(team.id)) return; setActiveTeam(team); router.push('/dashboard'); onClose?.(); }}
                     />
                   ))
                 }
               </div>
               <DropdownMenuSeparator className="my-1.5" />
-              <DropdownMenuItem onClick={() => router.push('/club')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all">
+              <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/club'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all">
                 <Building className="h-3.5 w-3.5" /> Club Hub
               </DropdownMenuItem>
               <DropdownMenuSeparator className="my-1.5" />
@@ -339,7 +348,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                     key={team.id}
                     team={team}
                     isActive={activeTeam?.id === team.id}
-                    onClick={() => { setActiveTeam(team); onClose?.(); }}
+                    onClick={() => { if (!confirmPageContextSwitch(team.id)) return; setActiveTeam(team); onClose?.(); }}
                   />
                 ))}
               </div>
@@ -355,7 +364,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                     team={team}
                     isActive={activeTeam?.id === team.id}
                     tierOverride={squadTier(team, true)}
-                    onClick={() => { setActiveTeam(team); onClose?.(); }}
+                    onClick={() => { if (!confirmPageContextSwitch(team.id)) return; setActiveTeam(team); onClose?.(); }}
                   />
                 ))}
               </div>
@@ -364,17 +373,17 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
           )}
 
           {/* Footer — always visible */}
-          <DropdownMenuItem onClick={() => router.push('/team')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+          <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/team'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
             <Settings className="h-3.5 w-3.5 text-primary" /> View Team Profile
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push('/teams/join')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+          <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/teams/join'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
             <UserPlus className="h-3.5 w-3.5 text-primary" /> Portals
           </DropdownMenuItem>
           <DropdownMenuSeparator className="my-1.5" />
-          <DropdownMenuItem onClick={() => router.push('/teams/new?tier=starter')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+          <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/teams/new?tier=starter'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
             <PlusCircle className="h-3.5 w-3.5 text-primary" /> Create Free Team
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push('/teams/new?tier=pro')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+          <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/teams/new?tier=pro'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
             <Zap className="h-3.5 w-3.5 text-amber-500" /> Create Pro Team
           </DropdownMenuItem>
         </>
@@ -384,9 +393,21 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
 }
 
 
-export default function Shell({ children }: { children: React.ReactNode }) {
+function SidebarRouteClose() {
   const pathname = usePathname();
-  const router = useRouter();
+  const { setOpenMobile } = useSidebar();
+  useEffect(() => { setOpenMobile(false); }, [pathname, setOpenMobile]);
+  return null;
+}
+
+export default function Shell({ children }: { children: React.ReactNode }) {
+  return <NavigationFeedback><ShellContent>{children}</ShellContent></NavigationFeedback>;
+}
+
+function ShellContent({ children }: { children: React.ReactNode }) {
+  const confirmPageContextSwitch = usePageContextSwitch();
+  const pathname = usePathname();
+  const router = useNavigationRouter();
   const { 
     activeTeam, setActiveTeam, teams, user, isPro, 
     isPrimaryClubAuthority, isStaff, isParent, isPlayer, hasFeature, alerts,
@@ -555,7 +576,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   if (!activeTeam && !user) return null;
 
-  const handleLogout = async () => {
+  const performLogout = async (assertAuthority: () => void = () => {}) => {
+    assertAuthority();
     // Demo cleanup is an authentication-lifecycle operation. Profile flags can
     // legitimately remain on migrated beta accounts, so only Firebase's
     // anonymous identity may enter the destructive demo cleanup route.
@@ -571,10 +593,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       // Anonymous demo accounts cannot own notification endpoints. The device
       // route intentionally rejects them, so let demo cleanup handle logout.
       if (authenticatedUserId && !isDemoLogout) {
+        assertAuthority();
         await deletePushDevice(authenticatedUserId).catch(error => {
           console.warn('[Logout] Notification cleanup was unavailable; continuing sign-out.', error);
         });
       }
+      assertAuthority();
       if (isDemoLogout) {
         const response = await fetch('/api/demo/exit', { method: 'POST' });
         if (!response.ok) {
@@ -582,10 +606,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           throw new Error('Demo cleanup failed');
         }
       }
-      await clearBrowserSession();
+      assertAuthority();
+      await clearBrowserSession(assertAuthority);
+      assertAuthority();
       await signOut(auth);
       logoutCompleted = true;
-      router.push('/login');
+      if (!auth.currentUser) router.push('/login');
     } catch (error) {
       toast({ title: "Logout Failed", variant: "destructive" });
     } finally {
@@ -594,6 +620,14 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         else if (demoCleanupRejectedBeforeMutation) cancelDemoExitPending();
       }
     }
+  };
+
+  const handleLogout = async () => {
+    if (!confirmPageContextSwitch()) return;
+    if (auth.currentUser?.isAnonymous === true) return performLogout();
+    if (process.env.NEXT_PUBLIC_SCHEDULE_TODOS_SYNC_ENABLED !== 'true') return performLogout();
+    try { await coordinateTodoLogout(auth, performLogout); }
+    catch (error) { toast({ title: 'Logout paused', description: error instanceof Error ? error.message : 'Review pending task edits before logout.', variant: 'destructive' }); }
   };
 
   const handleDeleteTeam = async () => {
@@ -608,11 +642,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <SidebarProvider className={cn("relative h-full min-h-0", isModernLayout && "modern-app")}>
+    <SidebarProvider mobileBreakpoint={1280} style={{ "--sidebar-width": "18rem" } as React.CSSProperties} className={cn("relative h-full min-h-0", isModernLayout && "modern-app")}>
+      <SidebarRouteClose />
       <div className="modern-shell-frame flex flex-col h-full w-full bg-background selection:bg-primary/20">
         <div className="flex min-h-0 flex-1 overflow-hidden">
           {!isModernLayout && <Sidebar
-            className="absolute inset-y-0 h-full border-r bg-white w-72 shrink-0 shadow-sm **:data-[sidebar=sidebar]:overflow-y-auto **:data-[sidebar=sidebar]:overscroll-contain **:data-[sidebar=sidebar]:touch-pan-y"
+            className="absolute inset-y-0 h-full border-r bg-white shrink-0 shadow-sm **:data-[sidebar=sidebar]:overflow-y-auto **:data-[sidebar=sidebar]:overscroll-contain **:data-[sidebar=sidebar]:touch-pan-y"
             collapsible="offcanvas"
           >
             <SidebarHeader className="shrink-0 p-6 bg-white">
@@ -786,6 +821,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             </SidebarHeader>
 
             <SidebarContent className="flex-none overflow-visible px-4 py-2 bg-white">
+              {(isStaff || isPrimaryClubAuthority || isSuperAdmin) && <PublicPageEntry className="mb-4 w-full" />}
               {/* School institution mode OR Elite Hub mode: hide all nav items */}
               {(!isSchoolInstitutionMode && !isEliteHubMode) && (
                 <SidebarMenu className="space-y-6">
@@ -926,7 +962,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   </DropdownMenuContent></DropdownMenu>
                 {((isSchoolMode && isPrimaryClubAuthority) || isEliteClubMode) && <Link href="/club" className="modern-header-hub">{isSchoolMode ? 'School Hub' : 'Club Hub'}</Link>}</nav>
               </div> : <div className="flex items-center gap-4">
-                <div className="md:hidden h-10 w-10" aria-hidden="true" />
+                <SidebarTrigger className="h-11 w-11 shrink-0" />
                 <div className="hidden md:block">
                   <h2 className="text-xl lg:text-2xl font-black uppercase tracking-tighter text-foreground">
                     {user?.role === 'league_creator' && pathname === '/competition' ? 'Competition Hub' :
@@ -942,19 +978,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
               <div className="flex items-center gap-2 md:gap-3">
                 {isStaff && <CreateAlertButton />}
                 <AlertsHistoryDialog>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Open alerts${unreadAlertsCount > 0 ? `, ${unreadAlertsCount} unread` : ''}`}
-                    className="h-10 w-10 md:h-11 md:w-11 rounded-2xl hover:bg-primary/5 text-foreground relative transition-all active:scale-95"
-                  >
-                    <Bell className="h-5 w-5" />
-                    {unreadAlertsCount > 0 && (
-                      <span className="absolute top-1 right-1 h-4 w-4 bg-primary text-[8px] font-black text-white rounded-full border-2 border-background flex items-center justify-center animate-pulse shadow-[0_0_10px_rgba(255,0,0,0.5)]">
-                        {unreadAlertsCount}
-                      </span>
-                    )}
-                  </Button>
+                  <AlertsBellButton unreadCount={unreadAlertsCount} />
                 </AlertsHistoryDialog>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
@@ -990,17 +1014,17 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     
                     <DropdownMenuSeparator className="my-1 mx-2" />
                     
-                    <DropdownMenuItem onClick={() => router.push('/settings')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+                    <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/settings'); }} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
                       <User className="h-4 w-4 text-primary" /> Profile Settings
                     </DropdownMenuItem>
 
                     {isSuperAdmin && (
-                      <DropdownMenuItem onClick={() => router.push('/admin')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest text-primary focus:text-primary">
+                      <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/admin'); }} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest text-primary focus:text-primary">
                         <ShieldCheck className="h-4 w-4" /> Go to Admin Page
                       </DropdownMenuItem>
                     )}
                     
-                    <DropdownMenuItem onClick={() => router.push('/how-to')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+                    <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/how-to'); }} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
                       <BookOpen className="h-4 w-4 text-primary" /> Help Guide
                     </DropdownMenuItem>
 
@@ -1150,6 +1174,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     </SheetHeader>
                     <ScrollArea className="flex-1 px-6 pb-10">
                       <div className="space-y-6 pt-2">
+                        {(isStaff || isPrimaryClubAuthority || isSuperAdmin) && <PublicPageEntry className="w-full" onNavigate={() => setIsMoreMenuOpen(false)} />}
 
                         {/* ── INSTITUTION AUTHORITY BLOCK ─────────────────────────────────
                              Always shown when user is a school admin or elite club organizer,
@@ -1158,7 +1183,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                           <div className="space-y-2">
                             {/* Hub link — clears activeTeam so hub shows in institution mode */}
                             <button
-                              onClick={() => { setActiveTeam(null as any); router.push('/club'); setIsMoreMenuOpen(false); }}
+                              onClick={() => { if (!confirmPageContextSwitch(null)) return; setActiveTeam(null as any); router.push('/club'); setIsMoreMenuOpen(false); }}
                               className={cn(
                                 "w-full flex items-center justify-between p-4 rounded-2xl border bg-primary text-white transition-all active:scale-[0.98]",
                                 pathname === '/club' ? "ring-2 ring-white ring-offset-2 ring-offset-primary" : ""

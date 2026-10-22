@@ -3,6 +3,8 @@ import { readFile } from 'node:fs/promises';
 import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import vm from 'node:vm';
+import { createRequire } from 'node:module';
+import { transform } from 'esbuild';
 import sharp from 'sharp';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
@@ -90,12 +92,14 @@ test('landing install action stays legible on transparent and scrolled navigatio
 
 test('root application registers The Squad service worker without orphaning legacy Schedule installs', async () => {
   const layout = await source('../src/app/layout.tsx');
+  const boundary = await source('../src/components/squad-pages/route-boundary.tsx');
   const scheduleLayout = await source('../src/app/schedule-app/layout.tsx');
   const registration = await source('../src/components/pwa/AppServiceWorkerRegistration.tsx');
   const registrationHelper = await source('../src/lib/service-worker-registration.ts');
   const manifest = JSON.parse(await source('../public/manifest.json'));
   const scheduleManifest = JSON.parse(await source('../public/schedule-manifest.json'));
-  assert.match(layout, /AppServiceWorkerRegistration/);
+  assert.match(layout, /<SquadPageBoundary>/);
+  assert.match(boundary, /AppServiceWorkerRegistration/);
   assert.match(registration, /registerPrimaryServiceWorker/);
   assert.match(registrationHelper, /navigator\.serviceWorker\.register\('\/sw\.js', \{[\s\S]*scope: '\/'/);
   assert.equal(manifest.name, 'The Squad');
@@ -110,6 +114,42 @@ test('root application registers The Squad service worker without orphaning lega
   assert.notEqual(scheduleManifest.id, manifest.id);
   assert.match(scheduleLayout, /manifest: '\/schedule-manifest\.json'/);
   assert.match(scheduleLayout, /appleWebApp:\s*\{[\s\S]*?title: 'The Squad Scheduler'/);
+});
+
+test('root route boundary preserves application PWA registration and isolates enabled public pages', async () => {
+  const code = (await transform(await source('../src/components/squad-pages/route-boundary.tsx'), {
+    loader: 'tsx', format: 'cjs', jsx: 'automatic',
+  })).code;
+  const require = createRequire(import.meta.url);
+  for (const flag of [undefined, 'false', 'true']) {
+    for (const pathname of ['/dashboard', '/schedule-app', '/login', '/p/fictional-page', '/squad-pages']) {
+      const marker = name => function BoundaryMarker({ children }) {
+        return React.createElement('div', { 'data-boundary': name }, children);
+      };
+      const dependencies = {
+        'next/navigation': { usePathname: () => pathname },
+        '@/components/providers/team-provider': { TeamProvider: marker('team') },
+        '@/components/pwa/AppServiceWorkerRegistration': { AppServiceWorkerRegistration: marker('service-worker') },
+        '@/components/BugReporter': { __esModule: true, default: marker('bug-reporter') },
+        './entity-context': { PageEntityProvider: marker('entity') },
+        '@/components/ui/toaster': { Toaster: marker('toaster') },
+      };
+      const loadedModule = { exports: {} };
+      vm.runInNewContext(code, {
+        module: loadedModule, exports: loadedModule.exports,
+        require: name => dependencies[name] || require(name),
+        process: { env: { NEXT_PUBLIC_SQUAD_PAGES_ENABLED: flag } },
+      });
+      const html = renderToStaticMarkup(React.createElement(loadedModule.exports.SquadPageBoundary, null, 'Owned child'));
+      const isolated = flag === 'true' && (pathname.startsWith('/p/') || pathname === '/squad-pages');
+      assert.equal(html.includes('data-boundary="service-worker"'), !isolated, `${flag}:${pathname}`);
+      assert.equal(html.includes('data-boundary="team"'), !isolated, `${flag}:${pathname}`);
+      assert.equal(html.includes('data-boundary="entity"'), !isolated, `${flag}:${pathname}`);
+      assert.equal(html.includes('data-boundary="bug-reporter"'), !isolated, `${flag}:${pathname}`);
+      assert.equal((html.match(/data-boundary="toaster"/g) || []).length, 1);
+      assert.match(html, /Owned child/);
+    }
+  }
 });
 
 test('worker never caches authenticated dashboard HTML', async () => {

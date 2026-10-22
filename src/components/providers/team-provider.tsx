@@ -7,7 +7,7 @@ import { clearBrowserSession, DEMO_EXIT_PENDING_KEY, getAuthToken, authHeader } 
 import { leagueResolutionCommand, sendLeagueScoringCommand } from '@/lib/public-league-scoring';
 import {libraryDataUrlBlob} from '@/lib/library-client-upload';
 import { fetchAlertHistory } from '@/lib/client-alert-history';
-import { isAlertRelevantToRecipient } from '@/lib/alert-audience';
+import { alertRecipientForMembership, isAlertRelevantToRecipient } from '@/lib/alert-audience';
 import { isBillableSquadSeat } from '@/lib/team-seat-policy';
 import { calculateHouseholdPayments, type HouseholdPayment } from '@/lib/household-payments';
 import { hasStaffRole } from '@/lib/staff-position';
@@ -1092,24 +1092,27 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   const [activeTeamId, setManualActiveTeamId] = useState<string | null>(null);
   const [userProfile, setUserProfile] = useState<UserProfile | null>(null);
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
-  const [userRole, setUserRole] = useState<string | null>(null);
+  const [roleResolution, setRoleResolution] = useState<{ uid: string; role: string | null } | null>(null);
+  const userRole = firebaseUser && roleResolution?.uid === firebaseUser.uid ? roleResolution.role : null;
   const [claimedSchoolAdminForUid, setClaimedSchoolAdminForUid] = useState<string | null>(null);
   const pushRegistrationAttemptedForUid = useRef<string | null>(null);
   const pushRegistrationInFlightForUid = useRef<string | null>(null);
 
   useEffect(() => {
-    if (!firebaseUser) {
-      setUserRole(null);
-      return;
-    }
+    let cancelled = false;
+    setRoleResolution(null);
+    if (!firebaseUser) return;
+    const uid = firebaseUser.uid;
     firebaseUser.getIdTokenResult()
       .then((tokenResult: any) => {
-        setUserRole((tokenResult.claims.role as string) || null);
+        if (!cancelled) setRoleResolution({ uid, role: (tokenResult.claims.role as string) || null });
       })
       .catch((err: any) => {
+        if (cancelled) return;
         console.error('Error fetching ID token result:', err);
-        setUserRole(null);
+        setRoleResolution({ uid, role: null });
       });
+    return () => { cancelled = true; };
   }, [firebaseUser]);
 
   useEffect(() => {
@@ -1327,6 +1330,14 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     // --- Default: first available team ---
     return teamsRaw[0] || null;
   }, [teamsRaw, activeTeamId]);
+
+  // A newly selected team's membership can arrive after the selection. Restore
+  // persistence only once that requested ID is confirmed in this user's teams.
+  useEffect(() => {
+    if (activeTeamId && activeTeamMembership?.id === activeTeamId) {
+      localStorage.setItem('sf_session_team_id', activeTeamId);
+    }
+  }, [activeTeamId, activeTeamMembership?.id]);
   const activeTeamDocRef = useMemoFirebase(() => (isAuthResolved && firebaseUser && db && activeTeamMembership?.id) ? doc(db, 'teams', activeTeamMembership.id) : null, [isAuthResolved, firebaseUser, db, activeTeamMembership?.id]);
   const { data: activeTeamDoc, isLoading: isActiveTeamDocLoading } = useDoc<Team>(activeTeamDocRef);
 
@@ -1587,12 +1598,15 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   // Every alert surface receives this same audience-filtered collection.
   // This prevents a badge for broadcasts that the inbox must not disclose.
-  const alerts = useMemo(() => allAlerts.filter(alert => isAlertRelevantToRecipient(alert, {
-    userId: firebaseUser?.uid,
-    isStaff,
-    isPlayer,
-    isParent,
-  })), [allAlerts, firebaseUser?.uid, isStaff, isPlayer, isParent]);
+  const alerts = useMemo(() => {
+    const recipient = alertRecipientForMembership({
+      userId: firebaseUser?.uid,
+      isStaff,
+      profileRole: userProfile?.role,
+      member: getMember(firebaseUser?.uid),
+    });
+    return allAlerts.filter(alert => isAlertRelevantToRecipient(alert, recipient));
+  }, [allAlerts, firebaseUser?.uid, isStaff, userProfile?.role, getMember]);
   const unreadAlertsCount = useMemo(
     () => alerts.filter(alert => !seenAlertIds.includes(alert.id)).length,
     [alerts, seenAlertIds],
@@ -2054,7 +2068,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     // Paid subscriptions may automatically allocate one available seat to a
     // newly created squad. The API derives eligibility and capacity server-side.
     const paidPlanTypes = new Set(['team', 'elite', 'league', 'school', 'squad_pro', 'squad_pro_demo']);
-    if (paidPlanTypes.has((userProfile as any).plan_type) && proQuotaStatus.remaining > 0 && firebaseAuth) {
+    if (planId !== 'free' && paidPlanTypes.has((userProfile as any).plan_type) && proQuotaStatus.remaining > 0 && firebaseAuth) {
       try {
         const token = await getAuthToken(firebaseAuth);
         const allocationResponse = await fetch('/api/teams/allocate-pro', {
@@ -2072,23 +2086,27 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
 
 
-    // Identity sweep: If the user has a name/avatar, update all their memberships to match
-    try {
-      const allMemberships = await getDocs(query(collectionGroup(db, 'members'), where('userId', '==', firebaseUser.uid)));
-      if (!allMemberships.empty) {
-        const sweepBatch = writeBatch(db);
-        let hasUpdates = false;
-        allMemberships.docs.forEach(mDoc => {
-          const mData = mDoc.data();
-          if (mData.name !== userProfile.name || mData.avatar !== userProfile.avatar) {
-            sweepBatch.update(mDoc.ref, { name: userProfile.name, avatar: userProfile.avatar });
-            hasUpdates = true;
-          }
-        });
-        if (hasUpdates) await sweepBatch.commit();
+    // Starter creation must not rewrite memberships on unrelated teams.
+    // Paid and legacy callers retain their existing identity synchronization.
+    if (planId !== 'free') {
+      // Identity sweep: If the user has a name/avatar, update all their memberships to match
+      try {
+        const allMemberships = await getDocs(query(collectionGroup(db, 'members'), where('userId', '==', firebaseUser.uid)));
+        if (!allMemberships.empty) {
+          const sweepBatch = writeBatch(db);
+          let hasUpdates = false;
+          allMemberships.docs.forEach(mDoc => {
+            const mData = mDoc.data();
+            if (mData.name !== userProfile.name || mData.avatar !== userProfile.avatar) {
+              sweepBatch.update(mDoc.ref, { name: userProfile.name, avatar: userProfile.avatar });
+              hasUpdates = true;
+            }
+          });
+          if (hasUpdates) await sweepBatch.commit();
+        }
+      } catch (e) {
+        console.warn("Identity sweep partial failure:", e);
       }
-    } catch (e) {
-      console.warn("Identity sweep partial failure:", e);
     }
 
     toast({ title: "Team Created Successfully!", description: `Your new ${type.replace('_', ' ')} "${name}" is ready.` });

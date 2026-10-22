@@ -1,10 +1,12 @@
 "use client";
 
+import { authFailureMessage } from '@/lib/auth-form-feedback';
 import { PasswordInput } from '@/components/ui/password-input';
 
 
 
 import React, { useState } from 'react';
+import { flushSync } from 'react-dom';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -17,7 +19,7 @@ import { doc, getDoc, updateDoc } from 'firebase/firestore';
 import { signInWithEmailAndPassword, signInAnonymously, signOut, signInWithPopup, GoogleAuthProvider, sendPasswordResetEmail, browserPopupRedirectResolver } from 'firebase/auth';
 import { toast } from '@/hooks/use-toast';
 import BrandLogo from '@/components/BrandLogo';
-import Image from 'next/image';
+import styles from './login-visual.module.css';
 import { Trophy, Users, Zap, Loader2, User, Baby, ChevronRight, ChevronLeft, ShieldAlert, GraduationCap, } from 'lucide-react';
 import { bootstrapDemoWorkspace, clearBrowserSession, establishBrowserSession } from '@/lib/client-auth';
 import { APP_DISTRIBUTION, isStoreDistribution, safeReturnPath } from '@/lib/app-distribution';
@@ -36,13 +38,18 @@ function withTimeout<T>(promise: Promise<T>, milliseconds: number, message: stri
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [formError, setFormError] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
+  const emailLoginPending = React.useRef(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isDemoLoading, setIsDemoLoading] = useState(false);
   const [forgotMode, setForgotMode] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotSent, setForgotSent] = useState(false);
   const [forgotLoading, setForgotLoading] = useState(false);
+  const [resetError, setResetError] = useState('');
+  const resetPending = React.useRef(false);
   const nativeBusy = React.useSyncExternalStore(nativeBrowserAuthGate.subscribe, nativeBrowserAuthGate.busy, () => false);
   const nativeSessionVerified = React.useRef(false);
 
@@ -56,6 +63,7 @@ export default function LoginPage() {
   const router = useRouter();
 
   React.useEffect(() => {
+    setIsHydrated(true);
     const returnTo = new URLSearchParams(window.location.search).get('returnTo');
     if (returnTo) {
       sessionStorage.setItem('squad_return_path', safeReturnPath(returnTo, APP_DISTRIBUTION));
@@ -79,7 +87,10 @@ export default function LoginPage() {
         } catch {
           await clearBrowserSession();
           await signOut(auth).catch(() => undefined);
+          emailLoginPending.current = false;
           setIsLoading(false);
+          setIsGoogleLoading(false);
+          setFormError('Your login could not be secured. Please try again.');
           toast({
             title: 'Session Setup Failed',
             description: 'Your login could not be secured. Please try again.',
@@ -117,37 +128,56 @@ export default function LoginPage() {
           }
         } catch (e) {
           router.push('/onboarding');
-        } finally {
-          setIsLoading(false);
         }
+        // Keep feedback active until navigation unmounts this page.
       };
       fetchRole();
     }
   }, [user, isUserLoading, db, router, auth, isDemoLoading, nativeBusy]);
 
-  const handleLogin = async (e: React.FormEvent) => {
+  const handleLogin = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (nativeBrowserAuthGate.busy()) return;
-    setIsLoading(true);
+    if (!isHydrated || emailLoginPending.current || isLoading || isDemoLoading || nativeBrowserAuthGate.busy()) return;
+    if (!e.currentTarget.checkValidity()) {
+      e.currentTarget.reportValidity();
+      return;
+    }
+    // Read the submitted DOM values as browsers/password managers can autofill
+    // without updating React state before submitting.
+    const submittedEmail = (e.currentTarget.elements.namedItem('email') as HTMLInputElement).value;
+    const submittedPassword = (e.currentTarget.elements.namedItem('password') as HTMLInputElement).value;
+    // Lock synchronously: a second submit can arrive before React renders.
+    setFormError('');
+    emailLoginPending.current = true;
+    flushSync(() => setIsLoading(true));
     try {
-      await withTimeout(
-        signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password),
-        15000,
-        'Login request timed out. Check your connection and try again.',
-      );
+      // A synchronous commit updates the DOM, but the browser still needs a
+      // rendering opportunity before SDK work or a native account sheet starts.
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      // Firebase owns the request timeout. Racing its promise here would unlock
+      // retries while the original sign-in could still authenticate later.
+      await signInWithEmailAndPassword(auth, submittedEmail.trim().toLowerCase(), submittedPassword);
     } catch (error: any) {
+      const message = authFailureMessage(error);
+      setFormError(message);
       toast({
         title: "Login Failed",
-        description: "The email or password is incorrect, or this account is unavailable.",
+        description: message,
         variant: "destructive",
       });
-    } finally {
+      emailLoginPending.current = false;
       setIsLoading(false);
     }
+    // Firebase success starts session/profile setup in the user effect above.
+    // Releasing here creates an enabled, idle-looking form during that work.
   };
 
   const handleGoogleLogin = async () => {
-    setIsLoading(true);
+    if (emailLoginPending.current || nativeBrowserAuthGate.busy()) return;
+    emailLoginPending.current = true;
+    setFormError('');
+    flushSync(() => setIsLoading(true));
+    let signedIn = false;
     setIsGoogleLoading(true);
     try {
       const provider = new GoogleAuthProvider();
@@ -158,31 +188,36 @@ export default function LoginPage() {
       // reports cancellation/network failures; a request timer cannot safely
       // cancel the popup and would falsely fail a still-active sign-in.
       await signInWithPopup(auth, provider, browserPopupRedirectResolver);
+      signedIn = true;
     } catch (error: any) {
       if (error.code === 'auth/popup-closed-by-user' || error.code === 'auth/cancelled-popup-request') return;
-      toast({
-        title: "Google Login Failed",
-        description: error.code === 'auth/popup-blocked'
+      const message = error.code === 'auth/popup-blocked'
           ? 'Allow pop-ups for The Squad in your browser, then try again.'
           : error.code === 'auth/network-request-failed'
             ? 'Check your connection, then try signing in with Google again.'
-            : 'Could not sign in with Google. Please try again or use your email and password.',
-        variant: "destructive",
-      });
+            : 'Could not sign in with Google. Please try again or use your email and password.';
+      setFormError(message);
+      toast({ title: "Google Login Failed", description: message, variant: "destructive" });
     } finally {
-      setIsLoading(false);
-      setIsGoogleLoading(false);
+      if (!signedIn) {
+        emailLoginPending.current = false;
+        setIsLoading(false);
+        setIsGoogleLoading(false);
+      }
     }
   };
 
-  const handleForgotPassword = async (e: React.FormEvent) => {
+  const handleForgotPassword = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    const target = (forgotEmail || email).trim();
+    if (resetPending.current) return;
+    setResetError('');
+    const target = (e.currentTarget.elements.namedItem('resetEmail') as HTMLInputElement).value.trim();
     if (!target) {
       toast({ title: "Email Required", description: "Enter the email address tied to your account.", variant: "destructive" });
       return;
     }
-    setForgotLoading(true);
+    resetPending.current = true;
+    flushSync(() => setForgotLoading(true));
     try {
       // Use our branded Resend email instead of Firebase's default template
       const res = await fetch('/api/email/reset-password', {
@@ -196,8 +231,9 @@ export default function LoginPage() {
       }
       setForgotSent(true);
     } catch (error: any) {
-      toast({ title: "Reset Failed", description: error.message || "Could not send reset email. Try again.", variant: "destructive" });
+      setResetError("Reset request could not be completed. Check your connection and try again.");
     } finally {
+      resetPending.current = false;
       setForgotLoading(false);
     }
   };
@@ -245,20 +281,17 @@ export default function LoginPage() {
   ];
 
   return (
-    <div className="flex flex-col items-center justify-start lg:justify-center min-h-screen bg-black p-4 sm:p-6 relative overflow-y-auto overflow-x-hidden">
-      <div className="absolute inset-0 w-full h-full">
-        <Image 
-          src="https://images.unsplash.com/photo-1540747913346-19e32dc3e97e?auto=format&fit=crop&q=80&w=1600" 
-          alt="Stadium Atmosphere" 
-          fill
-          className="object-cover opacity-50 animate-in fade-in duration-1000"
-          data-ai-hint="stadium lights"
-          priority
-        />
+    <div className={styles.page}>
+      <div className={styles.background} aria-hidden="true">
+        <picture>
+          <source media="(max-width: 520px)" srcSet="/images/auth/signin-court-mobile.webp" />
+          {/* Precompressed local stock assets avoid third-party requests and large mobile downloads. */}
+          <img src="/squad-pages/editorial/court.webp" alt="" width={1600} height={900} fetchPriority="high" decoding="async" />
+        </picture>
       </div>
-      <div className="absolute inset-0 bg-linear-to-b from-black/60 via-transparent to-black/80" />
-      
-      {!isStoreDistribution && (<div className="relative z-30 w-full max-w-5xl flex items-start pt-4 mb-2">
+      <div className={styles.overlay} aria-hidden="true" />
+
+      {!isStoreDistribution && (<div className={styles.homeNav}>
         <Link href="/">
           <Button variant="ghost" className="text-white hover:bg-white/10 font-black uppercase text-[10px] tracking-widest h-10 px-4 rounded-full border border-white/10 backdrop-blur-sm">
             <ChevronLeft className="mr-2 h-4 w-4" /> Back to Home
@@ -266,36 +299,49 @@ export default function LoginPage() {
         </Link>
       </div>)}
 
-      <div className="relative z-20 mb-8 flex flex-col items-center gap-2 animate-in fade-in slide-in-from-top-4 duration-1000">
+      <div className={styles.brand}>
         <BrandLogo variant="dark-background" className="h-16 w-48 drop-shadow-2xl" priority />
       </div>
 
-      <div className="w-full max-w-5xl grid grid-cols-1 lg:grid-cols-2 gap-12 items-center relative z-10">
-        <Card className="border-none shadow-2xl rounded-4xl sm:rounded-[3rem] animate-in fade-in slide-in-from-left-8 duration-700 bg-white/95 backdrop-blur-sm">
+      <div className={styles.layout}>
+        <section className={styles.story} aria-label="Welcome to The Squad">
+          <p className={styles.eyebrow}>Built for the whole team</p>
+          <h2 className={styles.headline}>Your team.<br /><span>Your next level.</span></h2>
+          <p className={styles.caption}>Bring your season together. Plan, connect, and compete with The Squad.</p>
+        </section>
+        <Card className={`border-none shadow-2xl rounded-4xl sm:rounded-[3rem] animate-in fade-in slide-in-from-left-8 duration-700 bg-white/95 backdrop-blur-sm ${styles.card}`}>
           <CardHeader className="space-y-2 pt-8 sm:pt-12 text-center">
             <h1 className="text-3xl sm:text-4xl font-black tracking-tighter uppercase">
               {forgotMode ? 'Reset Password' : 'Sign In'}
             </h1>
-            <CardDescription className="text-base font-bold uppercase tracking-widest text-primary/60 text-[10px]">
+            <CardDescription className="text-base font-bold uppercase tracking-widest text-muted-foreground text-[10px]">
               {forgotMode ? 'Enter your email to receive a reset link' : 'Use your account credentials'}
             </CardDescription>
           </CardHeader>
 
+          {/* Keep announcements outside the busy form so they are not deferred. */}
+          <p role="status" aria-live="polite" aria-atomic="true" className="sr-only">
+            {!isHydrated ? "Preparing sign-in." : isLoading ? "Logging in. Please wait." : forgotLoading ? "Sending reset link. Please wait." : ""}
+          </p>
+
+          {forgotMode && resetError && <p role="alert" className="mx-6 text-sm text-destructive">{resetError}</p>}
           {/* ── Forgot Password flow ── */}
           {forgotMode ? (
-            <form onSubmit={handleForgotPassword}>
+            <form onSubmit={handleForgotPassword} aria-busy={forgotLoading}>
               <CardContent className="space-y-6 px-10">
                 {forgotSent ? (
                   <div className="text-center space-y-4 py-6">
                     <div className="text-5xl">📬</div>
                     <p className="font-black text-lg uppercase tracking-tight">Check your inbox!</p>
-                    <p className="text-sm text-muted-foreground font-medium">A reset link was sent. Check spam if you don't see it within a minute.</p>
+                    <p role="status" className="text-sm text-muted-foreground font-medium">If an account uses this email, a reset link will be sent. Check your inbox and spam folder.</p>
                   </div>
                 ) : (
                   <div className="space-y-2">
                     <Label htmlFor="forgot-email" className="font-black text-[10px] uppercase tracking-widest px-1 ml-1 text-muted-foreground">Account Email</Label>
                     <Input
                       id="forgot-email"
+                      name="resetEmail"
+                      disabled={forgotLoading}
                       type="email"
                       autoComplete="email"
                       placeholder="name@organization.com"
@@ -311,12 +357,13 @@ export default function LoginPage() {
               <CardFooter className="flex flex-col space-y-4 pb-12 px-10 pt-4">
                 {!forgotSent && (
                   <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" type="submit" disabled={forgotLoading}>
-                    {forgotLoading ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : 'Send Reset Link'}
+                    {forgotLoading ? <><Loader2 aria-hidden="true" className="h-6 w-6 animate-spin mr-2" />Sending reset link…</> : 'Send Reset Link'}
                   </Button>
                 )}
                 <button
                   type="button"
-                  onClick={() => { setForgotMode(false); setForgotSent(false); setForgotEmail(''); }}
+                  disabled={forgotLoading}
+                  onClick={() => { setForgotMode(false); setForgotSent(false); setForgotEmail(''); setResetError(''); }}
                   className="text-[10px] font-black text-primary uppercase hover:underline tracking-widest"
                 >
                   ← Back to Login
@@ -324,7 +371,8 @@ export default function LoginPage() {
               </CardFooter>
             </form>
           ) : (
-          <form onSubmit={handleLogin}>
+          <form onSubmit={handleLogin} aria-busy={!isHydrated || isLoading} onInvalid={() => setFormError('Enter a valid email address and your password.')}>
+            {formError && <p id="login-error" role="alert" className="mx-6 mb-4 text-sm text-destructive">{formError}</p>}
             <CardContent className="space-y-6 px-6 sm:px-10">
               
               {isStoreDistribution && process.env.NEXT_PUBLIC_NATIVE_AUTH_ENABLED === 'true' ? (
@@ -376,13 +424,18 @@ export default function LoginPage() {
               <div className="space-y-2">
                 <Label htmlFor="email" className="font-black text-[10px] uppercase tracking-widest px-1 ml-1 text-muted-foreground">Email Address</Label>
                 <Input 
-                  id="email" 
+                  id="email"
+                  name="email"
+                  maxLength={254}
+                  autoCapitalize="none"
+                  spellCheck={false}
+                  aria-describedby={formError ? "login-error" : undefined} 
                   type="email" 
                   autoComplete="email"
                   placeholder="name@organization.com" 
                   required 
                   value={email}
-                  disabled={nativeBusy}
+                  disabled={!isHydrated || isLoading || nativeBusy}
                   onChange={(e) => setEmail(e.target.value)}
                   className="h-14 rounded-2xl bg-muted/50 border-2 border-transparent focus:border-primary/20 focus:bg-white transition-all text-base font-bold"
                 />
@@ -390,16 +443,18 @@ export default function LoginPage() {
               <div className="space-y-2">
                 <div className="flex justify-between items-center px-1">
                   <Label htmlFor="password" className="font-black text-[10px] uppercase tracking-widest ml-1 text-muted-foreground">Password</Label>
-                  <button type="button" disabled={nativeBusy} onClick={() => { setForgotMode(true); setForgotEmail(email); }} className="text-[10px] font-black text-primary uppercase hover:underline tracking-widest">Forgot?</button>
+                  <button type="button" disabled={!isHydrated || isLoading || isDemoLoading || nativeBusy} onClick={() => { setForgotMode(true); setForgotEmail(email); }} className="text-[10px] font-black text-primary uppercase hover:underline tracking-widest">Forgot?</button>
                 </div>
                 <div className="relative">
                   <PasswordInput 
-                    id="password" 
+                    id="password"
+                    name="password"
+                    aria-describedby={formError ? "login-error" : undefined} 
                      
                     autoComplete="current-password"
                     required 
                     value={password}
-                    disabled={nativeBusy}
+                    disabled={!isHydrated || isLoading || nativeBusy}
                     onChange={(e) => setPassword(e.target.value)}
                     className="h-14 rounded-2xl bg-muted/50 border-2 border-transparent focus:border-primary/20 focus:bg-white transition-all text-base font-bold pr-12"
                   />
@@ -407,8 +462,8 @@ export default function LoginPage() {
               </div>
             </CardContent>
             <CardFooter className="flex flex-col space-y-6 pb-10 sm:pb-12 px-6 sm:px-10 pt-4">
-              <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" type="submit" disabled={isLoading || isDemoLoading || nativeBusy}>
-                {isLoading ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Sign In"}
+              <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl shadow-primary/20 active:scale-95 transition-all" type="submit" disabled={!isHydrated || isLoading || isDemoLoading || nativeBusy}>
+                {!isHydrated ? "Preparing sign-in…" : isLoading ? <><Loader2 aria-hidden="true" className="h-6 w-6 animate-spin motion-reduce:animate-none mr-2" />Logging in…</> : "Sign In"}
               </Button>
               <div className="text-center space-y-2">
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
@@ -420,7 +475,9 @@ export default function LoginPage() {
           )}
         </Card>
 
-        <div id="demos" className="space-y-6 animate-in fade-in slide-in-from-right-8 duration-1000 lg:overflow-y-auto lg:max-h-[80vh] custom-scrollbar lg:pr-4">
+        <details id="demos" className={styles.demos}>
+          <summary>Explore demo workspaces</summary>
+          <div className={styles.demoContent}>
           <div className="bg-primary text-white p-10 rounded-[3rem] shadow-2xl relative overflow-hidden group">
             <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-700">
               <ShieldAlert className="h-48 w-48" />
@@ -457,11 +514,13 @@ export default function LoginPage() {
               </Button>
             ))}
           </div>
-        </div>
+          </div>
+        </details>
       </div>
 
-      <div className="text-center pt-12 relative z-10 opacity-40">
+      <div className={styles.footer}>
         <p className="text-[10px] text-white font-black uppercase tracking-[0.3em]">The Squad • thesquad.pro</p>
+        <p>Stock photo: <a href="https://unsplash.com/photos/basketball-court-near-body-of-water-itqkcMEix64" target="_blank" rel="noopener noreferrer">JC Dela Cuesta / Unsplash</a></p>
       </div>
     </div>
   );

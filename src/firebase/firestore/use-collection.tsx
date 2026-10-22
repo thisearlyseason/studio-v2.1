@@ -1,6 +1,7 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
+import { useScopedSnapshotState } from './use-scoped-snapshot-state';
 import {
   Query,
   onSnapshot,
@@ -9,7 +10,6 @@ import {
   QuerySnapshot,
   CollectionReference,
 } from 'firebase/firestore';
-import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { DEMO_EXIT_CANCELLED_EVENT, DEMO_EXIT_EVENT, DEMO_EXIT_PENDING_KEY } from '@/lib/client-auth';
@@ -44,10 +44,7 @@ export function useCollection<T = any>(
   type ResultItemType = WithId<T>;
   type StateDataType = ResultItemType[] | null;
 
-  const [resolvedTarget, setResolvedTarget] = useState<typeof memoizedTargetRefOrQuery>(undefined);
-  const [data, setData] = useState<StateDataType>(null);
-  const [isLoading, setIsLoading] = useState<boolean>(true);
-  const [error, setError] = useState<FirestoreError | Error | null>(null);
+  const { data, isLoading, error, accountId, isCurrent, setData, setIsLoading, setError } = useScopedSnapshotState<Exclude<StateDataType, null>>(memoizedTargetRefOrQuery);
 
   useEffect(() => {
     if (!memoizedTargetRefOrQuery) {
@@ -57,7 +54,6 @@ export function useCollection<T = any>(
       return;
     }
 
-    const auth = getAuth();
     let unsubscribeSnapshot: (() => void) | null = null;
     let snapshotPaused = localStorage.getItem(DEMO_EXIT_PENDING_KEY) === 'true';
 
@@ -87,6 +83,7 @@ export function useCollection<T = any>(
     }
 
     let isMounted = true;
+    setData(null);
     setIsLoading(true);
     setError(null);
 
@@ -95,7 +92,7 @@ export function useCollection<T = any>(
       unsubscribeSnapshot = onSnapshot(
         memoizedTargetRefOrQuery,
       (snapshot: QuerySnapshot<DocumentData>) => {
-        if (!isMounted || snapshotPaused) return;
+        if (!isMounted || snapshotPaused || !isCurrent()) return;
         const results: ResultItemType[] = [];
         for (const doc of snapshot.docs) {
           const sourceTeamId = doc.ref.parent.id === 'groupChats'
@@ -107,14 +104,12 @@ export function useCollection<T = any>(
             ...(sourceTeamId ? { teamId: sourceTeamId } : {}),
           });
         }
-        setResolvedTarget(memoizedTargetRefOrQuery);
         setData(results);
         setError(null);
         setIsLoading(false);
       },
       (err: FirestoreError) => {
-        if (!isMounted || snapshotPaused) return;
-        setResolvedTarget(memoizedTargetRefOrQuery);
+        if (!isMounted || snapshotPaused || !isCurrent()) return;
         
         // 1. SDK Internal Assertion Crashes (ca9, b815 and similar)
         // These are SDK bugs that occur during rapid updates or persistence mismatches.
@@ -142,7 +137,6 @@ export function useCollection<T = any>(
           // UI renders normally instead of entering an error state.
           if (!path) {
             console.warn('[useCollection] collectionGroup permission-denied (transient startup race — rules are authoritative fix):', err.message?.slice(0, 120));
-            setError(err);
             setData([]);
             setIsLoading(false);
             return;
@@ -207,8 +201,7 @@ export function useCollection<T = any>(
         }
       }
     };
-  }, [memoizedTargetRefOrQuery]);
+  }, [memoizedTargetRefOrQuery, accountId, isCurrent, setData, setIsLoading, setError]);
 
-  const current = resolvedTarget === memoizedTargetRefOrQuery;
-  return { data: current ? data : null, isLoading: Boolean(memoizedTargetRefOrQuery) && (!current || isLoading), error: current ? error : null };
+  return { data, isLoading, error };
 }

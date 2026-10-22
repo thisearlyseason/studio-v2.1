@@ -1,5 +1,6 @@
 "use client";
 
+import { PageEntityScope, PublicPageEntry } from '@/components/squad-pages/entity-context';
 import {gameResultSummary} from '@/lib/game-result-summary';
 import OrganizerGuide from '@/components/guidance/OrganizerGuide';
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
@@ -2568,6 +2569,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
         </div>
       ) : selectedLeagueId && activeLeague ? (
         <div className="space-y-8 animate-in slide-in-from-right-4 duration-500">
+          <PageEntityScope entity={{ kind: 'league', id: selectedLeagueId }} />
           <div className="flex items-center gap-3 mb-4 min-w-0">
             <Button aria-label="Back to leagues" variant="ghost" size="icon" onClick={() => setSelectedLeagueId(null)} className="rounded-full h-10 w-10 md:h-12 md:w-12 border-2 hover:bg-muted shrink-0 text-black border-black"><ChevronLeft className="h-5 w-5 md:h-6 md:w-6" /></Button>
             <div className="bg-primary/5 px-3 py-2 rounded-xl text-primary font-black uppercase text-[10px] tracking-widest border border-primary/10 flex items-center gap-1.5 min-w-0 overflow-hidden">
@@ -2997,6 +2999,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
             </TabsContent>
 
             <TabsContent value="portals" className="mt-0 animate-in fade-in duration-500">
+              <PublicPageEntry entity={{ kind: 'league', id: selectedLeagueId }} className="mb-4" />
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                 <Card className="rounded-[2.5rem] border-none shadow-xl bg-orange-600 text-white p-8 space-y-4 group transition-all">
                   <div className="flex items-center justify-between">

@@ -2,6 +2,8 @@
 "use client";
 
 import { useBillingDisplayPrices } from '@/lib/use-billing-display-prices';
+import { authFailureMessage, signupPasswordRequirements } from '@/lib/auth-form-feedback';
+import { flushSync } from 'react-dom';
 import { PasswordInput } from '@/components/ui/password-input';
 
 
@@ -13,7 +15,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { CardFooter, CardTitle, CardDescription } from '@/components/ui/card';
 import { useAuth, useFirestore } from '@/firebase';
-import { createUserWithEmailAndPassword, deleteUser, updateProfile, type User as FirebaseUser } from 'firebase/auth';
+import { createUserWithEmailAndPassword, validatePassword, deleteUser, updateProfile, type User as FirebaseUser } from 'firebase/auth';
 import { doc, writeBatch } from 'firebase/firestore';
 import { toast } from '@/hooks/use-toast';
 import {
@@ -157,6 +159,13 @@ export default function SignupPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [passwordConfirmation, setPasswordConfirmation] = useState('');
+  const [formError, setFormError] = useState('');
+  const [invalidField, setInvalidField] = useState('');
+  const errorRef = React.useRef<HTMLParagraphElement>(null);
+  const [signupComplete, setSignupComplete] = useState(false);
+  const [isHydrated, setIsHydrated] = useState(false);
+  const [requirements, setRequirements] = useState(signupPasswordRequirements());
+  const signupPending = React.useRef(false);
   const [isLoading, setIsLoading] = useState(false);
 
   const auth = useAuth();
@@ -177,6 +186,19 @@ export default function SignupPage() {
     if (linkedCode) setJoinCode(linkedCode);
   }, []);
 
+  React.useEffect(() => { setIsHydrated(true); }, []);
+  React.useEffect(() => {
+    if (step !== 'account') return;
+    let current = true;
+    // Firebase fetches public policy; the candidate password stays local.
+    validatePassword(auth, '').then(result => {
+      if (current) setRequirements(signupPasswordRequirements(result.passwordPolicy));
+    }).catch(() => { /* Submit checks policy again and shows a retryable error. */ });
+    return () => { current = false; };
+  }, [auth, step]);
+
+  React.useEffect(() => { if (formError && !isLoading) errorRef.current?.focus(); }, [formError, isLoading]);
+
   const selectedOption = SIGNUP_OPTIONS.find(o => o.id === regTarget);
   const rolePlans = !isStoreDistribution && regTarget ? ROLE_PLANS[regTarget as string] ?? [] : [];
 
@@ -192,33 +214,52 @@ export default function SignupPage() {
     setStep('account');
   };
 
-  const handleSignup = async (e: React.FormEvent) => {
+  const handleSignup = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
+    if (!isHydrated || signupPending.current) return;
+    const form = e.currentTarget;
+    const value = (field: string) => (form.elements.namedItem(field) as HTMLInputElement).value;
+    const email = value('email'), name = value('name'), password = value('password'), passwordConfirmation = value('passwordConfirmation');
+    const invalid = (message: string, field: string) => { setFormError(message); setInvalidField(field); (form.elements.namedItem(field) as HTMLInputElement)?.focus(); };
+    setFormError('');
+    setInvalidField('');
     if(!isStoreDistribution && planChoice && planChoice!=='starter' && displayPrices.quote(billingCycle==='annual'?PLAN_DEFS[planChoice].annualPriceId:PLAN_DEFS[planChoice].monthlyPriceId)?.currency!=='USD'){toast({title:'Current price unavailable',description:'Refresh prices before creating a paid plan.'});return;}
 
     const cleanEmail = email.trim().toLowerCase();
     const cleanName = name.trim().replace(/\s+/g, ' ');
     const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
     if (!emailRegex.test(cleanEmail)) {
-      toast({ title: "Invalid Email", description: "Please enter a valid email address (e.g. name@example.com).", variant: "destructive" });
+      invalid("Enter a valid email address, such as name@example.com.", 'email');
       return;
     }
     if (!cleanName || cleanName.length > 120) {
-      toast({ title: "Invalid Name", description: "Enter a name between 1 and 120 characters.", variant: "destructive" });
+      invalid("Enter a name between 1 and 120 characters.", 'name');
       return;
     }
     if (password.length < 8 || password.length > 128) {
-      toast({ title: "Weak Password", description: "Use a password between 8 and 128 characters.", variant: "destructive" });
+      invalid(requirements, 'password');
       return;
     }
     if (password !== passwordConfirmation) {
-      toast({ title: "Passwords Do Not Match", description: "Re-enter the same password in both fields.", variant: "destructive" });
+      invalid("Re-enter the same password in both fields.", 'passwordConfirmation');
       return;
     }
 
-    setIsLoading(true);
+    signupPending.current = true;
+    flushSync(() => setIsLoading(true));
+    let completed = false;
+    let policyChecked = false;
     let createdUser: FirebaseUser | null = null;
     try {
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
+      const validation = await validatePassword(auth, password);
+      policyChecked = true;
+      setRequirements(signupPasswordRequirements(validation.passwordPolicy));
+      if (validation.passwordPolicy.enforcementState !== 'OFF' && !validation.isValid) {
+        setInvalidField('password');
+        setFormError(signupPasswordRequirements(validation.passwordPolicy));
+        return;
+      }
       const userCredential = await createUserWithEmailAndPassword(auth, cleanEmail, password);
       const user = userCredential.user;
       createdUser = user;
@@ -271,15 +312,17 @@ export default function SignupPage() {
         });
       }
       await profileBatch.commit();
-      // Notification failure must never roll back a successfully created account.
-      try {
+      completed = true;
+      setSignupComplete(true);
+      // Notification delivery must not delay verification navigation or roll back the account.
+      void (async () => { try {
         const token = await user.getIdToken();
         await fetch('/api/admin/signup-alerts', {method:'POST',headers:{Authorization:`Bearer ${token}`}});
-      } catch { /* The first verified session retries delivery. */ }
+      } catch { /* The first verified session retries delivery. */ } })();
       toast({ title: "Verify Your Email", description: "We sent a verification link before account access is enabled." });
       router.push('/verify-email');
     } catch (error: any) {
-      if (createdUser) {
+      if (createdUser && !completed) {
         sessionStorage.removeItem('squad_post_verify_path');
         await deleteUser(createdUser).catch(() => {
           // A very recent signup normally requires no reauthentication. If the
@@ -287,20 +330,9 @@ export default function SignupPage() {
           // by API, middleware, Firestore, and Storage verification gates.
         });
       }
-      const code = error?.code || '';
-      if (code === 'auth/email-already-in-use') {
-        toast({ title: "Email Already in Use", description: "Please log in or use a different email.", variant: "destructive" });
-      } else if (code === 'auth/invalid-email') {
-        toast({ title: "Invalid Email", description: "Please enter a valid email address.", variant: "destructive" });
-      } else if (code === 'auth/weak-password') {
-        toast({ title: "Weak Password", description: "Password must be at least 6 characters.", variant: "destructive" });
-      } else if (code === 'auth/unauthorized-continue-uri') {
-        toast({ title: "Signup Temporarily Unavailable", description: "This site is not authorized for account verification. No account was retained.", variant: "destructive" });
-      } else {
-        toast({ title: "Signup Error", description: "Signup could not be completed. No account was retained; please try again.", variant: "destructive" });
-      }
+      if (!completed) setFormError(policyChecked ? authFailureMessage(error, true) : 'Password requirements could not be checked. Check your connection and try again.');
     } finally {
-      setIsLoading(false);
+      if (!completed) { signupPending.current = false; setIsLoading(false); }
     }
   };
 
@@ -671,8 +703,9 @@ export default function SignupPage() {
           )}
 
           {/* ── STEP 3: CREATE ACCOUNT ── */}
+          {step === 'account' && <p role="status" aria-live="polite" aria-atomic="true" className="px-8 text-sm">{signupComplete ? 'Account created. Continue to verify your email.' : isLoading ? 'Creating account. Please wait.' : ''}{signupComplete && <Link className="underline ml-2" href="/verify-email">Verify your email</Link>}</p>}
           {step === 'account' && (
-            <form onSubmit={handleSignup} className="p-8 space-y-5 animate-in slide-in-from-right-4 duration-500">
+            <form onSubmit={handleSignup} aria-busy={isLoading || !isHydrated} onInvalid={() => setFormError('Complete the required fields and follow the password requirements.')} className="p-8 space-y-5 animate-in slide-in-from-right-4 duration-500">
               <div className="text-center space-y-2">
                 <CardTitle className="text-2xl font-black uppercase tracking-tight">Create Account</CardTitle>
                 {isStoreDistribution && (
@@ -714,12 +747,15 @@ export default function SignupPage() {
                 )}
               </div>
 
-              <div className="space-y-3.5">
+              {formError && <p id="signup-error" ref={errorRef} tabIndex={-1} role="alert" className="text-sm text-destructive">{formError}</p>}
+              <fieldset disabled={isLoading || !isHydrated} className="space-y-3.5">
                 <div className="space-y-1.5">
                   <Label htmlFor="signup-name" className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Full Name</Label>
                   <Input
                     id="signup-name"
                     name="name"
+                    aria-invalid={invalidField === "name" || undefined}
+                    aria-describedby="signup-error"
                     autoComplete="name"
                     required
                     maxLength={120}
@@ -733,7 +769,11 @@ export default function SignupPage() {
                   <Label htmlFor="signup-email" className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Email Address</Label>
                   <Input
                     id="signup-email"
+                    autoCapitalize="none"
+                    spellCheck={false}
                     name="email"
+                    aria-invalid={invalidField === "email" || undefined}
+                    aria-describedby="signup-error"
                     autoComplete="email"
                     required
                     type="email"
@@ -749,6 +789,9 @@ export default function SignupPage() {
                   <PasswordInput
                     id="signup-password"
                     name="password"
+                    aria-invalid={invalidField === "password" || undefined}
+                    
+                    aria-describedby="signup-password-requirements signup-error"
                     autoComplete="new-password"
                     required
                     
@@ -760,11 +803,14 @@ export default function SignupPage() {
                     className="h-12 rounded-xl bg-muted/30 border-muted font-semibold"
                   />
                 </div>
+                <p id="signup-password-requirements" className="text-sm text-muted-foreground">{requirements}</p>
                 <div className="space-y-1.5">
                   <Label htmlFor="signup-password-confirmation" className="text-[10px] font-black uppercase tracking-widest ml-1 text-muted-foreground">Confirm Password</Label>
                   <PasswordInput
                     id="signup-password-confirmation"
                     name="passwordConfirmation"
+                    aria-invalid={invalidField === "passwordConfirmation" || undefined}
+                    aria-describedby="signup-error"
                     required
                     
                     minLength={8}
@@ -776,7 +822,7 @@ export default function SignupPage() {
                     className="h-12 rounded-xl bg-muted/30 border-muted font-semibold"
                   />
                 </div>
-              </div>
+              </fieldset>
 
               <div className="bg-muted/40 p-3.5 rounded-xl flex items-start gap-2.5">
                 <ShieldCheck className="h-4 w-4 text-primary shrink-0 mt-0.5" />
@@ -796,7 +842,7 @@ export default function SignupPage() {
                 <Button
                   type="submit"
                   className="w-full h-12 rounded-2xl font-black uppercase shadow-xl"
-                  disabled={isLoading}
+                  disabled={isLoading || !isHydrated}
                 >
                   {isLoading
                     ? "Creating Account..."
@@ -807,6 +853,7 @@ export default function SignupPage() {
                 </Button>
                 <button
                   type="button"
+                  disabled={isLoading}
                   onClick={() => {
                     setStep(signupBackStep(regTarget, APP_DISTRIBUTION));
                   }}

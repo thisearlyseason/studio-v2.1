@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useRef, useState } from 'react';
+import { flushSync } from 'react-dom';
 import { signInWithCustomToken, signOut, setPersistence, inMemoryPersistence, browserLocalPersistence } from 'firebase/auth';
 import { useAuth } from '@/firebase';
 import { Button } from '@/components/ui/button';
@@ -19,6 +20,7 @@ export function NativeProviderLogin({ disabled, onVerified }: { disabled: boolea
   const [providers, setProviders] = useState<Provider[]>([]);
   const [state, setState] = useState<NativeAuthState>({ phase: 'idle' });
   const [joinCode, setJoinCode] = useState('');
+  const [activeProvider, setActiveProvider] = useState<Provider | null>(null);
   const client = useRef<ReturnType<typeof createNativeAuthClient> | null>(null);
   const verified = useRef(onVerified); verified.current = onVerified;
   const release = useRef<(() => void) | null>(null);
@@ -84,15 +86,16 @@ export function NativeProviderLogin({ disabled, onVerified }: { disabled: boolea
     const lease = nativeBrowserAuthGate.acquire();
     if (!lease) return;
     release.current = lease;
+    flushSync(() => { setActiveProvider(provider); setState({ phase: 'working' }); });
     void client.current.begin(provider).catch(() => { lease(); release.current = null; setState({ phase: 'failed' }); });
   };
-  const busy = state.phase === 'working' || state.phase === 'onboarding' || state.locked;
+  const busy = state.phase === 'working' || state.phase === 'onboarding' || state.phase === 'verified' || state.locked;
   if (!providers.length) return <p role="status" className="rounded-xl border p-4 text-sm text-muted-foreground">Provider sign-in is unavailable in this app version. Please use email and password below.</p>;
   return <div className="space-y-3" aria-label="App sign-in">
-    {providers.map(provider => <Button key={provider} type="button" variant="outline" disabled={disabled || !!busy || nativeBrowserAuthGate.busy()} onClick={() => begin(provider)} className="min-h-12 w-full rounded-xl">Continue with {provider === 'apple.com' ? 'Apple' : 'Google'}</Button>)}
+    {providers.map(provider => <Button key={provider} type="button" variant="outline" disabled={disabled || !!busy || nativeBrowserAuthGate.busy()} onClick={() => begin(provider)} aria-busy={activeProvider === provider && !!busy} className="min-h-12 w-full rounded-xl">{activeProvider === provider && busy ? 'Logging in…' : `Continue with ${provider === 'apple.com' ? 'Apple' : 'Google'}`}</Button>)}
     {state.phase === 'working' && <p role="status" className="text-sm">Complete sign-in in the account window. We’ll verify your session before opening The Squad.</p>}
     {state.phase === 'onboarding' && <NativeFreeOnboarding initialJoinCode={joinCode} onSubmit={value => { void client.current?.submitOnboarding(value); }} />}
     {state.phase === 'failed' && <p role="alert" className="text-sm font-semibold text-destructive">{state.locked ? 'Sign-in cleanup could not be confirmed. Close and reopen the app before trying again.' : 'Sign-in could not be completed. Try again or use another sign-in method for your account.'}</p>}
-    {busy && !state.locked && <Button type="button" variant="ghost" onClick={() => { void client.current?.cancel(); }} className="min-h-11 w-full">Cancel sign-in</Button>}
+    {(state.phase === 'working' || state.phase === 'onboarding') && !state.locked && <Button type="button" variant="ghost" onClick={() => { void client.current?.cancel(); }} className="min-h-11 w-full">Cancel sign-in</Button>}
   </div>;
 }
