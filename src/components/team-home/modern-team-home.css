@@ -256,3 +256,7 @@ html[data-squad-layout="modern"] [role="dialog"] { border-radius: 18px; }
 .dark .modern-feature-page, .dark .modern-tools-menu { color: #edf3fc; }
 .dark .modern-feature-page [data-ui="card"]:not(.bg-primary):not(.bg-black):not(.bg-secondary) { background: #112139; border-color: #263a54; }
 .dark .modern-app .modern-home-header, .dark .modern-page-trail, .dark .modern-tools-menu { background: #091324; color: #edf3fc; }
+
+@media (max-width: 640px) {
+  .modern-app .modern-header-nav > .modern-header-hub { display: none; }
+}

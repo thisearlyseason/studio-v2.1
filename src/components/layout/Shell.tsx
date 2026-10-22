@@ -921,9 +921,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     <DropdownMenuLabel>Team tools</DropdownMenuLabel>
                     {filteredCoordTabs.map(tab => <DropdownMenuItem key={tab.href} onSelect={() => { if (tab.pro && !isPro) purchasePro(); else router.push(tab.href); }}><tab.icon className="h-4 w-4"/>{tab.name}{tab.pro && !isPro && <Lock className="ml-auto h-3 w-3" aria-label="Upgrade required"/>}</DropdownMenuItem>)}
                     {isStaff && <><DropdownMenuSeparator/>{filteredAdminTabs.map(tab => <DropdownMenuItem key={tab.href} onSelect={() => { if (isAdminTabLocked(tab)) purchasePro(); else router.push(tab.href); }}><tab.icon className="h-4 w-4"/>{tab.name}{isAdminTabLocked(tab) && <Lock className="ml-auto h-3 w-3" aria-label="Upgrade required"/>}</DropdownMenuItem>)}<DropdownMenuItem onSelect={() => router.push('/team')}><Settings className="h-4 w-4"/>Team Settings</DropdownMenuItem></>}
+                    {((isSchoolMode && isPrimaryClubAuthority) || isEliteClubMode) && <DropdownMenuItem onSelect={() => router.push('/club')}><Building className="h-4 w-4"/>{isSchoolMode ? 'School Hub' : 'Club Hub'}</DropdownMenuItem>}
                     <DropdownMenuSeparator/><DropdownMenuItem onSelect={() => router.push('/settings')}><User className="h-4 w-4"/>My Account</DropdownMenuItem>
                   </DropdownMenuContent></DropdownMenu>
-                {((isSchoolMode && isPrimaryClubAuthority) || isEliteClubMode) && <Link href="/club">{isSchoolMode ? 'School Hub' : 'Club Hub'}</Link>}</nav>
+                {((isSchoolMode && isPrimaryClubAuthority) || isEliteClubMode) && <Link href="/club" className="modern-header-hub">{isSchoolMode ? 'School Hub' : 'Club Hub'}</Link>}</nav>
               </div> : <div className="flex items-center gap-4">
                 <div className="md:hidden h-10 w-10" aria-hidden="true" />
                 <div className="hidden md:block">
