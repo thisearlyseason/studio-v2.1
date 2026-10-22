@@ -193,7 +193,7 @@ export function MyPaymentsView({ userEmail, teamIds }: MyPaymentsViewProps) {
       <Card className="rounded-4xl border-none shadow-md bg-black text-white p-6 relative overflow-hidden">
         <Receipt className="absolute -right-4 -bottom-4 h-20 w-20 opacity-10" />
         <p className="text-[9px] font-black uppercase tracking-widest opacity-50">Total Paid</p>
-        <p className="text-4xl font-black mt-1">
+        <p className="text-2xl sm:text-4xl font-black mt-1 break-words">
           {totals.map(([currency, cents]) => <span key={currency} className="block">{currency} ${(cents / 100).toFixed(2)}</span>)}
         </p>
         <p className="text-[9px] font-bold opacity-30 uppercase tracking-widest mt-1">
@@ -250,7 +250,7 @@ export function MyPaymentsView({ userEmail, teamIds }: MyPaymentsViewProps) {
                   </div>
                 </div>
 
-                <div className="flex items-center gap-3 shrink-0">
+                <div className="flex flex-wrap items-center gap-3 shrink-0 max-w-full">
                   <span className="text-xl font-black text-primary">{amountStr}</span>
 
                   {isOnline && payment.stripe_receipt_url ? (
