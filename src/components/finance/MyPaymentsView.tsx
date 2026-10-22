@@ -8,9 +8,10 @@ import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
 import { format } from 'date-fns';
-import { collection, onSnapshot, query, where, orderBy } from 'firebase/firestore';
+import { collection, onSnapshot, query, where } from 'firebase/firestore';
 import { useFirestore } from '@/firebase';
 import { generateBrandedPDF } from '@/lib/pdf-utils';
+import { paidTeamPaymentTotals } from '@/lib/personal-payments';
 import { toast } from '@/hooks/use-toast';
 
 interface Payment {
@@ -50,9 +51,13 @@ export function MyPaymentsView({ userEmail, teamIds }: MyPaymentsViewProps) {
   const db = useFirestore();
   const [payments, setPayments] = useState<Payment[]>([]);
   const [isLoading, setIsLoading] = useState(true);
-  const teamKey = teamIds.slice(0, 5).join('\u0000');
+  const teamKey = [...new Set(teamIds)].sort().join('\u0000');
+  const [failedTeams, setFailedTeams] = useState<string[]>([]);
+  const [retry, setRetry] = useState(0);
 
   useEffect(() => {
+    let active = true;
+    setFailedTeams([]);
     const selectedTeamIds = teamKey ? teamKey.split('\u0000') : [];
     if (!db || !userEmail || selectedTeamIds.length === 0) {
       setPayments([]);
@@ -61,9 +66,12 @@ export function MyPaymentsView({ userEmail, teamIds }: MyPaymentsViewProps) {
     }
 
     setIsLoading(true);
+    setPayments([]);
+    setFailedTeams([]);
     const results = new Map<string, Payment[]>();
     const initialized = new Set<string>();
     const publish = (teamId: string, values: Payment[]) => {
+      if (!active) return;
       results.set(teamId, values);
       initialized.add(teamId);
       setPayments(
@@ -77,28 +85,25 @@ export function MyPaymentsView({ userEmail, teamIds }: MyPaymentsViewProps) {
     const unsubscribes = selectedTeamIds.map(teamId => onSnapshot(
       query(
         collection(db, 'teams', teamId, 'payments'),
-        where('payer_email', '==', userEmail.toLowerCase()),
-        orderBy('createdAt', 'desc')
+        where('payer_email', '==', userEmail.trim().toLowerCase())
       ),
       snapshot => publish(teamId, snapshot.docs.map(docSnapshot => ({
+        ...docSnapshot.data(),
         id: docSnapshot.id,
         teamId,
-        ...docSnapshot.data(),
       } as Payment))),
       error => {
+        if (!active) return;
         console.error(`[MyPaymentsView] Unable to load payments for team ${teamId}:`, error);
+        setFailedTeams(previous => [...previous, teamId]);
         publish(teamId, []);
       }
     ));
 
-    return () => unsubscribes.forEach(unsubscribe => unsubscribe());
-  }, [db, teamKey, userEmail]);
+    return () => { active = false; unsubscribes.forEach(unsubscribe => unsubscribe()); };
+  }, [db, teamKey, userEmail, retry]);
 
-  const totalPaid = useMemo(() =>
-    (payments || [])
-      .reduce((sum, p) => sum + paymentNetCents(p), 0),
-    [payments]
-  );
+  const totals = useMemo(() => paidTeamPaymentTotals(payments), [payments]);
 
   const handleDownloadOfflineRecord = (payment: Payment) => {
     try {
@@ -122,7 +127,7 @@ export function MyPaymentsView({ userEmail, teamIds }: MyPaymentsViewProps) {
           const lines = [
             ['Item',        payment.paymentItemName || 'Payment'],
             ['Date',        payment.createdAt ? format(new Date(payment.createdAt), 'PPP') : '—'],
-            ['Amount',      `$${((payment.amount || 0) / 100).toFixed(2)} ${(payment.currency || 'usd').toUpperCase()}`],
+            ['Amount',      `$${(paymentNetCents(payment) / 100).toFixed(2)} ${(payment.currency || 'usd').toUpperCase()}`],
             ['Method',      'Offline (Cash / Check / Other)'],
             ['Status',      payment.status.toUpperCase()],
             ['Payer',       payment.payer_name || payment.payer_email || '—'],
@@ -168,13 +173,15 @@ export function MyPaymentsView({ userEmail, teamIds }: MyPaymentsViewProps) {
     );
   }
 
+  if (failedTeams.length) return <div role="alert" className="rounded-xl border p-6 space-y-3"><p>Some payment records could not load. Your history may be incomplete.</p><Button variant="outline" onClick={() => setRetry(value => value + 1)}>Retry payment history</Button></div>;
+
   if (!payments?.length) {
     return (
-      <div className="py-16 text-center opacity-30 space-y-3 border-2 border-dashed rounded-[2.5rem]">
+      <div className="py-12 text-center text-muted-foreground space-y-3 border-2 border-dashed rounded-[2.5rem]">
         <Receipt className="h-12 w-12 mx-auto" />
         <p className="text-xs font-black uppercase tracking-widest">No payment records found.</p>
         <p className="text-[9px] font-bold uppercase tracking-[0.2em]">
-          Your payments will appear here once recorded by your team organizer.
+          Completed online team payments and organizer-recorded payments appear here when matched to your account email.
         </p>
       </div>
     );
@@ -187,7 +194,7 @@ export function MyPaymentsView({ userEmail, teamIds }: MyPaymentsViewProps) {
         <Receipt className="absolute -right-4 -bottom-4 h-20 w-20 opacity-10" />
         <p className="text-[9px] font-black uppercase tracking-widest opacity-50">Total Paid</p>
         <p className="text-4xl font-black mt-1">
-          ${(totalPaid / 100).toLocaleString('en-US', { minimumFractionDigits: 2 })}
+          {totals.map(([currency, cents]) => <span key={currency} className="block">{currency} ${(cents / 100).toFixed(2)}</span>)}
         </p>
         <p className="text-[9px] font-bold opacity-30 uppercase tracking-widest mt-1">
           {payments.filter(p => p.status === 'paid').length} payment{payments.filter(p => p.status === 'paid').length !== 1 ? 's' : ''} recorded
@@ -199,12 +206,12 @@ export function MyPaymentsView({ userEmail, teamIds }: MyPaymentsViewProps) {
         {payments.map(payment => {
           const isOnline = payment.payment_method === 'online';
           const isPaid = payment.status === 'paid';
-          const amountStr = `$${(paymentNetCents(payment) / 100).toFixed(2)}`;
+          const amountStr = `${(payment.currency || 'usd').toUpperCase()} $${(paymentNetCents(payment) / 100).toFixed(2)}`;
 
           return (
             <Card
-              key={payment.id}
-              className="rounded-4xl border-none shadow-md bg-white ring-1 ring-black/5 overflow-hidden"
+              key={`${payment.teamId}:${payment.id}`}
+              className="rounded-[2rem] border-none shadow-md bg-white ring-1 ring-black/5 overflow-hidden"
             >
               <CardContent className="p-5 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
                 <div className="flex items-center gap-4 min-w-0">

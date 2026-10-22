@@ -90,9 +90,9 @@ export default function PaymentsPage() {
   const [filterStatus, setFilterStatus] = useState<'all' | 'paid' | 'pending' | 'overdue'>('all');
 
   const paymentsQuery = useMemoFirebase(() => {
-    if (!db || !user?.id) return null;
+    if (!isParent || !db || !user?.id) return null;
     return query(collection(db, 'users', user.id, 'payments'), orderBy('date', 'desc'));
-  }, [db, user?.id]);
+  }, [db, user?.id, isParent]);
 
   const { data: rawPayments, isLoading } = useCollection<Payment>(paymentsQuery);
 
@@ -130,13 +130,14 @@ export default function PaymentsPage() {
         </div>
       </div>
 
+      <div className="rounded-xl border p-4 space-y-2"><p>Household charges and their status are maintained by your organizer. View receipts and recorded team payments in your payment history.</p><Button variant="outline" onClick={() => router.push('/payments')}>View my team payments</Button></div>
       {/* Stats Row */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <Card data-testid="family-payment-total-paid" className="rounded-4xl border-none shadow-xl bg-black text-white overflow-hidden">
           <CardContent className="p-6">
             <div className="flex items-center justify-between mb-3">
               <div className="bg-green-500/20 p-2 rounded-xl"><CheckCircle2 className="h-5 w-5 text-green-400" /></div>
-              <Badge className="bg-white/10 text-white border-none font-black text-[8px] uppercase">YTD</Badge>
+              <Badge className="bg-white/10 text-white border-none font-black text-[8px] uppercase">Recorded</Badge>
             </div>
             <p className="text-[9px] font-black uppercase tracking-widest opacity-50 mb-1">Total Paid</p>
             <p className="text-3xl font-black">${stats.paid.toFixed(2)}</p>

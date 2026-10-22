@@ -15,7 +15,7 @@ type RouteDecision =
 const PROTECTED_EXACT_PATHS = new Set([
   '/calendar', '/dashboard', '/drills', '/equipment', '/events', '/facilities',
   '/feed', '/files', '/fundraising', '/games', '/leagues', '/practice', '/pricing',
-  '/roster', '/settings', '/team', '/tournaments', '/volunteers',
+  '/payments', '/roster', '/settings', '/team', '/tournaments', '/volunteers',
 ]);
 
 const PROTECTED_PREFIXES = [
@@ -30,6 +30,10 @@ const STAFF_PREFIXES = [
 
 const MANAGEMENT_ROLES = new Set(['coach', 'admin', 'league_creator', 'superadmin']);
 const INSTITUTION_PLANS = new Set(['elite', 'elite_teams', 'league', 'elite_league', 'school']);
+
+export function canViewPersonalPayments(role: unknown): boolean {
+  return ['parent', 'guardian', 'adult_player', 'coach', 'admin', 'league_creator', 'superadmin'].includes(String(role || '').trim().toLowerCase());
+}
 
 function matchesPrefix(pathname: string, prefix: string): boolean {
   return pathname === prefix || pathname.startsWith(`${prefix}/`);
@@ -59,7 +63,7 @@ export function isProtectedDashboardPath(pathname: string): boolean {
 }
 
 export function isSensitiveDashboardPath(pathname: string): boolean {
-  return matchesPrefix(pathname, '/admin') ||
+  return matchesPrefix(pathname, '/payments') || matchesPrefix(pathname, '/admin') ||
     matchesPrefix(pathname, '/club') ||
     matchesPrefix(pathname, '/competition') ||
     matchesPrefix(pathname, '/dashboard/billing') ||
@@ -80,8 +84,12 @@ export function authorizeDashboardRoute(
     return isSuperAdmin ? { allowed: true } : { allowed: false, redirectTo: '/dashboard' };
   }
 
+  if (matchesPrefix(pathname, '/payments')) {
+    return canViewPersonalPayments(role) ? { allowed: true } : { allowed: false, redirectTo: '/dashboard' };
+  }
+
   if (matchesPrefix(pathname, '/family')) {
-    return role === 'parent' || isSuperAdmin
+    return role === 'parent' || role === 'guardian' || isSuperAdmin
       ? { allowed: true }
       : { allowed: false, redirectTo: '/dashboard' };
   }
