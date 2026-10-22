@@ -11,11 +11,17 @@ export function parseNativeOnboarding(input: unknown): NativeOnboarding {
 export function profileWrites(identity: UserRecord, input: NativeOnboarding, now: number) {
   const value = parseNativeOnboarding(input);
   if (!identity.uid || identity.disabled || !identity.emailVerified || !identity.email) throw new NativeAuthError('account_unavailable');
+  // Firebase's verified user record is authoritative, never a browser claim.
+  // Apple may omit a name on repeat authorization. A blank name can be
+  // completed later in the profile; it must not block account creation.
+  const providerName = identity.displayName?.replace(/\s+/g, ' ').trim() || '';
+  const fullName = providerName.length <= 120 && !/[\u0000-\u001f\u007f]/.test(identity.displayName || '')
+    ? providerName || value.fullName : value.fullName;
   const targets: Record<NativeOnboarding['role'], SignupRegistrationTarget> = {
     adult_player: 'self', parent: 'child', coach: 'coach', admin: 'school_ad', league_creator: 'league_creator',
   };
   const user: Record<string, unknown> = {
-    id: identity.uid, fullName: value.fullName, email: identity.email.trim().toLowerCase(), role: value.role,
+    id: identity.uid, fullName, email: identity.email.trim().toLowerCase(), role: value.role,
     notificationsEnabled: false, upcomingEventNotificationsEnabled: false, createdAt: new Date(now).toISOString(),
     nativeSignupConsent: { adultConfirmed: true, termsAccepted: true, recordedAt: new Date(now).toISOString(), version: 1 },
   };
@@ -25,7 +31,7 @@ export function profileWrites(identity: UserRecord, input: NativeOnboarding, now
       if (photo.protocol === 'https:' && !photo.username && !photo.password) user.avatarUrl = photo.href;
     } catch { /* A provider photo is optional, never required for account creation. */ }
   }
-  const [firstName, ...lastName] = value.fullName.split(' ');
+  const [firstName, ...lastName] = fullName.split(' ');
   const player = value.role === 'adult_player' ? {
     firstName, lastName: lastName.join(' '), userId: identity.uid, isMinor: false,
     parentId: '', hasLogin: true, recruitingProfileEnabled: false, createdAt: new Date(now).toISOString(),

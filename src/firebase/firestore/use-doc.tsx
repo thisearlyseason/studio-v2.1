@@ -1,7 +1,6 @@
 'use client';
     
-import { useEffect } from 'react';
-import { useScopedSnapshotState } from './use-scoped-snapshot-state';
+import { useState, useEffect } from 'react';
 import {
   DocumentReference,
   onSnapshot,
@@ -44,7 +43,9 @@ export function useDoc<T = any>(
 ): UseDocResult<T> {
   type StateDataType = WithId<T> | null;
 
-  const { data, isLoading, error, accountId, isCurrent, setData, setIsLoading, setError } = useScopedSnapshotState<Exclude<StateDataType, null>>(memoizedDocRef);
+  const [data, setData] = useState<StateDataType>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true); // Start true to prevent flash of empty state
+  const [error, setError] = useState<FirestoreError | Error | null>(null);
 
   useEffect(() => {
     if (!memoizedDocRef) {
@@ -56,13 +57,11 @@ export function useDoc<T = any>(
 
     setIsLoading(true);
     setError(null);
-    setData(null);
-    let active = true;
+    // Optional: setData(null); // Clear previous data instantly
 
     const unsubscribe = onSnapshot(
       memoizedDocRef,
       (snapshot: DocumentSnapshot<DocumentData>) => {
-        if (!active || !isCurrent()) return;
         if (snapshot.exists()) {
           setData({ ...(snapshot.data() as T), id: snapshot.id });
         } else {
@@ -73,7 +72,6 @@ export function useDoc<T = any>(
         setIsLoading(false);
       },
       (error: FirestoreError) => {
-        if (!active || !isCurrent()) return;
         // Suppress Firestore SDK internal assertion/state errors — these are SDK bugs,
         // not application errors, triggered during HMR or rapid listener teardown.
         if (error.message?.includes('INTERNAL ASSERTION FAILED') || error.message?.includes('Unexpected state')) {
@@ -113,7 +111,6 @@ export function useDoc<T = any>(
     );
 
     return () => {
-      active = false;
       try {
         unsubscribe();
       } catch (e: any) {
@@ -123,7 +120,7 @@ export function useDoc<T = any>(
         }
       }
     };
-  }, [memoizedDocRef, accountId, isCurrent, setData, setIsLoading, setError]); // Re-run if the memoizedDocRef changes.
+  }, [memoizedDocRef]); // Re-run if the memoizedDocRef changes.
 
   return { data, isLoading, error };
 }

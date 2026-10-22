@@ -117,7 +117,7 @@ export default function AdminPlansPage() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
             {plans.map((plan) => (
               <Card key={plan.id} className={cn("rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 transition-all", editingPlan?.id === plan.id ? "ring-4 ring-primary scale-[1.02]" : "hover:scale-[1.01]")}>
-
+                <div className={cn("h-2 w-full", plan.billingType === 'free' ? "bg-muted" : "bg-primary")} />
                 <CardHeader className="p-8 pb-4">
                   <div className="flex justify-between items-start">
                     <div>
@@ -322,7 +322,7 @@ export default function AdminPlansPage() {
                 </div>
 
                 <div className="flex flex-col justify-center items-center text-center space-y-6 bg-muted/20 rounded-[3rem] p-10 border-2 border-dashed border-muted-foreground/10">
-                  <div className="bg-white p-6 rounded-4xl shadow-xl relative">
+                  <div className="bg-white p-6 rounded-[2rem] shadow-xl relative">
                     <Users className="h-16 w-16 text-muted-foreground opacity-20" />
                     <Zap className="absolute -top-2 -right-2 h-8 w-8 text-amber-500 animate-pulse" />
                   </div>

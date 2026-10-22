@@ -1,4 +1,3 @@
-import { assertManagedPlatformRequest, assertManagedCheckoutReady } from './stripe-managed-checkout';
 import { randomUUID } from 'node:crypto';
 import { isDeepStrictEqual } from 'node:util';
 import { FieldValue, type DocumentReference, type Firestore } from 'firebase-admin/firestore';
@@ -59,7 +58,6 @@ async function assertCompletedSubscriptionEnded(stripe: Stripe, session: Stripe.
  * The exact provider request is retained so an uncertain response is recoverable.
  */
 export async function createCheckoutSessionWithLock(userRef: DocumentReference, key: string, request: Stripe.Checkout.SessionCreateParams, stripe: Stripe) {
-  assertManagedPlatformRequest(request);
   const db = userRef.firestore;
   for (let retry = 0; retry < 3; retry++) {
     const { lock, create, recover } = await db.runTransaction(async transaction => {
@@ -75,7 +73,7 @@ export async function createCheckoutSessionWithLock(userRef: DocumentReference, 
         transaction.update(userRef, { pendingCheckout: lock });
         return { lock, create: true, recover: true };
       }
-      const attemptId = (request.managed_payments?.enabled === true ? 'checkout-attempt-managed-v4-' : 'checkout-attempt-standard-v2-') + randomUUID();
+      const attemptId = 'checkout-attempt-' + randomUUID();
       const lock: CheckoutLock = {
         key, attemptId, sessionId: null, expiresAt: Date.now() + 120_000,
         request: { ...request, expires_at: Math.floor(Date.now() / 1000) + 86400, metadata: { ...request.metadata, firebase_uid: userRef.id, checkout_attempt: attemptId } },
@@ -88,15 +86,6 @@ export async function createCheckoutSessionWithLock(userRef: DocumentReference, 
     if (create) {
       if (!lock.request || lock.request.customer !== request.customer || lock.request.metadata?.firebase_uid !== userRef.id) {
         throw new CheckoutLifecycleError('The saved checkout does not belong to this account. Contact support before continuing.');
-      }
-      // Validate Managed readiness before touching any older payable sessions.
-      // A fresh reservation has not reached Stripe yet, so a known validation
-      // failure can safely release only this exact attempt. Recovery stays fenced.
-      try {
-        await assertManagedCheckoutReady(stripe, lock.request);
-      } catch (error) {
-        if (!recover) await clearSettledCheckout(db, userRef, lock);
-        throw error;
       }
       // Recovering this same attempt must not expire its already-created session.
       // Paginate so older open checkouts cannot remain payable but untracked.
@@ -125,21 +114,6 @@ export async function createCheckoutSessionWithLock(userRef: DocumentReference, 
         delete saved.metadata.checkout_attempt;
         const expected = { ...request, metadata: { ...request.metadata, firebase_uid: userRef.id } };
         delete expected.expires_at;
-        // Pre-migration reservations retain their exact omitted mode and old
-        // provider key. Permit only this known schema addition; all other saved
-        // parameters still require equality with the validated route request.
-        if (!Object.hasOwn(saved, 'managed_payments') && expected.managed_payments?.enabled === false) {
-          delete expected.managed_payments;
-        }
-        // An unresolved standard attempt keeps its exact original request/key.
-        if (request.managed_payments?.enabled === true && saved.managed_payments?.enabled !== true && !lock.attemptId?.startsWith('checkout-attempt-managed-v4-')) {
-          if (Object.hasOwn(saved, 'managed_payments')) expected.managed_payments = { enabled: false };
-          else delete expected.managed_payments;
-          expected.adaptive_pricing = { enabled: false };
-          delete (expected.metadata as Stripe.MetadataParam).squad_payment_flow;
-          expected.subscription_data = { ...expected.subscription_data, metadata: { ...expected.subscription_data?.metadata } };
-          delete expected.subscription_data.metadata!.squad_payment_flow;
-        }
         if (!isDeepStrictEqual(saved, expected)) throw new CheckoutLifecycleError('Retry the previous checkout selections to resolve that attempt, or contact support before deleting your account.');
       }
       session = recoveredSession ?? await stripe.checkout.sessions.create(lock.request!, { idempotencyKey: lock.attemptId! });
@@ -153,13 +127,6 @@ export async function createCheckoutSessionWithLock(userRef: DocumentReference, 
       session = await stripe.checkout.sessions.retrieve(lock.sessionId!);
     }
     assertSessionOwner(session, userRef, lock.request?.customer ?? request.customer);
-    if (lock.request?.managed_payments?.enabled === true) {
-      if (session.managed_payments?.enabled !== true) {
-        if (session.status === 'open') await stripe.checkout.sessions.expire(session.id);
-        throw new CheckoutLifecycleError('Managed checkout responsibility could not be verified.');
-      }
-      if (session.status === 'open') await assertManagedCheckoutReady(stripe, lock.request);
-    }
     if (session.status === 'open' && lock.key === key && session.url) return session;
     if (session.status === 'open') session = await stripe.checkout.sessions.expire(session.id);
     await assertCompletedSubscriptionEnded(stripe, session);

@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { EventEmitter } from 'node:events';
 import test from 'node:test';
@@ -65,7 +66,7 @@ function dependencies(overrides = {}) {
         return { results: scenariosRecorded, runErrors, selected: scenarios.map(scenario => scenario.id) };
       },
     }),
-    rootDir: new URL('..', import.meta.url).pathname,
+    rootDir: fileURLToPath(new URL('..', import.meta.url)),
     outputRoot: '/tmp/task3-runner-output',
     markdownPath: '/tmp/task3-runner-output/02-identity.md',
     ...overrides,

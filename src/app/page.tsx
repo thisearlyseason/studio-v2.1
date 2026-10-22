@@ -1,11 +1,9 @@
 
 "use client"; 
 
-import { useBillingDisplayPrices } from '@/lib/use-billing-display-prices';
-import { PRICING_CONFIG } from '@/lib/pricing';
 import { ParentCompanyBrand } from '@/components/ParentCompanyBrand';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { motion, useScroll, useTransform, useMotionValue, useSpring } from 'framer-motion';
+import { motion, useInView, useScroll, useTransform, useMotionValue, useSpring } from 'framer-motion';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { 
@@ -59,7 +57,6 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import BrandLogo from '@/components/BrandLogo';
 import { LandingChatbot } from '@/components/LandingChatbot';
-import { PlatformComparison } from '@/components/marketing/platform-comparison';
 import { LandingPwaInstallButton } from '@/components/pwa/LandingPwaInstallButton';
 import { cn } from '@/lib/utils';
 import Image from 'next/image';
@@ -134,6 +131,32 @@ function TiltCard({ strength = 12, className, children }: { strength?: number; c
   );
 }
 
+// ── 3D Stats Counter ─────────────────────────────────────────────────────
+function StatCounter({ value, label, suffix = '' }: { value: number; label: string; suffix?: string }) {
+  const ref = useRef<HTMLDivElement>(null);
+  const inView = useInView(ref, { once: true, amount: 0.5 });
+  const [count, setCount] = useState(0);
+  useEffect(() => {
+    if (!inView) return;
+    let start = 0;
+    const step = value / 60;
+    const timer = setInterval(() => {
+      start += step;
+      if (start >= value) { setCount(value); clearInterval(timer); }
+      else setCount(Math.floor(start));
+    }, 16);
+    return () => clearInterval(timer);
+  }, [inView, value]);
+  return (
+    <div ref={ref} className="text-center">
+      <div className="text-4xl md:text-5xl font-black tracking-tighter text-white">
+        {count.toLocaleString()}<span className="text-primary">{suffix}</span>
+      </div>
+      <div className="text-[10px] font-black uppercase tracking-widest text-white/40 mt-1">{label}</div>
+    </div>
+  );
+}
+
 // ── Pricing Toggle Context ──────────────────────────────────────────────
 const PricingCycleContext = React.createContext<{ cycle: 'monthly' | 'annual'; setCycle: (c: 'monthly' | 'annual') => void }>({ cycle: 'monthly', setCycle: () => {} });
 
@@ -158,28 +181,26 @@ function PricingToggle() {
         )}
       >
         Annual
-        <span className="bg-primary/20 text-primary font-black text-[8px] px-1.5 py-0.5 rounded-full border border-primary/30">YEARLY</span>
+        <span className="bg-primary/20 text-primary font-black text-[8px] px-1.5 py-0.5 rounded-full border border-primary/30">SAVE 20%</span>
       </button>
     </div>
   );
 }
 
-function PricingDisplay({ planId, color, darkBg }: { planId: string; color: string; darkBg?: boolean }) {
-  const prices = useBillingDisplayPrices();
-  const plan = PRICING_CONFIG.find(p=>p.id===planId);
+function PricingDisplay({ monthly, annual, annualMonthly, color, darkBg }: { monthly: string; annual: string; annualMonthly: string; color: string; darkBg?: boolean }) {
   const { cycle } = React.useContext(PricingCycleContext);
-  const opacityClass = darkBg ? 'opacity-60' : 'text-white/70';
+  const opacityClass = darkBg ? 'opacity-60' : 'text-white/40';
   return (
     <div className="space-y-0.5">
       <div className="flex items-baseline gap-1">
         <span className={cn('text-4xl font-black tracking-tighter transition-all duration-300', color)}>
-          {prices.label(cycle==='annual' ? plan?.annualPriceId || '' : plan?.monthlyPriceId || '')}
+          {cycle === 'annual' ? annualMonthly : monthly}
         </span>
-        <span className={cn('text-[10px] font-black uppercase', darkBg ? 'opacity-60' : 'text-white/70')}>/{cycle==='annual'?'yr':'mo'}</span>
+        <span className={cn('text-[10px] font-black uppercase', darkBg ? 'opacity-60' : 'text-white/40')}>/mo</span>
       </div>
       {cycle === 'annual' && (
         <p className={cn('text-[9px] font-black uppercase tracking-wider', color, 'opacity-70')}>
-          Billed annually
+          {annual}/yr · billed annually
         </p>
       )}
     </div>
@@ -284,7 +305,7 @@ function SectionHeader({ badge, title, subtitle }: { badge: string; title: React
       <motion.div variants={fadeUp}>
         <Badge variant="secondary" className="bg-primary/5 text-primary border-none font-black px-4 py-1 uppercase tracking-widest text-[10px]">{badge}</Badge>
       </motion.div>
-      <motion.h2 variants={fadeUp} className="text-3xl sm:text-5xl md:text-7xl font-black tracking-tighter leading-[0.9] sm:leading-none md:leading-none">{title}</motion.h2>
+      <motion.h2 variants={fadeUp} className="text-3xl sm:text-5xl md:text-7xl font-black tracking-tighter leading-[0.9]">{title}</motion.h2>
       <motion.div variants={fadeUp} className="text-muted-foreground font-medium text-lg pt-4 leading-relaxed">{subtitle}</motion.div>
     </motion.div>
   );
@@ -626,7 +647,7 @@ export default function LandingPage() {
               onEnded={handleVideoEnded}
               className="absolute inset-0 w-full h-full object-cover"
             />
-            <div className="absolute inset-0 bg-black/55 bg-linear-to-b from-black/50 via-black/20 to-black/80" />
+            <div className="absolute inset-0 bg-black/55 bg-gradient-to-b from-black/50 via-black/20 to-black/80" />
           </motion.div>
         ))}
 
@@ -664,7 +685,7 @@ export default function LandingPage() {
           />
           {/* Diagonal line */}
           <motion.div
-            className="absolute top-1/2 left-1/2 w-[600px] h-px bg-linear-to-r from-transparent via-primary/20 to-transparent -translate-x-1/2 -translate-y-1/2 rotate-[-30deg]"
+            className="absolute top-1/2 left-1/2 w-[600px] h-px bg-gradient-to-r from-transparent via-primary/20 to-transparent -translate-x-1/2 -translate-y-1/2 rotate-[-30deg]"
             initial={{ scaleX: 0, opacity: 0 }}
             animate={{ scaleX: 1, opacity: 1 }}
             transition={{ delay: 1.0, duration: 1.4, ease: [0.16, 1, 0.3, 1] }}
@@ -679,7 +700,7 @@ export default function LandingPage() {
             <motion.div animate={{ y: [0, -10, 0], rotate: [0, 1, 0] }} transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut', delay: 2 }}>
               <div className="text-[9px] font-black uppercase tracking-widest text-primary mb-1">Live Match</div>
               <div className="text-xs font-black">🏆 Hawks 3 – 1 Bulls</div>
-              <div className="text-[8px] text-white/70 mt-0.5">Q3 · 14:32</div>
+              <div className="text-[8px] text-white/40 mt-0.5">Q3 · 14:32</div>
             </motion.div>
           </motion.div>
           {/* Top-left roster card */}
@@ -749,7 +770,7 @@ export default function LandingPage() {
             {/* DOMINATE — crashes straight down from above with extreme rotateX */}
             <div className="overflow-hidden pb-2">
               <motion.div
-                className="text-4xl sm:text-5xl md:text-9xl font-black text-white tracking-tighter leading-[0.88] sm:leading-none md:leading-none"
+                className="text-4xl sm:text-5xl md:text-9xl font-black text-white tracking-tighter leading-[0.88]"
                 initial={{ y: '-120%', rotateX: -120, opacity: 0, scale: 1.4, filter: 'blur(8px)' }}
                 animate={{ y: 0, rotateX: 0, opacity: 1, scale: 1, filter: 'blur(0px)' }}
                 transition={{ delay: 0.7, duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
@@ -762,7 +783,7 @@ export default function LandingPage() {
             {/* YOUR SEASON — side-by-side, each slams in from the sides with huge rotateY */}
             <div className="overflow-hidden pb-1 flex items-baseline justify-center gap-2 md:gap-6 flex-wrap">
               <motion.span
-                className="inline-block text-4xl sm:text-5xl md:text-9xl font-black text-white tracking-tighter leading-[0.88] sm:leading-none md:leading-none"
+                className="inline-block text-4xl sm:text-5xl md:text-9xl font-black text-white tracking-tighter leading-[0.88]"
                 initial={{ x: -200, rotateY: 90, opacity: 0, scale: 0.7, filter: 'blur(10px)' }}
                 animate={{ x: 0, rotateY: 0, opacity: 1, scale: 1, filter: 'blur(0px)' }}
                 transition={{ delay: 1.05, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
@@ -771,7 +792,7 @@ export default function LandingPage() {
                 YOUR
               </motion.span>
               <motion.span
-                className="inline-block text-4xl sm:text-5xl md:text-9xl font-black text-primary italic tracking-tighter leading-[0.88] sm:leading-none md:leading-none"
+                className="inline-block text-4xl sm:text-5xl md:text-9xl font-black text-primary italic tracking-tighter leading-[0.88]"
                 initial={{ x: 200, rotateY: -90, opacity: 0, scale: 0.5, filter: 'blur(12px)' }}
                 animate={{ x: 0, rotateY: 0, opacity: 1, scale: 1, filter: 'blur(0px)' }}
                 transition={{ delay: 1.15, duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
@@ -783,7 +804,7 @@ export default function LandingPage() {
 
             {/* Underline streak — fires after impact */}
             <motion.div
-              className="mx-auto mt-3 h-1.5 rounded-full bg-linear-to-r from-transparent via-primary to-transparent"
+              className="mx-auto mt-3 h-1.5 rounded-full bg-gradient-to-r from-transparent via-primary to-transparent"
               initial={{ width: 0, opacity: 0 }}
               animate={{ width: '70%', opacity: 1 }}
               transition={{ delay: 1.45, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
@@ -792,7 +813,7 @@ export default function LandingPage() {
 
           {/* Subtitle */}
           <motion.p
-            className="text-base md:text-xl text-white/70 max-w-2xl mx-auto font-medium leading-relaxed md:leading-7"
+            className="text-base md:text-xl text-white/70 max-w-2xl mx-auto font-medium leading-relaxed"
             initial={{ opacity: 0, filter: 'blur(12px)', y: 20 }}
             animate={{ opacity: 1, filter: 'blur(0px)', y: 0 }}
             transition={{ delay: 1.55, duration: 1.0, ease: 'easeOut' }}
@@ -837,7 +858,7 @@ export default function LandingPage() {
                 <DialogDescription className="sr-only">
                   Choose a demo role to open an isolated sample workspace.
                 </DialogDescription>
-
+                <div className="h-2 bg-primary w-full" />
                 <div className="p-8 lg:p-12 space-y-8">
                   <div className="text-center space-y-2">
                     <h2 className="text-4xl font-black uppercase tracking-tight">Choose a Demo Role</h2>
@@ -849,7 +870,7 @@ export default function LandingPage() {
                       <Button 
                         key={demo.id} 
                         variant="outline" 
-                        className="h-24 rounded-3xl bg-muted/30 border-2 border-transparent hover:border-primary/20 hover:bg-white hover:text-foreground transition-all flex items-center justify-between px-6 group"
+                        className="h-24 rounded-[1.5rem] bg-muted/30 border-2 border-transparent hover:border-primary/20 hover:bg-white hover:text-foreground transition-all flex items-center justify-between px-6 group"
                         onClick={() => handleLaunchDemo(demo.id)}
                         disabled={isDemoLoading}
                         aria-label={`Open ${demo.name}: ${demo.desc}`}
@@ -877,7 +898,7 @@ export default function LandingPage() {
       {/* ══ 3D STATS MARQUEE BAR ══ */}
       <section className="relative py-8 md:py-12 bg-black overflow-hidden grid-beam">
         {/* Ambient glow behind stats */}
-        <div className="absolute inset-0 bg-linear-to-b from-black via-black to-black pointer-events-none" />
+        <div className="absolute inset-0 bg-gradient-to-b from-black via-black to-black pointer-events-none" />
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-32 bg-primary/8 blur-[80px] pointer-events-none" />
         <motion.div
           className="container mx-auto px-6 relative z-10"
@@ -886,17 +907,17 @@ export default function LandingPage() {
         >
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-0 md:divide-x md:divide-white/10">
             {[
-              { value: 'Teams', label: 'Manage your roster' },
-              { value: 'Schedules', label: 'Keep everyone informed' },
-              { value: 'Tournaments', label: 'Organize the competition' },
-              { value: 'Free plan', label: 'Get started with the basics' },
+              { value: 1100, label: 'Athletes Managed', suffix: '' },
+              { value: 98,   label: 'Uptime SLA',        suffix: '%' },
+              { value: 220,  label: 'Teams Deployed',    suffix: '+' },
+              { value: 5,    label: 'Free Trial',        suffix: '-Day' },
             ].map((stat, i) => (
               <motion.div
                 key={i}
                 variants={fadeUp}
                 className="flex justify-center md:px-8"
               >
-                <div className="text-center"><div className="text-2xl md:text-3xl font-black text-white">{stat.value}</div><p className="text-sm text-white/80 mt-2">{stat.label}</p></div>
+                <StatCounter value={stat.value} label={stat.label} suffix={stat.suffix} />
               </motion.div>
             ))}
           </div>
@@ -915,7 +936,7 @@ export default function LandingPage() {
             href="/beta"
             className="group flex flex-col items-center gap-2 bg-black text-white px-3 py-5 rounded-l-2xl shadow-2xl shadow-black/40 border border-white/10 hover:bg-primary hover:text-gray-900 hover:border-primary transition-all duration-300"
           >
-            <ChevronRight className="h-3.5 w-3.5 -rotate-90 opacity-60 group-hover:opacity-100 transition-all" />
+            <ChevronRight className="h-3.5 w-3.5 rotate-[-90deg] opacity-60 group-hover:opacity-100 transition-all" />
             <span
               className="text-[11px] font-black uppercase tracking-widest"
               style={{ writingMode: 'vertical-rl', transform: 'rotate(180deg)' }}
@@ -955,7 +976,7 @@ export default function LandingPage() {
 
                   <motion.h2
                     variants={fadeUp}
-                    className="text-5xl md:text-6xl font-black text-gray-900 tracking-tighter leading-[0.92] md:leading-none"
+                    className="text-5xl md:text-6xl font-black text-gray-900 tracking-tighter leading-[0.92]"
                   >
                     BE THE FIRST<br />TO<span className="text-primary italic"> KNOW.</span>
                   </motion.h2>
@@ -975,7 +996,7 @@ export default function LandingPage() {
                       'Zero spam — one email, that\'s it',
                     ].map((item) => (
                       <li key={item} className="flex items-center gap-3 text-sm font-bold text-gray-700">
-                        <span className="shrink-0 w-5 h-5 rounded-full bg-primary/15 flex items-center justify-center">
+                        <span className="flex-shrink-0 w-5 h-5 rounded-full bg-primary/15 flex items-center justify-center">
                           <Check className="h-3 w-3 text-primary" />
                         </span>
                         {item}
@@ -991,9 +1012,9 @@ export default function LandingPage() {
                   viewport={{ once: true, amount: 0.3 }}
                   transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1], delay: 0.15 }}
                 >
-                  <div className="bg-white rounded-4xl shadow-2xl shadow-black/8 p-8 md:p-10 ring-1 ring-black/5 relative overflow-hidden">
+                  <div className="bg-white rounded-[2rem] shadow-2xl shadow-black/8 p-8 md:p-10 ring-1 ring-black/5 relative overflow-hidden">
                     {/* Top accent bar */}
-
+                    <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-primary via-yellow-400 to-primary/60 rounded-t-[2rem]" />
 
                     {newsletterDone ? (
                       <motion.div
@@ -1044,7 +1065,7 @@ export default function LandingPage() {
                             placeholder="Your Name"
                             value={newsletterName}
                             onChange={(e) => setNewsletterName(e.target.value)}
-                            className="w-full h-auto px-5 py-3.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-400 font-semibold text-sm focus:outline-none focus:border-primary/50 focus:bg-white focus:ring-2 focus:ring-primary/10 transition-all"
+                            className="w-full h-13 px-5 py-3.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-400 font-semibold text-sm focus:outline-none focus:border-primary/50 focus:bg-white focus:ring-2 focus:ring-primary/10 transition-all"
                           />
                           <motion.input
                             aria-label="Newsletter email"
@@ -1054,7 +1075,7 @@ export default function LandingPage() {
                             required
                             value={newsletterEmail}
                             onChange={(e) => setNewsletterEmail(e.target.value)}
-                            className="w-full h-auto px-5 py-3.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-400 font-semibold text-sm focus:outline-none focus:border-primary/50 focus:bg-white focus:ring-2 focus:ring-primary/10 transition-all"
+                            className="w-full h-13 px-5 py-3.5 rounded-xl bg-gray-50 border border-gray-200 text-gray-900 placeholder:text-gray-400 font-semibold text-sm focus:outline-none focus:border-primary/50 focus:bg-white focus:ring-2 focus:ring-primary/10 transition-all"
                           />
                         </div>
 
@@ -1063,7 +1084,7 @@ export default function LandingPage() {
                           disabled={newsletterLoading}
                           whileHover={{ scale: 1.02, boxShadow: '0 8px 30px rgba(234,179,8,0.35)' }}
                           whileTap={{ scale: 0.97 }}
-                          className="w-full h-auto py-3.5 rounded-xl bg-gray-900 text-white font-black uppercase tracking-widest text-sm hover:bg-black transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-60"
+                          className="w-full h-13 py-3.5 rounded-xl bg-gray-900 text-white font-black uppercase tracking-widest text-sm hover:bg-black transition-all shadow-lg flex items-center justify-center gap-2 disabled:opacity-60"
                         >
                           {newsletterLoading
                             ? <Loader2 className="h-5 w-5 animate-spin" />
@@ -1131,15 +1152,15 @@ export default function LandingPage() {
               {
                 Icon: CreditCard,
                 title: 'Online Payments',
-                desc: <>Accept dues, fees, and donations through Stripe. <strong>Connect an organizer account</strong> to receive payments. Processing fees and payout timing depend on Stripe and the account.</>,
-                items: ['Stripe Connect', 'Payment Tracking'],
+                desc: <>Accept dues, fees, and donations directly through Stripe. Coaches connect their own account in minutes — <strong>money goes straight to them</strong>, no platform cut.</>,
+                items: ['Stripe Connect', 'Instant Payouts'],
                 accent: 'from-orange-500/10 to-transparent',
               },
               {
                 Icon: ShieldCheck,
-                title: 'Waiver Tracking',
-                desc: <>Hub admins distribute waivers to coaches. <strong>Notification and tracking tools</strong> help staff identify missing signatures.</>,
-                items: ['Waiver Distribution', 'Signature Status'],
+                title: 'Global Waiver Compliance',
+                desc: <>Hub admins deploy signed waivers to all coaches instantly. <strong>Real-time notification and tracking</strong> ensures 100% staff compliance.</>,
+                items: ['Instant Deploy', '100% Compliance'],
                 accent: 'from-teal-500/10 to-transparent',
               },
             ].map(({ Icon, title, desc, items, accent }, i) => (
@@ -1151,11 +1172,11 @@ export default function LandingPage() {
                 <TiltCard strength={8} className="h-full rounded-[2.5rem] overflow-hidden">
                   <Card className="rounded-[2.5rem] border-none depth-card bg-white p-10 space-y-6 h-full group relative overflow-hidden cursor-pointer transition-colors duration-500 hover:bg-gray-950 hover:text-white">
                     {/* Accent gradient top-left */}
-                    <div className={`absolute top-0 left-0 w-64 h-64 bg-linear-to-br ${accent} rounded-full blur-2xl pointer-events-none opacity-60 group-hover:opacity-0 transition-opacity`} />
+                    <div className={`absolute top-0 left-0 w-64 h-64 bg-gradient-to-br ${accent} rounded-full blur-2xl pointer-events-none opacity-60 group-hover:opacity-0 transition-opacity`} />
                     {/* Dark mode glow */}
-                    <div className="absolute top-0 left-0 w-64 h-64 bg-linear-to-br from-primary/20 to-transparent rounded-full blur-2xl pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <div className="absolute top-0 left-0 w-64 h-64 bg-gradient-to-br from-primary/20 to-transparent rounded-full blur-2xl pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
                     {/* Shimmer */}
-                    <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/5 to-transparent -skew-x-12 translate-x-[-200%] group-hover:translate-x-[300%] transition-transform duration-1000 pointer-events-none" />
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -skew-x-12 translate-x-[-200%] group-hover:translate-x-[300%] transition-transform duration-1000 pointer-events-none" />
                     <div className="relative z-10 space-y-6">
                       <div className="bg-primary p-4 rounded-2xl w-fit shadow-lg shadow-primary/30 group-hover:shadow-primary/50 transition-shadow">
                         <Icon className="h-8 w-8 text-white" />
@@ -1178,16 +1199,87 @@ export default function LandingPage() {
         </div>
       </section>
 
-      <section id="comparison" className="scroll-mt-24 py-20 md:py-32 bg-white relative">
+      <section id="comparison" className="py-32 bg-white relative">
         <div className="container mx-auto px-6">
           <SectionHeader
-            badge="Compare Platforms"
-            title={<>FIND YOUR <br /> <span className="text-primary italic">TEAM’S FIT.</span></>}
-            subtitle="See how The Squad brings coaching, family coordination and competition management together, alongside the capabilities other sports platforms offer."
+            badge="Market Intelligence"
+            title={<>COMPETITIVE <br /> <span className="text-primary italic">ADVANTAGE.</span></>}
+            subtitle="Legacy tools are for hobbyists. The Squad is built for organizations that demand absolute operational visibility and high-performance metrics."
           />
-          <PlatformComparison />
+          
+          <div className="relative group">
+            <div className="absolute inset-0 bg-primary/5 blur-[100px] rounded-full opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none" />
+            <div className="relative overflow-x-auto rounded-[2rem] md:rounded-[3.5rem] border-2 shadow-2xl bg-white scrollbar-hide">
+              <div className="md:hidden flex items-center justify-center p-3 bg-muted/20 text-[8px] font-black uppercase tracking-[0.2em] text-primary space-x-2 border-b">
+                <span>Swipe to compare</span>
+                <ChevronRight className="h-3 w-3 animate-bounce-x" />
+              </div>
+              <table className="w-full text-left border-collapse min-w-[700px] md:min-w-[1000px]">
+              <thead>
+                <tr className="bg-black text-white">
+                  <th className="py-8 px-8 text-[10px] font-black uppercase tracking-[0.2em] opacity-60">Capabilities</th>
+                  <th className="py-8 px-8 text-center bg-primary">
+                    <div className="flex flex-col items-center gap-2">
+                      <span className="font-black text-xs tracking-tighter">THE SQUAD</span>
+                      <Badge className="bg-white text-primary border-none font-black text-[7px] h-4">PLATFORM OF CHOICE</Badge>
+                    </div>
+                  </th>
+                  <th className="py-8 px-8 text-center text-[10px] font-black uppercase tracking-widest opacity-40">TeamSnap</th>
+                  <th className="py-8 px-8 text-center text-[10px] font-black uppercase tracking-widest opacity-40">Hudl</th>
+                  <th className="py-8 px-8 text-center text-[10px] font-black uppercase tracking-widest opacity-40">TeamReach</th>
+                  <th className="py-8 px-8 text-center text-[10px] font-black uppercase tracking-widest opacity-40">GameChanger</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y">
+                {[
+                  { feature: "Branded PDF Briefings", squad: true, tsnap: false, hudl: false, treach: false, gchanger: false, note: "Institutional Tactical PDF Printouts" },
+                  { feature: "Athlete Film Library", squad: true, tsnap: false, hudl: "Basic", treach: false, gchanger: false, note: "Hosted and uploaded highlight reels" },
+                  { feature: "Institutional Fiscal Audit", squad: true, tsnap: false, hudl: false, treach: false, gchanger: false, note: "Club-wide financial visibility" },
+                  { feature: "Recruiting Portfolio Export", squad: true, tsnap: false, hudl: false, treach: false, gchanger: false, note: "Certified athlete performance resumes" },
+                  { feature: "Consolidated Household Hub", squad: true, tsnap: false, hudl: false, treach: false, gchanger: false, note: "Unified management for multi-athlete families" },
+                  { feature: "Image/Asset Optimization", squad: true, tsnap: false, hudl: false, treach: false, gchanger: false, note: "Automatic high-res compression" },
+                  { feature: "75% Film Watch Rule", squad: true, tsnap: false, hudl: "Partial", treach: false, gchanger: false, note: "Verified compliance monitoring" },
+                  { feature: "Tournament & League Elite Engines", squad: true, tsnap: "Partial", hudl: false, treach: false, gchanger: "Basic", note: "One-click championship series" },
+                  { feature: "UTC-Precision Scheduling", squad: true, tsnap: "Basic", hudl: "Basic", treach: "Basic", gchanger: "Basic", note: "Timezone-aware local consistency" },
+                ].map((row, idx) => (
+                  <tr key={idx} className="group hover:bg-muted/10 transition-colors">
+                    <td className="py-6 px-8">
+                      <p className="font-black text-sm uppercase tracking-tight leading-none mb-1">{row.feature}</p>
+                      <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest">{row.note}</p>
+                    </td>
+                    <td className="py-6 px-8 bg-primary/5 border-x-2 border-primary/10">
+                      <div className="flex justify-center">
+                        <Check className="h-6 w-6 text-primary stroke-[4px]" />
+                      </div>
+                    </td>
+                    <td className="py-6 px-8 text-center">
+                      <div className="flex justify-center">
+                        {row.tsnap === true ? <Check className="h-5 w-5 text-primary stroke-[3px]" /> : (row.tsnap === false ? <X className="h-4 w-4 opacity-10" /> : <span className="text-[8px] font-black uppercase text-muted-foreground leading-none">{row.tsnap}</span>)}
+                      </div>
+                    </td>
+                    <td className="py-6 px-8 text-center">
+                      <div className="flex justify-center">
+                        {row.hudl === true ? <Check className="h-5 w-5 text-primary stroke-[3px]" /> : (row.hudl === false ? <X className="h-4 w-4 opacity-10" /> : <span className="text-[8px] font-black uppercase text-muted-foreground leading-none">{row.hudl}</span>)}
+                      </div>
+                    </td>
+                    <td className="py-6 px-8 text-center">
+                      <div className="flex justify-center">
+                        {row.treach === true ? <Check className="h-5 w-5 text-primary stroke-[3px]" /> : (row.treach === false ? <X className="h-4 w-4 opacity-10" /> : <span className="text-[8px] font-black uppercase text-muted-foreground leading-none">{row.treach}</span>)}
+                      </div>
+                    </td>
+                    <td className="py-6 px-8 text-center">
+                      <div className="flex justify-center">
+                        {row.gchanger === true ? <Check className="h-5 w-5 text-primary stroke-[3px]" /> : (row.gchanger === false ? <X className="h-4 w-4 opacity-10" /> : <span className="text-[8px] font-black uppercase text-muted-foreground leading-none">{row.gchanger}</span>)}
+                      </div>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </section>
+      </div>
+    </section>
 
       <section className="py-32 bg-black text-white overflow-hidden relative">
         {/* Deep depth orbs */}
@@ -1204,7 +1296,7 @@ export default function LandingPage() {
               <motion.div variants={fadeUp}>
                 <Badge className="bg-primary text-white border-none font-black px-4 h-7 uppercase tracking-widest text-[10px]">Strategic Advantages</Badge>
               </motion.div>
-              <motion.h2 variants={fadeUp} className="text-4xl md:text-6xl font-black tracking-tight leading-none uppercase md:leading-none">
+              <motion.h2 variants={fadeUp} className="text-4xl md:text-6xl font-black tracking-tight leading-none uppercase">
                 CHAMPIONSHIP <br /> <span className="text-primary italic">OPERATIONS.</span>
               </motion.h2>
               
@@ -1213,7 +1305,7 @@ export default function LandingPage() {
                   { Icon: ClipboardList, title: 'Scouting Profiles', desc: <>Keep <strong>Staff Evaluations</strong>, recruiting-ready notes, and athlete media together in one controlled profile.</> },
                   { Icon: Video,        title: 'Athlete Film Library',  desc: <>Archive hosted or uploaded <strong>Highlight Reels</strong> for staff review and recruiting portfolios.</> },
                   { Icon: Building,     title: 'Institutional Hub',    desc: <><strong>Fiscal Pulse Auditing</strong> for club directors managing 20+ squads with aggregated financial visibility.</> },
-                  { Icon: ShieldAlert,  title: 'Recruiting Portfolios',desc: <><strong>Personnel Evaluations</strong> that athletes can export for recruiting conversations.</> },
+                  { Icon: ShieldAlert,  title: 'Recruiting Portfolios',desc: <>Certified <strong>Personnel Evaluations</strong> that athletes can export directly to college recruitment pipelines.</> },
                 ].map(({ Icon, title, desc }, i) => (
                   <motion.div key={i} variants={fadeUp} className="space-y-3 group">
                     <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center group-hover:bg-primary transition-colors">
@@ -1260,7 +1352,7 @@ export default function LandingPage() {
               >
                 <Card className="rounded-[2.5rem] border-white/10 bg-white/5 backdrop-blur-xl p-8 lg:p-10 depth-card-dark overflow-hidden">
                   {/* Shimmer sweep on hover */}
-                  <div className="absolute inset-0 bg-linear-to-r from-transparent via-white/4 to-transparent -skew-x-12 animate-shimmer-x pointer-events-none rounded-[2.5rem]" />
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-white/4 to-transparent -skew-x-12 animate-shimmer-x pointer-events-none rounded-[2.5rem]" />
                   <div className="space-y-6 relative z-10">
                     {/* Header */}
                     <div className="flex items-center justify-between">
@@ -1268,9 +1360,9 @@ export default function LandingPage() {
                         <div className="h-10 w-10 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/40 float-fast">
                           <Activity className="h-5 w-5 text-white" />
                         </div>
-                        <span className="font-black uppercase tracking-widest text-xs">Example Team Feed</span>
+                        <span className="font-black uppercase tracking-widest text-xs">Live Tactical Feed</span>
                       </div>
-                      <Badge variant="outline" className="border-white/20 text-white font-black text-[8px] px-2 h-5 glow-red">DEMO DATA</Badge>
+                      <Badge variant="outline" className="border-white/20 text-white font-black text-[8px] px-2 h-5 glow-red">ENCRYPTED</Badge>
                     </div>
                     {/* Notifications stack */}
                     <div className="space-y-3">
@@ -1295,13 +1387,13 @@ export default function LandingPage() {
                         >
                           <div className={cn('h-2.5 w-2.5 rounded-full shrink-0', item.active ? 'bg-primary animate-pulse' : 'bg-white/20')} />
                           <p className="flex-1 text-[10px] font-bold text-white/70 leading-snug">{item.label}</p>
-                          <span className={cn('text-[8px] font-black uppercase shrink-0', item.active ? 'text-primary' : 'text-white/70')}>{item.time}</span>
+                          <span className={cn('text-[8px] font-black uppercase shrink-0', item.active ? 'text-primary' : 'text-white/30')}>{item.time}</span>
                         </motion.div>
                       ))}
                     </div>
                     {/* Progress bars */}
                     <div className="space-y-3 pt-2 border-t border-white/8">
-                      <p className="text-[9px] font-black uppercase text-white/70 tracking-widest">Roster Compliance</p>
+                      <p className="text-[9px] font-black uppercase text-white/30 tracking-widest">Roster Compliance</p>
                       {[
                         { label: 'Film Watch', pct: 87, color: 'bg-primary' },
                         { label: 'Waivers Signed', pct: 100, color: 'bg-emerald-500' },
@@ -1326,10 +1418,10 @@ export default function LandingPage() {
                     </div>
                     {/* Footer */}
                     <div className="flex items-center justify-between">
-                      <p className="text-[10px] font-bold text-white/70 uppercase tracking-widest">Active Coordination Hub</p>
+                      <p className="text-[10px] font-bold text-white/30 uppercase tracking-widest">Active Coordination Hub</p>
                       <div className="flex -space-x-2">
                         {[...Array(4)].map((_,i) => (
-                          <div key={i} className="h-7 w-7 rounded-full border-2 border-black/60 bg-linear-to-br from-white/20 to-white/5 float-fast" style={{animationDelay:`${i*0.4}s`}} />
+                          <div key={i} className="h-7 w-7 rounded-full border-2 border-black/60 bg-gradient-to-br from-white/20 to-white/5 float-fast" style={{animationDelay:`${i*0.4}s`}} />
                         ))}
                       </div>
                     </div>
@@ -1363,8 +1455,8 @@ export default function LandingPage() {
                 <TiltCard strength={6} className="h-full rounded-[2.5rem] overflow-hidden">
                   <Card className="rounded-[2.5rem] border-none depth-card bg-white p-10 space-y-6 h-full relative overflow-hidden group cursor-pointer hover:bg-gray-950 hover:text-white transition-colors duration-500">
                     {/* Gradient top accent */}
-                    <div className={`absolute top-0 left-0 w-full h-40 bg-linear-to-b ${color} to-transparent pointer-events-none opacity-70 group-hover:opacity-0 transition-opacity`} />
-                    <div className="absolute top-0 left-0 w-full h-40 bg-linear-to-b from-primary/10 to-transparent pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
+                    <div className={`absolute top-0 left-0 w-full h-40 bg-gradient-to-b ${color} to-transparent pointer-events-none opacity-70 group-hover:opacity-0 transition-opacity`} />
+                    <div className="absolute top-0 left-0 w-full h-40 bg-gradient-to-b from-primary/10 to-transparent pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
                     {/* Number badge */}
                     <div className="absolute top-8 right-8 text-[80px] font-black text-black/4 group-hover:text-white/4 leading-none select-none transition-colors">{num}</div>
                     <div className="relative z-10 space-y-6">
@@ -1396,13 +1488,13 @@ export default function LandingPage() {
             variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.12 } } }}
           >
             <motion.div variants={fadeUp}>
-              <Badge className="bg-primary/20 text-red-400 border-primary/30 font-black px-4 py-1 uppercase tracking-widest text-[10px]">Transparent Institutional Tiers</Badge>
+              <Badge className="bg-primary/20 text-primary border-primary/30 font-black px-4 py-1 uppercase tracking-widest text-[10px]">Transparent Institutional Tiers</Badge>
             </motion.div>
-            <motion.h2 variants={fadeUp} className="text-4xl sm:text-5xl md:text-7xl font-black tracking-tighter leading-[0.9] text-white sm:leading-none md:leading-none">
-              SCALE YOUR <span className="text-red-400 italic">OPERATION.</span>
+            <motion.h2 variants={fadeUp} className="text-4xl sm:text-5xl md:text-7xl font-black tracking-tighter leading-[0.9] text-white">
+              SCALE YOUR <span className="text-primary italic">OPERATION.</span>
             </motion.h2>
-            <motion.div variants={fadeUp} className="flex items-center gap-2 text-red-400 font-black uppercase tracking-widest text-[10px] bg-primary/10 px-4 py-2 rounded-full border border-primary/20 w-fit mx-auto">
-              <AlertCircle className="h-3 w-3" /><span>Choose the plan that fits your organization</span>
+            <motion.div variants={fadeUp} className="flex items-center gap-2 text-primary font-black uppercase tracking-widest text-[10px] bg-primary/10 px-4 py-2 rounded-full border border-primary/20 w-fit mx-auto">
+              <AlertCircle className="h-3 w-3" /><span>Limited Introductory Pricing • Competitive Advantage Locked</span>
             </motion.div>
 
             {/* Billing Cycle Toggle */}
@@ -1419,16 +1511,16 @@ export default function LandingPage() {
             transition={{ duration: 0.6, delay: 0.2 }}
             className="relative max-w-2xl mx-auto mb-12 overflow-hidden"
           >
-            <div className="absolute -inset-px rounded-2xl bg-linear-to-r from-primary/60 via-yellow-400/40 to-primary/60 opacity-60 blur-[2px]" />
+            <div className="absolute -inset-[1px] rounded-2xl bg-gradient-to-r from-primary/60 via-yellow-400/40 to-primary/60 opacity-60 blur-[2px]" />
             <div className="relative flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-6 bg-black rounded-2xl px-8 py-5">
               <motion.div
-                className="absolute inset-0 bg-linear-to-r from-transparent via-white/5 to-transparent -skew-x-12 pointer-events-none rounded-2xl"
+                className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -skew-x-12 pointer-events-none rounded-2xl"
                 animate={{ x: ['-100%', '200%'] }}
                 transition={{ duration: 3.5, repeat: Infinity, repeatDelay: 5, ease: 'easeInOut' }}
               />
               <div className="flex items-center gap-3 relative z-10">
                 <div className="bg-primary/20 border border-primary/30 rounded-xl p-2.5">
-                  <Clock className="h-5 w-5 text-red-400" />
+                  <Clock className="h-5 w-5 text-primary" />
                 </div>
                 <div>
                   <p className="text-white font-black uppercase tracking-tight text-sm leading-none">5-Day Free Trial</p>
@@ -1439,7 +1531,7 @@ export default function LandingPage() {
               <div className="flex flex-wrap items-center justify-center gap-3 relative z-10">
                 {['Card saved upfront', 'No charge for 5 days', 'Cancel anytime'].map((item) => (
                   <span key={item} className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest text-white/60">
-                    <CheckCircle2 className="h-3 w-3 text-red-400 shrink-0" />
+                    <CheckCircle2 className="h-3 w-3 text-primary shrink-0" />
                     {item}
                   </span>
                 ))}
@@ -1453,22 +1545,22 @@ export default function LandingPage() {
               {/* Starter */}
               <motion.div whileHover={{ y: -8, scale: 1.02 }} transition={{ type: 'spring', stiffness: 280, damping: 22 }} className="flex flex-col">
               <Card className="rounded-[2.5rem] border border-white/8 shadow-xl overflow-hidden flex flex-col bg-white/5 backdrop-blur-sm h-full">
-                <div className="h-px w-full bg-linear-to-r from-transparent via-white/20 to-transparent" />
+                <div className="h-px w-full bg-gradient-to-r from-transparent via-white/20 to-transparent" />
                 <CardHeader className="p-8 pb-4 space-y-4">
                   <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 border-white/20 text-white/60 w-fit">GRASSROOTS</Badge>
                   <div className="space-y-1">
                     <CardTitle className="text-2xl font-black uppercase tracking-tight text-white">Starter</CardTitle>
                     <span className="text-4xl font-black tracking-tighter text-white">$0</span>
                   </div>
-                  <CardDescription className="text-[10px] font-bold text-white/70 uppercase">Foundational coordination hub.</CardDescription>
+                  <CardDescription className="text-[10px] font-bold text-white/40 uppercase">Foundational coordination hub.</CardDescription>
                 </CardHeader>
                 <CardContent className="p-8 pt-0 flex-1 space-y-6">
                   <div className="pt-4 border-t border-white/10 space-y-3">
-                    <p className="text-[9px] font-black uppercase text-white/70">Included</p>
+                    <p className="text-[9px] font-black uppercase text-white/30">Included</p>
                     <ul className="space-y-2">
-                      <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><Check className="h-3.5 w-3.5 text-red-400" /> Scheduling</li>
-                      <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><Check className="h-3.5 w-3.5 text-red-400" /> Team Chat</li>
-                      <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><Check className="h-3.5 w-3.5 text-red-400" /> Score Tracking</li>
+                      <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><Check className="h-3.5 w-3.5 text-primary" /> Scheduling</li>
+                      <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><Check className="h-3.5 w-3.5 text-primary" /> Team Chat</li>
+                      <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><Check className="h-3.5 w-3.5 text-primary" /> Score Tracking</li>
                     </ul>
                   </div>
                 </CardContent>
@@ -1484,40 +1576,40 @@ export default function LandingPage() {
               <motion.div whileHover={{ y: -14, scale: 1.03 }} transition={{ type: 'spring', stiffness: 280, damping: 22 }} className="flex flex-col">
               <div className="relative flex flex-col h-full">
                 {/* Animated glowing border ring */}
-                <div className="absolute inset-[-2px] rounded-[2.6rem] bg-linear-to-br from-primary via-yellow-400/60 to-primary/40 opacity-80" />
+                <div className="absolute -inset-[2px] rounded-[2.6rem] bg-gradient-to-br from-primary via-yellow-400/60 to-primary/40 opacity-80" />
                 <Card className="relative rounded-[2.5rem] border-none shadow-2xl overflow-hidden flex flex-col bg-black text-white h-full">
                   {/* Shimmer sweep */}
                   <motion.div
-                    className="absolute inset-0 bg-linear-to-r from-transparent via-white/5 to-transparent -skew-x-12 pointer-events-none z-10"
+                    className="absolute inset-0 bg-gradient-to-r from-transparent via-white/5 to-transparent -skew-x-12 pointer-events-none z-10"
                     animate={{ x: ['-100%', '200%'] }}
                     transition={{ duration: 3, repeat: Infinity, repeatDelay: 4, ease: 'easeInOut' }}
                   />
                   <div className="absolute top-0 right-0 p-4 opacity-[0.07] -rotate-12 pointer-events-none"><Zap className="h-24 w-24" /></div>
                   <CardHeader className="p-8 pb-4 space-y-4 relative z-10">
                     <div className="flex items-center justify-between">
-                      <Badge className="bg-primary text-white border-none font-black text-[8px] px-3 h-5 uppercase">TEAM PLAN</Badge>
-                      <Sparkles className="h-5 w-5 text-red-400 animate-pulse" />
+                      <Badge className="bg-primary text-black border-none font-black text-[8px] px-3 h-5 uppercase">MOST POPULAR</Badge>
+                      <Sparkles className="h-5 w-5 text-primary animate-pulse" />
                     </div>
                     <div className="space-y-1">
                       <CardTitle className="text-2xl font-black uppercase tracking-tight">Squad Pro</CardTitle>
-                      <PricingDisplay planId="team" color="text-red-400" darkBg />
+                      <PricingDisplay monthly="$19.99" annual="$199" annualMonthly="$16.58" color="text-primary" darkBg />
                     </div>
                     <CardDescription className="text-[10px] font-bold text-white/50 uppercase">Championship tools for one team.</CardDescription>
                   </CardHeader>
                   <CardContent className="p-8 pt-0 flex-1 space-y-6 relative z-10">
                     <div className="pt-4 border-t border-white/10 space-y-3">
-                      <p className="text-[9px] font-black uppercase text-white/70">Everything in Starter +</p>
+                      <p className="text-[9px] font-black uppercase text-white/30">Everything in Starter +</p>
                       <ul className="space-y-2">
-                        <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/80"><Sparkles className="h-3.5 w-3.5 text-red-400" /> 75% Watch Rule</li>
-                        <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/80"><Sparkles className="h-3.5 w-3.5 text-red-400" /> Auto-Brackets</li>
-                        <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/80"><Sparkles className="h-3.5 w-3.5 text-red-400" /> Digital Waivers</li>
-                        <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/80"><Sparkles className="h-3.5 w-3.5 text-red-400" /> Online Payments via Stripe Connect</li>
+                        <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/80"><Sparkles className="h-3.5 w-3.5 text-primary" /> 75% Watch Rule</li>
+                        <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/80"><Sparkles className="h-3.5 w-3.5 text-primary" /> Auto-Brackets</li>
+                        <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/80"><Sparkles className="h-3.5 w-3.5 text-primary" /> Digital Waivers</li>
+                        <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/80"><Sparkles className="h-3.5 w-3.5 text-primary" /> Online Payments via Stripe Connect</li>
                       </ul>
                     </div>
                   </CardContent>
                   <CardFooter className="p-8 pt-0 relative z-10">
                     <Link href="/signup" className="w-full">
-                      <Button className="w-full h-12 rounded-xl font-black shadow-xl shadow-primary/40 bg-primary text-white hover:bg-primary/90 text-xs uppercase tracking-widest active:scale-95 transition-all">
+                      <Button className="w-full h-12 rounded-xl font-black shadow-xl shadow-primary/40 bg-primary text-black hover:bg-primary/90 text-xs uppercase tracking-widest active:scale-95 transition-all">
                         Start Pro Team <ChevronRight className="h-4 w-4 ml-1" />
                       </Button>
                     </Link>
@@ -1529,22 +1621,22 @@ export default function LandingPage() {
               {/* Elite Teams */}
               <motion.div whileHover={{ y: -8, scale: 1.02 }} transition={{ type: 'spring', stiffness: 280, damping: 22 }} className="flex flex-col">
               <Card className="rounded-[2.5rem] border border-white/8 shadow-xl overflow-hidden flex flex-col bg-white/5 backdrop-blur-sm h-full">
-                <div className="h-px w-full bg-linear-to-r from-transparent via-white/20 to-transparent" />
+                <div className="h-px w-full bg-gradient-to-r from-transparent via-white/20 to-transparent" />
                 <CardHeader className="p-8 pb-4 space-y-4">
-                  <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 border-primary/30 text-red-400 w-fit">ORGANIZATION</Badge>
+                  <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 border-primary/30 text-primary w-fit">ORGANIZATION</Badge>
                   <div className="space-y-1">
                     <CardTitle className="text-2xl font-black uppercase tracking-tight text-white">Elite Teams</CardTitle>
-                    <PricingDisplay planId="elite" color="text-red-400" />
+                    <PricingDisplay monthly="$119" annual="$1,119" annualMonthly="$93" color="text-primary" />
                   </div>
-                  <CardDescription className="text-[10px] font-bold text-white/70 uppercase">8 Pro Teams + Master Club Hub.</CardDescription>
+                  <CardDescription className="text-[10px] font-bold text-white/40 uppercase">8 Pro Teams + Master Club Hub.</CardDescription>
                 </CardHeader>
                 <CardContent className="p-8 pt-0 flex-1 space-y-6">
                   <div className="pt-4 border-t border-white/10 space-y-3">
-                    <p className="text-[9px] font-black uppercase text-white/70">Institutional</p>
+                    <p className="text-[9px] font-black uppercase text-white/30">Institutional</p>
                     <ul className="space-y-2">
-                      <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><CheckCircle2 className="h-3.5 w-3.5 text-red-400" /> Recruitment Portal</li>
-                      <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><CheckCircle2 className="h-3.5 w-3.5 text-red-400" /> Fee Management</li>
-                      <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><CheckCircle2 className="h-3.5 w-3.5 text-red-400" /> Staff Notes</li>
+                      <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><CheckCircle2 className="h-3.5 w-3.5 text-primary" /> Recruitment Portal</li>
+                      <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><CheckCircle2 className="h-3.5 w-3.5 text-primary" /> Fee Management</li>
+                      <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><CheckCircle2 className="h-3.5 w-3.5 text-primary" /> Staff Notes</li>
                     </ul>
                   </div>
                 </CardContent>
@@ -1562,28 +1654,28 @@ export default function LandingPage() {
               {/* Elite League */}
               <motion.div whileHover={{ y: -8, scale: 1.02 }} transition={{ type: 'spring', stiffness: 280, damping: 22 }} className="flex flex-col">
               <Card className="rounded-[2.5rem] border border-white/8 shadow-xl overflow-hidden flex flex-col bg-white/5 backdrop-blur-sm w-full h-full">
-                <div className="h-px w-full bg-linear-to-r from-transparent via-primary/40 to-transparent" />
+                <div className="h-px w-full bg-gradient-to-r from-transparent via-primary/40 to-transparent" />
                 <CardHeader className="p-8 pb-4 space-y-4">
-                  <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 border-primary/30 text-red-400 w-fit">INSTITUTIONAL</Badge>
+                  <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 border-primary/30 text-primary w-fit">INSTITUTIONAL</Badge>
                   <div className="space-y-1">
                     <CardTitle className="text-2xl font-black uppercase tracking-tight text-white">Elite League</CardTitle>
-                    <PricingDisplay planId="league" color="text-red-400" />
+                    <PricingDisplay monthly="$279" annual="$2,790" annualMonthly="$233" color="text-primary" />
                   </div>
-                  <CardDescription className="text-[10px] font-bold text-white/70 uppercase">18 Pro Teams + Public Hubs.</CardDescription>
+                  <CardDescription className="text-[10px] font-bold text-white/40 uppercase">18 Pro Teams + Public Hubs.</CardDescription>
                 </CardHeader>
                 <CardContent className="p-8 pt-0 flex-1 space-y-6">
                   <div className="pt-4 border-t border-white/10 space-y-3">
-                    <p className="text-[9px] font-black uppercase text-white/70">Full Infrastructure</p>
+                    <p className="text-[9px] font-black uppercase text-white/30">Full Infrastructure</p>
                     <ul className="space-y-2">
-                      <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><ShieldCheck className="h-3.5 w-3.5 text-red-400" /> Conflict Mgmt</li>
-                      <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><ShieldCheck className="h-3.5 w-3.5 text-red-400" /> Public Spectator Link</li>
-                      <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><ShieldCheck className="h-3.5 w-3.5 text-red-400" /> Custom Domain</li>
+                      <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><ShieldCheck className="h-3.5 w-3.5 text-primary" /> Conflict Mgmt</li>
+                      <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><ShieldCheck className="h-3.5 w-3.5 text-primary" /> Public Spectator Link</li>
+                      <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><ShieldCheck className="h-3.5 w-3.5 text-primary" /> Custom Domain</li>
                     </ul>
                   </div>
                 </CardContent>
                 <CardFooter className="p-8 pt-0">
                   <Link href="/signup" className="w-full">
-                    <Button variant="outline" className="w-full h-12 rounded-xl font-black uppercase text-xs border border-white/20 text-white hover:bg-white/10 hover:border-primary/40 hover:text-red-400 bg-transparent">Start League</Button>
+                    <Button variant="outline" className="w-full h-12 rounded-xl font-black uppercase text-xs border border-white/20 text-white hover:bg-white/10 hover:border-primary/40 hover:text-primary bg-transparent">Start League</Button>
                   </Link>
                 </CardFooter>
               </Card>
@@ -1592,18 +1684,18 @@ export default function LandingPage() {
               {/* School District */}
               <motion.div whileHover={{ y: -8, scale: 1.02 }} transition={{ type: 'spring', stiffness: 280, damping: 22 }} className="flex flex-col">
               <Card className="rounded-[2.5rem] border border-[#10b981]/15 shadow-xl overflow-hidden flex flex-col bg-white/5 backdrop-blur-sm w-full h-full">
-                <div className="h-px w-full bg-linear-to-r from-transparent via-[#10b981]/40 to-transparent" />
+                <div className="h-px w-full bg-gradient-to-r from-transparent via-[#10b981]/40 to-transparent" />
                 <CardHeader className="p-8 pb-4 space-y-4">
                   <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 border-[#10b981]/30 text-[#10b981] w-fit">K-12 DISTRICT</Badge>
                   <div className="space-y-1">
                     <CardTitle className="text-2xl font-black uppercase tracking-tight text-white">School District</CardTitle>
-                    <PricingDisplay planId="school" color="text-[#10b981]" />
+                    <PricingDisplay monthly="$175" annual="$1,750" annualMonthly="$146" color="text-[#10b981]" />
                   </div>
-                  <CardDescription className="text-[10px] font-bold text-white/70 uppercase">15 Squads Included · Extras at School Rate.</CardDescription>
+                  <CardDescription className="text-[10px] font-bold text-white/40 uppercase">15 Squads Included · Extras at School Rate.</CardDescription>
                 </CardHeader>
                 <CardContent className="p-8 pt-0 flex-1 space-y-6">
                   <div className="pt-4 border-t border-white/10 space-y-3">
-                    <p className="text-[9px] font-black uppercase text-white/70">Academic Athletics</p>
+                    <p className="text-[9px] font-black uppercase text-white/30">Academic Athletics</p>
                     <ul className="space-y-2">
                       <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><GraduationCap className="h-3.5 w-3.5 text-[#10b981]" /> 15 Pro Squad Hubs Included</li>
                       <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><GraduationCap className="h-3.5 w-3.5 text-[#10b981]" /> Athletic Director Hub</li>
@@ -1627,7 +1719,7 @@ export default function LandingPage() {
             initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }}
             transition={{ duration: 0.8 }}
           >
-            <p className="text-[10px] font-black uppercase text-red-500/60 tracking-widest">Web prices show the configured catalog currency. App store prices and taxes may differ by region; review the final confirmation before paying.</p>
+            <p className="text-[10px] font-black uppercase text-red-500/60 tracking-widest">All pricing is presented and billed in CAD.</p>
           </motion.div>
         </div>
       </PricingCycleContext.Provider>
@@ -1681,7 +1773,7 @@ export default function LandingPage() {
             <div className="mb-12 grid grid-cols-1 items-end gap-6 lg:grid-cols-[1fr_auto]">
               <div className="space-y-4">
                 <motion.p variants={fadeUp} className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Built for your organization</motion.p>
-                <motion.h2 variants={fadeUp} className="max-w-3xl text-4xl font-black uppercase leading-[0.95] tracking-tighter md:text-6xl md:leading-none">
+                <motion.h2 variants={fadeUp} className="max-w-3xl text-4xl font-black uppercase leading-[0.95] tracking-tighter md:text-6xl">
                   One platform. <span className="text-primary italic">Every level of play.</span>
                 </motion.h2>
               </div>
@@ -1714,7 +1806,7 @@ export default function LandingPage() {
                 <motion.div
                   key={item.label}
                   variants={fadeUp}
-                  className="group rounded-4xl border border-black/5 bg-white p-7 shadow-sm transition-all hover:-translate-y-1 hover:border-primary/20 hover:shadow-xl"
+                  className="group rounded-[2rem] border border-black/5 bg-white p-7 shadow-sm transition-all hover:-translate-y-1 hover:border-primary/20 hover:shadow-xl"
                 >
                   <div className="mb-8 flex h-12 w-12 items-center justify-center rounded-2xl bg-primary/10 text-primary transition-colors group-hover:bg-primary group-hover:text-white">
                     <item.icon className="h-6 w-6" />
@@ -1732,7 +1824,7 @@ export default function LandingPage() {
       <section id="newsletter" className="relative overflow-hidden bg-black py-24 text-white">
         <div className="absolute inset-0 opacity-25" style={{ backgroundImage: 'radial-gradient(circle at 15% 20%, rgba(239,68,68,0.7), transparent 34%), radial-gradient(circle at 85% 80%, rgba(255,255,255,0.18), transparent 30%)' }} />
         <div className="container relative z-10 mx-auto px-6">
-          <div className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 rounded-[3rem] border border-white/10 bg-white/5 p-8 shadow-2xl backdrop-blur-sm md:p-14 lg:grid-cols-[1.1fr_0.9fr]">
+          <div className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 rounded-[3rem] border border-white/10 bg-white/[0.05] p-8 shadow-2xl backdrop-blur-sm md:p-14 lg:grid-cols-[1.1fr_0.9fr]">
             <motion.div
               initial={{ opacity: 0, y: 24 }}
               whileInView={{ opacity: 1, y: 0 }}
@@ -1742,13 +1834,13 @@ export default function LandingPage() {
               <div className="inline-flex items-center gap-3 text-[10px] font-black uppercase tracking-[0.3em] text-primary">
                 <span className="h-2 w-2 rounded-full bg-primary" /> Stay in the game
               </div>
-              <h2 className="text-4xl font-black uppercase leading-[0.9] tracking-tighter sm:text-5xl md:text-7xl sm:leading-none md:leading-none">
+              <h2 className="text-4xl font-black uppercase leading-[0.9] tracking-tighter sm:text-5xl md:text-7xl">
                 Sign up for our <span className="text-primary italic">newsletter.</span>
               </h2>
-              <p className="max-w-xl text-base font-medium leading-relaxed text-white/60 md:text-lg md:leading-7">
+              <p className="max-w-xl text-base font-medium leading-relaxed text-white/60 md:text-lg">
                 Product updates, practical team-management ideas, and sports operations resources—delivered directly to your inbox.
               </p>
-              <p className="text-[10px] font-black uppercase tracking-widest text-white/70">No spam · Unsubscribe anytime</p>
+              <p className="text-[10px] font-black uppercase tracking-widest text-white/35">No spam · Unsubscribe anytime</p>
             </motion.div>
 
             <motion.div
@@ -1756,7 +1848,7 @@ export default function LandingPage() {
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, amount: 0.3 }}
               transition={{ delay: 0.1 }}
-              className="rounded-4xl bg-white p-7 text-foreground shadow-2xl md:p-9"
+              className="rounded-[2rem] bg-white p-7 text-foreground shadow-2xl md:p-9"
             >
               {newsletterDone ? (
                 <div className="flex min-h-[260px] flex-col items-center justify-center gap-4 text-center">
@@ -1776,7 +1868,7 @@ export default function LandingPage() {
                       onChange={(event) => setNewsletterName(event.target.value)}
                       placeholder="Your name"
                       autoComplete="name"
-                      className="h-auto rounded-xl bg-muted/50"
+                      className="h-13 rounded-xl bg-muted/50"
                     />
                   </div>
                   <div className="space-y-2">
@@ -1789,7 +1881,7 @@ export default function LandingPage() {
                       onChange={(event) => setNewsletterEmail(event.target.value)}
                       placeholder="you@example.com"
                       autoComplete="email"
-                      className="h-auto rounded-xl bg-muted/50"
+                      className="h-13 rounded-xl bg-muted/50"
                     />
                   </div>
                   <Button type="submit" disabled={newsletterLoading} className="h-14 w-full rounded-xl font-black uppercase tracking-widest">
@@ -1817,8 +1909,6 @@ export default function LandingPage() {
               <Link href="/AI_KNOWLEDGE_BASE.md" className="hidden hover:text-primary transition-colors">AI Knowledge Base</Link>
               <Link href="/privacy" className="hover:text-primary transition-colors">Privacy Policy</Link>
               <Link href="/terms" className="hover:text-primary transition-colors">Terms of Service</Link>
-              <Link href="/cookies" className="hover:text-primary transition-colors">Cookies</Link>
-              <Link href="/refunds" className="hover:text-primary transition-colors">Refunds</Link>
             </div>
 
             <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
@@ -1827,7 +1917,7 @@ export default function LandingPage() {
           </div>
         </div>
         <div className="mt-6 flex justify-center"><ParentCompanyBrand /></div>
-      </footer>
+    </footer>
 
       {/* Elfsight AI Chatbot | Squad Pro — landing page only */}
       <LandingChatbot />

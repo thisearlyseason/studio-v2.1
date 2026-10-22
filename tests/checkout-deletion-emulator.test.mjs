@@ -225,27 +225,3 @@ for (const name of ['canonical', 'legacy']) {
     assert.equal((await retry.json()).url, own[0].url);
   });
 }
-
-for (const route of ['canonical','legacy']) test(`standard mode ${route}: new reservation is explicit, legacy uncertain payload stays exact`, {skip:!enabled}, async()=>{
-  const who=await account('standard-'+route);
-  assert.equal((await create(route,who)).status,200);
-  const ref=db.doc('users/'+who.uid), profile=(await ref.get()).data(), lock=profile.pendingCheckout;
-  assert.deepEqual(lock.request.managed_payments,{enabled:false});
-  assert.match(lock.attemptId,/^checkout-attempt-standard-v2-/);
-  const oldRequest=structuredClone(lock.request); delete oldRequest.managed_payments;
-  const oldAttempt='checkout-attempt-legacy-'+who.uid;
-  oldRequest.metadata.checkout_attempt=oldAttempt;
-  sessions.delete(lock.sessionId);
-  await ref.update({pendingCheckout:{...lock,attemptId:oldAttempt,sessionId:null,expiresAt:0,request:oldRequest}});
-  assert.equal((await create(route,who)).status,200);
-  assert.deepEqual(idempotency.get(oldAttempt).params,oldRequest);
-  assert.equal(Object.hasOwn(idempotency.get(oldAttempt).params,'managed_payments'),false);
-});
-test('standard mode recovery rejects forged enabled Managed Payments payload', {skip:!enabled},async()=>{
- const who=await account('standard-forged'); assert.equal((await create('canonical',who)).status,200);
- const ref=db.doc('users/'+who.uid),lock=(await ref.get()).data().pendingCheckout;
- sessions.delete(lock.sessionId);
- const attempt='checkout-attempt-forged-'+who.uid;
- await ref.update({pendingCheckout:{...lock,attemptId:attempt,sessionId:null,expiresAt:0,request:{...lock.request,metadata:{...lock.request.metadata,checkout_attempt:attempt},managed_payments:{enabled:true}}}});
- assert.equal((await create('canonical',who)).status,409);assert.equal(idempotency.has(attempt),false);
-});

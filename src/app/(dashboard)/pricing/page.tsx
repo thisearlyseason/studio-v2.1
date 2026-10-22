@@ -1,11 +1,6 @@
 "use client";
-import { useBillingDisplayPrices } from "@/lib/use-billing-display-prices";
-import { BillingCountryDeclaration } from '@/components/billing-country-declaration';
-import { SchoolPlanDeclaration } from '@/components/school-plan-declaration';
-import { schoolOrganizationDeclaration, schoolPlanEligibilityError, type SchoolOrganizationDeclaration } from '@/lib/school-plan-eligibility';
 
-import { useSubscriptionCapabilities } from '@/lib/use-subscription-capabilities';
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { motion } from 'framer-motion';
 import { useRouter } from 'next/navigation';
 import { useTeam } from '@/components/providers/team-provider';
@@ -35,28 +30,16 @@ import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 
 export default function PricingPage() {
-  const displayPrices = useBillingDisplayPrices();
-  const planPriceId = (plan: Plan) => billingCycle === 'annual' ? plan.annualPriceId : plan.monthlyPriceId;
-  const addonPriceId = () => billingCycle === 'annual' ? EXTRA_TEAM_CONFIG.annualPriceId : EXTRA_TEAM_CONFIG.monthlyPriceId;
-  const priceReady = (id: string) => displayPrices.quote(id)?.currency === 'USD';
   const router = useRouter();
   const auth = useAuth();
   const { user } = useUser();
   const { isPro, userProfile } = useTeam();
   
-  const [billingCountry, setBillingCountry] = useState('');
-  const [billingCountryRequired, setBillingCountryRequired] = useState(false);
-  useEffect(() => { setBillingCountry(''); setBillingCountryRequired(false); }, [user?.uid]);
-  const [organizationDeclaration, setOrganizationDeclaration] = useState<SchoolOrganizationDeclaration | ''>('');
-  const declaredOrganization = organizationDeclaration || schoolOrganizationDeclaration((userProfile as any)?.organizationType) || '';
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
   const [extraTeams, setExtraTeams] = useState(0);
   const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
 
-  const capabilities = useSubscriptionCapabilities(auth, user?.uid, (userProfile as any)?.stripe_subscription_id);
-  const isCurrentPlan = (plan: Plan) => isPro && (userProfile as any)?.stripe_subscription_id && (userProfile as any)?.plan_type === plan.id && userProfile?.billing_cycle === billingCycle;
   const handleExtraTeamsChange = (delta: number) => {
-    if (!capabilities.addonsAllowed) return;
     setExtraTeams(prev => Math.max(0, prev + delta));
   };
 
@@ -67,24 +50,15 @@ export default function PricingPage() {
       return;
     }
 
-    if (isCurrentPlan(plan) && !capabilities.portalAllowed) { router.push('/dashboard/billing'); return; }
-    if ( (!isCurrentPlan(plan) && !capabilities.planChangesAllowed) || (extraTeams > 0 && !capabilities.addonsAllowed)) {
-      toast({ title: 'Plan changes unavailable', description: 'Plan changes and extra squad slots are temporarily unavailable. Please try again later.' });
-      return;
-    }
-    const eligibilityError = schoolPlanEligibilityError(plan.id, userProfile || {}, declaredOrganization);
-    if (eligibilityError) { toast({ title: 'Organization declaration required', description: eligibilityError, variant: 'destructive' }); return; }
-    if(!isCurrentPlan(plan) && (!priceReady(planPriceId(plan)) || (extraTeams>0 && !priceReady(addonPriceId())))) { toast({title:'Current price unavailable',description:'Refresh prices before subscribing.'}); return; }
     setLoadingPlanId(plan.id);
     const priceId = billingCycle === 'annual' ? plan.annualPriceId : plan.monthlyPriceId;
 
     try {
       const currentPlanId = (userProfile as any)?.plan_type;
-      const currentBillingCycle = userProfile?.billing_cycle;
       const hasActiveSubscription = isPro && (userProfile as any)?.stripe_subscription_id;
 
-      // ── PATH A: Same plan and billing interval → manage via portal ──
-      if (hasActiveSubscription && currentPlanId === plan.id && currentBillingCycle === billingCycle) {
+      // ── PATH A: Existing subscriber on the SAME plan → manage via portal ──
+      if (hasActiveSubscription && currentPlanId === plan.id) {
         const token = await getAuthToken(auth);
         const res = await fetch('/api/stripe/customer-portal', {
           method: 'POST',
@@ -96,7 +70,7 @@ export default function PricingPage() {
         throw new Error(data.error || 'Could not open billing portal.');
       }
 
-      // ── PATH B: A different plan or billing interval → direct upgrade ──
+      // ── PATH B: Existing subscriber switching to a DIFFERENT plan → direct upgrade ──
       if (hasActiveSubscription) {
         const token = await getAuthToken(auth);
         const res = await fetch('/api/subscription/update', {
@@ -105,18 +79,12 @@ export default function PricingPage() {
           body: JSON.stringify({
             userId: user.uid,
             newPriceId: priceId,
-            organizationDeclaration: declaredOrganization,
             operationId: crypto.randomUUID(),
           }),
         });
         const data = await res.json();
         if (data.success) {
           toast({ title: "Plan Updated!", description: `You've been switched to ${plan.name}.` });
-          router.push('/dashboard/billing');
-          return;
-        }
-        if (data.pending) {
-          toast({ title: 'Payment Pending', description: data.message });
           router.push('/dashboard/billing');
           return;
         }
@@ -128,10 +96,9 @@ export default function PricingPage() {
       const response = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ priceId, userId: user.uid, billingCycle, extraTeams, organizationDeclaration: declaredOrganization, ...(billingCountry ? { billingCountry } : {}) }),
+        body: JSON.stringify({ priceId, userId: user.uid, billingCycle, extraTeams }),
       });
       const data = await response.json();
-      if (data.code === 'BILLING_COUNTRY_REQUIRED') setBillingCountryRequired(true);
       if (data.url) {
         window.location.href = data.url;
       } else {
@@ -198,13 +165,8 @@ export default function PricingPage() {
               <Badge className="bg-green-100 text-green-700 border-none font-black text-[10px] px-2 h-5">SAVE 20%</Badge>
             </div>
           </motion.div>
-          <p className="text-sm text-muted-foreground pt-4">
-            Annual plans for Elite Teams, Elite League and Schools are available on this website. Choose Annual above to view yearly pricing.
-          </p>
         </motion.div>
       </div>
-
-      {billingCountryRequired && <div className="max-w-3xl mx-auto px-6 mb-16"><BillingCountryDeclaration value={billingCountry} onChange={setBillingCountry} /></div>}
 
       {/* Plans Grid */}
       <motion.div
@@ -228,7 +190,7 @@ export default function PricingPage() {
                 : "border-border/40 bg-white hover:border-primary/40"
             )}
           >
-
+            <div className={cn("h-1.5 w-full", plan.highlight ? "bg-primary" : "bg-muted/20")} />
             
             <CardHeader className="p-8 pb-4">
               <div className="flex justify-between items-start mb-4">
@@ -237,7 +199,7 @@ export default function PricingPage() {
               </div>
               <div className="flex items-baseline gap-1 mb-2">
                 <span className={cn("text-4xl font-black tracking-tighter", plan.highlight ? "text-primary" : "text-foreground")}>
-                  {displayPrices.label(planPriceId(plan))}
+                  {billingCycle === 'annual' ? plan.annualPrice : plan.monthlyPrice}
                 </span>
                 <span className="text-[10px] font-black uppercase opacity-60">/{billingCycle === 'annual' ? 'yr' : 'mo'}</span>
               </div>
@@ -287,13 +249,12 @@ export default function PricingPage() {
                 </ul>
               </div>
 
-              {plan.id === 'school' && userProfile?.plan_type !== 'school' && <SchoolPlanDeclaration value={declaredOrganization} onChange={setOrganizationDeclaration} />}
             </CardContent>
 
             <CardFooter className="p-8 pt-0">
               <Button 
                 onClick={() => handleCheckout(plan)}
-                disabled={(!isCurrentPlan(plan) && (!priceReady(planPriceId(plan)) || (extraTeams>0 && !priceReady(addonPriceId())))) || loadingPlanId !== null || (!!user?.uid && (!isCurrentPlan(plan) && !capabilities.planChangesAllowed))}
+                disabled={loadingPlanId !== null}
                 className={cn(
                   "w-full h-14 rounded-2xl font-black text-xs uppercase tracking-[0.2em] transition-all group-hover:gap-4",
                   plan.highlight 
@@ -304,7 +265,7 @@ export default function PricingPage() {
                 {loadingPlanId === plan.id ? (
                   <Loader2 className="h-5 w-5 animate-spin" />
                 ) : (
-                  <>{isCurrentPlan(plan) && !capabilities.portalAllowed ? 'Manage cancellation in Billing' : !isCurrentPlan(plan) && !capabilities.planChangesAllowed ? 'Plan changes unavailable' : 'Assign Protocol'} <ChevronRight className="h-4 w-4" /></>
+                  <>Assign Protocol <ChevronRight className="h-4 w-4" /></>
                 )}
               </Button>
             </CardFooter>
@@ -337,7 +298,7 @@ export default function PricingPage() {
               </p>
               <div className="flex items-baseline gap-2 pt-2">
                 <span className="text-4xl font-black text-foreground">
-                  {displayPrices.label(addonPriceId())}
+                  {billingCycle === 'annual' ? EXTRA_TEAM_CONFIG.annualPrice : EXTRA_TEAM_CONFIG.monthlyPrice}
                 </span>
                 <span className="text-xs font-black uppercase opacity-40">/team/{billingCycle === 'annual' ? 'yr' : 'mo'}</span>
               </div>
@@ -348,7 +309,6 @@ export default function PricingPage() {
                 <div className="text-[10px] font-black uppercase tracking-[0.3em] opacity-60">Provision Quantity</div>
                 <div className="flex items-center gap-6">
                   <button 
-                    disabled={!capabilities.addonsAllowed}
                     onClick={() => handleExtraTeamsChange(-1)}
                     className="w-12 h-12 rounded-2xl bg-white border shadow-sm flex items-center justify-center hover:bg-primary hover:text-white hover:border-primary transition-all active:scale-95"
                   >
@@ -356,7 +316,6 @@ export default function PricingPage() {
                   </button>
                   <span className="text-5xl font-black tabular-nums w-16">{extraTeams}</span>
                   <button 
-                    disabled={!capabilities.addonsAllowed}
                     onClick={() => handleExtraTeamsChange(1)}
                     className="w-12 h-12 rounded-2xl bg-white border shadow-sm flex items-center justify-center hover:bg-primary hover:text-white hover:border-primary transition-all active:scale-95"
                   >
@@ -370,7 +329,7 @@ export default function PricingPage() {
         </Card>
 
         <motion.div
-          className="bg-primary/5 rounded-4xl p-6 lg:p-8 flex flex-col md:flex-row items-center justify-between gap-6 border border-primary/10"
+          className="bg-primary/5 rounded-[2rem] p-6 lg:p-8 flex flex-col md:flex-row items-center justify-between gap-6 border border-primary/10"
           initial={{ opacity: 0, y: 24 }} whileInView={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.6, delay: 0.15 }}
           viewport={{ once: true }}

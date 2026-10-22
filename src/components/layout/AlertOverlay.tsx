@@ -87,7 +87,7 @@ export function AlertOverlay() {
     <Dialog open={isAlertOpen} onOpenChange={(open) => {
       if (!open) handleDismiss();
     }}>
-      <DialogContent className="left-1/2! top-1/2! h-auto! max-h-[90dvh]! -translate-x-1/2! -translate-y-1/2! w-[calc(100vw-2rem)] max-w-lg p-0 rounded-4xl sm:rounded-[3rem] overflow-hidden border-none shadow-[0_30px_100px_rgba(255,0,0,0.2)] bg-white">
+      <DialogContent className="!left-1/2 !top-1/2 !h-auto !max-h-[90dvh] !-translate-x-1/2 !-translate-y-1/2 w-[calc(100vw-2rem)] max-w-lg p-0 rounded-[2rem] sm:rounded-[3rem] overflow-hidden border-none shadow-[0_30px_100px_rgba(255,0,0,0.2)] bg-white">
         <DialogTitle className="sr-only">High Priority Team Alert</DialogTitle>
         <DialogDescription className="sr-only">Important message from your team</DialogDescription>
         {/* Championship Header */}
@@ -109,7 +109,7 @@ export function AlertOverlay() {
         </div>
 
         <div className="p-6 sm:p-8 space-y-6">
-          <div className="bg-muted/30 p-5 sm:p-8 rounded-4xl border-2 border-dashed border-primary/10 relative group">
+          <div className="bg-muted/30 p-5 sm:p-8 rounded-[2rem] border-2 border-dashed border-primary/10 relative group">
             <QuoteIcon className="absolute -top-4 -left-2 h-10 w-10 text-primary/10" />
             <p className="text-base sm:text-lg font-bold text-foreground leading-relaxed italic relative z-10">
               &ldquo;{latestAlert.message}&rdquo;
@@ -134,7 +134,7 @@ export function AlertOverlay() {
           </div>
 
           <Button
-            className="w-full h-14 rounded-4xl text-sm font-black uppercase tracking-widest shadow-2xl shadow-primary/30 active:scale-95 transition-all"
+            className="w-full h-14 rounded-[2rem] text-sm font-black uppercase tracking-widest shadow-2xl shadow-primary/30 active:scale-95 transition-all"
             onClick={handleUnderstood}
           >
             Got It
@@ -178,7 +178,7 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
   return (
     <Dialog open={isOpen} onOpenChange={setIsOpen}>
       <DialogTrigger asChild>{children}</DialogTrigger>
-      <DialogContent className="left-1/2! top-1/2! h-auto! max-h-[calc(100dvh-2rem)]! -translate-x-1/2! -translate-y-1/2! w-[calc(100vw-2rem)] max-w-xl rounded-3xl p-0 overflow-hidden border-none shadow-2xl bg-white">
+      <DialogContent className="!left-1/2 !top-1/2 !h-auto !max-h-[calc(100dvh-2rem)] !-translate-x-1/2 !-translate-y-1/2 w-[calc(100vw-2rem)] max-w-xl rounded-3xl p-0 overflow-hidden border-none shadow-2xl bg-white">
         <DialogTitle className="sr-only">Squad Alert Inbox</DialogTitle>
         <DialogDescription className="sr-only">History of all broadcasts dispatched to you</DialogDescription>
 
@@ -359,7 +359,7 @@ export function AlertsHistoryDialog({ children }: { children: React.ReactNode })
               );
             }) : (
               <div className="text-center py-10 opacity-20 flex flex-col items-center gap-4">
-                <div className="bg-muted p-6 rounded-4xl">
+                <div className="bg-muted p-6 rounded-[2rem]">
                   <Bell className="h-12 w-12" />
                 </div>
                 <p className="text-xs font-black uppercase tracking-[0.3em]">Broadcast Inbox Clear</p>
@@ -475,7 +475,7 @@ export function CreateAlertButton() {
             </div>
           </div>
           <DialogFooter>
-            <Button className="w-full h-16 rounded-4xl text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all border-none" onClick={handleCreate} disabled={isSubmitting || !title || !message}>
+            <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all border-none" onClick={handleCreate} disabled={isSubmitting || !title || !message}>
               {isSubmitting ? <Loader2 className="mr-2 h-5 w-5 animate-spin" /> : null}
               {isSubmitting ? 'Dispatching Broadcast' : 'Dispatch Strategic Broadcast'}
             </Button>

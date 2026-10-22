@@ -1,7 +1,6 @@
 'use client';
 
-import { useEffect } from 'react';
-import { useScopedSnapshotState } from './use-scoped-snapshot-state';
+import { useState, useEffect } from 'react';
 import {
   Query,
   onSnapshot,
@@ -10,6 +9,7 @@ import {
   QuerySnapshot,
   CollectionReference,
 } from 'firebase/firestore';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
 import { errorEmitter } from '@/firebase/error-emitter';
 import { FirestorePermissionError } from '@/firebase/errors';
 import { DEMO_EXIT_CANCELLED_EVENT, DEMO_EXIT_EVENT, DEMO_EXIT_PENDING_KEY } from '@/lib/client-auth';
@@ -44,7 +44,9 @@ export function useCollection<T = any>(
   type ResultItemType = WithId<T>;
   type StateDataType = ResultItemType[] | null;
 
-  const { data, isLoading, error, accountId, isCurrent, setData, setIsLoading, setError } = useScopedSnapshotState<Exclude<StateDataType, null>>(memoizedTargetRefOrQuery);
+  const [data, setData] = useState<StateDataType>(null);
+  const [isLoading, setIsLoading] = useState<boolean>(true);
+  const [error, setError] = useState<FirestoreError | Error | null>(null);
 
   useEffect(() => {
     if (!memoizedTargetRefOrQuery) {
@@ -54,6 +56,7 @@ export function useCollection<T = any>(
       return;
     }
 
+    const auth = getAuth();
     let unsubscribeSnapshot: (() => void) | null = null;
     let snapshotPaused = localStorage.getItem(DEMO_EXIT_PENDING_KEY) === 'true';
 
@@ -83,7 +86,6 @@ export function useCollection<T = any>(
     }
 
     let isMounted = true;
-    setData(null);
     setIsLoading(true);
     setError(null);
 
@@ -92,7 +94,7 @@ export function useCollection<T = any>(
       unsubscribeSnapshot = onSnapshot(
         memoizedTargetRefOrQuery,
       (snapshot: QuerySnapshot<DocumentData>) => {
-        if (!isMounted || snapshotPaused || !isCurrent()) return;
+        if (!isMounted || snapshotPaused) return;
         const results: ResultItemType[] = [];
         for (const doc of snapshot.docs) {
           const sourceTeamId = doc.ref.parent.id === 'groupChats'
@@ -109,7 +111,7 @@ export function useCollection<T = any>(
         setIsLoading(false);
       },
       (err: FirestoreError) => {
-        if (!isMounted || snapshotPaused || !isCurrent()) return;
+        if (!isMounted || snapshotPaused) return;
         
         // 1. SDK Internal Assertion Crashes (ca9, b815 and similar)
         // These are SDK bugs that occur during rapid updates or persistence mismatches.
@@ -201,7 +203,7 @@ export function useCollection<T = any>(
         }
       }
     };
-  }, [memoizedTargetRefOrQuery, accountId, isCurrent, setData, setIsLoading, setError]);
+  }, [memoizedTargetRefOrQuery]);
 
   return { data, isLoading, error };
 }

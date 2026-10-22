@@ -1,14 +1,10 @@
-import { schoolPlanEligibilityError } from '@/lib/school-plan-eligibility';
-import { assertManagedSubscriptionChange, assertManagedReceipt, ManagedCheckoutUnavailable, ManagedCoverageUnavailable } from '@/lib/stripe-managed-checkout';
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { getStripe } from '@/lib/stripe-client';
 import { assertNonAnonymous, verifyFirebaseToken, assertOwner } from '@/lib/api-auth';
 import {
   EXTRA_TEAM_PRICE_IDS,
-  isExtraTeamPriceId,
   PLAN_PRICE_MAP,
-  ACTIVE_PLAN_PRICE_IDS,
   PRICE_BILLING_CYCLE,
 } from '@/lib/stripe-price-map';
 import { isEntitledSubscriptionStatus } from '@/lib/server-team-entitlements';
@@ -45,11 +41,10 @@ export async function POST(req: NextRequest) {
   } | null = null;
 
   try {
-    const { userId, newPriceId, operationId, organizationDeclaration } = await readJsonBodyWithLimit<{
+    const { userId, newPriceId, operationId } = await readJsonBodyWithLimit<{
       userId?: unknown;
       newPriceId?: unknown;
       operationId?: unknown;
-      organizationDeclaration?: unknown;
     }>(req, 16_000);
 
     if (
@@ -77,7 +72,7 @@ export async function POST(req: NextRequest) {
 
     // Validate the priceId is a known plan
     const resolvedPlan = PLAN_PRICE_MAP[newPriceId];
-    if (!resolvedPlan || !ACTIVE_PLAN_PRICE_IDS.has(newPriceId)) {
+    if (!resolvedPlan) {
       return NextResponse.json({ error: 'Invalid priceId: not a recognized plan.' }, { status: 400 });
     }
 
@@ -87,9 +82,6 @@ export async function POST(req: NextRequest) {
     if (userSnap.data()?.isDemo === true) {
       return NextResponse.json({ error: 'Billing is unavailable in demo workspaces.' }, { status: 403 });
     }
-
-    const eligibilityError = schoolPlanEligibilityError(resolvedPlan.id, userSnap.data()!, organizationDeclaration);
-    if (eligibilityError) return NextResponse.json({ error: eligibilityError }, { status: 403 });
 
     const subscriptionId = userSnap.data()!.stripe_subscription_id;
     if (!subscriptionId) {
@@ -101,12 +93,6 @@ export async function POST(req: NextRequest) {
 
     const stripe = getStripe();
     const subscription = await stripe.subscriptions.retrieve(subscriptionId);
-    if (subscription.currency !== 'usd') {
-      return NextResponse.json(
-        { error: 'This subscription uses a previous currency. Contact support before changing its plan or seats.' },
-        { status: 409 }
-      );
-    }
     if (hasPendingSubscriptionUpdate(subscription.pending_update)) {
       return NextResponse.json(
         {
@@ -123,8 +109,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    await assertManagedSubscriptionChange(stripe, subscription);
-
     // Find the current base plan item
     const basePlanItem = subscription.items.data.find(item =>
       PLAN_PRICE_MAP[item.price.id] != null
@@ -139,7 +123,8 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Could not determine the requested billing cycle.' }, { status: 400 });
     }
     const addonItem = subscription.items.data.find(item =>
-      isExtraTeamPriceId(item.price.id)
+      item.price.id === EXTRA_TEAM_PRICE_IDS.monthly ||
+      item.price.id === EXTRA_TEAM_PRICE_IDS.annual
     );
     const items: any[] = [{ id: basePlanItem.id, price: newPriceId }];
     if (addonItem) {
@@ -193,12 +178,11 @@ export async function POST(req: NextRequest) {
         )
       : updatedSubscription;
 
-    if (isEntitledSubscriptionStatus(effectiveSubscription.status)) await assertManagedReceipt(stripe, effectiveSubscription);
-
     const isEntitled = isEntitledSubscriptionStatus(effectiveSubscription.status);
     const extraTeams = effectiveSubscription.items.data.reduce((total, item) => {
       if (
-        isExtraTeamPriceId(item.price.id)
+        item.price.id === EXTRA_TEAM_PRICE_IDS.monthly ||
+        item.price.id === EXTRA_TEAM_PRICE_IDS.annual
       ) {
         return total + (item.quantity || 0);
       }
@@ -230,7 +214,6 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, subscription: effectiveSubscription });
   } catch (err: any) {
-    if (err instanceof ManagedCheckoutUnavailable || err instanceof ManagedCoverageUnavailable) return NextResponse.json({ error: err.message }, { status: 409 });
     if (err instanceof SubscriptionMutationInProgressError) {
       return NextResponse.json(
         { error: 'Another subscription change is already being processed.' },

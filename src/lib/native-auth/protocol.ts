@@ -22,7 +22,8 @@ const providerSchema = z.enum(['google.com', 'apple.com']);
 const version = z.literal(1);
 const requestId = z.string().uuid();
 export const onboardingSchema = z.object({
-  fullName: z.string().trim().min(1).max(120),
+  // Keep the legacy field accepted; provider names are resolved server-side.
+  fullName: z.string().trim().max(120).default(''),
   role: z.enum(['adult_player', 'parent', 'coach', 'admin', 'league_creator']),
   adultConfirmed: z.literal(true),
   termsAccepted: z.literal(true),
@@ -50,7 +51,7 @@ function plainJson(value: unknown, depth = 0): boolean {
   });
 }
 
-export function parseNativeValue<T>(schema: z.ZodType<T>, input: unknown): T {
+export function parseNativeValue<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, input: unknown): T {
   if (!plainJson(input)) throw new NativeAuthError('invalid_request');
   const result = schema.safeParse(input);
   if (!result.success) throw new NativeAuthError('invalid_request');

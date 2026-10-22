@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { mkdtemp, readFile, writeFile } from 'node:fs/promises';
@@ -7,7 +8,7 @@ import test from 'node:test';
 
 import { closeRegisteredBrowserSessions, closeRegisteredProcessGroups, startLocalHarness } from '../scripts/qa/certification/local/harness.mjs';
 
-const ROOT = new URL('..', import.meta.url).pathname;
+const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
 function options(overrides = {}) {
   return {

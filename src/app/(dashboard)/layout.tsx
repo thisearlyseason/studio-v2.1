@@ -1,6 +1,4 @@
 "use client";
-import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
-import { schoolInstitutionLandingAllowed } from '@/lib/dashboard-institution-context';
 import Link from 'next/link';
 
 import Shell from '@/components/layout/Shell';
@@ -280,7 +278,7 @@ function BetaDemoSeeder({
 function LayoutContent({ children }: { children: React.ReactNode }) {
   const { user, isUserLoading, isAuthResolved } = useUser();
   const auth = useAuth();
-  const { teams, isTeamsLoading, isSeedingDemo, setIsSeedingDemo, user: userProfile, activeTeam, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isParent, isSuperAdmin } = useTeam();
+  const { teams, isTeamsLoading, isSeedingDemo, setIsSeedingDemo, user: userProfile, activeTeam, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isParent } = useTeam();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
@@ -308,15 +306,6 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     };
   }, []);
 
-  const routeDecision = userProfile && isAuthResolved
-    ? authorizeDashboardRoute(pathname, { ...userProfile, isPrimaryClubAuthority }, isSuperAdmin ? 'superadmin' : undefined)
-    : null;
-  const deniedRoute = routeDecision && !routeDecision.allowed ? routeDecision.redirectTo : null;
-
-  useEffect(() => {
-    if (mounted && !isUserLoading && deniedRoute) router.replace(deniedRoute);
-  }, [mounted, isUserLoading, deniedRoute, pathname, router]);
-
   useEffect(() => {
     if (!mounted || !isAuthResolved || isDemoInitializing) return;
     if (!user && !pathname.includes('seed_demo')) {
@@ -330,13 +319,9 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     // School Admins → School Hub (/club rendered as school view)
     // Elite Club Organizers → Elite Club Hub (/club rendered as elite view)
     // Each role uses its own session key so they don't block each other.
-    if (pathname === '/dashboard' && !isStoreDistribution && userProfile?.role === 'league_creator') {
-      router.replace('/competition');
-      return;
-    }
     if (pathname === '/dashboard' && !isTeamsLoading && teams.length > 0) {
       // Institution mode: school admin with no squad selected (or school hub record active)
-      const isSchoolInstitutionMode = isSchoolMode && schoolInstitutionLandingAllowed(activeTeam, isPrimaryClubAuthority, user?.uid, userProfile, isSuperAdmin ? 'superadmin' : undefined);
+      const isSchoolInstitutionMode = isSchoolMode && isPrimaryClubAuthority && (!activeTeam || activeTeam?.type === 'school');
       // Hub mode: elite club organizer with no squad selected
       const isEliteHubMode = isEliteClubMode && !activeTeam;
 
@@ -349,7 +334,8 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         seedLock: localStorage.getItem('squad_seeding_lock'),
       }) && userProfile?.homeScreenLayout !== 'modern') {
         router.push('/family');
-
+      } else if (!isStoreDistribution && userProfile?.role === 'league_creator') {
+        router.push('/competition');
       }
     }
 
@@ -359,7 +345,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         router.replace('/dashboard');
         return;
     }
-  }, [user, userProfile, isAuthResolved, router, mounted, isDemoInitializing, pathname, searchParams, isPrimaryClubAuthority, isSuperAdmin, isSchoolMode, isEliteClubMode, isParent, activeTeam, isTeamsLoading, teams.length]);
+  }, [user, userProfile?.isDemo, userProfile?.role, isAuthResolved, router, mounted, isDemoInitializing, pathname, searchParams, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isParent, activeTeam, isTeamsLoading, teams.length]);
 
   useEffect(() => {
     // Wait for both the profile and team hydration before deciding that the
@@ -519,7 +505,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   const isLoadingState = !hasAuthenticatedProfile ||
     (!loadingTimedOut && (isEssentiallyLoading || (!mounted && !userProfile)));
 
-  if (isLoadingState || deniedRoute) {
+  if (isLoadingState) {
     return (
       <div className="flex flex-col items-center justify-center min-h-screen bg-background">
         {mounted && (
@@ -610,12 +596,12 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
   return (
     <div className="flex flex-col h-dvh overflow-hidden">
       {userProfile?.isDemo && !userProfile?.isBetaTester && (
-        <div className="w-full bg-black text-white h-9 flex items-center justify-center gap-4 z-40 border-b border-primary/20 shrink-0 sticky top-0">
+        <div className="w-full bg-black text-white h-9 flex items-center justify-center gap-4 z-[40] border-b border-primary/20 shrink-0 sticky top-0">
           <Timer className="h-3.5 w-3.5 text-primary animate-pulse" />
           <div className="flex items-center gap-3">
             <span className="text-[10px] font-black uppercase tracking-widest">Demo Mode</span>
             <div className="h-3 w-px bg-white/20" />
-            <span className="text-[10px] font-mono font-bold text-red-400">
+            <span className="text-[10px] font-mono font-bold text-primary">
               Resets In: {timeLeft !== null ? formatTimeLeft(timeLeft) : '...'}
             </span>
           </div>
@@ -647,7 +633,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
           setIsSeedingDemo={setIsSeedingDemo}
         />
         <ErrorBoundary>
-          <Shell>{activeTeam && isTeamModuleRouteDisabled(pathname, activeTeam.features) ? null : children}</Shell>
+          <Shell>{children}</Shell>
         </ErrorBoundary>
       </div>
     </div>

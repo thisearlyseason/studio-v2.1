@@ -162,7 +162,13 @@ try {
     await f.page.waitForTimeout(200);
     assert.equal(f.state.submitted.at(-1).email, 'autofill@example.com');
     assert.equal(f.state.submitted.at(-1).password, '  fixture-password  ');
-    assert.equal(await f.page.getByRole('button', { name: 'Continue with Google' }).isDisabled(), true);
+    if (process.env.SQUAD_LOGIN_DISTRIBUTION === 'store') {
+      // Headless Chrome has no native provider bridge; do not manufacture one
+      // or confuse its absent provider button with an email-login defect.
+      await f.page.getByText('Provider sign-in is unavailable in this app version. Please use email and password below.', { exact: true }).waitFor();
+    } else {
+      assert.equal(await f.page.getByRole('button', { name: 'Continue with Google' }).isDisabled(), true);
+    }
     f.state.navigationGate = deferred();
     f.state.sessionGate.resolve();
     await f.page.waitForTimeout(500);

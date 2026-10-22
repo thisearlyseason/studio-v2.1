@@ -309,7 +309,7 @@ export default function LoginPage() {
           <h2 className={styles.headline}>Your team.<br /><span>Your next level.</span></h2>
           <p className={styles.caption}>Bring your season together. Plan, connect, and compete with The Squad.</p>
         </section>
-        <Card className={`border-none shadow-2xl rounded-4xl sm:rounded-[3rem] animate-in fade-in slide-in-from-left-8 duration-700 bg-white/95 backdrop-blur-sm ${styles.card}`}>
+        <Card className={`border-none shadow-2xl rounded-[2rem] sm:rounded-[3rem] animate-in fade-in slide-in-from-left-8 duration-700 bg-white/95 backdrop-blur-sm ${styles.card}`}>
           <CardHeader className="space-y-2 pt-8 sm:pt-12 text-center">
             <h1 className="text-3xl sm:text-4xl font-black tracking-tighter uppercase">
               {forgotMode ? 'Reset Password' : 'Sign In'}
@@ -483,7 +483,7 @@ export default function LoginPage() {
               <ShieldAlert className="h-48 w-48" />
             </div>
             <div className="relative z-10 space-y-4">
-              <Badge className="bg-black/20 text-white border-none font-black uppercase tracking-widest text-[10px] px-3 h-6">Interactive Demos</Badge>
+              <Badge className="bg-white/20 text-white border-none font-black uppercase tracking-widest text-[10px] px-3 h-6">Interactive Demos</Badge>
               <h3 className="text-4xl font-black tracking-tighter leading-none uppercase">Explore Demo <br />Workspaces</h3>
               <p className="text-white/80 font-medium text-sm leading-relaxed max-w-xs">
                 Open a ready-to-use sample workspace for the role you want to explore.
@@ -496,7 +496,7 @@ export default function LoginPage() {
               <Button 
                 key={demo.id} 
                 variant="outline" 
-                className="h-24 rounded-4xl bg-white/5 border-white/10 text-white hover:bg-white/10 hover:border-white/20 transition-all flex items-center justify-between px-8 backdrop-blur-md group"
+                className="h-24 rounded-[2rem] bg-white/5 border-white/10 text-white hover:bg-white/10 hover:border-white/20 transition-all flex items-center justify-between px-8 backdrop-blur-md group"
                 onClick={() => handleLaunchDemo(demo.id)}
                 disabled={isLoading || isDemoLoading || nativeBusy}
                 aria-label={`Open ${demo.name}: ${demo.desc}`}

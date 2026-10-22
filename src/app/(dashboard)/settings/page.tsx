@@ -570,7 +570,7 @@ export default function SettingsPage() {
               </DialogTrigger>
               <DialogContent className="sm:max-w-2xl rounded-[3rem] p-0 border-none shadow-2xl overflow-hidden">
                 <DialogTitle className="sr-only">Edit Profile Architect</DialogTitle>
-
+                <div className="h-2 bg-primary w-full" />
                 <div className="p-8 lg:p-12 space-y-10">
                   <DialogHeader>
                     <DialogTitle className="text-3xl font-black uppercase tracking-tight">Identity Architect</DialogTitle>
@@ -674,7 +674,7 @@ export default function SettingsPage() {
           <CardHeader className="bg-muted/30 border-b p-5 sm:p-6 flex flex-row items-center justify-between gap-4 space-y-0">
             <div className="flex min-w-0 items-center gap-3">
               <div className="bg-primary/10 p-2.5 shrink-0 rounded-xl text-primary"><Bell className="h-5 w-5" /></div>
-              <CardTitle className="text-sm font-bold leading-snug wrap-break-word">Tactical Alerts</CardTitle>
+              <CardTitle className="text-sm font-bold leading-snug break-words">Tactical Alerts</CardTitle>
             </div>
             <Switch className="shrink-0" aria-label="Tactical alerts" checked={notifications} onCheckedChange={handleNotificationsToggle} disabled={isNotifLoading || isStoreDistribution || notificationPermission === 'unsupported'} />
           </CardHeader>
@@ -709,7 +709,7 @@ export default function SettingsPage() {
               <div className="flex min-w-0 items-center gap-3">
                 <div className="bg-blue-100 p-2.5 shrink-0 rounded-xl text-blue-700"><Bell className="h-5 w-5" /></div>
                 <div>
-                  <CardTitle className="text-sm font-bold leading-snug wrap-break-word">Game-Day Reminders</CardTitle>
+                  <CardTitle className="text-sm font-bold leading-snug break-words">Game-Day Reminders</CardTitle>
                   <CardDescription className="mt-1 text-[10px] font-bold uppercase tracking-wider">
                     All active squad members
                   </CardDescription>
@@ -740,7 +740,7 @@ export default function SettingsPage() {
           <CardHeader className="bg-muted/30 border-b p-5 sm:p-6 flex flex-row items-center justify-between gap-4 space-y-0">
             <div className="flex min-w-0 items-center gap-3">
               <div className="bg-amber-100 p-2.5 shrink-0 rounded-xl text-amber-600"><ShieldCheck className="h-5 w-5" /></div>
-              <CardTitle className="text-sm font-bold leading-snug wrap-break-word">Subscription Intelligence</CardTitle>
+              <CardTitle className="text-sm font-bold leading-snug break-words">Subscription Intelligence</CardTitle>
             </div>
             <Badge className={cn("font-black uppercase text-[8px] tracking-widest", user.subscription_status === 'active' ? "bg-green-100 text-green-700" : "bg-primary/10 text-primary")}>
               {user.subscription_status || 'Free'}
@@ -811,7 +811,7 @@ export default function SettingsPage() {
                     <div className={cn("p-2 shrink-0 rounded-xl", isEnabled ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>
                       {isEnabled ? <Icon className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
                     </div>
-                    <span className={cn("text-sm font-semibold leading-snug wrap-break-word", !isEnabled && "text-muted-foreground")}>
+                    <span className={cn("text-sm font-semibold leading-snug break-words", !isEnabled && "text-muted-foreground")}>
                       {module.name}
                     </span>
                   </div>
@@ -934,7 +934,7 @@ export default function SettingsPage() {
       <Dialog open={isResetOpen} onOpenChange={setIsResetOpen}>
         <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl p-0 overflow-hidden">
           <DialogTitle className="sr-only">Season Reset Selection</DialogTitle>
-
+          <div className="h-2 bg-primary w-full" />
           <div className="p-8 space-y-6">
             <DialogHeader>
               <div className="flex items-center gap-3 mb-2">
@@ -989,7 +989,7 @@ export default function SettingsPage() {
       </AlertDialog>
 
       <AlertDialog open={isNotificationConsentOpen} onOpenChange={setIsNotificationConsentOpen}>
-        <AlertDialogContent className="rounded-4xl border-none shadow-2xl">
+        <AlertDialogContent className="rounded-[2rem] border-none shadow-2xl">
           <AlertDialogHeader>
             <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-primary/10 text-primary">
               <Bell className="h-7 w-7" />

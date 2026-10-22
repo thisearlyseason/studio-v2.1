@@ -1,9 +1,1 @@
-{
-  "buildCommand": "node production-deployment-guard.cjs && npm run verify:env && npx tsc --noEmit && npm run build",
-  "crons": [
-    {
-      "path": "/api/cron/signup-notifications",
-      "schedule": "0 10 * * *"
-    }
-  ]
-}
+{"buildCommand":"node store-production-deployment-guard.cjs && npm run verify:env && npx tsc --noEmit && npm run build"}

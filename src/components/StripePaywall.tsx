@@ -1,10 +1,7 @@
 "use client";
-import { BillingCountryDeclaration } from '@/components/billing-country-declaration';
-import { SchoolPlanDeclaration } from '@/components/school-plan-declaration';
-import { schoolOrganizationDeclaration, schoolPlanEligibilityError, type SchoolOrganizationDeclaration } from '@/lib/school-plan-eligibility';
 import { NativeSubscriptions } from '@/components/native-billing/NativeSubscriptions';
 
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import {
   Dialog,
   DialogContent,
@@ -28,26 +25,19 @@ import {
 import { toast } from '@/hooks/use-toast';
 import { cn } from '@/lib/utils';
 import { useAuth } from '@/firebase';
-import { useBillingDisplayPrices } from '@/lib/use-billing-display-prices';
 import { getAuthToken, authHeader } from '@/lib/client-auth';
 import { isStoreDistribution } from '@/lib/app-distribution';
 
 export function StripePaywall() {
   const { isPaywallOpen, setIsPaywallOpen, user, activeTeam, isPro } = useTeam();
-  const displayPrices = useBillingDisplayPrices(!isStoreDistribution);
   const auth = useAuth();
-  const [billingCountry, setBillingCountry] = useState('');
-  const [billingCountryRequired, setBillingCountryRequired] = useState(false);
-  useEffect(() => { setBillingCountry(''); setBillingCountryRequired(false); }, [user?.id]);
-  const [organizationDeclaration, setOrganizationDeclaration] = useState<SchoolOrganizationDeclaration | ''>('');
-  const declaredOrganization = organizationDeclaration || schoolOrganizationDeclaration((user as any)?.organizationType) || '';
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
   const [loadingPlanId, setLoadingPlanId] = useState<string | null>(null);
 
   if (isStoreDistribution) {
     return (
       <Dialog open={isPaywallOpen} onOpenChange={setIsPaywallOpen}>
-        <DialogContent className="sm:max-w-2xl max-h-[90dvh] overflow-y-auto rounded-4xl bg-white">
+        <DialogContent className="sm:max-w-2xl max-h-[90dvh] overflow-y-auto rounded-[2rem] bg-white">
           <DialogHeader>
             <DialogTitle>Upgrade your team</DialogTitle>
             <DialogDescription>Choose a subscription or restore an existing purchase.</DialogDescription>
@@ -67,10 +57,7 @@ export function StripePaywall() {
       return;
     }
 
-    const eligibilityError = schoolPlanEligibilityError(plan.id, user || {}, declaredOrganization);
-    if (eligibilityError) { toast({ title: 'Organization declaration required', description: eligibilityError, variant: 'destructive' }); return; }
     const priceId = billingCycle === 'annual' ? plan.annualPriceId : plan.monthlyPriceId;
-    if(displayPrices.quote(priceId)?.currency!=='USD'){toast({title:'Current price unavailable',description:'Refresh prices before subscribing.'});return;}
     setLoadingPlanId(plan.id);
 
     try {
@@ -94,10 +81,9 @@ export function StripePaywall() {
       const res = await fetch('/api/stripe/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ priceId, userId: user.id, teamId: activeTeam?.id, billingCycle, extraTeamQty: 0, organizationDeclaration: declaredOrganization, ...(billingCountry ? { billingCountry } : {}) }),
+        body: JSON.stringify({ priceId, userId: user.id, teamId: activeTeam?.id, billingCycle, extraTeamQty: 0 }),
       });
       const data = await res.json();
-      if (data.code === 'BILLING_COUNTRY_REQUIRED') setBillingCountryRequired(true);
       if (data.url) {
         window.location.href = data.url;
         return;
@@ -178,18 +164,12 @@ export function StripePaywall() {
               </div>
             </div>
 
-            <p className="text-sm text-muted-foreground">
-              Annual plans for Elite Teams, Elite League and Schools are available on this website. Choose Annual above to view yearly pricing.
-            </p>
-
-            {billingCountryRequired && <BillingCountryDeclaration value={billingCountry} onChange={setBillingCountry} />}
-
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">
               {PRICING_CONFIG.map((plan) => (
                 <div 
                   key={plan.id}
                   className={cn(
-                    "group relative rounded-4xl p-6 border-2 transition-all duration-300 hover:scale-[1.02] flex flex-col justify-between",
+                    "group relative rounded-[2rem] p-6 border-2 transition-all duration-300 hover:scale-[1.02] flex flex-col justify-between",
                     plan.highlight 
                       ? "border-primary bg-primary/5 shadow-xl shadow-primary/10" 
                       : "border-border/40 hover:border-black/20"
@@ -210,7 +190,7 @@ export function StripePaywall() {
 
                     <div className="flex items-baseline gap-1">
                       <span className="text-3xl font-black tracking-tighter">
-                        {displayPrices.label(billingCycle === 'annual' ? plan.annualPriceId : plan.monthlyPriceId)}
+                        {billingCycle === 'annual' ? plan.annualPrice : plan.monthlyPrice}
                       </span>
                       <span className="text-[10px] font-black uppercase opacity-40">/{billingCycle === 'annual' ? 'yr' : 'mo'}</span>
                     </div>
@@ -225,10 +205,9 @@ export function StripePaywall() {
                     </ul>
                   </div>
 
-                  {plan.id === 'school' && user?.plan_type !== 'school' && <SchoolPlanDeclaration value={declaredOrganization} onChange={setOrganizationDeclaration} />}
                   <Button 
                     onClick={() => handleSelectPlan(plan)}
-                    disabled={loadingPlanId !== null || displayPrices.quote(billingCycle==='annual'?plan.annualPriceId:plan.monthlyPriceId)?.currency!=='USD'}
+                    disabled={loadingPlanId !== null}
                     className={cn(
                       "w-full mt-6 h-12 rounded-xl font-black text-[10px] uppercase tracking-widest transition-all",
                       plan.highlight ? "bg-primary text-white shadow-lg shadow-primary/40" : "bg-black text-white"

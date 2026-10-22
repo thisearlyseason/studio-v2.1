@@ -3,11 +3,11 @@ import { readFileSync } from 'node:fs';
 import { initializeTestEnvironment, assertFails } from '@firebase/rules-unit-testing';
 import { doc, collection, getDoc, getDocs, setDoc, updateDoc, deleteDoc } from 'firebase/firestore';
 const enabled = process.env.NATIVE_AUTH_EMULATOR_TEST === '1';
-if (enabled && !/^127\.0\.0\.1:\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || '')) throw new Error('Requires isolated native-auth emulator');
+if (enabled && process.env.FIRESTORE_EMULATOR_HOST !== '127.0.0.1:8187') throw new Error('Requires isolated native-auth emulator');
 let env;
 before(async () => {
   if (!enabled) return;
-  env = await initializeTestEnvironment({ projectId: 'demo-native-auth-test', firestore: { host: (process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8187').split(':')[0], port: Number((process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8187').split(':')[1]), rules: readFileSync('firestore.rules', 'utf8') } });
+  env = await initializeTestEnvironment({ projectId: 'demo-native-auth-test', firestore: { host: '127.0.0.1', port: 8187, rules: readFileSync('firestore.rules', 'utf8') } });
   await env.withSecurityRulesDisabled(async context => {
     const db = context.firestore();
     await setDoc(doc(db, 'nativeAuthAttempts/fixture'), { state: 'pending', uid: 'owner' });

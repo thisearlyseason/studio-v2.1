@@ -1,3 +1,4 @@
+import { isStoreDistribution } from '@/lib/app-distribution';
 import { NextRequest, NextResponse } from "next/server";
 import { adminDb } from "@/lib/firebase-admin";
 import { getStripe } from "@/lib/stripe-client";
@@ -9,6 +10,7 @@ import {
 const id = (value: unknown): value is string =>
   typeof value === "string" && /^[A-Za-z0-9_-]{1,200}$/.test(value);
 export async function POST(request: NextRequest) {
+  if (isStoreDistribution) return NextResponse.json({ error: "Web checkout is unavailable in this app." }, { status: 403 });
   try {
     const body = await readJsonBodyWithLimit<Record<string, unknown>>(
       request,

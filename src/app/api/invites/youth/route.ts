@@ -20,6 +20,8 @@ import {
   readJsonBodyWithLimit,
   RequestBodyError,
 } from '@/lib/server-request-guards';
+import { isStoreDistribution } from '@/lib/app-distribution';
+import { canActivateYouthAccount, STORE_YOUTH_AGE_ERROR } from '@/lib/store-youth-age-policy';
 
 const TOKEN_PATTERN = /^[a-f0-9]{48}$/;
 const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
@@ -193,6 +195,13 @@ export async function GET(req: NextRequest) {
     if (!snapshot.exists || !inviteIsUsable(data)) {
       return NextResponse.json({ error: 'Invitation not found or expired.' }, { status: 404 });
     }
+    const childId = cleanChildId(data.childId);
+    if (isStoreDistribution && childId) {
+      const player = await adminDb.collection('players').doc(childId).get();
+      if (!player.exists || !canActivateYouthAccount(player.data()?.dateOfBirth)) {
+        return NextResponse.json({ error: STORE_YOUTH_AGE_ERROR }, { status: 403 });
+      }
+    }
 
     return NextResponse.json({
       invite: {
@@ -235,6 +244,9 @@ export async function POST(req: NextRequest) {
       (auth.role !== 'superadmin' && player.parentId !== auth.uid)
     ) {
       return NextResponse.json({ error: 'Child profile not found.' }, { status: 404 });
+    }
+    if (!canActivateYouthAccount(player.dateOfBirth)) {
+      return NextResponse.json({ error: STORE_YOUTH_AGE_ERROR }, { status: 403 });
     }
 
     if (action === 'revoke') {
@@ -475,6 +487,13 @@ export async function PUT(req: NextRequest) {
       return NextResponse.json({ error: 'Invitation not found or expired.' }, { status: 404 });
     }
 
+    if (isStoreDistribution) {
+      const invitedPlayer = await adminDb.collection('players').doc(invite.childId).get();
+      if (!invitedPlayer.exists || !canActivateYouthAccount(invitedPlayer.data()?.dateOfBirth)) {
+        return NextResponse.json({ error: STORE_YOUTH_AGE_ERROR }, { status: 403 });
+      }
+    }
+
     ensureAdminInit();
     const displayName = `${invite.childFirstName || ''} ${invite.childLastName || ''}`.trim();
     const userRecord = await admin.auth().createUser({
@@ -507,6 +526,9 @@ export async function PUT(req: NextRequest) {
         authorizedMemberships === null
       ) {
         throw new Error('Invitation data does not match the child profile.');
+      }
+      if (!canActivateYouthAccount(playerData.dateOfBirth)) {
+        throw new RequestBodyError(STORE_YOUTH_AGE_ERROR, 403);
       }
 
       const retainedToken = typeof freshInvite.previousToken === 'string' && TOKEN_PATTERN.test(freshInvite.previousToken)
@@ -570,10 +592,7 @@ export async function PUT(req: NextRequest) {
         inviteSentAt: admin.firestore.FieldValue.delete(),
         inviteExpiresAt: admin.firestore.FieldValue.delete(),
       });
-      // Legacy rosters may contain several active rows for one child in a squad.
-      // Every binding above is revalidated, but the new account gets one projection per squad.
-      const membershipsByTeam = new Map(boundMemberships.map(membership => [membership.binding.teamId, membership]));
-      for (const { binding, memberData, team } of membershipsByTeam.values()) {
+      for (const { binding, memberData, team } of boundMemberships) {
         transaction.create(
           adminDb.collection('teams').doc(binding.teamId).collection('members').doc(userRecord.uid),
           {

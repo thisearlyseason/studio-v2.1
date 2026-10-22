@@ -1,5 +1,3 @@
-import { paymentRefundState } from '@/lib/payment-refund-state';
-import { fulfillTournamentRegistration } from '@/lib/server-tournament-registration-payment';
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { FieldValue } from 'firebase-admin/firestore';
@@ -128,9 +126,6 @@ async function upsertStripePayment({
         updatedAt: new Date().toISOString(),
       });
     }
-    if (status === 'paid' || Number(current.amount_refunded) > 0) {
-      Object.assign(payload, paymentRefundState(Number(payload.amount ?? current.amount ?? 0), Number(fields.amount_refunded || 0), Number(current.amount_refunded || 0)));
-    }
     transaction.set(paymentRef, payload, { merge: true });
   });
 }
@@ -181,21 +176,15 @@ export async function POST(req: NextRequest) {
       created: event.created,
     };
     switch (event.type) {
-      case 'checkout.session.async_payment_succeeded':
       case 'checkout.session.completed': {
         const session = event.data.object as Stripe.Checkout.Session;
-        if (!await fulfillTournamentRegistration(session, connectedAccountId)) await handleCheckoutCompleted(session, connectedAccountId, eventContext);
+        await handleCheckoutCompleted(session, connectedAccountId, eventContext);
         break;
       }
 
       case 'payment_intent.succeeded': {
         const pi = event.data.object as Stripe.PaymentIntent;
         await handlePaymentIntentSucceeded(pi, connectedAccountId, eventContext);
-        break;
-      }
-
-      case 'charge.refunded': {
-        await handleChargeRefunded(event.data.object as Stripe.Charge, connectedAccountId, eventContext);
         break;
       }
 
@@ -243,8 +232,6 @@ async function handleCheckoutCompleted(
     throw new Error('Connected account does not own the referenced team.');
   }
 
-  if (session.payment_status !== 'paid') return;
-
   const payerEmail = (session.customer_details?.email ?? session.customer_email ?? '').trim().toLowerCase();
   const payerName = session.customer_details?.name ?? '';
   const amountTotal = session.amount_total ?? 0;
@@ -253,7 +240,6 @@ async function handleCheckoutCompleted(
   // Fetch receipt URL from the payment intent (if available)
   let receiptUrl: string | null = null;
   let paymentIntentMetadata: Stripe.Metadata = {};
-  let amountRefunded = 0;
   try {
     if (session.payment_intent && connectedAccountId) {
       const stripe = getStripe();
@@ -264,10 +250,9 @@ async function handleCheckoutCompleted(
       );
       receiptUrl = (pi.latest_charge as Stripe.Charge)?.receipt_url ?? null;
       paymentIntentMetadata = pi.metadata || {};
-      amountRefunded = (pi.latest_charge as Stripe.Charge)?.amount_refunded || 0;
     }
   } catch (err: any) {
-    throw new Error('Unable to verify current payment and refund state.');
+    console.warn('[Connect Webhook] Could not fetch receipt URL:', err.message);
   }
 
   // Checkout and payment-intent events have different event IDs. The payment
@@ -288,7 +273,6 @@ async function handleCheckoutCompleted(
       payer_name: payerName,
       payer_email: payerEmail,
       amount: amountTotal,
-      amount_refunded: amountRefunded,
       currency,
       stripe_session_id: session.id,
       stripe_payment_intent_id: paymentIntentId ?? null,
@@ -302,7 +286,6 @@ async function handleCheckoutCompleted(
     campaignId: session.metadata?.firebase_campaign_id || paymentIntentMetadata.firebase_campaign_id,
     paymentIntentId: paymentRecordId,
     amountCents: amountTotal,
-    refundedCents: amountRefunded,
     currency,
     payerName,
     payerEmail,
@@ -311,36 +294,6 @@ async function handleCheckoutCompleted(
   });
 
   console.log(`[Connect Webhook] Payment recorded for team ${teamId}: ${amountTotal} ${currency}`);
-}
-
-/** Resolve legacy Payment Links that have metadata only on Checkout, then reconcile current charge. */
-async function handleChargeRefunded(charge: Stripe.Charge, account: string | undefined, event: StripeEventContext) {
-  if (!account) throw new Error('A connected account is required.');
-  const piId = typeof charge.payment_intent === 'string' ? charge.payment_intent : charge.payment_intent?.id;
-  if (!piId) return;
-  const stripe = getStripe();
-  const sessions = await stripe.checkout.sessions.list({ payment_intent: piId, limit: 100 }, { stripeAccount: account });
-  const session = sessions.data.find(item => item.metadata?.firebase_team_id);
-  if (session) {
-    await handleCheckoutCompleted(session, account, event);
-    return;
-  }
-  const pi = await stripe.paymentIntents.retrieve(piId, {}, { stripeAccount: account });
-  const teamId = pi.metadata?.firebase_team_id;
-  if (!teamId) return;
-  if (!await connectAccountOwnsTeam(teamId, account)) throw new Error('Connected account does not own the referenced team.');
-  const currentCharge = await stripe.charges.retrieve(charge.id, {}, { stripeAccount: account });
-  await upsertStripePayment({ teamId, paymentRecordId: piId, status: 'paid', event, fields: {
-    amount: currentCharge.amount, amount_refunded: currentCharge.amount_refunded, currency: currentCharge.currency,
-    stripe_payment_intent_id: piId, stripe_connect_account_id: account,
-    stripe_receipt_url: currentCharge.receipt_url, payer_email: currentCharge.billing_details.email || '',
-    payer_name: currentCharge.billing_details.name || '',
-  } });
-  await recordFundraisingDonation({ teamId, campaignId: pi.metadata?.firebase_campaign_id,
-    paymentIntentId: piId, amountCents: currentCharge.amount, refundedCents: currentCharge.amount_refunded,
-    currency: currentCharge.currency, payerName: currentCharge.billing_details.name || '',
-    payerEmail: currentCharge.billing_details.email || '', receiptUrl: currentCharge.receipt_url,
-    connectedAccountId: account });
 }
 
 /**
@@ -396,7 +349,6 @@ async function recordFundraisingDonation({
   campaignId,
   paymentIntentId,
   amountCents,
-  refundedCents = 0,
   currency,
   payerName,
   payerEmail,
@@ -407,7 +359,6 @@ async function recordFundraisingDonation({
   campaignId?: string;
   paymentIntentId: string;
   amountCents: number;
-  refundedCents?: number;
   currency: string;
   payerName: string;
   payerEmail: string;
@@ -430,32 +381,27 @@ async function recordFundraisingDonation({
     if (!campaignSnapshot.exists) {
       throw new Error('Stripe payment referenced a missing fundraising campaign.');
     }
-    const previous = donationSnapshot.data() || {};
-    const refund = paymentRefundState(amountCents, refundedCents, Number(previous.amountRefundedCents || 0));
-    const previousNet = donationSnapshot.exists ? Number(previous.amountCents || Math.round(Number(previous.amount || 0) * 100)) : 0;
-    if (donationSnapshot.exists && previousNet === refund.net_amount) return;
+    if (donationSnapshot.exists) return;
 
     const now = new Date().toISOString();
     transaction.set(donationRef, {
       id: donationRef.id,
       donorName: payerName || 'Stripe Donor',
       donorEmail: payerEmail,
-      amount: refund.net_amount / 100,
-      amountCents: refund.net_amount,
-      grossAmountCents: amountCents,
-      amountRefundedCents: refund.amount_refunded,
+      amount: amountCents / 100,
+      amountCents,
       currency,
       method: 'external',
-      status: refund.status === 'refunded' ? 'refunded' : 'verified',
+      status: 'verified',
       stripePaymentIntentId: paymentIntentId,
       stripeReceiptUrl: receiptUrl,
       stripeConnectAccountId: connectedAccountId ?? null,
-      createdAt: previous.createdAt || now,
-      verifiedAt: previous.verifiedAt || now,
+      createdAt: now,
+      verifiedAt: now,
       verificationSource: 'stripe_webhook',
     });
     transaction.update(campaignRef, {
-      currentAmount: FieldValue.increment((refund.net_amount - previousNet) / 100),
+      currentAmount: FieldValue.increment(amountCents / 100),
       lastDonationAt: now,
       updatedAt: now,
     });

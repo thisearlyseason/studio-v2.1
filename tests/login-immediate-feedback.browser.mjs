@@ -118,6 +118,28 @@ async function fixture(options = {}) {
 try {
 
   {
+    const f = await fixture({viewport:{width:834,height:1194},hasTouch:true});
+    await f.context.addInitScript(() => {
+      window.squadNativeAuthCapabilities={version:1,providers:['apple.com']};
+      window.nativeBeginCount=0;window.nativeButtonAtBridge=[];
+      window.webkit={messageHandlers:{squadNativeAuth:{postMessage(message){
+        if(message.type==='cancel')return Promise.resolve({version:1,type:'cancelled',requestId:message.requestId});
+        window.nativeBeginCount++;window.nativeButtonAtBridge.push(document.querySelector('[aria-label="App sign-in"] button')?.textContent);
+        return new Promise((resolve,reject)=>{window.rejectNativeFixture=()=>reject(Error('synthetic-native-cancellation'));});
+      }}}};
+    });
+    await f.open();
+    const apple=f.page.getByRole('button',{name:'Continue with Apple',exact:true});await apple.waitFor();
+    const immediate=await apple.evaluate(button=>{button.click();return{text:button.textContent,disabled:button.disabled,busy:button.getAttribute('aria-busy')};});
+    assert.equal(immediate.text,'Logging in…','actual native provider button changes in click task');assert.equal(immediate.disabled,true);assert.equal(immediate.busy,'true');
+    await f.page.waitForFunction(()=>window.nativeBeginCount===1);
+    assert.deepEqual(await f.page.evaluate(()=>window.nativeButtonAtBridge),['Logging in…']);
+    await f.page.evaluate(()=>{const b=document.querySelector('[aria-label="App sign-in"] button');b.click();b.click()});assert.equal(await f.page.evaluate(()=>window.nativeBeginCount),1);
+    await f.page.evaluate(()=>window.rejectNativeFixture());await f.page.getByRole('alert').filter({hasText:'Sign-in could not be completed'}).waitFor();
+    await apple.waitFor();assert(await apple.isEnabled());await apple.click();await f.page.waitForFunction(()=>window.nativeBeginCount===2);await f.page.evaluate(()=>window.rejectNativeFixture());await apple.waitFor();
+    await f.close();passed.push('actual store login route: iOS capability/provider bridge fixture reproduces button path, immediate pending, duplicate lock and failure retry');
+  }
+  {
     const f=await fixture({viewport:{width:834,height:1194},hasTouch:true});f.state.authFailure=true;f.state.authGate=deferred();await f.open();
     await f.page.evaluate(()=>{window.framesAfterSubmit=0;document.querySelector('form').addEventListener('submit',()=>{const frame=()=>{window.framesAfterSubmit++;window.firstPendingFrame??={text:document.querySelector('button[type=submit]').textContent,disabled:document.querySelector('button[type=submit]').disabled};if(window.framesAfterSubmit<3)requestAnimationFrame(frame)};requestAnimationFrame(frame)},{capture:true,once:true});});
     const immediate=await f.page.locator('button[type=submit]').evaluate(button=>{button.click();return{text:button.textContent,disabled:button.disabled};});assert.match(immediate.text,/Logging in/);assert.equal(immediate.disabled,true);await f.page.waitForFunction(()=>window.framesAfterSubmit>=2);assert.match((await f.page.evaluate(()=>window.firstPendingFrame)).text,/Logging in/);await f.busy('immediate DOM and rendering-opportunity feedback on actual route');
@@ -170,7 +192,13 @@ try {
     await f.page.waitForTimeout(200);
     assert.equal(f.state.submitted.at(-1).email, 'autofill@example.com');
     assert.equal(f.state.submitted.at(-1).password, '  fixture-password  ');
-    assert.equal(await f.page.getByRole('button', { name: 'Continue with Google' }).isDisabled(), true);
+    if (process.env.SQUAD_LOGIN_DISTRIBUTION === 'store') {
+      // Headless Chrome has no native provider bridge; do not manufacture one
+      // or confuse its absent provider button with an email-login defect.
+      await f.page.getByText('Provider sign-in is unavailable in this app version. Please use email and password below.', { exact: true }).waitFor();
+    } else {
+      assert.equal(await f.page.getByRole('button', { name: 'Continue with Google' }).isDisabled(), true);
+    }
     f.state.navigationGate = deferred();
     f.state.sessionGate.resolve();
     await f.page.waitForTimeout(500);

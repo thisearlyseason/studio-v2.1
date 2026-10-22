@@ -47,6 +47,18 @@ const containsUndefined = value => value !== null && typeof value === 'object'
   ? Object.values(value).some(item => item === undefined || containsUndefined(item))
   : false;
 
+test('legacy scoring cannot mutate a version2 workspace even with a valid owner and code', async () => {
+  const { app, records } = await setup(undefined, { uid: 'owner', role: 'coach' }, {}, { competition: { version: 2 } });
+  const before = structuredClone(records.get('teams/team-a/events/cup-a'));
+  try {
+    const result = await post(app, command());
+    assert.equal(result.status, 409);
+    assert.match(result.body.error, /workspace/i);
+    assert.deepEqual(records.get('teams/team-a/events/cup-a'), before);
+    assert.equal(auditCount(records), 0);
+  } finally { app.dispose(); }
+});
+
 test('Tournament score replay is one mutation and changed payload collides', async () => {
   const { app, records } = await setup();
   try {

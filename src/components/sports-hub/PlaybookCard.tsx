@@ -37,7 +37,9 @@ export function PlaybookCard({ resource, className }: PlaybookCardProps) {
             <Video className="h-7 w-7 text-white fill-white" />
           </div>
         </div>
-      ) : null}
+      ) : (
+        <div className="h-2 hero-gradient" />
+      )}
       <div className="p-5">
         <div className="flex items-start justify-between gap-2 mb-3">
           <div className="flex flex-wrap gap-1.5">

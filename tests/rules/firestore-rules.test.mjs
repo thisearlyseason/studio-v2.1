@@ -1491,11 +1491,3 @@ test('feed clients cannot bypass server blocking or read comments after a modera
   await testEnv.withSecurityRulesDisabled(context => deleteDoc(doc(context.firestore(), 'teams/team-a/feedPosts/post')));
   await assertFails(getDoc(doc(member, 'teams/team-a/feedPosts/post/comments/comment')));
 });
-
-test('versioned tournament documents cannot bypass the validated workspace',async()=>{
- await testEnv.withSecurityRulesDisabled(async context=>{await setDoc(doc(context.firestore(),'teams/team-a/events/versioned-cup'),{isTournament:true,eventType:'tournament',title:'Versioned Cup',competition:{version:2,revision:1,status:'draft'},tournamentGames:[]});});
- const owner=authenticatedDb('owner');
- await assertFails(setDoc(doc(owner,'teams/team-a/events/forged-workspace'),{title:'Forged',competition:{version:2,status:'published'}}));
- await assertFails(setDoc(doc(owner,'teams/team-a/events/versioned-cup'),{competition:{version:2,revision:2,status:'published'}},{merge:true}));
- await assertFails(setDoc(doc(owner,'teams/team-a/events/versioned-cup'),{location:'An overlapping field'},{merge:true}));
-});

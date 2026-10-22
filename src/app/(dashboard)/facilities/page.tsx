@@ -306,7 +306,7 @@ function EditFacilityDialog({ facility }: { facility: Facility }) {
       </Tooltip>
       <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
         <DialogTitle className="sr-only">Edit Facility</DialogTitle>
-
+        <div className="h-2 bg-primary w-full" />
         <div className="p-8 lg:p-12 space-y-8">
           <DialogHeader>
             <div className="flex items-center gap-4 mb-2">
@@ -443,7 +443,7 @@ function AuthorizedFacilityManagementPage() {
             </DialogTrigger>
             <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
               <DialogTitle className="sr-only">Facility Registration</DialogTitle>
-
+              <div className="h-2 bg-primary w-full" />
               <div className="p-8 lg:p-12 space-y-10">
                 <DialogHeader>
                   <div className="flex items-center gap-4 mb-2">
@@ -483,7 +483,7 @@ function AuthorizedFacilityManagementPage() {
                   </div>
                 </div>
                 <DialogFooter className="pt-4">
-                  <Button className="w-full h-16 rounded-4xl text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleAddFacility} disabled={isProcessing || !newFac.name.trim() || !newFac.address.trim()}>
+                  <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleAddFacility} disabled={isProcessing || !newFac.name.trim() || !newFac.address.trim()}>
                     {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Commit Facility Enrollment"}
                   </Button>
                 </DialogFooter>
@@ -496,10 +496,10 @@ function AuthorizedFacilityManagementPage() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
         {facilities?.map((facility) => (
           <Card key={facility.id} className="rounded-[3rem] border-none shadow-2xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col group">
-
+            <div className="h-2 hero-gradient w-full" />
             <CardContent className="p-8 space-y-8 flex-1">
               <div className="flex justify-between items-start">
-                <div className="bg-primary/5 p-5 rounded-3xl text-primary shadow-inner">
+                <div className="bg-primary/5 p-5 rounded-[1.5rem] text-primary shadow-inner">
                   <MapPin className="h-10 w-10" />
                 </div>
                 {isStaff && (

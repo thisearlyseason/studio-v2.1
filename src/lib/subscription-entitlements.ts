@@ -1,4 +1,4 @@
-import { isExtraTeamPriceId, PLAN_PRICE_MAP } from '@/lib/stripe-price-map';
+import { EXTRA_TEAM_PRICE_IDS, PLAN_PRICE_MAP } from '@/lib/stripe-price-map';
 import { isEntitledSubscriptionStatus } from '@/lib/subscription-seat-policy';
 
 export type SubscriptionItemLike = {
@@ -34,7 +34,8 @@ export function resolveSubscriptionEntitlements(
       continue;
     }
     if (
-      isExtraTeamPriceId(item.price.id)
+      item.price.id === EXTRA_TEAM_PRICE_IDS.monthly ||
+      item.price.id === EXTRA_TEAM_PRICE_IDS.annual
     ) {
       extraTeams += Math.max(0, item.quantity || 0);
     }

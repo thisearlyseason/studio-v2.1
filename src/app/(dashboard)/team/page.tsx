@@ -2,7 +2,6 @@
 "use client";
 import { CoverEditor } from '@/components/team-home/cover-editor';
 
-import OrganizerGuide from '@/components/guidance/OrganizerGuide';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { 
   Camera, 
@@ -81,9 +80,6 @@ export default function TeamProfilePage() {
   const [isPlanOpen, setIsPlanOpen] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [isUpdatingLogo, setIsUpdatingLogo] = useState(false);
-  const [logoRevision, setLogoRevision] = useState(0);
-  const logoSource = activeTeam?.teamLogoUrl?.startsWith('/api/media?path=') && logoRevision
-    ? `${activeTeam.teamLogoUrl}&v=${logoRevision}` : activeTeam?.teamLogoUrl;
   const [selectedPlanId, setSelectedPlanId] = useState('');
   const [isCodeEditOpen, setIsCodeEditOpen] = useState(false);
   const [newCode, setNewCode] = useState('');
@@ -237,7 +233,7 @@ export default function TeamProfilePage() {
       setIsUpdatingLogo(true);
       try {
         const uploaded=await uploadScopedMedia(`teams/${activeTeam.id}/branding/logo`,e.target.files[0],await getAuthToken(firebaseAuth));
-        if(db){await updateDoc(doc(db,'teams',activeTeam.id),{teamLogoUrl:uploaded.url});setLogoRevision(revision=>revision+1);propagateLogoToLeagues(activeTeam.id,uploaded.url);}
+        if(db){await updateDoc(doc(db,'teams',activeTeam.id),{teamLogoUrl:uploaded.url});propagateLogoToLeagues(activeTeam.id,uploaded.url);}
         toast({ title: 'Squad Branding Updated', description: 'Identity assets synchronized across the matrix.' });
         setIsUpdatingLogo(false);
       } catch (err) {
@@ -310,7 +306,6 @@ export default function TeamProfilePage() {
 
   return (
     <div className="space-y-8 animate-in fade-in duration-500">
-      <OrganizerGuide kind="team" />
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 bg-muted/20 p-6 rounded-[2.5rem] border border-black/5">
         <div>
           <h2 className="text-xs font-black uppercase tracking-[0.3em] text-muted-foreground mb-3 ml-1">Squad Management</h2>
@@ -484,7 +479,7 @@ export default function TeamProfilePage() {
           <div className="relative group">
             <input type="file" ref={logoInputRef} className="hidden" accept="image/*" onChange={handleLogoChange} />
             <Avatar className="h-40 w-40 border-0 bg-transparent shadow-none rounded-none">
-              <AvatarImage key={logoRevision} src={logoSource} className="object-contain" />
+              <AvatarImage src={activeTeam.teamLogoUrl} className="object-contain" />
               <AvatarFallback className="hero-gradient text-white text-4xl font-black rounded-3xl">{activeTeam.name ? activeTeam.name[0] : 'T'}</AvatarFallback>
             </Avatar>
             {isAdmin && (
@@ -612,7 +607,7 @@ export default function TeamProfilePage() {
                     >
                       {activeTeam.teamLogoUrl ? (
                         <>
-                          <img key={logoRevision} src={logoSource} className="w-full h-full object-contain p-4" alt="Squad Logo" />
+                          <img src={activeTeam.teamLogoUrl} className="w-full h-full object-contain p-4" alt="Squad Logo" />
                           <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex flex-col items-center justify-center text-white p-4 text-center">
                              <Camera className="h-8 w-8 mb-2" />
                              <p className="text-[10px] font-black uppercase tracking-wider">Replace Logo</p>
@@ -705,7 +700,7 @@ export default function TeamProfilePage() {
         </div>
 
         <aside className="space-y-8">
-          <Card className="rounded-4xl border-none shadow-xl bg-primary text-primary-foreground overflow-hidden group">
+          <Card className="rounded-[2rem] border-none shadow-xl bg-primary text-primary-foreground overflow-hidden group">
             <CardContent className="p-8 space-y-6">
               <div className="space-y-1">
                 <Badge className="bg-white/20 text-white border-none font-black uppercase tracking-widest text-[8px] h-5 px-2">Recruitment Hub</Badge>
@@ -757,7 +752,7 @@ export default function TeamProfilePage() {
           <Dialog open={isCodeEditOpen} onOpenChange={setIsCodeEditOpen}>
             <DialogContent className="rounded-[2.5rem] sm:max-w-md border-none shadow-2xl p-0 overflow-hidden text-foreground">
               <DialogTitle className="sr-only">Customize Squad Identity</DialogTitle>
-
+              <div className="h-2 bg-primary w-full" />
               <div className="p-8 space-y-8">
                 <DialogHeader>
                   <DialogTitle className="text-2xl font-black uppercase tracking-tight text-foreground">Finalize Identity</DialogTitle>
@@ -805,7 +800,7 @@ export default function TeamProfilePage() {
       <Link href="/roster">
         <Card className="rounded-[2.5rem] border-none shadow-xl bg-white overflow-hidden group hover:shadow-2xl transition-all cursor-pointer ring-1 ring-black/5">
           <CardContent className="p-6 sm:p-8 flex flex-col sm:flex-row items-center gap-6">
-            <div className="bg-primary/10 p-5 rounded-3xl text-primary shadow-inner shrink-0">
+            <div className="bg-primary/10 p-5 rounded-[1.5rem] text-primary shadow-inner shrink-0">
               <Users className="h-10 w-10" />
             </div>
             <div className="flex-1 min-w-0 text-center sm:text-left">

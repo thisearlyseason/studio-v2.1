@@ -239,7 +239,7 @@ export default function JoinTeamPage() {
 
         {/* Every signed-in account may enroll itself as an ordinary player. */}
         <Card className={cn("rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col", isStaff && "lg:col-span-2")}>
-
+            <div className="h-2 bg-primary w-full" />
             <CardHeader className="p-8 lg:p-10">
               <div className="flex items-center gap-4 mb-2">
                 <div className="bg-primary/10 p-3 rounded-2xl text-primary">
@@ -359,7 +359,7 @@ export default function JoinTeamPage() {
         {isStaff ? (
           <>
             <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-black text-white flex flex-col">
-
+              <div className="h-2 bg-primary w-full" />
               <CardHeader className="p-8 lg:p-10">
                 <div className="flex items-center gap-4 mb-2">
                   <div className="bg-primary p-3 rounded-2xl text-white shadow-lg shadow-primary/20"><Trophy className="h-6 w-6" /></div>
@@ -383,7 +383,7 @@ export default function JoinTeamPage() {
             </Card>
 
             <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col">
-
+              <div className="h-2 bg-primary w-full" />
               <CardHeader className="p-8 lg:p-10">
                 <div className="flex items-center gap-4 mb-2">
                   <div className="bg-primary/10 p-3 rounded-2xl text-primary"><CalendarDays className="h-6 w-6" /></div>
@@ -418,7 +418,7 @@ export default function JoinTeamPage() {
       </div>
 
       {isStaff && activeTeam && (
-        <Card className="rounded-4xl border-primary/20 bg-primary/5">
+        <Card className="rounded-[2rem] border-primary/20 bg-primary/5">
           <CardContent className="p-6 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
             <div><p className="font-black uppercase tracking-tight">Invite players to {activeTeam.name}</p><p className="text-xs text-muted-foreground mt-1">Share the link. Players join themselves; you do not need to create their account.</p></div>
             <Button onClick={handleCopyInviteLink} className="h-11 rounded-xl font-black uppercase text-[10px] shrink-0"><Copy className="h-4 w-4 mr-2" /> Copy Player Invite Link</Button>

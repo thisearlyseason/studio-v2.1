@@ -477,7 +477,7 @@ function ChatRoomInner() {
           )}
           {chatImage && (
             <div className="relative inline-block animate-in zoom-in duration-300">
-              <img src={chatImage} className="h-24 w-auto rounded-3xl border-4 border-white shadow-xl ring-1 ring-black/10" alt="Preview" />
+              <img src={chatImage} className="h-24 w-auto rounded-[1.5rem] border-4 border-white shadow-xl ring-1 ring-black/10" alt="Preview" />
               <Tooltip>
                 <TooltipTrigger asChild>
                   <Button aria-label="Remove attached image" variant="destructive" size="icon" className="absolute -top-3 -right-3 h-8 w-8 rounded-full shadow-lg border-2 border-white" onClick={() => setChatImage(undefined)}>
@@ -529,7 +529,7 @@ function ChatRoomInner() {
             
             <div className="flex-1 relative">
               <Input 
-                className="w-full rounded-3xl bg-muted/30 border-2 border-transparent focus:border-primary/20 focus:bg-white h-12 px-6 font-bold text-base transition-all pr-12 shadow-inner"
+                className="w-full rounded-[1.5rem] bg-muted/30 border-2 border-transparent focus:border-primary/20 focus:bg-white h-12 px-6 font-bold text-base transition-all pr-12 shadow-inner" 
                 placeholder="Tactical update..." 
                 value={input} 
                 onChange={e => setInput(e.target.value)} 
@@ -581,7 +581,7 @@ function ChatRoomInner() {
       <Dialog open={isMembersDialogOpen} onOpenChange={setIsMembersDialogOpen}>
         <DialogContent className="w-[calc(100vw-1rem)] max-w-md max-h-[calc(100dvh-1rem)] rounded-3xl sm:rounded-[2.5rem] border-none shadow-2xl p-0 overflow-y-auto">
           <DialogTitle className="sr-only">Squad Enrollment Management</DialogTitle>
-
+          <div className="h-2 bg-primary w-full" />
           <div className="p-5 sm:p-8 space-y-5 sm:space-y-6">
             <DialogHeader>
               <DialogTitle className="text-xl sm:text-2xl font-black uppercase tracking-tight pr-8">Squad Enrollment</DialogTitle>
@@ -677,7 +677,7 @@ function ChatRoomInner() {
       <Dialog open={isPollDialogOpen} onOpenChange={setIsPollDialogOpen}>
         <DialogContent className="sm:max-w-md rounded-[3rem] border-none shadow-2xl overflow-hidden p-0">
           <DialogTitle className="sr-only">Launch Squad Poll</DialogTitle>
-
+          <div className="h-2 bg-primary w-full" />
           <div className="p-8">
             <DialogHeader className="mb-6">
               <DialogTitle className="text-3xl font-black uppercase tracking-tight leading-none">Launch Poll</DialogTitle>

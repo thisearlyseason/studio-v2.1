@@ -6,8 +6,8 @@ const enabled = process.env.CHECKOUT_DELETION_EMULATOR_TEST === '1';
 let env;
 before(async () => {
   if (!enabled) return;
-  if (!/^127\.0\.0\.1:\d+$/.test(process.env.FIRESTORE_EMULATOR_HOST || '')) throw Error('Requires isolated billing emulator');
-  env = await initializeTestEnvironment({ projectId: 'demo-native-auth-test', firestore: { host: (process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8187').split(':')[0], port: Number((process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8187').split(':')[1]), rules: readFileSync(process.env.CHECKOUT_RULES_TEST_SOURCE || 'firestore.rules', 'utf8') } });
+  if (process.env.FIRESTORE_EMULATOR_HOST !== '127.0.0.1:8187') throw Error('Requires isolated billing emulator');
+  env = await initializeTestEnvironment({ projectId: 'demo-native-auth-test', firestore: { host: '127.0.0.1', port: 8187, rules: readFileSync(process.env.CHECKOUT_RULES_TEST_SOURCE || 'firestore.rules', 'utf8') } });
 });
 after(async () => { await env?.cleanup(); });
 test('new browser profiles cannot forge checkout requests or lifecycle guards', { skip: !enabled }, async () => {

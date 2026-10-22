@@ -620,7 +620,7 @@ export default function RosterPage() {
                 <DialogContent className="sm:max-w-md rounded-[2.5rem] border-none shadow-2xl p-0 overflow-y-auto bg-white text-foreground">
                   <DialogTitle className="sr-only">Invite Teammates</DialogTitle>
                   <DialogDescription className="sr-only">Enroll new teammates via squad code or recruitment link</DialogDescription>
-
+                  <div className="h-2 bg-primary w-full" />
                   <div className="p-8 space-y-8">
                     <DialogHeader>
                       <DialogTitle className="text-3xl font-black uppercase tracking-tight text-foreground">Recruit Hub</DialogTitle>
@@ -642,7 +642,7 @@ export default function RosterPage() {
                             placeholder="Set Seat Limit..."
                             value={activeTeam.rosterLimit || ''}
                             onChange={(e) => updateTeam(activeTeam.id, { rosterLimit: parseInt(e.target.value) || 0 })}
-                            className="h-12 rounded-3xl border-2 font-black text-lg bg-white"
+                            className="h-12 rounded-[1.5rem] border-2 font-black text-lg bg-white"
                           />
                           <div className="p-3 bg-white rounded-2xl border-2 text-muted-foreground/30">
                             <Settings className="h-5 w-5" />
@@ -712,7 +712,7 @@ export default function RosterPage() {
 
       <div className="grid grid-cols-1 gap-3">
         {filteredRoster.map((member) => (
-          <Card key={member.id} className="overflow-hidden border-none shadow-sm transition-all duration-300 ring-1 ring-black/5 rounded-4xl cursor-pointer group hover:shadow-md bg-white" onClick={() => setSelectedMemberId(member.id)}>
+          <Card key={member.id} className="overflow-hidden border-none shadow-sm transition-all duration-300 ring-1 ring-black/5 rounded-[2rem] cursor-pointer group hover:shadow-md bg-white" onClick={() => setSelectedMemberId(member.id)}>
             <CardContent className="p-4 flex items-center justify-between">
               <div className="flex items-center gap-4">
                 <Avatar className="h-14 w-14 rounded-2xl border-2 border-background shadow-md">
@@ -777,7 +777,7 @@ export default function RosterPage() {
 
           <div className="grid grid-cols-1 gap-3">
             {parents.map((parent, idx) => (
-              <Card key={idx} className="overflow-hidden border-none shadow-sm transition-all duration-300 ring-1 ring-black/5 rounded-4xl cursor-pointer group hover:shadow-md bg-white" onClick={() => handleChatWithParent(parent)}>
+              <Card key={idx} className="overflow-hidden border-none shadow-sm transition-all duration-300 ring-1 ring-black/5 rounded-[2rem] cursor-pointer group hover:shadow-md bg-white" onClick={() => handleChatWithParent(parent)}>
                 <CardContent className="p-4 flex items-center justify-between">
                   <div className="flex items-center gap-4">
                     <Avatar className="h-14 w-14 rounded-2xl border-2 border-background shadow-md">
@@ -1027,7 +1027,7 @@ export default function RosterPage() {
                              placeholder="e.g. Varsity, Junior Varsity, Elite..."
                              value={selectedMember.division || ''}
                              onChange={(e) => handleUpdateMemberField('division', e.target.value)}
-                             className="h-12 rounded-3xl border-2 font-black text-lg bg-white"
+                             className="h-12 rounded-[1.5rem] border-2 font-black text-lg bg-white"
                            />
                            <p className="text-[9px] font-medium text-muted-foreground italic leading-relaxed">Assign this athlete to a specific competitive division for league and tournament sorting.</p>
                          </div>
@@ -1097,7 +1097,7 @@ export default function RosterPage() {
                                         {format(new Date(signatureRecord.signedAt), 'MMMM d, yyyy h:mm a')}
                                       </p>
                                       {signatureRecord.signedByParent && signatureRecord.parentName && (
-                                        <p className="text-[8px] font-black text-primary uppercase tracking-widest">
+                                        <p className="text-[8px] font-black text-primary uppercase tracking-[0.1em]">
                                           Signed by {signatureRecord.parentName}
                                         </p>
                                       )}
@@ -1222,7 +1222,7 @@ export default function RosterPage() {
         <DialogContent className="sm:max-w-md rounded-[2.5rem] p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
           <DialogTitle className="sr-only">Provision Role</DialogTitle>
           <DialogDescription className="sr-only">Update organizational authority and team position</DialogDescription>
-
+          <div className="h-2 bg-primary w-full" />
           <div className="p-8 space-y-6">
             <DialogHeader>
               <div className="flex items-center gap-3 mb-2">

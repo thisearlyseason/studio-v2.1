@@ -85,11 +85,7 @@ function getZonedClock(now, requestedTimeZone) {
         return getZonedClock(now, DEFAULT_TIME_ZONE);
     }
     const value = (type) => parts.find((part) => part.type === type)?.value || "";
-    // ICU can emit 24:00 for local midnight even when h23 was requested.
-    // Treat it as the start of the represented calendar day; otherwise the
-    // scheduler reads it as minute 1440 and incorrectly excludes 00:xx events.
-    const rawHour = Number(value("hour"));
-    const hour = rawHour === 24 ? 0 : rawHour;
+    const hour = Number(value("hour"));
     const minute = Number(value("minute"));
     return {
         date: `${value("year")}-${value("month")}-${value("day")}`,

@@ -121,7 +121,7 @@ function EditChildModal({ child, onClose }: { child: PlayerProfile; onClose: () 
   return (
     <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden sm:max-w-2xl bg-white text-foreground flex flex-col max-h-[90vh]">
       <DialogTitle className="sr-only">Edit Athlete Profile</DialogTitle>
-
+      <div className="h-2 bg-primary w-full shrink-0" />
       <div className="overflow-y-auto flex-1">
         <div className="p-8 lg:p-10 space-y-8">
           <DialogHeader>
@@ -298,7 +298,7 @@ function LoginEnabledInfoModal() {
   return (
     <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden sm:max-w-lg bg-white text-foreground">
       <DialogTitle className="sr-only">Login Enabled Explained</DialogTitle>
-
+      <div className="h-2 bg-primary w-full" />
       <div className="p-8 lg:p-10 space-y-6">
         <DialogHeader>
           <DialogTitle className="text-3xl font-black uppercase tracking-tight flex items-center gap-3">
@@ -443,12 +443,12 @@ function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
 
   return (
     <Card data-testid={`family-child-${child.id}`} className="rounded-[3rem] border-none shadow-2xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col group transition-all hover:ring-primary/20">
-
+      <div className="h-2 hero-gradient w-full" />
       <CardContent className="p-8 lg:p-10 space-y-6 flex-1">
 
         {/* Header Row */}
         <div className="flex justify-between items-start">
-          <div className="bg-primary/5 p-5 rounded-3xl text-primary shadow-inner">
+          <div className="bg-primary/5 p-5 rounded-[1.5rem] text-primary shadow-inner">
             <Baby className="h-10 w-10" />
           </div>
           <div className="flex items-center gap-2">
@@ -589,7 +589,7 @@ function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
                 </Button>
               </DialogTrigger>
               <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden sm:max-w-md bg-white text-foreground">
-
+                <div className="h-2 bg-primary w-full" />
                 <div className="p-8 space-y-6">
                   <DialogHeader>
                     <DialogTitle className="text-2xl font-black uppercase tracking-tight">
@@ -677,7 +677,7 @@ function ChildCard({ child, teams }: { child: PlayerProfile; teams: Team[] }) {
             </Dialog>
             {/* Success Modal */}
         <Dialog open={isSuccessOpen} onOpenChange={setIsSuccessOpen}>
-          <DialogContent className="max-w-md bg-white rounded-4xl p-10 space-y-8 border-none shadow-2xl overflow-hidden">
+          <DialogContent className="max-w-md bg-white rounded-[2rem] p-10 space-y-8 border-none shadow-2xl overflow-hidden">
             <div className="space-y-4 text-center">
               <div className="w-20 h-20 hero-gradient rounded-full flex items-center justify-center mx-auto mb-6 shadow-xl animate-in zoom-in-50 duration-500">
                 <Check className="h-10 w-10 text-white" />
@@ -765,10 +765,10 @@ function MasterSquadWall({ consolidatedTeams }: { consolidatedTeams: { team: Tea
         {consolidatedTeams.map(({ team, members }) => (
           <Card data-testid={`family-team-${team.id}`}
             key={team.id}
-            className="group relative rounded-4xl border-none shadow-lg bg-white/40 backdrop-blur-xl overflow-hidden ring-1 ring-black/5 hover:ring-primary/40 transition-all cursor-pointer h-32 flex flex-col justify-end p-6"
+            className="group relative rounded-[2rem] border-none shadow-lg bg-white/40 backdrop-blur-xl overflow-hidden ring-1 ring-black/5 hover:ring-primary/40 transition-all cursor-pointer h-32 flex flex-col justify-end p-6"
             onClick={() => router.push(`/feed?teamId=${team.id}`)}
           >
-
+            <div className="absolute top-0 left-0 w-full h-1 bg-primary transform origin-left scale-x-0 group-hover:scale-x-100 transition-transform duration-500" />
             
             {/* Participant Avatars */}
             <div className="absolute top-4 right-4 flex -space-x-2">
@@ -1294,7 +1294,7 @@ export default function FamilyPage() {
           </DialogTrigger>
           <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden sm:max-w-md bg-white text-foreground">
             <DialogTitle className="sr-only">Add Player</DialogTitle>
-
+            <div className="h-2 bg-primary w-full" />
             <div className="p-8 lg:p-10 space-y-8">
               <DialogHeader>
                 <DialogTitle className="text-3xl font-black uppercase tracking-tight text-foreground">Player Details</DialogTitle>
@@ -1382,8 +1382,8 @@ export default function FamilyPage() {
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {pendingWaivers.map(w => (
-              <Card key={`${w.childId}_${w.docId}`} className="rounded-4xl border-none shadow-md ring-2 ring-red-200 bg-white overflow-hidden">
-
+              <Card key={`${w.childId}_${w.docId}`} className="rounded-[2rem] border-none shadow-md ring-2 ring-red-200 bg-white overflow-hidden">
+                <div className="h-1 bg-red-500 w-full" />
                 <CardContent className="p-6 space-y-4">
                   <div className="flex items-start justify-between gap-3">
                     <div className="flex-1 min-w-0">
@@ -1417,7 +1417,7 @@ export default function FamilyPage() {
       <Dialog open={!!signingWaiver} onOpenChange={open => { if (!open) { setSigningWaiver(null); setSignatureText(''); } }}>
         <DialogContent className="rounded-[2.5rem] border-none shadow-2xl p-0 overflow-hidden sm:max-w-2xl bg-white text-foreground flex flex-col max-h-[90vh]">
           <DialogTitle className="sr-only">Sign Waiver</DialogTitle>
-
+          <div className="h-2 bg-red-500 w-full shrink-0" />
           <div className="overflow-y-auto flex-1">
             <div className="p-8 space-y-6">
               <DialogHeader>
@@ -1608,7 +1608,7 @@ export default function FamilyPage() {
                       </Card>
                     );
                   }) : (
-                    <div className="py-8 text-center rounded-4xl border-2 border-dashed border-muted/30 bg-muted/5 opacity-50">
+                    <div className="py-8 text-center rounded-[2rem] border-2 border-dashed border-muted/30 bg-muted/5 opacity-50">
                       <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground">Strategic Silence for {child.firstName}</p>
                     </div>
                   )}

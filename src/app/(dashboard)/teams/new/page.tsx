@@ -1,7 +1,6 @@
 
 "use client";
 
-import OrganizerGuide from '@/components/guidance/OrganizerGuide';
 import React, { useState, useEffect, Suspense } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Button } from '@/components/ui/button';
@@ -67,9 +66,8 @@ function NewTeamForm() {
       }
       
       const teamId = await createNewTeam(teamName, targetType, organizerPosition, description, selectedPlan, customWaiverTitle, customWaiverContent, targetSchoolId);
-      if (!teamId) throw new Error('Unable to create the squad. Please try again.');
-      setActiveTeam({ id: teamId } as any);
       if (!isStoreDistribution && selectedPlan === 'team' && proQuotaStatus.remaining <= 0) {
+        setActiveTeam({ id: teamId } as any);
         router.push('/dashboard/billing');
       } else {
         router.push('/feed');
@@ -91,7 +89,6 @@ function NewTeamForm() {
 
   return (
     <div className="max-w-4xl mx-auto space-y-6 pt-4 pb-20">
-      <OrganizerGuide kind="team" />
       <Button variant="ghost" onClick={() => router.back()} className="font-bold">
         <ChevronLeft className="h-4 w-4 mr-1" /> Back
       </Button>
@@ -99,27 +96,27 @@ function NewTeamForm() {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-8">
         <div className="lg:col-span-3 space-y-6">
           <Card className="border-none shadow-2xl rounded-[2.5rem] overflow-hidden bg-white ring-1 ring-black/5">
-
+            <div className="h-2 hero-gradient w-full" />
             <CardHeader className="p-8 lg:p-10">
-              <CardTitle className="text-3xl font-black uppercase tracking-tight">Create your team</CardTitle>
-              <CardDescription className="text-[10px] font-bold uppercase tracking-widest">Add the basics now. Invite people next.</CardDescription>
+              <CardTitle className="text-3xl font-black uppercase tracking-tight">Launch Squad</CardTitle>
+              <CardDescription className="text-[10px] font-bold uppercase tracking-widest">Operational Deployment</CardDescription>
             </CardHeader>
             <CardContent className="space-y-8 p-8 lg:p-10 pt-0">
               <div className="space-y-2">
-                <Label htmlFor="team-name" className="text-[10px] font-black uppercase tracking-widest">Squad Name</Label>
-                <Input id="team-name" value={teamName} onChange={e => setTeamName(e.target.value)} className="h-14 text-xl rounded-2xl border-2 font-black" placeholder="e.g. Metro Elite U14" />
+                <Label className="text-[10px] font-black uppercase tracking-widest">Squad Name</Label>
+                <Input value={teamName} onChange={e => setTeamName(e.target.value)} className="h-14 text-xl rounded-2xl border-2 font-black" placeholder="e.g. Metro Elite U14" />
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <Label htmlFor="team-type" className="text-[10px] font-black uppercase tracking-widest">Team type</Label>
+                  <Label className="text-[10px] font-black uppercase tracking-widest">Team Protocol</Label>
                   {isSchoolAdmin && activeTeam?.type === 'school' ? (
                     <div className="h-12 rounded-xl border-2 border-muted bg-muted/20 flex items-center px-4 font-bold text-muted-foreground">
                        {type === 'school_squad' ? 'Sub-Squad' : 'School Team'}
                     </div>
                   ) : (
                     <Select value={type} onValueChange={(v: any) => setType(v)}>
-                      <SelectTrigger id="team-type" className="h-12 rounded-xl border-2 font-bold"><SelectValue /></SelectTrigger>
+                      <SelectTrigger className="h-12 rounded-xl border-2 font-bold"><SelectValue /></SelectTrigger>
                       <SelectContent className="rounded-xl">
                         <SelectItem value="adult">Adult (18+)</SelectItem>
                         <SelectItem value="youth">Youth (Minor Support)</SelectItem>
@@ -128,9 +125,9 @@ function NewTeamForm() {
                   )}
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="team-organizer-role" className="text-[10px] font-black uppercase tracking-widest">Your Role</Label>
+                  <Label className="text-[10px] font-black uppercase tracking-widest">Your Role</Label>
                   <Select value={organizerPosition} onValueChange={setOrganizerPosition}>
-                    <SelectTrigger id="team-organizer-role" className="h-12 rounded-xl border-2 font-bold"><SelectValue /></SelectTrigger>
+                    <SelectTrigger className="h-12 rounded-xl border-2 font-bold"><SelectValue /></SelectTrigger>
                     <SelectContent className="rounded-xl">
                       <SelectItem value="Coach">Head Coach</SelectItem>
                       <SelectItem value="Manager">Organization Lead</SelectItem>
@@ -140,8 +137,8 @@ function NewTeamForm() {
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="team-description" className="text-[10px] font-black uppercase tracking-widest">Biography</Label>
-                <Textarea id="team-description" value={description} onChange={e => setDescription(e.target.value)} className="rounded-2xl min-h-[100px] border-2 font-medium" />
+                <Label className="text-[10px] font-black uppercase tracking-widest">Biography</Label>
+                <Textarea value={description} onChange={e => setDescription(e.target.value)} className="rounded-2xl min-h-[100px] border-2 font-medium" />
               </div>
 
               <div className="space-y-4 pt-4 border-t">
@@ -152,12 +149,12 @@ function NewTeamForm() {
                 <p className="text-[10px] text-muted-foreground font-bold tracking-widest mb-4">Create a custom liability waiver, code of conduct, or media release. This will automatically deploy to all athletes assigned to this squad.</p>
                 <div className="space-y-4">
                   <div className="space-y-2">
-                    <Label htmlFor="team-waiver-title" className="text-[10px] font-black uppercase tracking-widest">Protocol Title (Optional)</Label>
-                    <Input id="team-waiver-title" value={customWaiverTitle} onChange={e => setCustomWaiverTitle(e.target.value)} className="h-12 rounded-xl border-2 font-bold" placeholder="e.g. 2025 League Waiver" />
+                    <Label className="text-[10px] font-black uppercase tracking-widest">Protocol Title (Optional)</Label>
+                    <Input value={customWaiverTitle} onChange={e => setCustomWaiverTitle(e.target.value)} className="h-12 rounded-xl border-2 font-bold" placeholder="e.g. 2025 League Waiver" />
                   </div>
                   <div className="space-y-2">
-                    <Label htmlFor="team-waiver-content" className="text-[10px] font-black uppercase tracking-widest">Legal Execution Text</Label>
-                    <Textarea id="team-waiver-content" value={customWaiverContent} onChange={e => setCustomWaiverContent(e.target.value)} className="rounded-xl min-h-[120px] border-2 font-medium bg-muted/30" placeholder="Enter terms and conditions for your members..." />
+                    <Label className="text-[10px] font-black uppercase tracking-widest">Legal Execution Text</Label>
+                    <Textarea value={customWaiverContent} onChange={e => setCustomWaiverContent(e.target.value)} className="rounded-xl min-h-[120px] border-2 font-medium bg-muted/30" placeholder="Enter terms and conditions for your members..." />
                   </div>
                 </div>
               </div>
@@ -168,17 +165,17 @@ function NewTeamForm() {
         <div className="lg:col-span-2 space-y-6">
           <div className="space-y-4">
             <h3 className="text-[10px] font-black uppercase tracking-[0.3em] ml-1">Tier Selection</h3>
-            <button type="button" aria-pressed={selectedPlan === 'free'}
-              className={cn("w-full text-left p-6 rounded-3xl border-2 cursor-pointer transition-all", selectedPlan === 'free' ? "border-black bg-white ring-4 ring-black/5" : "border-transparent bg-muted/30")}
+            <div 
+              className={cn("p-6 rounded-3xl border-2 cursor-pointer transition-all", selectedPlan === 'free' ? "border-black bg-white ring-4 ring-black/5" : "border-transparent bg-muted/30")}
               onClick={() => setSelectedPlan('free')}
             >
               <p className="font-black text-sm uppercase">Starter Squad</p>
               <p className="text-xl font-black mt-1">$0</p>
               <p className="text-[10px] text-muted-foreground font-bold mt-1">Basic features, 1 team</p>
-            </button>
+            </div>
             {(!isStoreDistribution || proQuotaStatus.remaining > 0) && (
-              <button type="button" aria-pressed={selectedPlan === 'team'}
-                className={cn("w-full text-left p-6 rounded-3xl border-2 cursor-pointer transition-all relative overflow-hidden", selectedPlan === 'team' ? "border-primary bg-black text-white shadow-xl" : "border-transparent bg-muted/30")}
+              <div
+                className={cn("p-6 rounded-3xl border-2 cursor-pointer transition-all relative overflow-hidden", selectedPlan === 'team' ? "border-primary bg-black text-white shadow-xl" : "border-transparent bg-muted/30")}
                 onClick={() => setSelectedPlan('team')}
               >
                 <Zap className="absolute -right-2 -bottom-2 h-16 w-16 opacity-10 -rotate-12" />
@@ -194,7 +191,7 @@ function NewTeamForm() {
                   <p className="text-[10px] font-bold mt-1 opacity-60">Stripe payment required to activate</p>
                 </>
                 )}
-              </button>
+              </div>
             )}
             {!isStoreDistribution && selectedPlan === 'team' && proQuotaStatus.remaining <= 0 && (
               <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-50 border border-amber-200">
@@ -213,11 +210,11 @@ function NewTeamForm() {
             </div>
           )}
 
-          <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleCreate} aria-describedby={creationError ? 'team-creation-error' : undefined} disabled={isProcessing || !teamName.trim()} aria-busy={isProcessing}>
-            {isProcessing ? <><Loader2 aria-hidden="true" className="h-6 w-6 animate-spin" /><span>Creating team…</span></> : (
+          <Button className="w-full h-16 rounded-2xl text-lg font-black shadow-xl" onClick={handleCreate} aria-describedby={creationError ? 'team-creation-error' : undefined} disabled={isProcessing || !teamName.trim()}>
+            {isProcessing ? <Loader2 className="h-6 w-6 animate-spin" /> : (
               !isStoreDistribution && selectedPlan === 'team' && proQuotaStatus.remaining <= 0
                 ? 'Create Then Upgrade →'
-                : 'Create team'
+                : 'Deploy Squad Hub'
             )}
           </Button>
         </div>

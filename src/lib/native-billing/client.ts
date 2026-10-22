@@ -18,7 +18,7 @@ export async function nativeBilling(action: 'catalog' | 'purchase' | 'restore' |
   const ios = scope.webkit?.messageHandlers?.squadNativeBilling, android = scope.squadNativeBilling;
   if (!ios && !android) throw new Error('Update The Squad from your app store to use in-app subscriptions.');
   const requestId = crypto.randomUUID();
-  const message = { version: 1, requestId, action, token, packageId, displayPriceQuote };
+  const message = { version: 1, requestId, action, token, packageId, ...(displayPriceQuote === undefined ? {} : { displayPriceQuote }) };
   pending = true;
   let timer: ReturnType<typeof setTimeout> | undefined;
   try {

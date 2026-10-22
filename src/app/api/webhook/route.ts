@@ -1,18 +1,17 @@
-import { assertManagedReceipt } from '@/lib/stripe-managed-checkout';
-import { notifySignup } from '@/lib/server-signup-notification';
 import { NextRequest, NextResponse } from 'next/server';
 import Stripe from 'stripe';
 import { adminDb } from '@/lib/firebase-admin';
 import { getStripe } from '@/lib/stripe-client';
 import {
   PLAN_PRICE_MAP,
-  isExtraTeamPriceId,
+  EXTRA_TEAM_PRICE_IDS,
   PRICE_BILLING_CYCLE,
 } from '@/lib/stripe-price-map';
 import { isEntitledSubscriptionStatus } from '@/lib/server-team-entitlements';
 import { reconcilePaidTeamSeats } from '@/lib/server-subscription-seats';
 import { chooseAuthoritativeSubscriptionId } from '@/lib/subscription-seat-policy';
 import {
+  ownerNewRegistrationEmail,
   ownerPaymentReceivedEmail,
   ownerCancellationEmail,
   ownerPaymentFailedEmail,
@@ -139,8 +138,6 @@ async function syncSubscriptionToFirestore(
     return;
   }
 
-  if (isEntitledSubscriptionStatus(subscription.status)) await assertManagedReceipt(getStripe(), subscription);
-
   // 2. Map subscription items to plan + add-ons
   let planType = 'free';
   let baseLimit = 1;
@@ -155,7 +152,8 @@ async function syncSubscriptionToFirestore(
       baseLimit = resolved.teamLimit;
       billingCycle = PRICE_BILLING_CYCLE[priceId] || null;
     } else if (
-      isExtraTeamPriceId(priceId)
+      priceId === EXTRA_TEAM_PRICE_IDS.monthly ||
+      priceId === EXTRA_TEAM_PRICE_IDS.annual
     ) {
       extraTeams += item.quantity || 0;
     } else {
@@ -336,9 +334,26 @@ export async function POST(req: NextRequest) {
             isCurrentCheckoutSubscription ? session.metadata?.firebase_uid : null
           );
 
-          if (isCurrentCheckoutSubscription && session.payment_status === 'paid') {
-            const signupUid = subscription.metadata?.firebase_uid || session.metadata?.firebase_uid;
-            if (signupUid) await notifySignup(signupUid, 'paid', subscription.id);
+          // ── Owner notification: New Registration ──
+          try {
+            const customerEmail = typeof session.customer_details?.email === 'string' ? session.customer_details.email : 'unknown';
+            const amountTotal = session.amount_total ?? 0;
+            const currency = session.currency ?? 'usd';
+            // Resolve plan name from subscription items
+            let planName = 'Unknown Plan';
+            let planId = 'unknown';
+            for (const item of subscription.items.data) {
+              const resolved = PLAN_PRICE_MAP[item.price.id];
+              if (resolved) { planName = resolved.id; planId = resolved.id; break; }
+            }
+            const userId = subscription.metadata?.firebase_uid || 'unknown';
+            const tplEmail = ownerNewRegistrationEmail({ planName, planId, customerEmail, userId, amount: amountTotal, interval: subscription.items.data[0]?.price?.recurring?.interval || 'month' });
+            await Promise.all([
+              notifyOwnerEmail(tplEmail.subject, tplEmail.html),
+              notifyOwnerPush('🎉 New Registration', `${customerEmail} subscribed to ${planName}`, '/admin'),
+            ]);
+          } catch (notifyErr) {
+            console.warn('[Webhook] Owner registration notification error (non-critical):', notifyErr);
           }
         }
         break;
@@ -397,10 +412,6 @@ export async function POST(req: NextRequest) {
         break;
       }
 
-      // Existing Stripe endpoints may subscribe to payment_succeeded instead
-      // of paid. Both reconcile the latest subscription, never invoice amount
-      // alone; signature verification and the event ledger remain shared.
-      case 'invoice.payment_succeeded':
       case 'invoice.paid': {
         const invoice = event.data.object as Stripe.Invoice;
         const invoiceSubscriptionId =
@@ -416,10 +427,6 @@ export async function POST(req: NextRequest) {
             eventSubscription
           );
           await syncSubscriptionToFirestore(subscription);
-
-          if (subscription.id === eventSubscription.id && invoice.amount_paid > 0 && subscription.metadata?.firebase_uid) {
-            await notifySignup(subscription.metadata.firebase_uid, 'paid', subscription.id);
-          }
 
           // ── Owner notification: Payment Received ──
           try {

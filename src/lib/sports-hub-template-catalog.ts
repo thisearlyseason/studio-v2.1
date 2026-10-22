@@ -1,5 +1,3 @@
-import { SPORT_SCORESHEETS } from './sport-scoresheets';
-
 export interface SportsHubTemplateSummary {
   slug: string;
   title: string;
@@ -7,7 +5,6 @@ export interface SportsHubTemplateSummary {
 }
 
 export const SPORTS_HUB_TEMPLATES: SportsHubTemplateSummary[] = [
-  ...SPORT_SCORESHEETS.map(({ slug, title, description }) => ({ slug, title, description })),
   { slug: 'season-planning-spreadsheet', title: 'Season Planning Spreadsheet', description: 'Map your entire season week by week with phase, training load, game schedule, and monthly planning tools.' },
   { slug: 'practice-plan-builder', title: 'Practice Plan Builder', description: 'Build structured practices with drill slots, time blocks, coaching notes, and post-session reflection.' },
   { slug: 'game-day-checklist', title: 'Game Day Checklist', description: 'Prepare equipment, communications, officials, first aid, and post-game tasks with one complete checklist.' },

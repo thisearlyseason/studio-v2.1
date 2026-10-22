@@ -380,7 +380,7 @@ function AuthorizedEquipmentPage() {
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-8">
         <aside className="space-y-6">
-          <Card className="rounded-4xl border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white">
+          <Card className="rounded-[2rem] border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white">
             <CardHeader className="bg-muted/30 border-b p-6">
               <div className="flex items-center gap-3">
                 <Filter className="h-4 w-4 text-primary" />
@@ -429,7 +429,7 @@ function AuthorizedEquipmentPage() {
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             {filteredEq.map((item) => (
               <Card key={item.id} className="rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col group">
-
+                <div className={cn("h-2 w-full", item.availableQuantity === 0 ? "bg-red-500" : "bg-primary")} />
                 <CardHeader className="p-8 pb-4 space-y-4">
                   <div className="flex justify-between items-start">
                     <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest border-primary/20 text-primary">{item.category}</Badge>
@@ -538,7 +538,7 @@ function AuthorizedEquipmentPage() {
       <Dialog open={isAddOpen} onOpenChange={setIsAddOpen}>
         <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white">
           <DialogTitle className="sr-only">Enroll Equipment Asset</DialogTitle>
-
+          <div className="h-2 bg-primary w-full" />
           <div className="p-8 lg:p-12 space-y-10">
             <DialogHeader>
               <div className="flex items-center gap-4 mb-2">
@@ -593,11 +593,11 @@ function AuthorizedEquipmentPage() {
               />
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Asset Description</Label>
-                <Textarea placeholder="Condition notes or sizing..." value={formEq.description} onChange={e => setFormEq({...formEq, description: e.target.value})} className="rounded-3xl min-h-[120px] border-2 font-medium focus:border-primary/20 transition-all p-4 resize-none" />
+                <Textarea placeholder="Condition notes or sizing..." value={formEq.description} onChange={e => setFormEq({...formEq, description: e.target.value})} className="rounded-[1.5rem] min-h-[120px] border-2 font-medium focus:border-primary/20 transition-all p-4 resize-none" />
               </div>
             </div>
             <DialogFooter>
-              <Button className="w-full h-16 rounded-4xl text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleAddItem} disabled={isProcessing || !formEq.name}>
+              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl shadow-primary/20 active:scale-[0.98] transition-all" onClick={handleAddItem} disabled={isProcessing || !formEq.name}>
                 {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : "Commit Asset to Vault"}
               </Button>
             </DialogFooter>
@@ -608,7 +608,7 @@ function AuthorizedEquipmentPage() {
       <Dialog open={isEditOpen} onOpenChange={setIsEditOpen}>
         <DialogContent className="rounded-[3rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white">
           <DialogTitle className="sr-only">Edit Equipment Asset</DialogTitle>
-
+          <div className="h-2 bg-primary w-full" />
           <div className="p-8 lg:p-12 space-y-10">
             <DialogHeader>
               <div className="flex items-center gap-4 mb-2">
@@ -663,11 +663,11 @@ function AuthorizedEquipmentPage() {
               />
               <div className="space-y-2">
                 <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Asset Description</Label>
-                <Textarea value={formEq.description} onChange={e => setFormEq({...formEq, description: e.target.value})} className="rounded-3xl min-h-[120px] border-2 font-medium p-4 resize-none" />
+                <Textarea value={formEq.description} onChange={e => setFormEq({...formEq, description: e.target.value})} className="rounded-[1.5rem] min-h-[120px] border-2 font-medium p-4 resize-none" />
               </div>
             </div>
             <DialogFooter>
-              <Button className="w-full h-16 rounded-4xl text-lg font-black shadow-xl" onClick={handleEditItem} disabled={isProcessing || !formEq.name}>
+              <Button className="w-full h-16 rounded-[2rem] text-lg font-black shadow-xl" onClick={handleEditItem} disabled={isProcessing || !formEq.name}>
                 {isProcessing ? <Loader2 className="h-6 w-6 animate-spin mr-2" /> : <Save className="h-5 w-5 mr-2" />}
                 Commit Synchronization
               </Button>
@@ -689,7 +689,7 @@ function AuthorizedEquipmentPage() {
                 <SelectTrigger className="h-14 rounded-xl border-2 font-bold"><SelectValue placeholder="Select player..." /></SelectTrigger>
                 <SelectContent className="rounded-xl">
                   {members.map(m => (
-                    <SelectItem key={m.id} value={m.userId} className="font-bold">{m.name} ({m.position})</SelectItem>
+                    <SelectItem key={m.userId} value={m.userId} className="font-bold">{m.name} ({m.position})</SelectItem>
                   ))}
                 </SelectContent>
               </Select>

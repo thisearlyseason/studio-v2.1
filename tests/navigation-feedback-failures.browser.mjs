@@ -1,7 +1,8 @@
+import { fileURLToPath } from 'node:url';
 // Actual feedback component with controlled router failures; no Next/provider/browser owner session.
 import{build}from'esbuild';import fs from'node:fs/promises';import path from'node:path';import http from'node:http';import assert from'node:assert/strict';
 const{chromium}=await import(process.env.PLAYWRIGHT_MODULE||'playwright');
-const root=path.resolve(new URL('..',import.meta.url).pathname),out=process.env.AUDIT_OUTPUT;assert(out);await fs.mkdir(out,{recursive:true});
+const root=path.resolve(fileURLToPath(new URL('..',import.meta.url))),out=process.env.AUDIT_OUTPUT;assert(out);await fs.mkdir(out,{recursive:true});
 const router=`export function useRouter(){return {push:(href,options)=>window.fixturePush(href,options,false),replace:(href,options)=>window.fixturePush(href,options,true)}}`;
 const link=`import React from'react';export default React.forwardRef(function Link({href,onNavigate,replace,scroll,prefetch,...props},ref){return <a {...props} href={href} ref={ref} onClick={e=>{if(e.defaultPrevented||e.metaKey||e.ctrlKey)return;let canceled=false;onNavigate?.({preventDefault(){canceled=true}});if(!canceled)window.fixturePush(href,{scroll},replace);e.preventDefault()}}/>})`;
 const entry=`import React,{Suspense,useState}from'react';import{createRoot}from'react-dom/client';import{NavigationFeedback,NavigationLink,useNavigationRouter,useNavigationAllowed}from'./src/components/layout/navigation-feedback';

@@ -428,7 +428,7 @@ function RegistrationForm() {
       <div className="min-h-screen flex flex-col items-center justify-center bg-muted/30 p-6 text-center space-y-6">
         <BrandLogo variant="light-background" className="h-10 w-40 mb-10" />
         <Card className="max-w-md w-full border-none shadow-2xl rounded-[2.5rem] bg-white p-12 space-y-8 overflow-hidden relative">
-
+          <div className="absolute top-0 left-0 w-full h-2 bg-orange-600" />
           <div className="flex justify-center"><AlertCircle className="h-16 w-16 text-orange-600 mb-2" /></div>
           <div className="space-y-2">
             <h2 className="text-3xl font-black uppercase tracking-tighter text-black">Registration Closed</h2>
@@ -547,7 +547,7 @@ function RegistrationForm() {
         </div>
 
         <Card className="lg:col-span-8 rounded-[3rem] border-none shadow-2xl overflow-hidden bg-white ring-1 ring-black/5 min-h-[600px] flex flex-col">
-
+          <div className="h-2 bg-primary w-full" />
           
           <form onSubmit={handleSubmit} className="flex-1 flex flex-col">
             <CardHeader className="p-8 lg:p-10 pb-4">
@@ -953,7 +953,7 @@ function RegistrationForm() {
                              placeholder={isUnder18 ? "Guardian's Full Legal Name" : "Participant's Full Legal Name"} 
                              value={signature} 
                              onChange={e => setSignature(e.target.value)} 
-                             className="h-20 rounded-4xl border-2 font-mono italic text-center text-3xl bg-muted/5 shadow-inner focus:ring-4 focus:ring-primary/10"
+                             className="h-20 rounded-[2rem] border-2 font-mono italic text-center text-3xl bg-muted/5 shadow-inner focus:ring-4 focus:ring-primary/10" 
                              required 
                            />
                            <Signature className="absolute right-6 top-1/2 -translate-y-1/2 h-8 w-8 opacity-20" />

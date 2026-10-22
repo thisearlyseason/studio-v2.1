@@ -5,8 +5,7 @@ export type SignupRegistrationTarget =
   | 'child'
   | 'coach'
   | 'league_creator'
-  | 'school_ad'
-  | 'nonprofit_manager';
+  | 'school_ad';
 export type SignupPlanChoice =
   | 'starter'
   | 'pro_team'
@@ -30,7 +29,7 @@ export function signupNextState(
   if (target === 'self' || target === 'child') {
     return { step: 'join_team', planChoice: null };
   }
-  return { step: 'plan', planChoice: (target === 'school_ad' || target === 'nonprofit_manager') ? 'school' : null };
+  return { step: 'plan', planChoice: target === 'school_ad' ? 'school' : null };
 }
 
 export function signupSteps(

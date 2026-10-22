@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 // Actual dashboard client layout; auth/team/Next boundaries are controlled.
 // This tests fail-closed rendering, not a Firebase session or deployed editor.
 import {build} from 'esbuild';
@@ -6,7 +7,7 @@ import path from 'node:path';
 import http from 'node:http';
 import assert from 'node:assert/strict';
 const {chromium}=await import(process.env.PLAYWRIGHT_MODULE||'/Users/tylerans/.npm/_npx/31e32ef8478fbf80/node_modules/playwright/index.mjs');
-const root=path.resolve(new URL('..',import.meta.url).pathname);
+const root=path.resolve(fileURLToPath(new URL('..',import.meta.url)));
 const out=process.env.AUDIT_OUTPUT;assert(out);await fs.mkdir(out,{recursive:true});
 const shared=`import{useSyncExternalStore}from'react';import{flushSync}from'react-dom';let state=window.initialState;const listeners=new Set();window.auditSet=next=>flushSync(()=>{state={...state,...next};listeners.forEach(f=>f())});export function useStateFixture(){return useSyncExternalStore(f=>{listeners.add(f);return()=>listeners.delete(f)},()=>state)};export const auth={currentUser:null};export const router={push:p=>window.navigation.push(p),replace:p=>window.navigation.push(p)};`;
 const stubs={

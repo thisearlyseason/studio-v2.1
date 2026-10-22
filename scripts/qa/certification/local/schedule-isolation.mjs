@@ -161,16 +161,7 @@ export async function snapshotCompetitionRoots(firestore, { leagueIds, teamIds }
       }
     }
   }
-  const unique=[...new Set(paths)].sort();
-  const suffixes=[...new Set([...leagueIds,...teamIds].map(id=>id.match(/-oct5-[a-f0-9]{6}$/)?.[0]).filter(Boolean))];
-  if(!suffixes.length)return unique;
-  const scoped=[];
-  for(const documentPath of unique){
-    if(competitionSnapshotIncludes(documentPath,null,suffixes)){scoped.push(documentPath);continue;}
-    const document=await firestore.doc(documentPath).get();
-    if(competitionSnapshotIncludes(documentPath,document.data(),suffixes))scoped.push(documentPath);
-  }
-  return scoped;
+  return [...new Set(paths)].sort();
 }
 
 function containsExactReference(value, references) {
@@ -213,5 +204,3 @@ export async function registerCompetitionDiscovery({ registry, scopeId, runId, r
   });
 }
 import { createHash } from 'node:crypto';
-
-export function competitionSnapshotIncludes(path,value,suffixes){return suffixes.some(suffix=>path.includes(suffix)||JSON.stringify(value||{}).includes(suffix));}

@@ -138,7 +138,7 @@ test('tournament and event registration responses are visible at their event-sco
   assert.match(tournament, /events', eventId as string, 'registrationEntries'/);
   assert.match(tournament, /where\('event_id', '==', eventId as string\)/);
   assert.match(tournament, /else if \(!isConfigLoading\)[\s\S]{0,500}is_active: false/);
-  assert.match(tournament, /form_schema: \[\]/);
+  assert.match(tournament, /form_schema: \[DIVISION_FIELD\]/);
   assert.match(tournament, /Required Answer/);
   assert.match(tournament, /Configure a question, answer type, form section/);
   assert.match(tournament, /value=\{editingField\?\.type \|\| ''\}/);
@@ -666,7 +666,7 @@ test('topic gap pages publish sport solutions and the recommended articles in th
   assert.match(sportIndex, /Sports management software by sport/i);
   assert.match(sportLanding, /'@type': 'FAQPage'/);
   assert.match(sportLanding, /'@type': 'SoftwareApplication'/);
-  assert.match(sportLanding, /priceCurrency: 'USD'/);
+  assert.match(sportLanding, /priceCurrency: 'CAD'/);
   assert.match(sportLanding, /href="\/#pricing"/);
   assert.match(youthPage, /article\.section\.toLowerCase\(\) === 'youth'/);
   assert.match(sectionNav, /name: 'Youth Sports', href: '\/sports-hub\/youth'/);
@@ -680,7 +680,7 @@ test('topic gap pages publish sport solutions and the recommended articles in th
   assert.match(audienceCatalog, /seoTitle: 'Parks and Recreation Sports Management Software'/);
   assert.match(audiencePage, /'@type': 'BreadcrumbList'/);
   assert.match(rootLayout, /canonical: 'https:\/\/www\.thesquad\.pro'/);
-  assert.match(rootLayout, /priceCurrency: 'USD'/);
+  assert.match(rootLayout, /priceCurrency: 'CAD'/);
 });
 
 test('the Elfsight chatbot and beta reporter are restricted to the landing page', async () => {
@@ -969,7 +969,7 @@ test('household realtime listeners ignore permission errors after authentication
   assert.match(collectionHook, /let snapshotPaused = localStorage\.getItem\(DEMO_EXIT_PENDING_KEY\) === 'true'/);
   assert.match(collectionHook, /if \(!snapshotPaused\) subscribeSnapshot\(\)/);
   assert.match(collectionHook, /const pauseSnapshot = \(\) => \{\s+snapshotPaused = true;\s+unsubscribeSnapshot\?\.\(\);\s+unsubscribeSnapshot = null;/);
-  assert.match(collectionHook, /if \(!isMounted \|\| snapshotPaused \|\| !isCurrent\(\)\) return;/);
+  assert.match(collectionHook, /if \(!isMounted \|\| snapshotPaused\) return;/);
   assert.match(collectionHook, /window\.removeEventListener\(DEMO_EXIT_EVENT, pauseSnapshot\)/);
   assert.match(firebaseProvider, /if \(localStorage\.getItem\(DEMO_EXIT_RETRY_REQUIRED_KEY\) !== 'true' && sessionStorage\.getItem\(DEMO_START_KEY\)\) \{\s+cancelDemoExitPending\(\);/);
 });

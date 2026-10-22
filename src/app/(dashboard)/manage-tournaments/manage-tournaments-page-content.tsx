@@ -1,4 +1,5 @@
 "use client";
+import { isStoreDistribution } from '@/lib/app-distribution';
 
 import { PageEntityScope, PublicPageEntry } from '@/components/squad-pages/entity-context';
 import TournamentQuickExports from '@/components/tournaments/TournamentQuickExports';
@@ -796,7 +797,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
             <ScrollArea
               showScrollHint
               scrollHintLabel="More tournament settings"
-              className="flex-1 px-6 sm:px-8 lg:px-16 pt-12 sm:pt-16 pb-32 min-h-0 [&_[data-radix-scroll-area-viewport]>div]:block! [&_[data-radix-scroll-area-viewport]>div]:w-full! [&_[data-radix-scroll-area-viewport]>div]:min-w-0!"
+              className="flex-1 px-6 sm:px-8 lg:px-16 pt-12 sm:pt-16 pb-32 min-h-0 [&_[data-radix-scroll-area-viewport]>div]:block! [&_[data-radix-scroll-area-viewport]>div]:!w-full [&_[data-radix-scroll-area-viewport]>div]:!min-w-0"
             >
               <div className="max-w-3xl w-full min-w-0 mx-auto space-y-12">
                 {step === 1 && (
@@ -1012,7 +1013,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
                         const isVisible = form.stagedDivisions.length === 0 || t.division === activeWizardDivision;
                         if (!isVisible) return null;
                         return (
-                          <div key={t.id} className="bg-white/5 p-5 rounded-4xl border border-white/5 hover:bg-white/10 transition-colors group relative overflow-hidden space-y-3">
+                          <div key={t.id} className="bg-white/5 p-5 rounded-[2rem] border border-white/5 hover:bg-white/10 transition-colors group relative overflow-hidden space-y-3">
                             {t.source && (
                               <div className={cn(
                                 "absolute top-0 right-12 px-3 py-1 text-[7px] font-black uppercase tracking-widest rounded-b-lg",
@@ -1066,7 +1067,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
                       <p className="text-sm font-bold opacity-40 uppercase tracking-widest">Calibrate format, dates, timeslots, and venue configurations for each division.</p>
                     </div>
 
-                    <div className="rounded-4xl border border-white/10 bg-[#0a0a0a] p-6 text-left space-y-4">
+                    <div className="rounded-[2rem] border border-white/10 bg-[#0a0a0a] p-6 text-left space-y-4">
                       <div>
                         <h4 className="font-black text-sm uppercase tracking-widest text-primary">Required Waivers</h4>
                         <p className="text-[9px] font-bold uppercase tracking-widest text-white/40">Active Library &amp; Docs waivers apply to every tournament team, including manually added teams.</p>
@@ -1144,7 +1145,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
                         <div className="min-w-0 space-y-8">
                           <div className="min-w-0 grid grid-cols-1 lg:grid-cols-2 gap-8">
                             {/* Card 1: Format & Chrono Sync */}
-                            <div className="min-w-0 bg-[#0a0a0a] p-5 sm:p-8 rounded-4xl border border-white/5 space-y-6 text-left text-white">
+                            <div className="min-w-0 bg-[#0a0a0a] p-5 sm:p-8 rounded-[2rem] border border-white/5 space-y-6 text-left text-white">
                               <h4 className="font-black text-sm uppercase tracking-widest text-primary">Format & Chrono Sync</h4>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                                 <div className="space-y-2">
@@ -1281,7 +1282,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
                             </div>
 
                             {/* Card 2: Venue & Field Allocation */}
-                            <div className="bg-[#0a0a0a] p-8 rounded-4xl border border-white/5 space-y-6 text-left text-white">
+                            <div className="bg-[#0a0a0a] p-8 rounded-[2rem] border border-white/5 space-y-6 text-left text-white">
                               <div className="flex items-center justify-between">
                                 <h4 className="font-black text-sm uppercase tracking-widest text-primary">Venue & Field Allocation</h4>
                                 <div className="flex border border-white/10 rounded-xl overflow-hidden">
@@ -1377,7 +1378,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
                           </div>
 
                           {/* Card 3: Daily Operational Windows */}
-                          <div data-testid="daily-operational-windows" className="min-w-0 bg-[#0a0a0a] p-5 sm:p-8 rounded-4xl border border-white/5 space-y-6 text-left text-white">
+                          <div data-testid="daily-operational-windows" className="min-w-0 bg-[#0a0a0a] p-5 sm:p-8 rounded-[2rem] border border-white/5 space-y-6 text-left text-white">
                             <div className="flex items-center justify-between">
                               <h4 className="font-black text-sm uppercase tracking-widest text-primary">Daily Operational Windows</h4>
                               {(!activeConfig.dailyWindows || activeConfig.dailyWindows.length === 0) && (
@@ -2169,7 +2170,7 @@ function TournamentDetailView({
         <div className="flex min-w-0 items-center gap-4">
           <Button variant="ghost" size="icon" onClick={onBack} className="rounded-full h-12 w-12 border-2 hover:bg-muted shrink-0 text-black border-black"><ChevronLeft className="h-6 w-6" /></Button>
           <div className="min-w-0 bg-primary/5 px-4 py-2 rounded-xl text-primary font-black uppercase text-[10px] tracking-widest border border-primary/10 flex items-center gap-1.5">
-            <span className="wrap-break-word">Active Context: {event.title}</span>
+            <span className="break-words">Active Context: {event.title}</span>
             {(event as any).competition?.version === 2 && <a className="ml-4 underline font-bold" href={`/manage-tournaments/builder?eventId=${event.id}`}>Edit tournament setup</a>}
             {event.divisionTitle && (
               <span className="text-muted-foreground/80">• {event.divisionTitle}</span>
@@ -2203,7 +2204,7 @@ function TournamentDetailView({
                <div>
                  <Badge className="bg-primary text-white border-none font-black text-[10px] uppercase tracking-widest mb-1">Elite Series Platform</Badge>
                  <div className="flex min-w-0 max-w-full flex-wrap items-center gap-3">
-                   <h1 className="max-w-full wrap-break-word text-3xl sm:text-4xl md:text-6xl font-black uppercase tracking-normal leading-tight">{event.title}</h1>
+                   <h1 className="max-w-full break-words text-3xl sm:text-4xl md:text-6xl font-black uppercase tracking-normal leading-tight">{event.title}</h1>
                    {event.divisionTitle && (
                      <Badge className="bg-primary text-white border-none font-black text-[10px] h-6 px-3.5 uppercase tracking-wider">
                        {event.divisionTitle}
@@ -2272,7 +2273,7 @@ function TournamentDetailView({
                   <Button size="sm" onClick={() => window.open(`/tournaments/referee/${activeTeam?.id}/${event.id}`, '_blank')} className="h-8 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/10 font-black uppercase text-[9px] tracking-widest">
                      <UserCheck className="h-3 w-3 mr-1.5" /> Referee Portal
                   </Button>
-                  <Button size="sm" onClick={() => window.open(`/register/tournament/${activeTeam?.id}/${event.id}`, '_blank')} className="h-8 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/10 font-black uppercase text-[9px] tracking-widest">
+                  <Button size="sm" disabled={isStoreDistribution} title={isStoreDistribution ? 'Use Registration & Access to copy the link for sharing.' : undefined} onClick={() => window.open(`/register/tournament/${activeTeam?.id}/${event.id}`, '_blank')} className="h-8 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/10 font-black uppercase text-[9px] tracking-widest">
                      <Share2 className="h-3 w-3 mr-1.5" /> Registration
                   </Button>
                </>)}
@@ -2289,7 +2290,7 @@ function TournamentDetailView({
       <TournamentEditDialog event={event} isOpen={isEditModalOpen} onOpenChange={setIsEditModalOpen} />
 
       <Dialog open={scoreDialogOpen} onOpenChange={setScoreDialogOpen}>
-        <DialogContent className="sm:max-w-[520px] max-h-[85dvh] overflow-y-auto overflow-x-hidden bg-white rounded-4xl p-6 sm:p-8 border-2 shadow-2xl">
+        <DialogContent className="sm:max-w-[520px] max-h-[85dvh] overflow-y-auto overflow-x-hidden bg-white rounded-[2rem] p-6 sm:p-8 border-2 shadow-2xl">
           <DialogHeader>
             <DialogTitle className="text-3xl font-black uppercase tracking-tighter">Edit Match</DialogTitle>
             <DialogDescription className="text-[10px] font-bold uppercase tracking-widest text-muted-foreground">Changes update the tournament bracket, schedule and standings.</DialogDescription>
@@ -2362,12 +2363,12 @@ function TournamentDetailView({
                <div className="flex min-w-0 items-center gap-3 justify-between">
                   <div className="min-w-0 space-y-3 flex-1 flex flex-col items-center">
                     <Label className="text-[11px] font-black uppercase tracking-widest text-center truncate max-w-full px-2">{selectedGame.team1}</Label>
-                    <Input name="score1" aria-label="First team score" type="number" min={0} max={999} step={1} defaultValue={selectedGame.score1 || 0} required className="h-20 w-full text-4xl font-black text-center rounded-4xl bg-slate-50 border-2 border-slate-200 focus:bg-white focus:border-primary transition-all shadow-inner" />
+                    <Input name="score1" aria-label="First team score" type="number" min={0} max={999} step={1} defaultValue={selectedGame.score1 || 0} required className="h-20 w-full text-4xl font-black text-center rounded-[2rem] bg-slate-50 border-2 border-slate-200 focus:bg-white focus:border-primary transition-all shadow-inner" />
                   </div>
                   <div className="text-xl font-black opacity-10 pt-8 italic tracking-tighter">VS</div>
                   <div className="min-w-0 space-y-3 flex-1 flex flex-col items-center">
                     <Label className="text-[11px] font-black uppercase tracking-widest text-center truncate max-w-full px-2">{selectedGame.team2}</Label>
-                    <Input name="score2" aria-label="Second team score" type="number" min={0} max={999} step={1} defaultValue={selectedGame.score2 || 0} required className="h-20 w-full text-4xl font-black text-center rounded-4xl bg-slate-50 border-2 border-slate-200 focus:bg-white focus:border-primary transition-all shadow-inner" />
+                    <Input name="score2" aria-label="Second team score" type="number" min={0} max={999} step={1} defaultValue={selectedGame.score2 || 0} required className="h-20 w-full text-4xl font-black text-center rounded-[2rem] bg-slate-50 border-2 border-slate-200 focus:bg-white focus:border-primary transition-all shadow-inner" />
                   </div>
                </div>
                
@@ -2403,12 +2404,12 @@ function TournamentDetailView({
         <DialogContent className="sm:max-w-md bg-black border-none rounded-[4rem] p-12 overflow-hidden">
           <DialogTitle className="sr-only">Championship Celebration</DialogTitle>
           <DialogDescription className="sr-only">Tournament champion result and celebration.</DialogDescription>
-          <div className="absolute inset-0 bg-linear-to-b from-primary/20 via-transparent to-transparent opacity-50" />
+          <div className="absolute inset-0 bg-gradient-to-b from-primary/20 via-transparent to-transparent opacity-50" />
           <div className="relative z-10 text-center space-y-8 py-10">
              <div className="flex justify-center">
                 <div className="relative">
                    <div className="absolute inset-0 bg-primary blur-[80px] opacity-40 animate-pulse" />
-                   <div className="relative bg-linear-to-br from-yellow-400 to-amber-600 p-8 rounded-[3rem] shadow-[0_0_50px_rgba(245,158,11,0.5)]">
+                   <div className="relative bg-gradient-to-br from-yellow-400 to-amber-600 p-8 rounded-[3rem] shadow-[0_0_50px_rgba(245,158,11,0.5)]">
                       <Trophy className="h-28 w-28 text-white animate-bounce" />
                    </div>
                 </div>
@@ -2426,7 +2427,7 @@ function TournamentDetailView({
       <div className="bg-white rounded-[4rem] border-2 shadow-2xl overflow-hidden flex flex-col">
         <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full h-full">
           <div className="bg-muted/30 p-8 border-b">
-            <TabsList className="bg-white/50 h-auto p-2 rounded-4xl border-2 w-full flex-wrap gap-1 shadow-inner">
+            <TabsList className="bg-white/50 h-auto p-2 rounded-[2rem] border-2 w-full flex-wrap gap-1 shadow-inner">
               <TabsTrigger value="itinerary" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-black data-[state=active]:text-white">Matches</TabsTrigger>
               {!isStarter && <TabsTrigger value="officials" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-blue-600 data-[state=active]:text-white">Officials</TabsTrigger>}
               <TabsTrigger value="bracket" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white">Brackets</TabsTrigger>
@@ -2562,7 +2563,7 @@ function TournamentDetailView({
 
                     <div className={cn("grid grid-cols-1 gap-6", event.tournamentType === 'pool_play_knockout' && "md:grid-cols-2")}>
                       {!versioned && event.tournamentType === 'pool_play_knockout' && (
-                      <div className="bg-[#0a0a0a] p-8 rounded-4xl border border-white/5 space-y-6">
+                      <div className="bg-[#0a0a0a] p-8 rounded-[2rem] border border-white/5 space-y-6">
                         <div className="space-y-2">
                           <Badge className="bg-primary/20 text-primary border border-primary/30 font-black text-[8px] uppercase tracking-widest">Pro Tool</Badge>
                           <h4 className="text-lg font-black uppercase tracking-tight text-white">Seed from Standings</h4>
@@ -2574,7 +2575,7 @@ function TournamentDetailView({
                       </div>
                       )}
 
-                      <div className="bg-[#0a0a0a] p-8 rounded-4xl border border-white/5 space-y-6 relative overflow-hidden">
+                      <div className="bg-[#0a0a0a] p-8 rounded-[2rem] border border-white/5 space-y-6 relative overflow-hidden">
                         <div className="absolute inset-0 bg-emerald-500/3" />
                         <div className="relative space-y-2">
                           <Badge className="bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 font-black text-[8px] uppercase tracking-widest">Active</Badge>
@@ -2632,7 +2633,7 @@ function TournamentDetailView({
                       ) : (event.refereePool || []).map((ref: TournamentReferee) => {
                         const assignCount = (event.tournamentGames || []).filter((g: any) => g.refereeId === ref.id).length;
                         return (
-                          <Card key={ref.id} className="rounded-4xl p-5 border-none shadow-md bg-white flex items-center justify-between group hover:shadow-lg transition-all">
+                          <Card key={ref.id} className="rounded-[2rem] p-5 border-none shadow-md bg-white flex items-center justify-between group hover:shadow-lg transition-all">
                             <div className="space-y-1 min-w-0 mr-3">
                               <div className="flex items-center gap-2 flex-wrap">
                                 <p className="font-black text-sm uppercase tracking-tight truncate">{ref.name}</p>
@@ -2677,7 +2678,7 @@ function TournamentDetailView({
                           </div>
                         );
                         return assignable.map((game: any) => (
-                          <Card key={game.id} className="rounded-4xl p-5 border-none shadow-md bg-white space-y-3">
+                          <Card key={game.id} className="rounded-[2rem] p-5 border-none shadow-md bg-white space-y-3">
                             <div className="flex items-center justify-between gap-3">
                               <div className="min-w-0">
                                 <p className="font-black text-sm uppercase tracking-tight">{game.team1} <span className="text-muted-foreground/40 font-normal">vs</span> {game.team2}</p>
@@ -2710,7 +2711,7 @@ function TournamentDetailView({
                       })()}
                     </div>
                     {isStaff && (
-                      <Card className="rounded-[2.5rem] p-8 border-none shadow-xl bg-linear-to-br from-blue-600 to-blue-700 text-white space-y-4 mt-2">
+                      <Card className="rounded-[2.5rem] p-8 border-none shadow-xl bg-gradient-to-br from-blue-600 to-blue-700 text-white space-y-4 mt-2">
                         <div className="flex items-center gap-3">
                           <div className="bg-white/15 p-3 rounded-xl"><UserCheck className="h-6 w-6" /></div>
                           <div>
@@ -3013,7 +3014,7 @@ function TournamentDetailView({
                  </>
                 ) : (
                   <div className="text-center py-20 border-4 border-dashed rounded-[3rem] bg-muted/5 flex flex-col items-center max-w-2xl mx-auto space-y-6 animate-in fade-in duration-500">
-                    <div className="bg-primary/10 p-6 rounded-4xl text-primary shadow-inner">
+                    <div className="bg-primary/10 p-6 rounded-[2rem] text-primary shadow-inner">
                       <CalendarDays className="h-12 w-12" />
                     </div>
                     {deploymentError && (
@@ -3065,7 +3066,7 @@ function TournamentDetailView({
                  />
                ) : (
                  <div className="text-center py-20 border-4 border-dashed rounded-[3rem] bg-muted/5 flex flex-col items-center max-w-2xl mx-auto space-y-6">
-                   <div className="bg-primary/10 p-6 rounded-4xl text-primary shadow-inner">
+                   <div className="bg-primary/10 p-6 rounded-[2rem] text-primary shadow-inner">
                      <CalendarDays className="h-12 w-12" />
                    </div>
                    <h3 className="text-3xl font-black uppercase tracking-tighter text-black">Bracket Not Initialized</h3>
@@ -3082,7 +3083,7 @@ function TournamentDetailView({
 
                 {(!event.tournamentGames || event.tournamentGames.length === 0) ? (
                   <div className="text-center py-20 border-4 border-dashed rounded-[3rem] bg-muted/5 flex flex-col items-center max-w-2xl mx-auto space-y-6">
-                    <div className="bg-primary/10 p-6 rounded-4xl text-primary shadow-inner">
+                    <div className="bg-primary/10 p-6 rounded-[2rem] text-primary shadow-inner">
                       <Trophy className="h-12 w-12" />
                     </div>
                     <h3 className="text-3xl font-black uppercase tracking-tighter text-black">No Standings Available</h3>
@@ -3319,7 +3320,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
           if (!hasDivisions) {
             const event = group.items[0];
             return (
-              <Card key={event.id} className="rounded-4xl border-none shadow-xl ring-1 ring-black/5 bg-white p-6 sm:p-10 space-y-6 sm:space-y-8 group hover:shadow-2xl transition-all cursor-pointer relative overflow-hidden" onClick={() => setSelectedEventId(event.id)}>
+              <Card key={event.id} className="rounded-[2rem] border-none shadow-xl ring-1 ring-black/5 bg-white p-6 sm:p-10 space-y-6 sm:space-y-8 group hover:shadow-2xl transition-all cursor-pointer relative overflow-hidden" onClick={() => setSelectedEventId(event.id)}>
                 <div className="absolute top-0 right-0 p-8 opacity-5 group-hover:scale-110 transition-transform duration-700 font-black italic text-8xl flex flex-col items-end pointer-events-none">
                    <Trophy className="h-32 w-32" />
                 </div>
@@ -3330,7 +3331,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
                     </Badge>
                     {event.isArchived && <Badge className="bg-amber-100 text-amber-700 border-none text-[8px] font-black uppercase px-2">Archived</Badge>}
                   </div>
-                  <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight leading-tight group-hover:text-primary transition-colors wrap-break-word overflow-hidden text-left">{event.title}</h3>
+                  <h3 className="text-xl sm:text-2xl font-black uppercase tracking-tight leading-tight group-hover:text-primary transition-colors break-words overflow-hidden text-left">{event.title}</h3>
                   <div className="flex flex-col gap-2 pt-4 text-left">
                     <div className="flex items-center gap-3 text-muted-foreground">
                        <CalendarDays className="h-4 w-4" />
@@ -3495,7 +3496,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
                    placeholder="e.g. Winter Invitational - Elite Tier" 
                    value={duplicateTitle} 
                    onChange={e => setDuplicateTitle(e.target.value)} 
-                   className="h-20 rounded-4xl border-2 border-white/10 bg-white/5 font-black text-2xl px-8 focus:bg-white focus:text-black transition-all"
+                   className="h-20 rounded-[2rem] border-2 border-white/10 bg-white/5 font-black text-2xl px-8 focus:bg-white focus:text-black transition-all"
                    autoFocus
                  />
               </div>
@@ -3505,7 +3506,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
               </p>
             </div>
             <DialogFooter>
-              <Button className="w-full h-20 rounded-4xl text-xl font-black bg-white text-black hover:bg-primary hover:text-white transition-all shadow-2xl" onClick={handleDuplicateTournament} disabled={isProcessing || !duplicateTitle.trim()}>
+              <Button className="w-full h-20 rounded-[2rem] text-xl font-black bg-white text-black hover:bg-primary hover:text-white transition-all shadow-2xl" onClick={handleDuplicateTournament} disabled={isProcessing || !duplicateTitle.trim()}>
                 {isProcessing ? <Loader2 className="h-8 w-8 animate-spin" /> : "Deploy Replicated Series"}
               </Button>
             </DialogFooter>

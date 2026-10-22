@@ -345,7 +345,7 @@ export function FundraisingManager() {
       <Dialog open={isFormOpen} onOpenChange={o => { if (!isProcessing) { setIsFormOpen(o); if (!o) { setEditingCampaign(null); resetForm(); } } }}>
         <DialogContent className="rounded-[3.5rem] sm:max-w-xl p-0 border-none shadow-2xl overflow-hidden bg-white text-foreground">
           <DialogTitle className="sr-only">Campaign Deployment Protocol</DialogTitle>
-
+          <div className="h-2 bg-primary w-full" />
           <div className="p-8 lg:p-12 space-y-8 overflow-y-auto max-h-[90vh] custom-scrollbar">
             <DialogHeader>
               <div className="flex items-center gap-4 mb-2">
@@ -432,7 +432,7 @@ export function FundraisingManager() {
 
             <DialogFooter>
               <Button
-                className="w-full h-16 rounded-4xl text-lg font-black bg-black text-white hover:bg-primary transition-all shadow-xl border-none"
+                className="w-full h-16 rounded-[2rem] text-lg font-black bg-black text-white hover:bg-primary transition-all shadow-xl border-none"
                 onClick={handleSubmit}
                 disabled={isProcessing || !form.title || !form.goalAmount}
               >
