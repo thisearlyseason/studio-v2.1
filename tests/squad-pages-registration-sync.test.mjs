@@ -1,5 +1,6 @@
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';import assert from 'node:assert/strict';import path from 'node:path';import {build} from 'esbuild';
-const root=path.resolve(new URL('..',import.meta.url).pathname);
+const root=path.resolve(fileURLToPath(new URL('..',import.meta.url)));
 const built=await build({stdin:{contents:`export * from './src/lib/squad-pages/registration-forms';export * from './src/lib/squad-pages/authority';export * from './src/lib/squad-pages/service';export * from './src/lib/squad-pages/fixtures';export * from './src/lib/squad-pages/store';`,resolveDir:root},bundle:true,platform:'node',format:'esm',packages:'external',write:false,logLevel:'silent',alias:{'@':root+'/src'},plugins:[{name:'no-provider',setup(b){b.onResolve({filter:/firebase-admin/},()=>({path:'provider',namespace:'blocked'}));b.onLoad({filter:/.*/,namespace:'blocked'},()=>({contents:'export const adminDb=new Proxy({}, {get(){throw Error("Provider forbidden")}});',loader:'js'}));}}]});
 const m=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].text).toString('base64'));
 const now=Date.parse('2026-10-16T18:00:00Z'),team={kind:'team',id:'demo-hawks'},owner={uid:'demo-owner'};

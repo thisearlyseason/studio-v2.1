@@ -1,5 +1,6 @@
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';import assert from 'node:assert/strict';import path from 'node:path';import{build}from'esbuild';
-const root=path.resolve(new URL('..',import.meta.url).pathname);
+const root=path.resolve(fileURLToPath(new URL('..',import.meta.url)));
 const b=await build({stdin:{contents:`export * from './src/lib/squad-pages/model';export {PageView} from './src/components/squad-pages/page-view';export {renderToStaticMarkup} from 'react-dom/server';export {createElement} from 'react';`,resolveDir:root},bundle:true,platform:'node',format:'esm',write:false,logLevel:'silent',jsx:'automatic',alias:{'@':root+'/src'},plugins:[{name:'style-names',setup(x){x.onLoad({filter:/\.module\.css$/},()=>({contents:'export default new Proxy({}, {get:(_,key)=>String(key)})',loader:'js'}))}}]});
 // React's server renderer uses CommonJS node dependencies; provide node require explicitly.
 const {createRequire}=await import('node:module');globalThis.__presentationRequire=createRequire(import.meta.url);

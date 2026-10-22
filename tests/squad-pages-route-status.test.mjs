@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
@@ -5,7 +6,7 @@ import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import { build } from 'esbuild';
 const require = createRequire(import.meta.url);
-const root = path.resolve(new URL('..', import.meta.url).pathname);
+const root = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
 const bundle = await build({ stdin: { contents: `export * from './src/lib/squad-pages/route-status'; export * from './src/lib/squad-pages/store'; export * from './src/lib/squad-pages/fixtures'; export * from './src/lib/squad-pages/service';`, resolveDir: root }, bundle: true, platform: 'node', format: 'esm', packages: 'external', write: false, logLevel: 'silent', alias: { '@': root + '/src' }, plugins: [{ name: 'isolated-route-test', setup(b) {
   b.onResolve({ filter: /^next\/server$/ }, () => ({ path: pathToFileURL(require.resolve('next/server')).href, external: true }));
   b.onResolve({ filter: /firebase-admin/ }, () => ({ path: 'sdk', namespace: 'blocked' }));

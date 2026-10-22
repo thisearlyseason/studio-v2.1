@@ -1,8 +1,9 @@
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import path from 'node:path';
 import { build } from 'esbuild';
-const root=path.resolve(new URL('..',import.meta.url).pathname);
+const root=path.resolve(fileURLToPath(new URL('..',import.meta.url)));
 const built=await build({stdin:{contents:`export * from './src/lib/squad-pages/http';export {PageError} from './src/lib/squad-pages/model';export {MediaInputError} from './src/lib/media-policy';export {RequestBodyError} from './src/lib/bounded-json';`,resolveDir:root},bundle:true,platform:'node',format:'esm',packages:'external',write:false,logLevel:'silent',alias:{'@':root+'/src'},plugins:[{name:'no-provider',setup(b){b.onResolve({filter:/^next\/server$/},()=>({path:'next',namespace:'isolated'}));b.onLoad({filter:/.*/,namespace:'isolated'},()=>({contents:'export class NextRequest extends Request{};export class NextResponse extends Response{static json(data,options){return new NextResponse(JSON.stringify(data),options)}};',loader:'js'}));b.onResolve({filter:/firebase-admin/},()=>({path:'provider',namespace:'blocked'}));b.onLoad({filter:/.*/,namespace:'blocked'},()=>({contents:'export const ensureAdminInit=()=>{throw Error("Provider forbidden")};export const getAdminProjectId=ensureAdminInit;export const getAuth=ensureAdminInit;export const adminDb=new Proxy({}, {get(){throw Error("Provider forbidden")}});',loader:'js'}));}}]});
 const m=await import('data:text/javascript;base64,'+Buffer.from(built.outputFiles[0].text).toString('base64'));
 test('media and bounded JSON client errors retain400/413; unexpected errors do not expose detail',async()=>{for(const error of [new m.MediaInputError('Invalid raster',400),new m.MediaInputError('Too large',413),new m.RequestBodyError('Invalid JSON',400),new m.PageError('Conflict',409)])assert.equal(m.pageFailure(error).status,error.status);const response=m.pageFailure(Error('private provider detail'));assert.equal(response.status,500);assert.equal((await response.text()).includes('private provider'),false)});

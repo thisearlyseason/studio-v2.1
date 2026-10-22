@@ -1,5 +1,6 @@
+import { fileURLToPath } from 'node:url';
 import test from'node:test';import assert from'node:assert/strict';import path from'node:path';import{build}from'esbuild';
-const root=path.resolve(new URL('..',import.meta.url).pathname);const stubs={ 'next/server':`export class NextRequest extends Request{};export class NextResponse extends Response{static json(x,o={}){return new NextResponse(JSON.stringify(x),o)}};`,
+const root=path.resolve(fileURLToPath(new URL('..',import.meta.url)));const stubs={ 'next/server':`export class NextRequest extends Request{};export class NextResponse extends Response{static json(x,o={}){return new NextResponse(JSON.stringify(x),o)}};`,
  '@/lib/squad-pages/http':`export const assertEnabled=()=>{};export const entityParameter=req=>JSON.parse(req.nextUrl.searchParams.get('entity')||'null');export const pageActor=async()=>globalThis.__mediaReview.actor;export const pageJSON=(x,status=200)=>new Response(JSON.stringify(x),{status});export const pageFailure=e=>new Response(JSON.stringify({error:e.message}),{status:e.status||500});`,
  '@/lib/squad-pages/store':`export const localPreview=()=>true;export const pageStore=async()=>globalThis.__mediaReview.store;`,
  '@/lib/squad-pages/media':`export const writePageImage=async(...x)=>{const c=globalThis.__mediaReview;c.writes.push(x.slice(0,2));await c.barrier()};export const discardOwnedImage=async(...x)=>globalThis.__mediaReview.discards.push(x);export const readPageImage=async()=>Buffer.from('image');`,

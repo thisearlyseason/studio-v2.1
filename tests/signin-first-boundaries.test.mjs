@@ -1,10 +1,11 @@
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {build} from 'esbuild';
 import {pathToFileURL} from 'node:url';
-const root=path.resolve(new URL('..',import.meta.url).pathname);
+const root=path.resolve(fileURLToPath(new URL('..',import.meta.url)));
 const state={calls:[],cookie:null,decoded:null,authError:null,profile:{role:'coach'}};
 globalThis.__signinAudit=state;
 process.env.SQUAD_PAGES_ENABLED='true';process.env.NEXT_PUBLIC_SQUAD_PAGES_ENABLED='true';

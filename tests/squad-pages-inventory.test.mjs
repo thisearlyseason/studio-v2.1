@@ -1,5 +1,6 @@
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';import assert from 'node:assert/strict';import {build} from 'esbuild';
-const root=new URL('../',import.meta.url).pathname,key='__squadInventoryTest';
+const root=fileURLToPath(new URL('../',import.meta.url)),key='__squadInventoryTest';
 const stubs={
 'next/server':'export class NextRequest extends Request{};',
 '@/lib/firebase-admin':'export const adminDb={};',

@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
@@ -6,7 +7,7 @@ import { build } from 'esbuild';
 import sharp from 'sharp';
 import { optimizePageUpload, pageImageVariant, PAGE_IMAGE_MAX_BYTES } from '../src/lib/squad-pages/image-optimization.ts';
 
-const root = new URL('../', import.meta.url).pathname;
+const root = fileURLToPath(new URL('../', import.meta.url));
 const photoSource = await readFile(new URL('../public/images/sports/football.webp', import.meta.url));
 const photo = await sharp(photoSource).resize(2800, 1700, { fit: 'cover' }).jpeg({ quality: 96, chromaSubsampling: '4:4:4' }).toBuffer();
 const logo = await sharp(Buffer.from('<svg width="600" height="240"><rect x="20" y="20" width="560" height="200" rx="24" fill="#009cde" fill-opacity=".65"/><path d="M50 170L120 50L190 170Z" fill="#fb3948"/><text x="210" y="145" font-size="64" fill="white">SQUAD</text></svg>')).png().toBuffer();
