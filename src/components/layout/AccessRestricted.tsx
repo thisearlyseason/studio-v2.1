@@ -7,14 +7,14 @@ import { Card, CardContent } from '@/components/ui/card';
 import { useRouter } from 'next/navigation';
 import { isStoreDistribution } from '@/lib/app-distribution';
 
-export function AccessRestricted({ 
-  type = 'role', 
-  title = "Institutional Hub Locked", 
-  description = "Your current role does not have the necessary security clearance to access this tactical command center." 
-}: { 
-  type?: 'role' | 'tier' | 'feature', 
-  title?: string, 
-  description?: string 
+export function AccessRestricted({
+  type = 'role',
+  title = "Access unavailable",
+  description = "Your account does not have permission to open this section."
+}: {
+  type?: 'role' | 'tier' | 'feature',
+  title?: string,
+  description?: string
 }) {
   const router = useRouter();
 
@@ -26,7 +26,7 @@ export function AccessRestricted({
           <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-1000">
             <Zap className="h-64 w-64" />
           </div>
-          
+
           <CardContent className="p-12 space-y-10 relative z-10 text-center">
             {/* Pulsing Icon Container */}
             <div className="bg-primary p-6 rounded-[2.5rem] w-fit mx-auto shadow-2xl shadow-primary/40 -rotate-6 group-hover:rotate-0 transition-all duration-500 ring-2 ring-primary/20">
@@ -61,29 +61,29 @@ export function AccessRestricted({
   }
 
   return (
-    <div className="py-24 flex items-center justify-center p-6 animate-in fade-in zoom-in duration-500">
-      <Card className="max-w-xl w-full rounded-[3.5rem] border-none shadow-2xl bg-[#0a0a0a] text-white relative overflow-hidden group border border-white/5">
+    <div className="py-12 sm:py-24 flex items-center justify-center p-6 animate-in fade-in zoom-in duration-500">
+      <Card className="max-w-xl w-full rounded-[3.5rem] border-none shadow-2xl bg-black text-white relative overflow-hidden group border border-white/5">
         <div className="absolute top-0 right-0 p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-1000">
           <ShieldAlert className="h-64 w-64 text-primary" />
         </div>
-        
-        <CardContent className="p-12 space-y-10 relative z-10 text-center">
+
+        <CardContent className="p-6 sm:p-12 space-y-8 relative z-10 text-center">
           <div className="bg-white/5 backdrop-blur-3xl p-6 rounded-[2.5rem] w-fit mx-auto shadow-2xl ring-1 ring-white/10 -rotate-6 group-hover:rotate-0 transition-all duration-700">
             <ShieldAlert className="h-10 w-10 text-primary" />
           </div>
 
           <div className="space-y-4">
-            <h1 className="text-4xl font-black uppercase tracking-tighter leading-none">{title}</h1>
-            <p className="text-white/50 font-medium leading-relaxed italic max-w-sm mx-auto">
+            <h1 className="text-2xl sm:text-4xl font-bold tracking-tight leading-tight">{title}</h1>
+            <p className="text-white/80 font-medium leading-relaxed max-w-sm mx-auto">
               {description}
             </p>
           </div>
 
           <div className="pt-4">
             <Button size="lg" className="w-full h-16 rounded-[2.5rem] bg-white text-black hover:bg-primary hover:text-white font-black text-lg transition-all border-none shadow-2xl active:scale-95 flex items-center justify-center gap-3" onClick={() => router.push('/dashboard')}>
-              <ArrowLeft className="h-5 w-5" /> Exit Command Center
+              <ArrowLeft className="h-5 w-5" /> Back to Dashboard
             </Button>
-            <p className="text-[8px] font-black uppercase tracking-widest text-white/20 mt-6 group-hover:text-primary transition-colors">Contact your team administrator for access.</p>
+            <p className="text-sm font-medium text-white/70 mt-6 group-hover:text-primary transition-colors">Contact your team administrator for access.</p>
           </div>
         </CardContent>
       </Card>

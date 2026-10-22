@@ -65,3 +65,17 @@ test('ordinary authenticated routes remain available during profile setup', () =
   assert.equal(authorizeDashboardRoute('/dashboard', null).allowed, true);
   assert.equal(authorizeDashboardRoute('/teams/join', { role: 'adult_player' }).allowed, true);
 });
+
+
+test('personal payments are available to adult roles without granting household access', () => {
+  for (const role of ['adult_player', 'coach', 'parent', 'guardian', 'admin']) {
+    assert.equal(authorizeDashboardRoute('/payments', { role }).allowed, true);
+  }
+  for (const role of ['youth_player', 'player', '', undefined]) {
+    assert.equal(authorizeDashboardRoute('/payments', { role }).allowed, false);
+  }
+  assert.equal(authorizeDashboardRoute('/family/payments', { role: 'guardian' }).allowed, true);
+  assert.equal(authorizeDashboardRoute('/family/payments', { role: 'coach' }).allowed, false);
+  assert.equal(isProtectedDashboardPath('/payments'), true);
+  assert.equal(isSensitiveDashboardPath('/payments'), true);
+});

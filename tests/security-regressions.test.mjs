@@ -254,8 +254,8 @@ test('offline payments are validated and written only through the finance-author
   assert.match(route, /getTeamFinanceAccess/);
   assert.match(route, /payment_method: 'offline'/);
   assert.match(route, /recorded_by: auth\.uid/);
-  assert.match(memberPayments, /where\('payer_email', '==', userEmail\.toLowerCase\(\)\)/);
-  assert.match(memberPayments, /orderBy\('createdAt', 'desc'\)/);
+  assert.match(memberPayments, /where\('payer_email', '==', userEmail\.trim\(\)\.toLowerCase\(\)\)/);
+  assert.match(memberPayments, /localeCompare\(String\(a\.createdAt/);
   assert.ok(indexes.indexes.some(index =>
     index.collectionGroup === 'payments' &&
     index.queryScope === 'COLLECTION' &&
