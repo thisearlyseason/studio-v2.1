@@ -1,5 +1,6 @@
 'use client';
 import React, { useEffect, useRef, useState } from 'react';
+import styles from './todo-sync-panel.module.css';
 import type { User } from 'firebase/auth';
 import { watchScheduleUser } from './sync';
 import { loadScopedTodos } from './storage';
@@ -9,7 +10,7 @@ import { contextPrefix, type CloudTodo } from '@/lib/schedule-todos/model';
 type Box = ReturnType<typeof createTodoOutbox>;
 const newId = () => crypto.randomUUID();
 /** Separate cloud list: the device-only list is never silently uploaded/replaced. */
-export function TodoSyncPanel({ onExitBlockedChange }: { onExitBlockedChange?: (blocked: boolean) => void } = {}) {
+export function TodoSyncPanel({ onExitBlockedChange, dark = false }: { onExitBlockedChange?: (blocked: boolean) => void; dark?: boolean } = {}) {
   const epoch = useRef(0);
   const operation = useRef<symbol | null>(null);
   const actor = useRef<User | null>(null);
@@ -56,20 +57,27 @@ export function TodoSyncPanel({ onExitBlockedChange }: { onExitBlockedChange?: (
   function change(record: CloudTodo, remove = false) {
     void run(controller => controller.queue({ id: record.id, requestId: newId(), kind: remove ? 'delete' : 'update', expectedVersion: record.version, ...(remove ? {} : { fields: { text: record.text, dueDate: record.dueDate, completed: !record.completed } }) }), 'Queued on this browser. Send pending to save to your account.');
   }
-  return <section aria-label="Account cloud tasks">
+  return <section className={styles.panel} data-theme={dark ? 'dark' : 'light'} aria-label="Account cloud tasks" aria-busy={busy}>
     <h2>Account cloud tasks</h2>
-    <p>Your device-only list below stays separate. Nothing is imported automatically. Browser pending copies are unencrypted and can be lost if storage is cleared or evicted.</p>
+    <p className={styles.intro}>Send changes here to share them across devices. Device-only tasks stay separate.</p>
+    <p className={styles.privacy}>Unsent edits are unencrypted on this browser. Clearing storage can lose them.</p>
     {!view.uid ? <p>Sign in to manage account cloud tasks.</p> : <>
-      <p>Current account: {actor.current?.email || view.uid}</p>
+      <p className={styles.identity}>Current account: {actor.current?.email || view.uid}</p>
       {view.locked ? <div><p>{view.retainedCount} retained browser changes. Private task contents are hidden. Resuming reveals unencrypted browser data for this account.</p><button disabled={busy} onClick={() => void run(c => c.resume(true), 'Browser edits opened for this account session.')}>Confirm resume private browser tasks</button></div> : <>
-      <p role="status">{view.pending.length} pending · {view.remote.filter(r => !r.deletedAt).length} saved copies cached. Pending items are not yet confirmed saved.</p>
+      <p role="status" className={styles.summary}>{view.pending.length} pending · {view.remote.filter(r => !r.deletedAt).length} saved copies cached.</p>
+      <p>{view.context ? 'Queued changes are not saved until sent.' : 'Refresh saved tasks before adding a cloud task.'}</p>
+      <div className={styles.actions}>
       <button disabled={busy} onClick={() => void run(c => c.refresh(), 'Saved account tasks refreshed.')}>Refresh saved tasks</button>
-      <button disabled={busy} onClick={() => void run(async c => { await c.flush(); }, 'Send finished. Review pending items and conflicts below.')}>Send pending</button>
-      <button disabled={busy} onClick={() => void run(c => c.retryBlocked(), 'Blocked items queued again; Send pending to retry.')}>Retry blocked items</button>
-      <form onSubmit={e => { e.preventDefault(); void run(async c => { if(!view.context)throw Error('Refresh saved account tasks first.');const generation=epoch.current;await c.queue({ id: contextPrefix(view.context)+newId(), requestId: newId(), kind: 'create', expectedVersion: 0, fields: { text, dueDate: date, completed: false } }); if(epoch.current===generation){setText('');setDate('');} }, 'New task queued on this browser.'); }}>
-        <label>New cloud task<input disabled={busy} maxLength={500} required value={text} onChange={e => setText(e.target.value)} /></label>
+      <button className={styles.primary} disabled={busy || !view.pending.some(e => e.status === 'queued')} onClick={() => void run(async c => { await c.flush(); }, 'Send finished. Review pending items and conflicts below.')}>Send pending</button>
+      <button disabled={busy || !view.pending.some(e => e.status === 'blocked')} onClick={() => void run(c => c.retryBlocked(), 'Blocked items queued again; Send pending to retry.')}>Retry blocked items</button>
+      </div>
+      {busy && <p role="status" aria-live="polite">Working…</p>}
+      <form className={styles.form} onSubmit={e => { e.preventDefault(); void run(async c => { if(!view.context)throw Error('Refresh saved account tasks first.');const generation=epoch.current;await c.queue({ id: contextPrefix(view.context)+newId(), requestId: newId(), kind: 'create', expectedVersion: 0, fields: { text, dueDate: date, completed: false } }); if(epoch.current===generation){setText('');setDate('');} }, 'New task queued on this browser.'); }}>
+        <div className={styles.fields}>
+        <label>New cloud task<input disabled={busy} maxLength={500} placeholder="e.g. QA Sync Test A" required value={text} onChange={e => setText(e.target.value)} /></label>
         <label>Due date<input disabled={busy} type="date" required value={date} onChange={e => setDate(e.target.value)} /></label>
-        <button disabled={busy}>Queue new task</button>
+        </div>
+        <button className={styles.primary} disabled={busy || !view.context || !text.trim() || !date}>Queue new task</button>
       </form>
       <button disabled={busy} onClick={() => void run(() => { const uid = actor.current!.uid; const items = loadScopedTodos(localStorage, uid); setReview({ uid, items }); setConfirmed(false); })}>Review this account’s device tasks for import</button>
       {review?.uid === view.uid && <div aria-label="Import review">
@@ -79,10 +87,13 @@ export function TodoSyncPanel({ onExitBlockedChange }: { onExitBlockedChange?: (
         <button disabled={busy || !confirmed || !review.items.length} onClick={() => void run(async c => { if (review.uid !== actor.current?.uid) throw Error('Account changed. Review import again.'); await c.importLegacy(review.items, confirmed); setReview(null); setConfirmed(false); }, 'Import queued. Original device tasks kept. Send pending to save.')}>Queue confirmed import</button>
         <button onClick={() => { setReview(null); setConfirmed(false); }}>Cancel import</button>
       </div>}
-      <ul>{view.remote.filter(r => !r.deletedAt).map(r => <li key={r.id}>{r.text} · {r.dueDate} · {r.completed ? 'Completed' : 'Pending'}
+      <h3>Saved cloud tasks</h3>
+      {!view.remote.some(r => !r.deletedAt) && <p>{view.context ? 'No saved cloud tasks.' : 'Refresh to load saved tasks.'}</p>}
+      <ul aria-label="Saved cloud tasks">{view.remote.filter(r => !r.deletedAt).map(r => <li key={r.id}><span className={styles.state}>Saved · {r.completed ? 'Completed' : 'Not completed'}</span>{r.text} · {r.dueDate}
         <button disabled={busy || view.pending.some(e => e.intent.id === r.id)} onClick={() => change(r)}>Queue completion change</button>
         <button disabled={busy || view.pending.some(e => e.intent.id === r.id)} onClick={() => change(r, true)}>Queue deletion</button>
       </li>)}</ul>
+      {view.pending.length > 0 && <h3>Pending changes</h3>}
       <ul aria-label="Pending task changes">{view.pending.map(e => <li key={e.intent.requestId}>
         <p>{e.status}: {e.intent.fields?.text || 'Delete task'} {e.error}</p>
         {e.status === 'review' && <><p>Refresh saved tasks and compare them with this retained edit. An earlier send may already have saved. A new copy can duplicate a prior create. Imports must be previewed again.</p><button disabled={busy} onClick={() => { if(window.confirm('Discard this retained browser edit?'))void run(c=>c.reviewStale(e.intent.requestId,'discard',true)); }}>Discard retained edit</button><button disabled={busy || e.intent.kind==='import'} onClick={() => { if(window.confirm('I compared the saved list and understand this explicit resubmission may create a duplicate if an earlier send succeeded.'))void run(c=>c.reviewStale(e.intent.requestId,'resubmit',true),'Reviewed change queued; Send pending to save.'); }}>Confirm explicit resubmission</button></>}

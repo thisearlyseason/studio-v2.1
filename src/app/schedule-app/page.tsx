@@ -309,7 +309,11 @@ export default function ScheduleApp() {
 
         {/* TODOS TAB */}
           <div hidden={tab !== 'todos'}>
-            {process.env.NEXT_PUBLIC_SCHEDULE_TODOS_SYNC_ENABLED === 'true' && <TodoSyncPanel onExitBlockedChange={setCloudExitBlocked} />} 
+            {process.env.NEXT_PUBLIC_SCHEDULE_TODOS_SYNC_ENABLED === 'true' && <TodoSyncPanel onExitBlockedChange={setCloudExitBlocked} dark={dark} />} 
+            <div style={{ borderTop: `2px solid ${border}`, paddingTop: 20, marginTop: 24, marginBottom: 16 }}>
+              <h2 style={{ fontSize: 20, fontWeight: 850, color: text, margin: '0 0 6px' }}>Device-only tasks</h2>
+              <p style={{ fontSize: 14, color: dark ? '#d4d4d8' : muted, margin: 0 }}>Saved on this device. Not shared automatically.</p>
+            </div>
             {!storageUserId && (
               <div style={{ ...S.card, marginBottom: 16 }}>
                 <p style={{ color: text }}>Sign in to keep a private task list on this device.</p>
@@ -318,7 +322,7 @@ export default function ScheduleApp() {
             )}
             {storageUserId && todosHydrated && !addOpen && (
               <button onClick={() => { setAddOpen(true); setTimeout(() => textRef.current?.focus(), 100); }} style={{ width: '100%', padding: '14px', background: '#7c3aed', border: 'none', borderRadius: 14, color: '#fff', fontSize: 13, fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.1em', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 8, marginBottom: 16 }}>
-                <span style={{ fontSize: 18 }}>＋</span> Add Task
+                <span aria-hidden="true" style={{ fontSize: 18 }}>＋</span> Add device-only task
               </button>
             )}
             {storageUserId && todosHydrated && addOpen && (

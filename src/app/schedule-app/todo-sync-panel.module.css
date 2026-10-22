@@ -1,0 +1,110 @@
+.panel {
+  --cloud-surface: #fff;
+  --cloud-text: #18181b;
+  --cloud-muted: #52525b;
+  --cloud-border: #d4d4d8;
+  --cloud-input: #71717a;
+  --cloud-button: #f4f4f5;
+  --cloud-disabled: #e4e4e7;
+  --cloud-accent: #6d28d9;
+  --cloud-focus: #6d28d9;
+  color-scheme: light;
+  color: var(--cloud-text);
+  background: var(--cloud-surface);
+  border: 1px solid var(--cloud-border);
+  border-top: 4px solid var(--cloud-accent);
+  border-radius: 16px;
+  padding: 20px;
+  margin-bottom: 24px;
+  font-size: 14px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+.panel[data-theme='dark'] {
+  --cloud-surface: #18181b;
+  --cloud-text: #fafafa;
+  --cloud-muted: #d4d4d8;
+  --cloud-border: #52525b;
+  --cloud-input: #a1a1aa;
+  --cloud-button: #27272a;
+  --cloud-disabled: #3f3f46;
+  --cloud-accent: #7c3aed;
+  --cloud-focus: #c4b5fd;
+  color-scheme: dark;
+}
+.panel h2 { font-size: 20px; font-weight: 850; line-height: 1.25; margin: 0 0 8px; }
+.panel p { margin: 8px 0; }
+.intro, .privacy { color: var(--cloud-muted); }
+.identity { border-bottom: 1px solid var(--cloud-border); padding-bottom: 12px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0; }
+.panel button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 44px;
+  max-width: 100%;
+  padding: 10px 14px;
+  margin: 4px 8px 4px 0;
+  border: 1px solid var(--cloud-input);
+  border-radius: 10px;
+  background: var(--cloud-button);
+  color: var(--cloud-text);
+  font: inherit;
+  font-weight: 750;
+  line-height: 1.35;
+  white-space: normal;
+  text-align: center;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.actions button { margin: 0; }
+.panel button.primary { background: var(--cloud-accent); color: #fff; border-color: var(--cloud-accent); }
+.panel button:disabled, .panel button.primary:disabled {
+  color: var(--cloud-muted);
+  background: var(--cloud-disabled);
+  border-color: var(--cloud-border);
+  cursor: not-allowed;
+}
+.panel button:not(:disabled):hover { filter: brightness(.94); }
+.panel button:focus-visible, .panel input:focus-visible {
+  outline: 3px solid var(--cloud-focus);
+  outline-offset: 3px;
+}
+.form { border-top: 1px solid var(--cloud-border); border-bottom: 1px solid var(--cloud-border); padding: 16px 0; margin: 16px 0; }
+.fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(140px, 170px); gap: 12px; margin-bottom: 12px; }
+.panel label { display: block; font-weight: 700; min-width: 0; }
+.panel input {
+  display: block;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  min-height: 48px;
+  margin-top: 6px;
+  padding: 10px 12px;
+  border: 2px solid var(--cloud-input);
+  border-radius: 9px;
+  background: var(--cloud-surface);
+  color: var(--cloud-text);
+  font: inherit;
+  font-size: 16px;
+  line-height: 1.4;
+  color-scheme: inherit;
+}
+.panel input:disabled { opacity: .65; cursor: wait; }
+.panel input[type='checkbox'] { display: inline-block; width: 20px; min-height: 20px; margin: 0 8px 0 0; vertical-align: middle; }
+.panel ul { list-style: none; padding: 0; margin: 12px 0; }
+.panel li { padding: 12px; margin: 10px 0; border: 1px solid var(--cloud-border); border-radius: 10px; }
+.panel [aria-label='Import review'] { border: 2px solid var(--cloud-accent); border-radius: 12px; padding: 14px; margin: 12px 0; }
+.panel p[role='alert'] { color: #991b1b; background: #fef2f2; border: 1px solid #b91c1c; border-radius: 10px; padding: 12px; }
+.panel p[role='status']:not(.summary) { background: var(--cloud-button); border-left: 4px solid var(--cloud-accent); border-radius: 6px; padding: 10px 12px; }
+.panel[data-theme='dark'] p[role='alert'] { color: #fecaca; background: #450a0a; border-color: #f87171; }
+.summary { font-weight: 750; }
+@media (max-width: 520px) {
+  .panel { padding: 16px; }
+  .fields { grid-template-columns: minmax(0, 1fr); }
+  .actions { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .actions button, .form > button { width: 100%; margin-right: 0; }
+}
+
+.panel h3 { font-size: 16px; font-weight: 800; margin: 18px 0 6px; }
+.state { display: block; color: var(--cloud-muted); font-size: 12px; font-weight: 750; margin-bottom: 4px; }
