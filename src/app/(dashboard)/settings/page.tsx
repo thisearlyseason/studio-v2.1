@@ -340,7 +340,7 @@ export default function SettingsPage() {
     }
   };
 
-  const performLogout = async (assertAuthority: () => void = () => {}) => {
+  const performLogout = async (assertAuthority: () => void = () => {}, signOutCurrent: () => Promise<void> = () => signOut(auth)) => {
     assertAuthority();
     // A legacy profile can retain isDemo after becoming a registered beta
     // account. Only Firebase's anonymous identity is allowed to invoke the
@@ -371,7 +371,7 @@ export default function SettingsPage() {
       assertAuthority();
       await clearBrowserSession(assertAuthority);
       assertAuthority();
-      await signOut(auth);
+      await signOutCurrent();
       logoutCompleted = true;
       if (!auth.currentUser) router.push('/login');
     } catch (error) {
