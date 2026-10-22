@@ -1,5 +1,6 @@
 "use client";
 
+import { HomeLayoutSelector } from '@/components/team-home/layout-selector';
 import React, { useState, useMemo, useCallback, useEffect, useRef } from 'react';
 import { useTeam, PlayerProfile, Team, TeamEvent } from '@/components/providers/team-provider';
 import { Card, CardContent, CardHeader, CardTitle, CardFooter } from '@/components/ui/card';
@@ -822,7 +823,7 @@ export default function FamilyPage() {
     householdBalance, 
     isParent,
     user,
-    sendChildInvite
+    sendChildInvite, activeTeam
   } = useTeam();
 
   const db = useFirestore();
@@ -1277,6 +1278,7 @@ export default function FamilyPage() {
 
   return (
     <div className="space-y-10 pb-20 animate-in fade-in duration-700">
+      {activeTeam && user && !user.homeScreenLayout && !user.homeLayoutInvitationDismissed && <HomeLayoutSelector invitation />}
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1">
           <Badge className="bg-primary/10 text-primary border-none font-black uppercase tracking-widest text-[9px] h-6 px-3">Family Hub</Badge>

@@ -1,3 +1,4 @@
+import { purgeScheduleTodos } from './schedule-todo-purge';
 import { onDocumentCreated, onDocumentUpdated, onDocumentDeleted } from "firebase-functions/v2/firestore";
 import { HttpsError, onCall, onRequest } from "firebase-functions/v2/https";
 import { onSchedule } from "firebase-functions/v2/scheduler";
@@ -604,6 +605,7 @@ export const purgeExpiredDeletionRequests = onSchedule({
 
       // Block preferences are private account data outside the users tree.
       await db.recursiveDelete(db.collection('userSafety').doc(uid));
+      await purgeScheduleTodos(uid, (path) => db.recursiveDelete(db.doc(path)));
       if (user.exists) await db.recursiveDelete(user.ref);
       try {
         await admin.auth().deleteUser(uid);

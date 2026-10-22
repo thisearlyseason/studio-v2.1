@@ -1,5 +1,6 @@
 "use client";
 
+import { flushSync } from 'react-dom';
 import { PasswordInput } from '@/components/ui/password-input';
 
 
@@ -35,8 +36,13 @@ function YouthSignupContent() {
 
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [formError, setFormError] = useState('');
+  const submitPending = React.useRef(false);
+  const errorRef = React.useRef<HTMLParagraphElement>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [isDone, setIsDone] = useState(false);
+
+  useEffect(() => { if (formError && !isSubmitting) errorRef.current?.focus(); }, [formError, isSubmitting]);
 
   // ── 1. Load and validate the invite token ──
   useEffect(() => {
@@ -66,21 +72,27 @@ function YouthSignupContent() {
   }, [token]);
 
   // ── 2. Handle account creation ──
-  const handleCreateAccount = async (e: React.FormEvent) => {
+  const handleCreateAccount = async (e: React.FormEvent<HTMLFormElement>) => {
     e.preventDefault();
-    if (!invite || !token) return;
+    if (!invite || !token || submitPending.current) return;
+    const form = e.currentTarget;
+    const password = (form.elements.namedItem('password') as HTMLInputElement).value;
+    const confirmPassword = (form.elements.namedItem('confirmPassword') as HTMLInputElement).value;
+    setFormError('');
 
-    if (password.length < 8) {
-      toast({ title: 'Password too short', description: 'Must be at least 8 characters.', variant: 'destructive' });
+    if (password.length < 8 || password.length > 128) {
+      setFormError('Use a password between 8 and 128 characters.');
       return;
     }
     if (password !== confirmPassword) {
-      toast({ title: 'Passwords do not match', variant: 'destructive' });
+      setFormError('Re-enter the same password in both fields.');
       return;
     }
 
-    setIsSubmitting(true);
+    submitPending.current = true;
+    flushSync(() => setIsSubmitting(true));
     try {
+      await new Promise<void>(resolve => requestAnimationFrame(() => requestAnimationFrame(() => resolve())));
       const response = await fetch('/api/invites/youth', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
@@ -94,8 +106,9 @@ function YouthSignupContent() {
       }));
       setIsDone(true);
     } catch (error: any) {
-      toast({ title: 'Account Creation Failed', description: error.message, variant: 'destructive' });
+      setFormError('Account activation could not be completed. Check your connection and invitation, then try again.');
     } finally {
+      submitPending.current = false;
       setIsSubmitting(false);
     }
   };
@@ -142,7 +155,7 @@ function YouthSignupContent() {
               <CheckCircle2 className="h-10 w-10 text-green-600" />
             </div>
             <div>
-              <h2 className="text-3xl font-black uppercase tracking-tight">Account Created!</h2>
+              <h2 role="status" className="text-3xl font-black uppercase tracking-tight">Account Created!</h2>
               <p className="text-muted-foreground font-bold uppercase text-[10px] tracking-widest mt-2">
                 Welcome, {invite?.childFirstName}
               </p>
@@ -192,7 +205,9 @@ function YouthSignupContent() {
               </div>
             </div>
 
-            <form onSubmit={handleCreateAccount} className="space-y-6">
+            <p role="status" aria-live="polite">{isSubmitting ? 'Activating account. Please wait.' : ''}</p>
+            {formError && <p id="youth-error" ref={errorRef} tabIndex={-1} role="alert" className="text-sm text-destructive">{formError}</p>}
+            <form onSubmit={handleCreateAccount} aria-busy={isSubmitting} onInvalid={() => setFormError('Complete both password fields using 8–128 characters.')} className="space-y-6">
               <div>
                 <h3 className="text-2xl font-black uppercase tracking-tight">Create Your Password</h3>
                 <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest mt-1">
@@ -206,10 +221,14 @@ function YouthSignupContent() {
                   <div className="relative">
                     <PasswordInput
                       id="youth-password"
+                      name="password"
+                      disabled={isSubmitting}
+                      aria-describedby="youth-requirements youth-error"
                       autoComplete="new-password"
                       
                       required
                       minLength={8}
+                      maxLength={128}
                       value={password}
                       onChange={e => setPassword(e.target.value)}
                       className="h-14 rounded-2xl border-2 font-bold pr-12 bg-muted/10"
@@ -221,6 +240,11 @@ function YouthSignupContent() {
                   <Label htmlFor="youth-password-confirmation" className="text-[10px] font-black uppercase tracking-widest ml-1">Confirm Password</Label>
                   <PasswordInput
                     id="youth-password-confirmation"
+                    name="confirmPassword"
+                    disabled={isSubmitting}
+                    aria-describedby="youth-requirements youth-error"
+                    minLength={8}
+                    maxLength={128}
                     autoComplete="new-password"
                     
                     required
@@ -232,6 +256,7 @@ function YouthSignupContent() {
                 </div>
               </div>
 
+              <p id="youth-requirements" className="text-sm text-muted-foreground">Use 8–128 characters. Re-enter the same password to confirm it.</p>
               {/* Password strength hint */}
               {password && (
                 <div className="flex gap-1.5">
@@ -260,7 +285,7 @@ function YouthSignupContent() {
                 className="w-full h-16 rounded-2xl text-lg font-black shadow-2xl shadow-primary/20 active:scale-[0.98] transition-all"
                 disabled={isSubmitting}
               >
-                {isSubmitting ? <Loader2 className="h-6 w-6 animate-spin" /> : (
+                {isSubmitting ? <><Loader2 aria-hidden="true" className="h-6 w-6 animate-spin" /> Activating…</> : (
                   <><Key className="h-5 w-5 mr-2" /> Activate My Account</>
                 )}
               </Button>

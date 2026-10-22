@@ -1,12 +1,9 @@
 import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { Suspense } from 'react';
-import { Toaster } from "@/components/ui/toaster"
+import { SquadPageBoundary } from '@/components/squad-pages/route-boundary';
 import { FirebaseClientProvider } from '@/firebase/client-provider';
-import { TeamProvider } from '@/components/providers/team-provider';
 import { TooltipProvider } from "@/components/ui/tooltip";
-import BugReporter from '@/components/BugReporter';
-import { AppServiceWorkerRegistration } from '@/components/pwa/AppServiceWorkerRegistration';
 
 // ─── SEO Metadata ────────────────────────────────────────────────────────────
 export const metadata: Metadata = {
@@ -206,14 +203,11 @@ export default function RootLayout({
       </head>
       <body className="font-body antialiased min-h-screen bg-background text-foreground selection:bg-primary/20" suppressHydrationWarning>
         <FirebaseClientProvider>
-          <AppServiceWorkerRegistration />
           <Suspense fallback={null}>
             <TooltipProvider delayDuration={0}>
-              <TeamProvider>
+              <SquadPageBoundary>
                 {children}
-                <BugReporter />
-                <Toaster />
-              </TeamProvider>
+              </SquadPageBoundary>
             </TooltipProvider>
           </Suspense>
         </FirebaseClientProvider>

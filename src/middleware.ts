@@ -1,3 +1,5 @@
+import { squadPageRouteUnavailable } from '@/lib/squad-pages/route-gate';
+import { squadPublicRouteExists, squadPageNotFoundResponse } from '@/lib/squad-pages/route-status';
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 import * as admin from 'firebase-admin'
@@ -9,12 +11,13 @@ const PROTECTED_ROOTS = new Set([
   'admin', 'calendar', 'chats', 'club', 'coaches-corner', 'competition',
   'dashboard', 'drills', 'equipment', 'events', 'facilities', 'family',
   'feed', 'files', 'fundraising', 'games', 'manage-tournaments', 'practice',
-  'roster', 'settings', 'team', 'teams', 'volunteers',
+  'pricing', 'roster', 'settings', 'subscriptions', 'team', 'teams', 'volunteers',
 ]);
 
 function isProtectedPath(pathname: string) {
   if (pathname.startsWith('/events/register/')) return false;
   if (pathname === '/leagues' || pathname === '/leagues/') return true;
+  if (pathname === '/leagues/registration' || pathname.startsWith('/leagues/registration/')) return true;
   if (pathname === '/tournaments' || pathname === '/tournaments/') return true;
   const root = pathname.split('/').filter(Boolean)[0] || '';
   return PROTECTED_ROOTS.has(root);
@@ -180,6 +183,12 @@ function shouldNoIndex(pathname: string) {
 
 export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl
+  if (squadPageRouteUnavailable(pathname, request.nextUrl.hostname)) return squadPageNotFoundResponse();
+
+  // Resolve public-page availability before any layout or metadata can stream.
+  if ((request.method === 'GET' || request.method === 'HEAD') && (pathname === '/p' || pathname.startsWith('/p/'))) {
+    if (!await squadPublicRouteExists(pathname)) return squadPageNotFoundResponse();
+  }
 
   if (isStoreDistribution && pathname === '/') {
     const loginUrl = request.nextUrl.clone();

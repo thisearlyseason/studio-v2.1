@@ -25,3 +25,33 @@ export function isAlertRelevantToRecipient(
     default: return false;
   }
 }
+
+/** Display scope for server-only signup records; never used to grant access. */
+export function alertAudienceLabel(
+  alert: AlertAudienceRecord & { id?: string; createdBy?: string },
+): string {
+  if (alert.id?.startsWith('signup_') && alert.createdBy === 'system' && alert.targetUserId) {
+    return 'Superadmin only';
+  }
+  return String(alert.audience || '');
+}
+
+/** Match the history route's membership classification without changing global profile roles. */
+export function alertRecipientForMembership({ userId, isStaff, profileRole, member }: {
+  userId?: string | null;
+  isStaff: boolean;
+  profileRole?: unknown;
+  member?: { position?: unknown } | null;
+}): AlertRecipient {
+  const role = String(profileRole || '').trim().toLowerCase();
+  const position = String(member?.position || '').trim().toLowerCase();
+  const isParent = ['parent', 'guardian'].includes(position) || ['parent', 'guardian'].includes(role);
+  return {
+    userId,
+    isStaff,
+    isParent,
+    isPlayer: !isStaff && !isParent && (
+      ['player', 'adult_player', 'youth_player'].includes(role) || Boolean(member)
+    ),
+  };
+}

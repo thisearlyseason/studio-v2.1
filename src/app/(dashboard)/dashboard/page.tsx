@@ -1,6 +1,9 @@
 "use client";
 import { schoolInstitutionLandingAllowed } from '@/lib/dashboard-institution-context';
 
+import { homeWinRate } from '@/lib/team-home-events';
+import { HomeLayoutSelector } from '@/components/team-home/layout-selector';
+import { ModernTeamHome } from '@/components/team-home/modern-team-home';
 import React, { useMemo, useEffect, useState } from 'react';
 import { useTeam } from '@/components/providers/team-provider';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -57,13 +60,13 @@ function toDateObj(d: any): Date | null {
   try { return parseISO(d); } catch { return new Date(d); }
 }
 
-export default function UniversalAccountDashboard() {
+function UniversalAccountDashboard() {
   const { 
     user, activeTeam, activeTeamEvents, 
     householdBalance, isYouth, isParent, isPlayer,
     householdEvents, householdGames, myChildren, teams,
     isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isStaff, isSuperAdmin,
-    alerts, seenAlertIds, isTeamsLoading
+    alerts, seenAlertIds, isTeamsLoading, games
   } = useTeam();
   const router = useRouter();
   const db = useFirestore();
@@ -90,17 +93,7 @@ export default function UniversalAccountDashboard() {
     }
   }, [isSchoolMode, isPrimaryClubAuthority, isSuperAdmin, isEliteClubMode, activeTeam, user, router, isTeamsLoading, teams.length]);
 
-  const gamesQuery = useMemoFirebase(() => {
-    if (!db || !activeTeam?.id) return null;
-    return query(collection(db, 'teams', activeTeam.id, 'games'), limit(20));
-  }, [db, activeTeam?.id]);
-  const { data: games } = useCollection(gamesQuery);
-  
-  const winRate = useMemo(() => {
-    if (!games || games.length === 0) return 0;
-    const wins = games.filter((g: any) => g.result === 'Win').length;
-    return Math.round((wins / games.length) * 100);
-  }, [games]);
+  const winRate = useMemo(() => homeWinRate(games), [games]);
 
   const { pendingDocs } = usePendingWaivers();
   const pendingWaiversCount = pendingDocs.length;
@@ -492,4 +485,13 @@ export default function UniversalAccountDashboard() {
       </AlertDialog>
     </div>
   );
+}
+
+export default function TeamHomePage() {
+  const { user, activeTeam, isParent, isStaff } = useTeam();
+  const modern = user?.homeScreenLayout === 'modern';
+  return <>
+    {user && activeTeam && !user.homeLayoutInvitationDismissed && !user.homeScreenLayout && (!isParent || isStaff) && <HomeLayoutSelector invitation />}
+    {modern && activeTeam ? <ModernTeamHome key={`${user?.id}:${activeTeam.id}`} /> : <UniversalAccountDashboard />}
+  </>;
 }

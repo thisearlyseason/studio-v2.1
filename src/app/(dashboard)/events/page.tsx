@@ -552,7 +552,7 @@ export default function EventsPage() {
 
       <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
         <div className="space-y-1"><Badge className="bg-primary/10 text-primary border-none font-black uppercase text-[9px] h-6 px-3">Squad Itinerary</Badge><h1 className="text-4xl font-black uppercase tracking-tight">Schedule Hub</h1></div>
-        <div className="flex items-center gap-3">
+        <div className="flex flex-wrap items-center gap-3">
           {/* View toggle */}
           <div className="flex bg-muted/50 p-1 rounded-xl border shadow-inner">
             <Button

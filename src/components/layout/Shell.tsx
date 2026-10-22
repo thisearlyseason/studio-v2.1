@@ -1,8 +1,13 @@
 "use client";
+import { coordinateTodoLogout } from '@/lib/schedule-todos/logout';
+import { PublicPageEntry, confirmPageContextSwitch as confirmUnsavedPageContextSwitch } from '@/components/squad-pages/entity-context';
 
-import React, { useState, useEffect, memo, useMemo } from 'react';
-import Link from 'next/link';
-import { usePathname, useRouter } from 'next/navigation';
+import { AlertsBellButton } from './AlertsBellButton';
+
+import '@/components/team-home/modern-team-home.css';
+import React, { useState, useEffect, memo, useMemo, useRef } from 'react';
+import { NavigationFeedback, NavigationLink as Link, useNavigationRouter, useNavigationAllowed } from './navigation-feedback';
+import { usePathname } from 'next/navigation';
 import { 
   LayoutDashboard, 
   CalendarDays, 
@@ -12,7 +17,6 @@ import {
   ChevronDown,
   PlusCircle,
   Trophy,
-  Bell,
   Lock,
   Dumbbell,
   CreditCard,
@@ -80,7 +84,8 @@ import {
   SidebarMenuItem, 
   SidebarProvider,
   SidebarSeparator,
-  SidebarTrigger
+  SidebarTrigger,
+  useSidebar
 } from "@/components/ui/sidebar";
 import {
   Sheet,
@@ -98,6 +103,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import BrandLogo from '@/components/BrandLogo';
+import { useTeamNavigation, adminTabs } from '@/components/team-home/use-team-navigation';
 import { BetaNotificationBanner } from '@/components/layout/BetaNotificationBanner';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
@@ -118,28 +124,13 @@ import { hasCoachesCornerEntitlement } from '@/lib/coaches-corner-entitlement';
 import { cancelDemoExitPending, clearBrowserSession, clearDemoExitPending, markDemoExitPending, requireDemoExitRetry } from '@/lib/client-auth';
 import { deletePushDevice } from '@/lib/client-push-registration';
 import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
-import { isTeamModuleRouteDisabled } from '@/lib/team-module-visibility';
 import { isStoreDistribution } from '@/lib/app-distribution';
-const coordinationTabs = [
-  { name: 'Feed', href: '/feed', icon: Radio, pro: true },
-  { name: 'Schedule', href: '/events', icon: CalendarDays, pro: false },
-  { name: 'Roster', href: '/roster', icon: Users, pro: false },
-  { name: 'Practice', href: '/practice', icon: Dumbbell, pro: true },
-  { name: 'Competition Hub', href: '/competition', icon: Medal, pro: false },
-  { name: 'Leagues', href: '/leagues', icon: Medal, pro: false },
-  { name: 'Tournaments', href: '/manage-tournaments', icon: Trophy, pro: false },
-  { name: 'Scorekeeping', href: '/games', icon: Trophy, pro: false },
-  { name: 'Volunteer', href: '/volunteers', icon: HandHelping, pro: true },
-  { name: 'Fundraising', href: '/fundraising', icon: PiggyBank, pro: true },
-  { name: 'Team Chat', href: '/chats', icon: MessageCircle, pro: false },
-  { name: 'Library', href: '/files', icon: FolderClosed, pro: false },
-];
+// Check before confirmation or context mutation, including Radix portal menus.
+function usePageContextSwitch() {
+  const canNavigate = useNavigationAllowed();
+  return (targetTeamId?: string | null) => canNavigate() && confirmUnsavedPageContextSwitch(targetTeamId);
+}
 
-const adminTabs = [
-  { name: 'Coach Tools', href: '/coaches-corner', icon: PenTool, pro: true, desc: 'Waivers and documents' },
-  { name: 'Facilities', href: '/facilities', icon: MapPin, pro: false, desc: 'Venues and fields' },
-  { name: 'Equipment', href: '/equipment', icon: Package, pro: true, desc: 'Team inventory' },
-];
 
 const SidebarItem = memo(({ tab, isActive, isLocked }: { tab: any, isActive: boolean, isLocked: boolean }) => {
   const Icon = tab.icon;
@@ -184,6 +175,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
   isSchoolMode?: boolean; isPrimaryClubAuthority?: boolean; isEliteAccount?: boolean; isEliteClubMode?: boolean;
   onClose?: () => void;
 }) {
+  const confirmPageContextSwitch = usePageContextSwitch();
   const primarySchoolTeam = isSchoolMode ? teams.find(t => t.type === 'school') : null;
   const squadList = isSchoolMode ? teams.filter(t => t.type !== 'school') : teams;
 
@@ -277,7 +269,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                 subtitle={user?.institutionTitle || 'Athletic Director'}
                 initial={(user?.schoolName || user?.clubName || primarySchoolTeam.name || 'S')[0]}
                 isActive={activeTeam?.type === 'school'}
-                onClick={() => { setActiveTeam(primarySchoolTeam); router.push('/club'); onClose?.(); }}
+                onClick={() => { if (!confirmPageContextSwitch(primarySchoolTeam.id)) return; setActiveTeam(primarySchoolTeam); router.push('/club'); onClose?.(); }}
                 variant="school"
               />
             </>
@@ -292,22 +284,22 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                   key={team.id}
                   team={team}
                   isActive={activeTeam?.id === team.id && activeTeam?.type !== 'school'}
-                  onClick={() => { setActiveTeam(team); router.push('/dashboard'); onClose?.(); }}
+                  onClick={() => { if (!confirmPageContextSwitch(team.id)) return; setActiveTeam(team); router.push('/dashboard'); onClose?.(); }}
                 />
               ))
             }
           </div>
           <DropdownMenuSeparator className="my-1.5" />
           {isPrimaryClubAuthority && (
-            <DropdownMenuItem onClick={() => router.push('/club')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all">
+            <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/club'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all">
               <Building className="h-3.5 w-3.5" /> School Hub
             </DropdownMenuItem>
           )}
           <DropdownMenuSeparator className="my-1.5" />
-          <DropdownMenuItem onClick={() => router.push('/team')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+          <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/team'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
             <Settings className="h-3.5 w-3.5 text-primary" /> View Team Profile
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push('/teams/join')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+          <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/teams/join'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
             <UserPlus className="h-3.5 w-3.5 text-primary" /> Portals
           </DropdownMenuItem>
         </>
@@ -322,7 +314,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                 subtitle={user?.institutionTitle || 'Club Organizer'}
                 initial={(user?.clubName || user?.schoolName || 'E')[0]}
                 isActive={!activeTeam}
-                onClick={() => { setActiveTeam(null); router.push('/club'); onClose?.(); }}
+                onClick={() => { if (!confirmPageContextSwitch(null)) return; setActiveTeam(null); router.push('/club'); onClose?.(); }}
                 variant="elite"
               />
               <DropdownMenuSeparator className="my-1.5" />
@@ -336,13 +328,13 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                       team={team}
                       isActive={activeTeam?.id === team.id}
                       tierOverride={squadTier(team, true)}
-                      onClick={() => { setActiveTeam(team); router.push('/dashboard'); onClose?.(); }}
+                      onClick={() => { if (!confirmPageContextSwitch(team.id)) return; setActiveTeam(team); router.push('/dashboard'); onClose?.(); }}
                     />
                   ))
                 }
               </div>
               <DropdownMenuSeparator className="my-1.5" />
-              <DropdownMenuItem onClick={() => router.push('/club')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all">
+              <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/club'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest bg-primary/5 text-primary hover:bg-primary hover:text-white transition-all">
                 <Building className="h-3.5 w-3.5" /> Club Hub
               </DropdownMenuItem>
               <DropdownMenuSeparator className="my-1.5" />
@@ -356,7 +348,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                     key={team.id}
                     team={team}
                     isActive={activeTeam?.id === team.id}
-                    onClick={() => { setActiveTeam(team); onClose?.(); }}
+                    onClick={() => { if (!confirmPageContextSwitch(team.id)) return; setActiveTeam(team); onClose?.(); }}
                   />
                 ))}
               </div>
@@ -372,7 +364,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                     team={team}
                     isActive={activeTeam?.id === team.id}
                     tierOverride={squadTier(team, true)}
-                    onClick={() => { setActiveTeam(team); onClose?.(); }}
+                    onClick={() => { if (!confirmPageContextSwitch(team.id)) return; setActiveTeam(team); onClose?.(); }}
                   />
                 ))}
               </div>
@@ -381,17 +373,17 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
           )}
 
           {/* Footer — always visible */}
-          <DropdownMenuItem onClick={() => router.push('/team')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+          <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/team'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
             <Settings className="h-3.5 w-3.5 text-primary" /> View Team Profile
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push('/teams/join')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+          <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/teams/join'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
             <UserPlus className="h-3.5 w-3.5 text-primary" /> Portals
           </DropdownMenuItem>
           <DropdownMenuSeparator className="my-1.5" />
-          <DropdownMenuItem onClick={() => router.push('/teams/new?tier=starter')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+          <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/teams/new?tier=starter'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
             <PlusCircle className="h-3.5 w-3.5 text-primary" /> Create Free Team
           </DropdownMenuItem>
-          <DropdownMenuItem onClick={() => router.push('/teams/new?tier=pro')} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+          <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/teams/new?tier=pro'); }} className="p-2.5 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
             <Zap className="h-3.5 w-3.5 text-amber-500" /> Create Pro Team
           </DropdownMenuItem>
         </>
@@ -401,22 +393,38 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
 }
 
 
-export default function Shell({ children }: { children: React.ReactNode }) {
+function SidebarRouteClose() {
   const pathname = usePathname();
-  const router = useRouter();
+  const { setOpenMobile } = useSidebar();
+  useEffect(() => { setOpenMobile(false); }, [pathname, setOpenMobile]);
+  return null;
+}
+
+export default function Shell({ children }: { children: React.ReactNode }) {
+  return <NavigationFeedback><ShellContent>{children}</ShellContent></NavigationFeedback>;
+}
+
+function ShellContent({ children }: { children: React.ReactNode }) {
+  const confirmPageContextSwitch = usePageContextSwitch();
+  const pathname = usePathname();
+  const router = useNavigationRouter();
   const { 
     activeTeam, setActiveTeam, teams, user, isPro, 
     isPrimaryClubAuthority, isStaff, isParent, isPlayer, hasFeature, alerts,
     unreadAlertsCount, purchasePro, isSchoolMode, isSchoolAdmin, isEliteAccount, isEliteClubMode,
     deleteTeam, deleteAccount, isSuperAdmin
   } = useTeam();
+  const isModernLayout = user?.homeScreenLayout === 'modern';
+  const isModernHome = isModernLayout && pathname === '/dashboard' && Boolean(activeTeam);
+  useEffect(() => {
+    document.documentElement.dataset.squadLayout = isModernLayout ? 'modern' : 'classic';
+    return () => { delete document.documentElement.dataset.squadLayout; };
+  }, [isModernLayout]);
+  const workspaceMainRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (isModernLayout && !window.location.hash) workspaceMainRef.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [pathname, isModernLayout]);
   const auth = useAuth();
-  const canAccessCoachesCorner = hasCoachesCornerEntitlement(activeTeam, isSuperAdmin);
-  const isAdminTabLocked = (tab: (typeof adminTabs)[number]) =>
-    tab.href === '/coaches-corner'
-      ? !canAccessCoachesCorner
-      : tab.pro && !isPro;
-  const canManageFacilities = isSuperAdmin || !activeTeam || activeTeam.ownerUserId === auth?.currentUser?.uid;
   const [trialNow, setTrialNow] = useState(() => Date.now());
   useEffect(() => {
     if (user?.subscription_status !== 'trialing' || !user?.trial_end) return;
@@ -502,65 +510,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const showInstallBtn = !isStoreDistribution && !isStandalone && !installDismissed;
 
-  const roleNavigationOrder = isParent
-    ? ['/events', '/chats', '/files', '/volunteers', '/competition']
-    : isPlayer
-      ? ['/events', '/chats', '/practice', '/roster']
-      : user?.role === 'league_creator'
-        ? ['/competition', '/events', '/games', '/roster', '/chats']
-        : ['/events', '/roster', '/chats', '/practice', '/games'];
-
-  const navigationPriority = (href: string) => {
-    const index = roleNavigationOrder.indexOf(href);
-    return index === -1 ? roleNavigationOrder.length : index;
-  };
-
-  const filteredCoordTabs = coordinationTabs
-    .filter(tab => {
-      // League creators without a team: only show Competition Hub so they can manage leagues
-      if (user?.role === 'league_creator' && !activeTeam) {
-        return tab.name === 'Competition Hub';
-      }
-
-      if (!authorizeDashboardRoute(tab.href, {
-        role: user?.role,
-        plan_type: user?.plan_type,
-        isPrimaryClubAuthority,
-      }, isSuperAdmin ? 'superadmin' : undefined).allowed) return false;
-
-      // Module Visibility Settings
-      if (isTeamModuleRouteDisabled(tab.href, activeTeam?.features)) return false;
-
-      // Feed is filtered by plan/feature
-      if (tab.name === 'Feed') return hasFeature?.('live_feed_read') && !(isParent && activeTeam?.parentFeedEnabled === false);
-      // Roster: hide for school admins in institution mode (they use the School Hub instead)
-      if (tab.name === 'Roster' && isSchoolMode && isPrimaryClubAuthority && activeTeam?.type === 'school') return false;
-      // Fundraising: staff-only administrative module — players and parents cannot access it
-      if (tab.name === 'Fundraising' && !isStaff) return false;
-      return true;
-    })
-    .map(tab => {
-      if (tab.href === '/competition' && isSchoolMode) {
-        return { ...tab, name: 'Program League Hub' };
-      }
-      return tab;
-    })
-    .sort((a, b) => navigationPriority(a.href) - navigationPriority(b.href));
-
-  // Keep competition destinations discoverable even when the institution-only hub is unavailable.
+  const { filteredCoordTabs, filteredAdminTabs, isAdminTabLocked } = useTeamNavigation();
   const primaryCoordTabs = filteredCoordTabs.filter((tab, index) => index < 5 || ['/leagues', '/manage-tournaments'].includes(tab.href));
   const additionalCoordTabs = filteredCoordTabs.filter(tab => !primaryCoordTabs.includes(tab));
-
-  const filteredAdminTabs = adminTabs.filter(tab => {
-    // League creators without a team: show Facilities (free) + Equipment (locked if free)
-    if (user?.role === 'league_creator' && !activeTeam) {
-      return tab.name === 'Facilities' || tab.name === 'Equipment';
-    }
-    if (tab.name === 'Facilities' && !canManageFacilities) return false;
-    if (isTeamModuleRouteDisabled(tab.href, activeTeam?.features)) return false;
-    return true;
-  });
-
   // The institution hub is a route-level context. A previously selected squad can
   // remain active for later navigation, but it must not appear selected on the hub.
   const isInstitutionHubRoute = pathname === '/club';
@@ -598,7 +550,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           ]
         : isParent
           ? [
-              { name: 'Family', href: '/family', icon: Baby },
+              { name: user?.homeScreenLayout === 'modern' ? 'Home' : 'Family', href: user?.homeScreenLayout === 'modern' ? '/dashboard' : '/family', icon: user?.homeScreenLayout === 'modern' ? Home : Baby },
               { name: 'Schedule', href: '/calendar', icon: CalendarDays },
               ...(activeTeam?.features?.tacticalChat !== false ? [{ name: 'Chat', href: '/chats', icon: MessageCircle }] : []),
               { name: 'Waivers', href: '/files', icon: ShieldCheck },
@@ -624,7 +576,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   if (!activeTeam && !user) return null;
 
-  const handleLogout = async () => {
+  const performLogout = async (assertAuthority: () => void = () => {}) => {
+    assertAuthority();
     // Demo cleanup is an authentication-lifecycle operation. Profile flags can
     // legitimately remain on migrated beta accounts, so only Firebase's
     // anonymous identity may enter the destructive demo cleanup route.
@@ -640,10 +593,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
       // Anonymous demo accounts cannot own notification endpoints. The device
       // route intentionally rejects them, so let demo cleanup handle logout.
       if (authenticatedUserId && !isDemoLogout) {
+        assertAuthority();
         await deletePushDevice(authenticatedUserId).catch(error => {
           console.warn('[Logout] Notification cleanup was unavailable; continuing sign-out.', error);
         });
       }
+      assertAuthority();
       if (isDemoLogout) {
         const response = await fetch('/api/demo/exit', { method: 'POST' });
         if (!response.ok) {
@@ -651,10 +606,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           throw new Error('Demo cleanup failed');
         }
       }
-      await clearBrowserSession();
+      assertAuthority();
+      await clearBrowserSession(assertAuthority);
+      assertAuthority();
       await signOut(auth);
       logoutCompleted = true;
-      router.push('/login');
+      if (!auth.currentUser) router.push('/login');
     } catch (error) {
       toast({ title: "Logout Failed", variant: "destructive" });
     } finally {
@@ -663,6 +620,14 @@ export default function Shell({ children }: { children: React.ReactNode }) {
         else if (demoCleanupRejectedBeforeMutation) cancelDemoExitPending();
       }
     }
+  };
+
+  const handleLogout = async () => {
+    if (!confirmPageContextSwitch()) return;
+    if (auth.currentUser?.isAnonymous === true) return performLogout();
+    if (process.env.NEXT_PUBLIC_SCHEDULE_TODOS_SYNC_ENABLED !== 'true') return performLogout();
+    try { await coordinateTodoLogout(auth, performLogout); }
+    catch (error) { toast({ title: 'Logout paused', description: error instanceof Error ? error.message : 'Review pending task edits before logout.', variant: 'destructive' }); }
   };
 
   const handleDeleteTeam = async () => {
@@ -677,11 +642,12 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <SidebarProvider className="relative h-full min-h-0">
-      <div className="flex flex-col h-full w-full bg-background selection:bg-primary/20">
+    <SidebarProvider mobileBreakpoint={1280} style={{ "--sidebar-width": "18rem" } as React.CSSProperties} className={cn("relative h-full min-h-0", isModernLayout && "modern-app")}>
+      <SidebarRouteClose />
+      <div className="modern-shell-frame flex flex-col h-full w-full bg-background selection:bg-primary/20">
         <div className="flex min-h-0 flex-1 overflow-hidden">
-          <Sidebar 
-            className="absolute inset-y-0 h-full border-r bg-white w-72 shrink-0 shadow-sm **:data-[sidebar=sidebar]:overflow-y-auto **:data-[sidebar=sidebar]:overscroll-contain **:data-[sidebar=sidebar]:touch-pan-y"
+          {!isModernLayout && <Sidebar
+            className="absolute inset-y-0 h-full border-r bg-white shrink-0 shadow-sm **:data-[sidebar=sidebar]:overflow-y-auto **:data-[sidebar=sidebar]:overscroll-contain **:data-[sidebar=sidebar]:touch-pan-y"
             collapsible="offcanvas"
           >
             <SidebarHeader className="shrink-0 p-6 bg-white">
@@ -855,6 +821,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
             </SidebarHeader>
 
             <SidebarContent className="flex-none overflow-visible px-4 py-2 bg-white">
+              {(isStaff || isPrimaryClubAuthority || isSuperAdmin) && <PublicPageEntry className="mb-4 w-full" />}
               {/* School institution mode OR Elite Hub mode: hide all nav items */}
               {(!isSchoolInstitutionMode && !isEliteHubMode) && (
                 <SidebarMenu className="space-y-6">
@@ -972,12 +939,30 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 </div>
               )}
             </SidebarFooter>
-          </Sidebar>
+          </Sidebar>}
 
           <div className="flex min-w-0 flex-col flex-1 min-h-0">
-            <header className="sticky top-0 z-40 w-full bg-background/80 backdrop-blur-md border-b h-16 md:h-20 flex items-center px-4 md:px-10 justify-between text-foreground">
-              <div className="flex items-center gap-4">
-                <div className="md:hidden h-10 w-10" aria-hidden="true" />
+            <header className={cn("sticky top-0 z-40 w-full bg-background/95 backdrop-blur-md border-b h-16 md:h-20 flex items-center px-4 md:px-10 justify-between text-foreground", isModernLayout && "modern-home-header")}>
+              {isModernLayout ? <div className="modern-header-identity">
+                <Link href="/dashboard" className="modern-header-brand" aria-label={`${activeTeam?.name || 'The Squad'} dashboard`}>
+                  {activeTeam?.teamLogoUrl ? <Avatar className="h-10 w-10 rounded-lg"><AvatarImage src={activeTeam.teamLogoUrl}/><AvatarFallback>{activeTeam.name?.[0]}</AvatarFallback></Avatar> : <BrandLogo variant="light-background" className="h-9 w-20 shrink-0"/>}
+                  <span>{activeTeam?.name || 'The Squad'}</span>
+                </Link>
+                <DropdownMenu open={mobileSwitcherOpen} onOpenChange={setMobileSwitcherOpen}>
+                  <DropdownMenuTrigger asChild><Button variant="ghost" aria-label="Switch squad" className="modern-header-switch"><span className="hidden lg:inline">{activeTeam?.name}</span><ChevronDown className="h-4 w-4"/></Button></DropdownMenuTrigger>
+                  <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} user={user} isSchoolMode={isSchoolMode} isPrimaryClubAuthority={isPrimaryClubAuthority} isEliteAccount={isEliteAccount} isEliteClubMode={isEliteClubMode} onClose={() => setMobileSwitcherOpen(false)} />
+                </DropdownMenu>
+                <nav aria-label="Main navigation" className="modern-header-nav"><Link href="/dashboard" aria-current={pathname === '/dashboard' ? 'page' : undefined}>Dashboard</Link>
+                  <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="modern-tools-trigger" aria-label="Team tools"><Menu className="h-4 w-4"/><span className="modern-tools-label">Team tools</span></Button></DropdownMenuTrigger><DropdownMenuContent align="start" className="modern-tools-menu">
+                    <DropdownMenuLabel>Team tools</DropdownMenuLabel>
+                    {filteredCoordTabs.map(tab => <DropdownMenuItem key={tab.href} onSelect={() => { if (tab.pro && !isPro) purchasePro(); else router.push(tab.href); }}><tab.icon className="h-4 w-4"/>{tab.name}{tab.pro && !isPro && <Lock className="ml-auto h-3 w-3" aria-label="Upgrade required"/>}</DropdownMenuItem>)}
+                    {isStaff && <><DropdownMenuSeparator/>{filteredAdminTabs.map(tab => <DropdownMenuItem key={tab.href} onSelect={() => { if (isAdminTabLocked(tab)) purchasePro(); else router.push(tab.href); }}><tab.icon className="h-4 w-4"/>{tab.name}{isAdminTabLocked(tab) && <Lock className="ml-auto h-3 w-3" aria-label="Upgrade required"/>}</DropdownMenuItem>)}<DropdownMenuItem onSelect={() => router.push('/team')}><Settings className="h-4 w-4"/>Team Settings</DropdownMenuItem></>}
+                    {((isSchoolMode && isPrimaryClubAuthority) || isEliteClubMode) && <DropdownMenuItem onSelect={() => router.push('/club')}><Building className="h-4 w-4"/>{isSchoolMode ? 'School Hub' : 'Club Hub'}</DropdownMenuItem>}
+                    <DropdownMenuSeparator/><DropdownMenuItem onSelect={() => router.push('/settings')}><User className="h-4 w-4"/>My Account</DropdownMenuItem>
+                  </DropdownMenuContent></DropdownMenu>
+                {((isSchoolMode && isPrimaryClubAuthority) || isEliteClubMode) && <Link href="/club" className="modern-header-hub">{isSchoolMode ? 'School Hub' : 'Club Hub'}</Link>}</nav>
+              </div> : <div className="flex items-center gap-4">
+                <SidebarTrigger className="h-11 w-11 shrink-0" />
                 <div className="hidden md:block">
                   <h2 className="text-xl lg:text-2xl font-black uppercase tracking-tighter text-foreground">
                     {user?.role === 'league_creator' && pathname === '/competition' ? 'Competition Hub' :
@@ -988,30 +973,18 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                       filteredCoordTabs.find(t => t.href === pathname)?.name || adminTabs.find(t => t.href === pathname)?.name || 'Dashboard')}
                   </h2>
                 </div>
-              </div>
-              <div className="md:hidden"><BrandLogo variant="light-background" className="h-6 w-28" /></div>
+              </div>}
+              {!isModernLayout && <div className="md:hidden"><BrandLogo variant="light-background" className="h-6 w-28" /></div>}
               <div className="flex items-center gap-2 md:gap-3">
                 {isStaff && <CreateAlertButton />}
                 <AlertsHistoryDialog>
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    aria-label={`Open alerts${unreadAlertsCount > 0 ? `, ${unreadAlertsCount} unread` : ''}`}
-                    className="h-10 w-10 md:h-11 md:w-11 rounded-2xl hover:bg-primary/5 text-foreground relative transition-all active:scale-95"
-                  >
-                    <Bell className="h-5 w-5" />
-                    {unreadAlertsCount > 0 && (
-                      <span className="absolute top-1 right-1 h-4 w-4 bg-primary text-[8px] font-black text-white rounded-full border-2 border-background flex items-center justify-center animate-pulse shadow-[0_0_10px_rgba(255,0,0,0.5)]">
-                        {unreadAlertsCount}
-                      </span>
-                    )}
-                  </Button>
+                  <AlertsBellButton unreadCount={unreadAlertsCount} />
                 </AlertsHistoryDialog>
                 <DropdownMenu>
                   <DropdownMenuTrigger asChild>
                     <button
                       aria-label="Open account menu"
-                      className={cn(isStoreDistribution ? "block" : "hidden sm:block", "focus:outline-none items-center gap-2 group")}
+                      className={cn(isModernLayout || isStoreDistribution ? "block" : "hidden sm:block", "focus:outline-none items-center gap-2 group")}
                     >
                       <Avatar className="h-8 w-8 md:h-10 md:w-10 border-2 border-background shadow-md transition-transform group-hover:scale-105 active:scale-95">
                         <AvatarImage src={user?.avatar} />
@@ -1041,17 +1014,17 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     
                     <DropdownMenuSeparator className="my-1 mx-2" />
                     
-                    <DropdownMenuItem onClick={() => router.push('/settings')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+                    <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/settings'); }} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
                       <User className="h-4 w-4 text-primary" /> Profile Settings
                     </DropdownMenuItem>
 
                     {isSuperAdmin && (
-                      <DropdownMenuItem onClick={() => router.push('/admin')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest text-primary focus:text-primary">
+                      <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/admin'); }} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest text-primary focus:text-primary">
                         <ShieldCheck className="h-4 w-4" /> Go to Admin Page
                       </DropdownMenuItem>
                     )}
                     
-                    <DropdownMenuItem onClick={() => router.push('/how-to')} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
+                    <DropdownMenuItem onClick={() => { if (confirmPageContextSwitch()) router.push('/how-to'); }} className="p-3 cursor-pointer rounded-xl font-black text-xs gap-3 uppercase tracking-widest">
                       <BookOpen className="h-4 w-4 text-primary" /> Help Guide
                     </DropdownMenuItem>
 
@@ -1146,8 +1119,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 expands naturally and never gets clipped by overflow:hidden */}
             <div className="flex flex-col flex-1 min-h-0 overflow-x-hidden">
               <BetaNotificationBanner />
-              <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-10 max-w-7xl mx-auto w-full custom-scrollbar pb-32 md:pb-10 text-foreground">
-                {children}
+              {isModernLayout && !isModernHome && <div className="modern-page-trail"><Link href="/dashboard">Dashboard</Link><ChevronRight className="h-3 w-3"/><span>{pathname === '/settings' ? 'My Account' : pathname === '/team' ? 'Team Settings' : pathname === '/club' ? (isSchoolMode ? 'School Hub' : 'Club Hub') : filteredCoordTabs.find(tab => pathname === tab.href || pathname.startsWith(`${tab.href}/`))?.name || adminTabs.find(tab => pathname.startsWith(tab.href))?.name || pathname.split('/').filter(Boolean).slice(-1)[0]?.replace(/-/g, ' ')}</span><small>{activeTeam?.name}</small></div>}
+              <main ref={workspaceMainRef} className={cn("flex-1 overflow-y-auto overflow-x-hidden mx-auto w-full custom-scrollbar text-foreground", isModernLayout ? cn("modern-home-main", !isModernHome && "modern-feature-page") : "p-4 md:p-10 max-w-7xl pb-32 md:pb-10")}>
+                {isModernLayout && !isModernHome ? <div className="modern-page-content">{children}</div> : children}
               </main>
             </div>
 
@@ -1200,6 +1174,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                     </SheetHeader>
                     <ScrollArea className="flex-1 px-6 pb-10">
                       <div className="space-y-6 pt-2">
+                        {(isStaff || isPrimaryClubAuthority || isSuperAdmin) && <PublicPageEntry className="w-full" onNavigate={() => setIsMoreMenuOpen(false)} />}
 
                         {/* ── INSTITUTION AUTHORITY BLOCK ─────────────────────────────────
                              Always shown when user is a school admin or elite club organizer,
@@ -1208,7 +1183,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                           <div className="space-y-2">
                             {/* Hub link — clears activeTeam so hub shows in institution mode */}
                             <button
-                              onClick={() => { setActiveTeam(null as any); router.push('/club'); setIsMoreMenuOpen(false); }}
+                              onClick={() => { if (!confirmPageContextSwitch(null)) return; setActiveTeam(null as any); router.push('/club'); setIsMoreMenuOpen(false); }}
                               className={cn(
                                 "w-full flex items-center justify-between p-4 rounded-2xl border bg-primary text-white transition-all active:scale-[0.98]",
                                 pathname === '/club' ? "ring-2 ring-white ring-offset-2 ring-offset-primary" : ""

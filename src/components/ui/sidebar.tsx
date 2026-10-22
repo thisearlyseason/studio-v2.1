@@ -33,6 +33,7 @@ type SidebarContext = {
   openMobile: boolean
   setOpenMobile: (open: boolean) => void
   isMobile: boolean
+  sidebarId: string
   toggleSidebar: () => void
 }
 
@@ -50,6 +51,7 @@ function useSidebar() {
 const SidebarProvider = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div"> & {
+    mobileBreakpoint?: number
     defaultOpen?: boolean
     open?: boolean
     onOpenChange?: (open: boolean) => void
@@ -57,6 +59,7 @@ const SidebarProvider = React.forwardRef<
 >(
   (
     {
+      mobileBreakpoint = 768,
       defaultOpen = true,
       open: openProp,
       onOpenChange: setOpenProp,
@@ -67,14 +70,32 @@ const SidebarProvider = React.forwardRef<
     },
     ref
   ) => {
-    const isMobile = useIsMobile()
+    const defaultMobile = useIsMobile()
+    const [compact, setCompact] = React.useState<boolean | null>(null)
+    const isMobile = compact ?? defaultMobile
+    const sidebarId = React.useId()
+    React.useEffect(() => {
+      const media = window.matchMedia(`(max-width: ${mobileBreakpoint - 1}px)`)
+      const update = () => setCompact(media.matches)
+      update()
+      media.addEventListener('change', update)
+      return () => media.removeEventListener('change', update)
+    }, [mobileBreakpoint])
     const [openMobile, setOpenMobile] = React.useState(false)
 
     const [_open, _setOpen] = React.useState(defaultOpen)
     const open = openProp ?? _open
+    React.useEffect(() => {
+      if (openProp !== undefined) return
+      const value = document.cookie.split('; ').find(item => item.startsWith(`${SIDEBAR_COOKIE_NAME}=`))?.split('=')[1]
+      if (value === 'true' || value === 'false') _setOpen(value === 'true')
+    }, [openProp])
     const setOpen = React.useCallback(
       (value: boolean | ((value: boolean) => boolean)) => {
         const openState = typeof value === "function" ? value(open) : value
+        if (!openState && document.getElementById(sidebarId)?.contains(document.activeElement)) {
+          document.querySelector<HTMLButtonElement>(`[data-sidebar-trigger="${sidebarId}"]`)?.focus()
+        }
         if (setOpenProp) {
           setOpenProp(openState)
         } else {
@@ -83,8 +104,10 @@ const SidebarProvider = React.forwardRef<
 
         document.cookie = `${SIDEBAR_COOKIE_NAME}=${openState}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`
       },
-      [setOpenProp, open]
+      [setOpenProp, open, sidebarId]
     )
+
+    React.useEffect(() => { if (!isMobile) setOpenMobile(false) }, [isMobile])
 
     const toggleSidebar = React.useCallback(() => {
       return isMobile
@@ -95,6 +118,8 @@ const SidebarProvider = React.forwardRef<
     React.useEffect(() => {
       const handleKeyDown = (event: KeyboardEvent) => {
         if (
+          !event.defaultPrevented &&
+          !(event.target instanceof Element && event.target.closest('input, textarea, [contenteditable="true"]')) &&
           event.key === SIDEBAR_KEYBOARD_SHORTCUT &&
           (event.metaKey || event.ctrlKey)
         ) {
@@ -111,6 +136,7 @@ const SidebarProvider = React.forwardRef<
 
     const contextValue = React.useMemo<SidebarContext>(
       () => ({
+        sidebarId,
         state,
         open,
         setOpen,
@@ -119,7 +145,7 @@ const SidebarProvider = React.forwardRef<
         setOpenMobile,
         toggleSidebar,
       }),
-      [state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar]
+      [sidebarId, state, open, setOpen, isMobile, openMobile, setOpenMobile, toggleSidebar]
     )
 
     return (
@@ -166,7 +192,7 @@ const Sidebar = React.forwardRef<
     },
     ref
   ) => {
-    const { isMobile, state, openMobile, setOpenMobile } = useSidebar()
+    const { isMobile, state, openMobile, setOpenMobile, sidebarId } = useSidebar()
 
     if (collapsible === "none") {
       return (
@@ -187,6 +213,11 @@ const Sidebar = React.forwardRef<
       return (
         <Sheet open={openMobile} onOpenChange={setOpenMobile} {...props}>
           <SheetContent
+            id={sidebarId}
+            onCloseAutoFocus={event => {
+              event.preventDefault()
+              document.querySelector<HTMLButtonElement>(`[data-sidebar-trigger="${sidebarId}"]`)?.focus()
+            }}
             data-sidebar="sidebar"
             data-mobile="true"
             className="w-(--sidebar-width) bg-white p-0 text-sidebar-foreground [&>button]:hidden"
@@ -200,7 +231,7 @@ const Sidebar = React.forwardRef<
             <SheetHeader className="sr-only">
               <SheetTitle>Tactical Navigation Menu</SheetTitle>
             </SheetHeader>
-            <div className="flex h-full w-full flex-col bg-white">{children}</div>
+            <div className="relative flex h-full w-full flex-col bg-white"><SidebarTrigger className="absolute right-2 top-2 z-10 h-11 w-11" />{children}</div>
           </SheetContent>
         </Sheet>
       )
@@ -239,6 +270,8 @@ const Sidebar = React.forwardRef<
           {...props}
         >
           <div
+            id={sidebarId}
+            inert={state === "collapsed" && collapsible === "offcanvas" || undefined}
             data-sidebar="sidebar"
             role="navigation"
             aria-label="Sidebar navigation"
@@ -258,18 +291,23 @@ const SidebarTrigger = React.forwardRef<
   React.ElementRef<typeof Button>,
   React.ComponentProps<typeof Button>
 >(({ className, onClick, ...props }, ref) => {
-  const { toggleSidebar } = useSidebar()
+  const { toggleSidebar, isMobile, openMobile, open, sidebarId } = useSidebar()
 
   return (
     <Button
       ref={ref}
+      type="button"
       data-sidebar="trigger"
+      data-sidebar-trigger={sidebarId}
+      aria-controls={sidebarId}
+      aria-expanded={isMobile ? openMobile : open}
+      aria-label={(isMobile ? openMobile : open) ? "Close sidebar" : "Open sidebar"}
       variant="ghost"
       size="icon"
       className={cn("h-7 w-7", className)}
       onClick={(event) => {
         onClick?.(event)
-        toggleSidebar()
+        if (!event.defaultPrevented) toggleSidebar()
       }}
       {...props}
     >

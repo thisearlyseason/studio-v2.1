@@ -1,5 +1,6 @@
 
 "use client";
+import { CoverEditor } from '@/components/team-home/cover-editor';
 
 import OrganizerGuide from '@/components/guidance/OrganizerGuide';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -598,6 +599,7 @@ export default function TeamProfilePage() {
               </div>
             </CardHeader>
             <CardContent className="p-8 space-y-8">
+               <CoverEditor key={activeTeam.id} />
                <div className="flex flex-col md:flex-row gap-8 items-center">
                   <div className="relative group shrink-0">
                     <input type="file" ref={logoInputRef} className="hidden" accept="image/*" onChange={handleLogoChange} />
