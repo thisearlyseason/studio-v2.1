@@ -35,7 +35,7 @@ export function usePendingWaivers() {
     );
   }, [db, activeTeam?.id, isStaff, isClubManager, isSuperAdmin, signingMembers]);
 
-  const { data: localSignedFiles } = useCollection<TeamFile>(localFilesQuery);
+  const { data: localSignedFiles, isLoading: filesLoading, error: filesError } = useCollection<TeamFile>(localFilesQuery);
 
   const allSignedFilesRaw = useMemo(() => {
     const combined = [...(localSignedFiles || [])];
@@ -49,7 +49,7 @@ export function usePendingWaivers() {
     return query(collection(db, 'teams', activeTeam.id, 'documents'), orderBy('createdAt', 'desc'));
   }, [activeTeam?.id, db]);
 
-  const { data: documents } = useCollection<TeamDocument>(docsQuery);
+  const { data: documents, isLoading: docsLoading, error: docsError } = useCollection<TeamDocument>(docsQuery);
 
   const visibleWaiverDocuments = useMemo(() => getVisibleWaiverDocuments({
     documents: documents || [],
@@ -100,5 +100,5 @@ export function usePendingWaivers() {
     });
   }, [documents, realTimeSignedDocIds, signingMembers, activeTeam]);
 
-  return { pendingDocs, signingMembers, visibleSignedFiles, realTimeSignedDocIds, documents, visibleWaiverDocuments };
+  return { isLoading: filesLoading || docsLoading, error: filesError || docsError, pendingDocs, signingMembers, visibleSignedFiles, realTimeSignedDocIds, documents, visibleWaiverDocuments };
 }

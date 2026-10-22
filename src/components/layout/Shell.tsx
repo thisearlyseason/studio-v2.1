@@ -1,6 +1,9 @@
 "use client";
 
-import React, { useState, useEffect, memo, useMemo } from 'react';
+import '@/components/team-home/modern-team-home.css';
+
+
+import React, { useState, useEffect, memo, useMemo, useRef } from 'react';
 import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { 
@@ -98,6 +101,7 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import BrandLogo from '@/components/BrandLogo';
+import { useTeamNavigation, adminTabs } from '@/components/team-home/use-team-navigation';
 import { BetaNotificationBanner } from '@/components/layout/BetaNotificationBanner';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { 
@@ -118,28 +122,7 @@ import { hasCoachesCornerEntitlement } from '@/lib/coaches-corner-entitlement';
 import { cancelDemoExitPending, clearBrowserSession, clearDemoExitPending, markDemoExitPending, requireDemoExitRetry } from '@/lib/client-auth';
 import { deletePushDevice } from '@/lib/client-push-registration';
 import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
-import { isTeamModuleRouteDisabled } from '@/lib/team-module-visibility';
 import { isStoreDistribution } from '@/lib/app-distribution';
-const coordinationTabs = [
-  { name: 'Feed', href: '/feed', icon: Radio, pro: true },
-  { name: 'Schedule', href: '/events', icon: CalendarDays, pro: false },
-  { name: 'Roster', href: '/roster', icon: Users, pro: false },
-  { name: 'Practice', href: '/practice', icon: Dumbbell, pro: true },
-  { name: 'Competition Hub', href: '/competition', icon: Medal, pro: false },
-  { name: 'Leagues', href: '/leagues', icon: Medal, pro: false },
-  { name: 'Tournaments', href: '/manage-tournaments', icon: Trophy, pro: false },
-  { name: 'Scorekeeping', href: '/games', icon: Trophy, pro: false },
-  { name: 'Volunteer', href: '/volunteers', icon: HandHelping, pro: true },
-  { name: 'Fundraising', href: '/fundraising', icon: PiggyBank, pro: true },
-  { name: 'Team Chat', href: '/chats', icon: MessageCircle, pro: false },
-  { name: 'Library', href: '/files', icon: FolderClosed, pro: false },
-];
-
-const adminTabs = [
-  { name: 'Coach Tools', href: '/coaches-corner', icon: PenTool, pro: true, desc: 'Waivers and documents' },
-  { name: 'Facilities', href: '/facilities', icon: MapPin, pro: false, desc: 'Venues and fields' },
-  { name: 'Equipment', href: '/equipment', icon: Package, pro: true, desc: 'Team inventory' },
-];
 
 const SidebarItem = memo(({ tab, isActive, isLocked }: { tab: any, isActive: boolean, isLocked: boolean }) => {
   const Icon = tab.icon;
@@ -410,13 +393,17 @@ export default function Shell({ children }: { children: React.ReactNode }) {
     unreadAlertsCount, purchasePro, isSchoolMode, isSchoolAdmin, isEliteAccount, isEliteClubMode,
     deleteTeam, deleteAccount, isSuperAdmin
   } = useTeam();
+  const isModernLayout = user?.homeScreenLayout === 'modern';
+  const isModernHome = isModernLayout && pathname === '/dashboard' && Boolean(activeTeam);
+  useEffect(() => {
+    document.documentElement.dataset.squadLayout = isModernLayout ? 'modern' : 'classic';
+    return () => { delete document.documentElement.dataset.squadLayout; };
+  }, [isModernLayout]);
+  const workspaceMainRef = useRef<HTMLElement>(null);
+  useEffect(() => {
+    if (isModernLayout && !window.location.hash) workspaceMainRef.current?.scrollTo({ top: 0, left: 0, behavior: 'auto' });
+  }, [pathname, isModernLayout]);
   const auth = useAuth();
-  const canAccessCoachesCorner = hasCoachesCornerEntitlement(activeTeam, isSuperAdmin);
-  const isAdminTabLocked = (tab: (typeof adminTabs)[number]) =>
-    tab.href === '/coaches-corner'
-      ? !canAccessCoachesCorner
-      : tab.pro && !isPro;
-  const canManageFacilities = isSuperAdmin || !activeTeam || activeTeam.ownerUserId === auth?.currentUser?.uid;
   const [trialNow, setTrialNow] = useState(() => Date.now());
   useEffect(() => {
     if (user?.subscription_status !== 'trialing' || !user?.trial_end) return;
@@ -502,65 +489,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
 
   const showInstallBtn = !isStoreDistribution && !isStandalone && !installDismissed;
 
-  const roleNavigationOrder = isParent
-    ? ['/events', '/chats', '/files', '/volunteers', '/competition']
-    : isPlayer
-      ? ['/events', '/chats', '/practice', '/roster']
-      : user?.role === 'league_creator'
-        ? ['/competition', '/events', '/games', '/roster', '/chats']
-        : ['/events', '/roster', '/chats', '/practice', '/games'];
-
-  const navigationPriority = (href: string) => {
-    const index = roleNavigationOrder.indexOf(href);
-    return index === -1 ? roleNavigationOrder.length : index;
-  };
-
-  const filteredCoordTabs = coordinationTabs
-    .filter(tab => {
-      // League creators without a team: only show Competition Hub so they can manage leagues
-      if (user?.role === 'league_creator' && !activeTeam) {
-        return tab.name === 'Competition Hub';
-      }
-
-      if (!authorizeDashboardRoute(tab.href, {
-        role: user?.role,
-        plan_type: user?.plan_type,
-        isPrimaryClubAuthority,
-      }, isSuperAdmin ? 'superadmin' : undefined).allowed) return false;
-
-      // Module Visibility Settings
-      if (isTeamModuleRouteDisabled(tab.href, activeTeam?.features)) return false;
-
-      // Feed is filtered by plan/feature
-      if (tab.name === 'Feed') return hasFeature?.('live_feed_read') && !(isParent && activeTeam?.parentFeedEnabled === false);
-      // Roster: hide for school admins in institution mode (they use the School Hub instead)
-      if (tab.name === 'Roster' && isSchoolMode && isPrimaryClubAuthority && activeTeam?.type === 'school') return false;
-      // Fundraising: staff-only administrative module — players and parents cannot access it
-      if (tab.name === 'Fundraising' && !isStaff) return false;
-      return true;
-    })
-    .map(tab => {
-      if (tab.href === '/competition' && isSchoolMode) {
-        return { ...tab, name: 'Program League Hub' };
-      }
-      return tab;
-    })
-    .sort((a, b) => navigationPriority(a.href) - navigationPriority(b.href));
-
-  // Keep competition destinations discoverable even when the institution-only hub is unavailable.
+  const { filteredCoordTabs, filteredAdminTabs, isAdminTabLocked } = useTeamNavigation();
   const primaryCoordTabs = filteredCoordTabs.filter((tab, index) => index < 5 || ['/leagues', '/manage-tournaments'].includes(tab.href));
   const additionalCoordTabs = filteredCoordTabs.filter(tab => !primaryCoordTabs.includes(tab));
-
-  const filteredAdminTabs = adminTabs.filter(tab => {
-    // League creators without a team: show Facilities (free) + Equipment (locked if free)
-    if (user?.role === 'league_creator' && !activeTeam) {
-      return tab.name === 'Facilities' || tab.name === 'Equipment';
-    }
-    if (tab.name === 'Facilities' && !canManageFacilities) return false;
-    if (isTeamModuleRouteDisabled(tab.href, activeTeam?.features)) return false;
-    return true;
-  });
-
   // The institution hub is a route-level context. A previously selected squad can
   // remain active for later navigation, but it must not appear selected on the hub.
   const isInstitutionHubRoute = pathname === '/club';
@@ -598,7 +529,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
           ]
         : isParent
           ? [
-              { name: 'Family', href: '/family', icon: Baby },
+              { name: user?.homeScreenLayout === 'modern' ? 'Home' : 'Family', href: user?.homeScreenLayout === 'modern' ? '/dashboard' : '/family', icon: user?.homeScreenLayout === 'modern' ? Home : Baby },
               { name: 'Schedule', href: '/calendar', icon: CalendarDays },
               ...(activeTeam?.features?.tacticalChat !== false ? [{ name: 'Chat', href: '/chats', icon: MessageCircle }] : []),
               { name: 'Waivers', href: '/files', icon: ShieldCheck },
@@ -677,10 +608,10 @@ export default function Shell({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <SidebarProvider className="relative h-full min-h-0">
-      <div className="flex flex-col h-full w-full bg-background selection:bg-primary/20">
+    <SidebarProvider className={cn("relative h-full min-h-0", isModernLayout && "modern-app")}>
+      <div className="modern-shell-frame flex flex-col h-full w-full bg-background selection:bg-primary/20">
         <div className="flex min-h-0 flex-1 overflow-hidden">
-          <Sidebar 
+          {!isModernLayout && <Sidebar
             className="absolute inset-y-0 h-full border-r bg-white w-72 shrink-0 shadow-sm **:data-[sidebar=sidebar]:overflow-y-auto **:data-[sidebar=sidebar]:overscroll-contain **:data-[sidebar=sidebar]:touch-pan-y"
             collapsible="offcanvas"
           >
@@ -972,11 +903,28 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 </div>
               )}
             </SidebarFooter>
-          </Sidebar>
+          </Sidebar>}
 
           <div className="flex min-w-0 flex-col flex-1 min-h-0">
-            <header className="sticky top-0 z-40 w-full bg-background/80 backdrop-blur-md border-b h-16 md:h-20 flex items-center px-4 md:px-10 justify-between text-foreground">
-              <div className="flex items-center gap-4">
+            <header className={cn("sticky top-0 z-40 w-full bg-background/95 backdrop-blur-md border-b h-16 md:h-20 flex items-center px-4 md:px-10 justify-between text-foreground", isModernLayout && "modern-home-header")}>
+              {isModernLayout ? <div className="modern-header-identity">
+                <Link href="/dashboard" className="modern-header-brand" aria-label={`${activeTeam?.name || 'The Squad'} dashboard`}>
+                  {activeTeam?.teamLogoUrl ? <Avatar className="h-10 w-10 rounded-lg"><AvatarImage src={activeTeam.teamLogoUrl}/><AvatarFallback>{activeTeam.name?.[0]}</AvatarFallback></Avatar> : <BrandLogo variant="light-background" className="h-9 w-20 shrink-0"/>}
+                  <span>{activeTeam?.name || 'The Squad'}</span>
+                </Link>
+                <DropdownMenu open={mobileSwitcherOpen} onOpenChange={setMobileSwitcherOpen}>
+                  <DropdownMenuTrigger asChild><Button variant="ghost" aria-label="Switch squad" className="modern-header-switch"><span className="hidden lg:inline">{activeTeam?.name}</span><ChevronDown className="h-4 w-4"/></Button></DropdownMenuTrigger>
+                  <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} user={user} isSchoolMode={isSchoolMode} isPrimaryClubAuthority={isPrimaryClubAuthority} isEliteAccount={isEliteAccount} isEliteClubMode={isEliteClubMode} onClose={() => setMobileSwitcherOpen(false)} />
+                </DropdownMenu>
+                <nav aria-label="Main navigation" className="modern-header-nav"><Link href="/dashboard" aria-current={pathname === '/dashboard' ? 'page' : undefined}>Dashboard</Link>
+                  <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="modern-tools-trigger" aria-label="Team tools"><Menu className="h-4 w-4"/><span className="modern-tools-label">Team tools</span></Button></DropdownMenuTrigger><DropdownMenuContent align="start" className="modern-tools-menu">
+                    <DropdownMenuLabel>Team tools</DropdownMenuLabel>
+                    {filteredCoordTabs.map(tab => <DropdownMenuItem key={tab.href} onSelect={() => { if (tab.pro && !isPro) purchasePro(); else router.push(tab.href); }}><tab.icon className="h-4 w-4"/>{tab.name}{tab.pro && !isPro && <Lock className="ml-auto h-3 w-3" aria-label="Upgrade required"/>}</DropdownMenuItem>)}
+                    {isStaff && <><DropdownMenuSeparator/>{filteredAdminTabs.map(tab => <DropdownMenuItem key={tab.href} onSelect={() => { if (isAdminTabLocked(tab)) purchasePro(); else router.push(tab.href); }}><tab.icon className="h-4 w-4"/>{tab.name}{isAdminTabLocked(tab) && <Lock className="ml-auto h-3 w-3" aria-label="Upgrade required"/>}</DropdownMenuItem>)}<DropdownMenuItem onSelect={() => router.push('/team')}><Settings className="h-4 w-4"/>Team Settings</DropdownMenuItem></>}
+                    <DropdownMenuSeparator/><DropdownMenuItem onSelect={() => router.push('/settings')}><User className="h-4 w-4"/>My Account</DropdownMenuItem>
+                  </DropdownMenuContent></DropdownMenu>
+                {((isSchoolMode && isPrimaryClubAuthority) || isEliteClubMode) && <Link href="/club">{isSchoolMode ? 'School Hub' : 'Club Hub'}</Link>}</nav>
+              </div> : <div className="flex items-center gap-4">
                 <div className="md:hidden h-10 w-10" aria-hidden="true" />
                 <div className="hidden md:block">
                   <h2 className="text-xl lg:text-2xl font-black uppercase tracking-tighter text-foreground">
@@ -988,8 +936,8 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                       filteredCoordTabs.find(t => t.href === pathname)?.name || adminTabs.find(t => t.href === pathname)?.name || 'Dashboard')}
                   </h2>
                 </div>
-              </div>
-              <div className="md:hidden"><BrandLogo variant="light-background" className="h-6 w-28" /></div>
+              </div>}
+              {!isModernLayout && <div className="md:hidden"><BrandLogo variant="light-background" className="h-6 w-28" /></div>}
               <div className="flex items-center gap-2 md:gap-3">
                 {isStaff && <CreateAlertButton />}
                 <AlertsHistoryDialog>
@@ -1011,7 +959,7 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                   <DropdownMenuTrigger asChild>
                     <button
                       aria-label="Open account menu"
-                      className={cn(isStoreDistribution ? "block" : "hidden sm:block", "focus:outline-none items-center gap-2 group")}
+                      className={cn(isModernLayout || isStoreDistribution ? "block" : "hidden sm:block", "focus:outline-none items-center gap-2 group")}
                     >
                       <Avatar className="h-8 w-8 md:h-10 md:w-10 border-2 border-background shadow-md transition-transform group-hover:scale-105 active:scale-95">
                         <AvatarImage src={user?.avatar} />
@@ -1146,8 +1094,9 @@ export default function Shell({ children }: { children: React.ReactNode }) {
                 expands naturally and never gets clipped by overflow:hidden */}
             <div className="flex flex-col flex-1 min-h-0 overflow-x-hidden">
               <BetaNotificationBanner />
-              <main className="flex-1 overflow-y-auto overflow-x-hidden p-4 md:p-10 max-w-7xl mx-auto w-full custom-scrollbar pb-32 md:pb-10 text-foreground">
-                {children}
+              {isModernLayout && !isModernHome && <div className="modern-page-trail"><Link href="/dashboard">Dashboard</Link><ChevronRight className="h-3 w-3"/><span>{pathname === '/settings' ? 'My Account' : pathname === '/team' ? 'Team Settings' : pathname === '/club' ? (isSchoolMode ? 'School Hub' : 'Club Hub') : filteredCoordTabs.find(tab => pathname === tab.href || pathname.startsWith(`${tab.href}/`))?.name || adminTabs.find(tab => pathname.startsWith(tab.href))?.name || pathname.split('/').filter(Boolean).slice(-1)[0]?.replace(/-/g, ' ')}</span><small>{activeTeam?.name}</small></div>}
+              <main ref={workspaceMainRef} className={cn("flex-1 overflow-y-auto overflow-x-hidden mx-auto w-full custom-scrollbar text-foreground", isModernLayout ? cn("modern-home-main", !isModernHome && "modern-feature-page") : "p-4 md:p-10 max-w-7xl pb-32 md:pb-10")}>
+                {isModernLayout && !isModernHome ? <div className="modern-page-content">{children}</div> : children}
               </main>
             </div>
 

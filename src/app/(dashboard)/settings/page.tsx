@@ -1,4 +1,5 @@
 "use client";
+import { HomeLayoutSelector } from '@/components/team-home/layout-selector';
 
 import { PasswordInput } from '@/components/ui/password-input';
 
@@ -505,6 +506,8 @@ export default function SettingsPage() {
           <LogOut className="h-4 w-4" /> Sign Out
         </Button>
       </div>
+
+      <section id="appearance" className="scroll-mt-24 space-y-3"><h2 className="text-2xl font-bold">Appearance</h2><HomeLayoutSelector /></section>
 
       <Card className="rounded-[3rem] border-none shadow-2xl overflow-hidden bg-white ring-1 ring-black/5">
         <div className="bg-black h-32 w-full relative overflow-hidden">

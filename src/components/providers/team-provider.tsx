@@ -84,6 +84,8 @@ export type UserProfile = {
   betaDemoSeeded?: boolean;
   notificationsEnabled?: boolean; // Push notification preference — persisted to Firestore
   upcomingEventNotificationsEnabled?: boolean;
+  homeScreenLayout?: 'classic' | 'modern';
+  homeLayoutInvitationDismissed?: boolean;
 };
 
 export type PlayerProfile = {
@@ -240,6 +242,7 @@ export type Team = {
   description?: string;
   teamLogoUrl?: string;
   heroImageUrl?: string;
+  homeCover?: { id: string; urls: { width: number; url: string }[]; focalX: number; focalY: number };
   isPro?: boolean;
   planId?: string;
   clubId?: string;
@@ -882,6 +885,7 @@ interface TeamContextType {
   isEliteClubMode: boolean;
   householdEvents: TeamEvent[];
   activeTeamEvents: TeamEvent[];
+  homeDataStatus: { eventsLoading: boolean; eventsError: boolean; alertsLoading: boolean; alertsError: boolean };
   games: any[];
   householdGames: any[];
   householdBalance: number;
@@ -1374,7 +1378,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
   }, [membersData, hydrateEmails]);
 
-  const members = hydratedMembers;
+  const members = membersData === hydratedMembers ? hydratedMembers : (membersData || []);
   const isMembersLoading = isMembersInitialLoading || isHydrating;
 
   const getMember = useCallback((id: string | null | undefined) => {
@@ -1386,7 +1390,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (!db || !activeTeam?.id) return null;
     return query(collection(db, 'teams', activeTeam.id, 'events'), orderBy('date', 'asc'));
   }, [db, activeTeam?.id]);
-  const { data: activeEventsData } = useCollection<TeamEvent>(activeEventsQuery);
+  const { data: activeEventsData, isLoading: homeEventsLoading, error: homeEventsError } = useCollection<TeamEvent>(activeEventsQuery);
   const activeTeamEvents = useMemo(
     () => (activeEventsData || [])
       .map(event => normalizeTeamEvent(event, activeTeam?.id))
@@ -1442,6 +1446,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       stopForegroundRefresh();
     };
   }, [loadAlertHistory]);
+  const homeDataStatus = useMemo(() => ({ eventsLoading: homeEventsLoading, eventsError: Boolean(homeEventsError), alertsLoading: false, alertsError: Boolean(alertHistoryError) }), [homeEventsLoading, homeEventsError, alertHistoryError]);
   
   const seenAlertIds = useMemo(() => userProfile?.seenAlertIds || [], [userProfile?.seenAlertIds]);
 
@@ -1952,10 +1957,10 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   // Parent Login Redirect: Automatically push parents to the Family Hub if they land on the main dashboard
   useEffect(() => {
-    if (isAuthResolved && !isTeamsLoading && teams.length > 0 && isParent && !isStaff && pathname === '/dashboard') {
+    if (isAuthResolved && !isTeamsLoading && teams.length > 0 && isParent && !isStaff && pathname === '/dashboard' && userProfile?.homeScreenLayout !== 'modern') {
       router.push('/family');
     }
-  }, [isAuthResolved, isTeamsLoading, teams.length, isParent, isStaff, pathname, router]);
+  }, [isAuthResolved, isTeamsLoading, teams.length, isParent, isStaff, pathname, router, userProfile?.homeScreenLayout]);
 
 
   const formatTime = useCallback((iso: string) => { try { return format(new Date(iso), 'h:mm a'); } catch (e) { return '--:--'; } }, []);
@@ -3665,7 +3670,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     isEliteAccount,
     isEliteClubMode,
     isSchoolMode,
-    isSchoolAdmin, householdEvents: householdEvents || [], householdGames: householdGames || [], activeTeamEvents, games, householdBalance, myChildren, plans, isPlansLoading, proQuotaStatus,
+    isSchoolAdmin, householdEvents: householdEvents || [], householdGames: householdGames || [], activeTeamEvents, homeDataStatus, games, householdBalance, myChildren, plans, isPlansLoading, proQuotaStatus,
     deleteFundraisingOpportunity, addGame, updateGame, canAddProTeam: (proQuotaStatus.remaining > 0),
     isPaywallOpen, setIsPaywallOpen, purchasePro,
     hasFeature, alerts, alertHistoryError, refreshAlertHistory: loadAlertHistory, unreadAlertsCount,
@@ -3709,7 +3714,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     },
   }), [
     db, userProfile, activeTeam, setActiveTeam, teamsRaw, isTeamsLoading, members, isMembersLoading, firebaseUser, storage,
-    isStaff, isPro, isStarter, householdEvents, householdGames, activeTeamEvents, games, myChildren, plans, isPlansLoading, isPaywallOpen,
+    isStaff, isPro, isStarter, householdEvents, householdGames, activeTeamEvents, homeDataStatus, games, myChildren, plans, isPlansLoading, isPaywallOpen,
     isSeedingDemo, setIsSeedingDemo, getCalendarFeedUrl,
     seenAlertIds, alerts, alertHistoryError, loadAlertHistory, unreadAlertsCount, isSuperAdmin, isClubManager, isPrimaryClubAuthority, isEliteAccount, hasFeature, proQuotaStatus,
     totalStorageUsed,

@@ -1,0 +1,10 @@
+import test, { before, after } from 'node:test';
+import { readFileSync } from 'node:fs';
+import { initializeTestEnvironment, assertSucceeds, assertFails } from '@firebase/rules-unit-testing';
+import { doc, setDoc, updateDoc } from 'firebase/firestore';
+let env;
+before(async()=>{ env=await initializeTestEnvironment({projectId:'demo-modern-home-rules',firestore:{host:(process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080').split(':')[0],port:Number((process.env.FIRESTORE_EMULATOR_HOST || '127.0.0.1:8080').split(':')[1]),rules:readFileSync('firestore.rules','utf8')}});await env.withSecurityRulesDisabled(async c=>{ const db=c.firestore(); await setDoc(doc(db,'users','home-owner'),{name:'Owner',role:'coach'});await setDoc(doc(db,'users','home-other'),{name:'Other',role:'adult_player'});await setDoc(doc(db,'teams','home-team'),{ownerUserId:'home-owner'}); }); });
+after(async()=>env?.cleanup());
+test('personal layout and dismissal persist only on the owner profile',async()=>{const db=env.authenticatedContext('home-owner',{email_verified:true}).firestore();await assertSucceeds(updateDoc(doc(db,'users','home-owner'),{homeScreenLayout:'modern',homeLayoutInvitationDismissed:true}));await assertFails(updateDoc(doc(db,'users','home-other'),{homeScreenLayout:'modern'}));});
+test('invalid preference values and team-scoped personal layout are rejected',async()=>{const db=env.authenticatedContext('home-other',{email_verified:true}).firestore();await assertFails(updateDoc(doc(db,'users','home-other'),{homeScreenLayout:'broken'}));await assertFails(updateDoc(doc(db,'users','home-other'),{homeLayoutInvitationDismissed:'yes'}));await assertFails(updateDoc(doc(db,'teams','home-team'),{homeScreenLayout:'modern'}));});
+test('cover fields cannot bypass trusted processing even for team owners',async()=>{const db=env.authenticatedContext('home-owner',{email_verified:true}).firestore();await assertFails(updateDoc(doc(db,'teams','home-team'),{homeCover:{id:'unvalidated'}}));});

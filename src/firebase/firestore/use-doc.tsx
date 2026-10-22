@@ -43,6 +43,7 @@ export function useDoc<T = any>(
 ): UseDocResult<T> {
   type StateDataType = WithId<T> | null;
 
+  const [resolvedRef, setResolvedRef] = useState<typeof memoizedDocRef>(undefined);
   const [data, setData] = useState<StateDataType>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true); // Start true to prevent flash of empty state
   const [error, setError] = useState<FirestoreError | Error | null>(null);
@@ -62,6 +63,7 @@ export function useDoc<T = any>(
     const unsubscribe = onSnapshot(
       memoizedDocRef,
       (snapshot: DocumentSnapshot<DocumentData>) => {
+        setResolvedRef(memoizedDocRef);
         if (snapshot.exists()) {
           setData({ ...(snapshot.data() as T), id: snapshot.id });
         } else {
@@ -72,6 +74,7 @@ export function useDoc<T = any>(
         setIsLoading(false);
       },
       (error: FirestoreError) => {
+        setResolvedRef(memoizedDocRef);
         // Suppress Firestore SDK internal assertion/state errors — these are SDK bugs,
         // not application errors, triggered during HMR or rapid listener teardown.
         if (error.message?.includes('INTERNAL ASSERTION FAILED') || error.message?.includes('Unexpected state')) {
@@ -122,5 +125,6 @@ export function useDoc<T = any>(
     };
   }, [memoizedDocRef]); // Re-run if the memoizedDocRef changes.
 
-  return { data, isLoading, error };
+  const current = resolvedRef === memoizedDocRef;
+  return { data: current ? data : null, isLoading: Boolean(memoizedDocRef) && (!current || isLoading), error: current ? error : null };
 }

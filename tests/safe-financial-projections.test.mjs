@@ -1,3 +1,4 @@
+import { fileURLToPath } from 'node:url';
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {build} from 'esbuild';
@@ -15,7 +16,7 @@ async function load(routePath, initial, auth={uid:'owner'}, access={allowed:true
  '@/lib/server-stripe-connect':`export async function resolveTeamConnectAccount(){throw Error('Provider access forbidden')}`,
  '@/lib/store-request-guard':`export function storePurchaseResponse(){return null}`,
  };
- const output=await build({entryPoints:[new URL('../src/app/api/'+routePath+'/route.ts',import.meta.url).pathname],bundle:true,platform:'node',format:'esm',write:false,logLevel:'silent',plugins:[{name:'local-finance-boundaries',setup(b){b.onResolve({filter:/.*/},a=>Object.hasOwn(stubs,a.path)?{path:a.path,namespace:'stub'}:null);b.onLoad({filter:/.*/,namespace:'stub'},a=>({contents:stubs[a.path],loader:'js'}))}}]});
+ const output=await build({entryPoints:[fileURLToPath(new URL('../src/app/api/'+routePath+'/route.ts',import.meta.url))],bundle:true,platform:'node',format:'esm',write:false,logLevel:'silent',plugins:[{name:'local-finance-boundaries',setup(b){b.onResolve({filter:/.*/},a=>Object.hasOwn(stubs,a.path)?{path:a.path,namespace:'stub'}:null);b.onLoad({filter:/.*/,namespace:'stub'},a=>({contents:stubs[a.path],loader:'js'}))}}]});
  const route=await import('data:text/javascript;base64,'+Buffer.from(output.outputFiles[0].text).toString('base64'));return {route,records,dispose(){delete globalThis[key]}};
 }
 function req(query='',body,headers={}){const r=new Request('http://127.0.0.1/local'+query,{method:body?'POST':'GET',headers:{'content-type':'application/json',...headers},...(body?{body:JSON.stringify(body)}:{})});r.nextUrl=new URL(r.url);return r}

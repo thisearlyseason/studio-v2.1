@@ -44,6 +44,7 @@ export function useCollection<T = any>(
   type ResultItemType = WithId<T>;
   type StateDataType = ResultItemType[] | null;
 
+  const [resolvedTarget, setResolvedTarget] = useState<typeof memoizedTargetRefOrQuery>(undefined);
   const [data, setData] = useState<StateDataType>(null);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [error, setError] = useState<FirestoreError | Error | null>(null);
@@ -106,12 +107,14 @@ export function useCollection<T = any>(
             ...(sourceTeamId ? { teamId: sourceTeamId } : {}),
           });
         }
+        setResolvedTarget(memoizedTargetRefOrQuery);
         setData(results);
         setError(null);
         setIsLoading(false);
       },
       (err: FirestoreError) => {
         if (!isMounted || snapshotPaused) return;
+        setResolvedTarget(memoizedTargetRefOrQuery);
         
         // 1. SDK Internal Assertion Crashes (ca9, b815 and similar)
         // These are SDK bugs that occur during rapid updates or persistence mismatches.
@@ -139,6 +142,7 @@ export function useCollection<T = any>(
           // UI renders normally instead of entering an error state.
           if (!path) {
             console.warn('[useCollection] collectionGroup permission-denied (transient startup race — rules are authoritative fix):', err.message?.slice(0, 120));
+            setError(err);
             setData([]);
             setIsLoading(false);
             return;
@@ -205,5 +209,6 @@ export function useCollection<T = any>(
     };
   }, [memoizedTargetRefOrQuery]);
 
-  return { data, isLoading, error };
+  const current = resolvedTarget === memoizedTargetRefOrQuery;
+  return { data: current ? data : null, isLoading: Boolean(memoizedTargetRefOrQuery) && (!current || isLoading), error: current ? error : null };
 }

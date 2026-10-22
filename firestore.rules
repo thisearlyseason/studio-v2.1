@@ -250,9 +250,12 @@ service cloud.firestore {
         request.resource.data.diff(resource.data).affectedKeys().hasOnly([
           'name', 'fullName', 'email', 'phone', 'avatar', 'avatarUrl',
           'notificationsEnabled', 'upcomingEventNotificationsEnabled',
+          'homeScreenLayout', 'homeLayoutInvitationDismissed',
           'seenAlertIds', 'clubName', 'clubDescription',
           'schoolName', 'institutionTitle'
-        ])
+        ]) &&
+        (!request.resource.data.keys().hasAny(['homeScreenLayout']) || request.resource.data.homeScreenLayout in ['classic', 'modern']) &&
+        (!request.resource.data.keys().hasAny(['homeLayoutInvitationDismissed']) || request.resource.data.homeLayoutInvitationDismissed is bool)
       );
       allow delete: if false;
 
@@ -311,6 +314,7 @@ service cloud.firestore {
             ])
           )
         ) &&
+        !request.resource.data.diff(resource.data).affectedKeys().hasAny(['homeCover']) &&
         request.resource.data.ownerUserId == resource.data.ownerUserId &&
         request.resource.data.get('isPro', false) == resource.data.get('isPro', false) &&
         request.resource.data.get('planId', 'free') == resource.data.get('planId', 'free') &&

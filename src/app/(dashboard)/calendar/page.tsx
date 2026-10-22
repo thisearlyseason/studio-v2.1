@@ -2,7 +2,8 @@
 "use client";
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { eventDate, expandTournamentMatches } from '@/lib/team-home-events';
 import { 
   format, 
   startOfMonth, 
@@ -961,6 +962,12 @@ export default function MasterCalendarPage() {
   const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
   const [selectedChildIds, setSelectedChildIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
+  const homeEventParams = useSearchParams();
+  const [detailTeamId, setDetailTeamId] = useState<string | null>(null);
+  useEffect(() => {
+    const eventId = homeEventParams.get('event');
+    if (eventId) { setActiveDetailedEventId(eventId); setDetailTeamId(homeEventParams.get('team')); }
+  }, [homeEventParams]);
   const [activeDetailedEventId, setActiveDetailedEventId] = useState<string | null>(null);
   const handledReminderDeepLink = useRef<string | null>(null);
 
@@ -986,13 +993,13 @@ export default function MasterCalendarPage() {
     
     // Add standard events
     [...(householdEvents || []), ...(activeTeamEvents || [])].forEach(e => {
-      map.set(e.id, e);
+      map.set(`${e.teamId}:${e.id}`, e);
     });
 
     // Synthesis: Include household matches (games)
     (householdGames || []).forEach(g => {
-      if (!map.has(g.id)) {
-        map.set(g.id, {
+      if (!map.has(`${g.teamId}:${g.id}`)) {
+        map.set(`${g.teamId}:${g.id}`, {
           ...g,
           eventType: 'game',
           title: g.title || `Match: ${g.team1} vs ${g.team2}`,
@@ -1026,50 +1033,8 @@ export default function MasterCalendarPage() {
       } as TeamEvent);
     });
 
-    // Synthesis: Expand tournament games into individual match entries
-    const myTeamIds = (teams || []).map(t => t.id);
-    
-    [...(householdEvents || []), ...(activeTeamEvents || [])].forEach(e => {
-      if (e.isTournament && e.tournamentGames && e.tournamentGames.length > 0) {
-          e.tournamentGames.forEach((game: any, idx: number) => {
-            if (!game.date) return;
-            
-            // CRITICAL FILTER: Only expand matches the ACTIVE TEAM is actually playing in
-            const isMyGame = activeTeam && (
-              game.team1Id === activeTeam.id ||
-              game.team2Id === activeTeam.id ||
-              game.team1 === activeTeam.teamName ||
-              game.team2 === activeTeam.teamName
-            );
-
-            if (!isMyGame) return;
-
-            const isTBD = (game.team1 || '').toLowerCase().includes('tbd') || (game.team2 || '').toLowerCase().includes('tbd');
-            if (isTBD) return;
-
-            const matchId = game.id || `${e.id}_match_${idx}`;
-            if (!map.has(matchId)) {
-              // Derive a human-readable label — prefer leagueName from parent, fall back to tournament title
-              const matchLabel = (e as any).leagueName || (e.title ? e.title.replace(/^\[Tournament\]\s*/i, '').trim() : undefined);
-              map.set(matchId, {
-                ...e,
-                id: matchId,
-                title: `[Match] ${game.team1} vs ${game.team2}`,
-                date: game.date,
-                // CRITICAL: Override the parent tournament's endDate so this match only spans its own day
-                endDate: game.date,
-                startTime: game.time,
-                location: game.location || e.location,
-                eventType: 'tournament',
-                isTournamentMatch: true,
-                round: game.round,
-                parentTournamentId: e.id,
-                matchTeamIds: [game.team1Id, game.team2Id].filter(Boolean),
-                leagueName: matchLabel
-              } as any);
-            }
-          });
-      }
+    expandTournamentMatches([...(householdEvents || []), ...(activeTeamEvents || [])], activeTeam).forEach(match => {
+      if (!map.has(`${match.teamId}:${match.id}`)) map.set(`${match.teamId}:${match.id}`, match as TeamEvent);
     });
 
     return Array.from(map.values());
@@ -1101,19 +1066,19 @@ export default function MasterCalendarPage() {
     if (!activeDetailedEventId) return null;
     
     // 1. Check for exact match first (standard events)
-    const exactMatch = allEvents.find(e => e.id === activeDetailedEventId);
+    const exactMatch = allEvents.find(e => e.id === activeDetailedEventId && (!detailTeamId || e.teamId === detailTeamId));
     if (exactMatch) return exactMatch;
 
     // 2. Check for synthesized tournament match IDs
     // Format is usually [parentEventId]_match_[idx] or similar
     const parentEvent = allEvents.find(e => 
-      e.isTournament && 
+      e.isTournament && (!detailTeamId || e.teamId === detailTeamId) &&
       e.tournamentGames && 
       e.tournamentGames.some((g: any, idx: number) => (g.id === activeDetailedEventId || `${e.id}_match_${idx}` === activeDetailedEventId))
     );
 
     return parentEvent || null;
-  }, [allEvents, activeDetailedEventId]);
+  }, [allEvents, activeDetailedEventId, detailTeamId]);
 
   const discoveryTeamIds = useMemo(() => {
     const fromTeams = (teams || []).map(t => t.id);
@@ -1487,9 +1452,9 @@ export default function MasterCalendarPage() {
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setSelectedDay(day);
-                                  setActiveDetailedEventId(event.id);
+                                  setDetailTeamId(event.teamId); setActiveDetailedEventId(event.id);
                                 }}
-                                onKeyDown={(e) => e.key === 'Enter' && (e.stopPropagation(), setActiveDetailedEventId(event.id))}
+                                onKeyDown={(e) => e.key === 'Enter' && (e.stopPropagation(), setDetailTeamId(event.teamId), setActiveDetailedEventId(event.id))}
                               >
                                 {event.isTournament ? <Trophy className="h-3 w-3" /> : (event.eventType === 'game' ? <Activity className="h-3 w-3" /> : <div className="h-3 w-3 rounded-full border-2 border-white/50" />)}
                               </div>
@@ -1526,7 +1491,7 @@ export default function MasterCalendarPage() {
                 <h3 className="text-xl font-black uppercase tracking-tight text-foreground">{selectedDay ? format(selectedDay, 'EEEE, MMMM do') : 'Select a day'}</h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                   {selectedDayEvents.length > 0
-                    ? selectedDayEvents.map(event => <EventItem key={event.id} event={event} teams={teams} onClick={() => setActiveDetailedEventId(event.id)} />)
+                    ? selectedDayEvents.map(event => <EventItem key={event.id} event={event} teams={teams} onClick={() => { setDetailTeamId(event.teamId); setActiveDetailedEventId(event.id); }} />)
                     : (
                       <div className="col-span-full py-8 text-center rounded-2xl border-2 border-dashed border-muted/30">
                         <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground opacity-50">No events scheduled for this day</p>
@@ -1562,7 +1527,7 @@ export default function MasterCalendarPage() {
                       <div className="h-px bg-muted flex-1" />
                     </div>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4 ml-4 md:ml-16">
-                      {dayEvents.map(event => <EventItem key={event.id} event={event} teams={teams} onClick={() => setActiveDetailedEventId(event.id)} />)}
+                      {dayEvents.map(event => <EventItem key={event.id} event={event} teams={teams} onClick={() => { setDetailTeamId(event.teamId); setActiveDetailedEventId(event.id); }} />)}
                     </div>
                   </div>
                     );

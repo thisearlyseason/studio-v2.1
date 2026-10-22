@@ -38,7 +38,7 @@ test('desktop and mobile squad switchers share a stable accessible name', async 
   const shell = await source('../src/components/layout/Shell.tsx');
   const labels = shell.match(/aria-label="Switch squad"/g) || [];
 
-  assert.equal(labels.length, 3);
+  assert.equal(labels.length, 4);
   assert.match(shell, /data-team-switch-id=\{team\.id\}/);
   assert.match(shell, /data-testid="mobile-active-team-context"/);
   assert.match(shell, /Active Team:/);

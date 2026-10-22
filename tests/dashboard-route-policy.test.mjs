@@ -50,7 +50,8 @@ test('institution and competition hubs require matching authority', () => {
 test('shared navigation hides routes rejected by the dashboard policy', () => {
   const shell = fs.readFileSync(new URL('../src/components/layout/Shell.tsx', import.meta.url), 'utf8');
 
-  assert.match(shell, /authorizeDashboardRoute\(tab\.href,[\s\S]+isSuperAdmin \? 'superadmin' : undefined/);
+  const navigation = fs.readFileSync(new URL('../src/components/team-home/use-team-navigation.ts', import.meta.url), 'utf8');
+  assert.match(navigation, /authorizeDashboardRoute\(tab\.href,[\s\S]+isSuperAdmin \? 'superadmin' : undefined/);
   assert.match(shell, /bottomNavItems[\s\S]*?filter\(item => authorizeDashboardRoute\(item\.href/);
 });
 

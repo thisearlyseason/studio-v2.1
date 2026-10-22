@@ -347,7 +347,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         isParent,
         isDemo: userProfile?.isDemo === true,
         seedLock: localStorage.getItem('squad_seeding_lock'),
-      })) {
+      }) && userProfile?.homeScreenLayout !== 'modern') {
         router.push('/family');
 
       }

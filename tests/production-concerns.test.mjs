@@ -244,14 +244,15 @@ test('shared navigation uses plain language and role-specific primary actions', 
     source('../src/app/(dashboard)/layout.tsx'),
   ]);
 
-  assert.match(shell, /const roleNavigationOrder = isParent/);
+  assert.match(await source('../src/components/team-home/use-team-navigation.ts'), /const roleNavigationOrder = isParent/);
   assert.match(shell, /const primaryCoordTabs = filteredCoordTabs\.filter/);
   assert.match(shell, /\['\/leagues', '\/manage-tournaments'\]\.includes\(tab.href\)/);
   assert.match(shell, /Your Main Tools/);
   assert.match(shell, /More Tools/);
   assert.match(shell, /Join & Invite/);
   assert.doesNotMatch(shell, /Team Join Code/);
-  assert.match(shell, /\{ name: 'Family', href: '\/family'/);
+  assert.match(shell, /name: user\?\.homeScreenLayout === 'modern' \? 'Home' : 'Family'/);
+  assert.match(shell, /href: user\?\.homeScreenLayout === 'modern' \? '\/dashboard' : '\/family'/);
   assert.match(shell, /\{ name: 'Profile', href: '\/roster'/);
   assert.match(dashboard, /Next Actions/);
   assert.match(dashboard, /Family Schedule/);
