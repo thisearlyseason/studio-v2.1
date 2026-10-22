@@ -74,7 +74,8 @@ test('public registration controls and authentication pages expose accessible na
   assert.match(squad, /htmlFor=\"squad-join-date-of-birth\"/);
   assert.match(squad, /role=\"radiogroup\" aria-labelledby=\"squad-player-label\"/);
   assert.match(event, /htmlFor=\{`event-field-\$\{field\.id\}`\}/);
-  assert.match(youth, /aria-label=\{showPassword \? 'Hide password' : 'Show password'\}/);
+  assert.match(youth, /<PasswordInput[\s\S]*id="youth-password"/);
+  assert.match(await source('../src/components/ui/password-input.tsx'), /aria-label=\{visible \? "Hide password" : "Show password"\}/);
   assert.match(login, /<h1 className=/);
   assert.match(signup, /<h1 className=\"sr-only\">/);
   assert.match(pricing, /role=\"switch\"/);

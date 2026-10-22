@@ -1,0 +1,44 @@
+{
+  "upstreamVersion": "3.0.3",
+  "upstreamCommit": "74b2db2938fad48a2ea54a9c8bf27a37a62c350d",
+  "license": "MIT",
+  "sourceFiles": {
+    "LICENSE": "35bdd8a44339719441900fb50fbefc5e2dca1ca662cbaed7a687de842c8b70f2",
+    "index.js": "332ea07c7b006361aad12aa994ca75dc1db8e8382b884909e2f38f10b85c88a4",
+    "lib/assert-depth.js": "f1da48612bca8ecb2af1988a501de81f3c36a46d32cadbcda5a6671333a43a57",
+    "lib/compile.js": "9b370438e14068a867d5a2b1015c4267eea633bef7a0ea0d7bceafc366360df2",
+    "lib/constants.js": "c18ac5adb57308f1ce42a28552da3a31f5d83709743ebd9a636336813a744d4b",
+    "lib/expand.js": "11bf3012ad5a90be23f8d36b81aff9c05410d22c51e22e25ce9644e457e9030f",
+    "lib/parse.js": "52acc8606c3eee42745d0cf519cbee45775627447542a4d957604aed353095b1",
+    "lib/stringify.js": "f9b30a0a6349a99c7af1a21bee9b5f7a8badd518a250f4ca25f6336faeb589ba",
+    "lib/utils.js": "b5a7596aa67730412b3c029ef09e84e6b67b8e445cffd35d1d295549c89066c7",
+    "package.json": "a8eac58ff919681722701386d73f428b517fe55ad6c9978d2a9fe3fb65aa735b"
+  },
+  "reviewedFiveFiles": {
+    "lib/stringify.js": {
+      "baseSHA256": "379f22d77bfa1478341ccd49c5e4267464aabcbba03558bab332aac23fc6f23a",
+      "derivativeSHA256": "f9b30a0a6349a99c7af1a21bee9b5f7a8badd518a250f4ca25f6336faeb589ba"
+    },
+    "lib/parse.js": {
+      "baseSHA256": "e572166565f15fa6ad9865ae49d678218e32aabfd1b3720f6d0d43d39800d310",
+      "derivativeSHA256": "52acc8606c3eee42745d0cf519cbee45775627447542a4d957604aed353095b1"
+    },
+    "lib/assert-depth.js": {
+      "baseSHA256": null,
+      "derivativeSHA256": "f1da48612bca8ecb2af1988a501de81f3c36a46d32cadbcda5a6671333a43a57"
+    },
+    "lib/expand.js": {
+      "baseSHA256": "41ccc196ebfa7b7781a634e721eb744e4e7bcb54cba427a7e3d6806a1b9e58f7",
+      "derivativeSHA256": "11bf3012ad5a90be23f8d36b81aff9c05410d22c51e22e25ce9644e457e9030f"
+    },
+    "lib/compile.js": {
+      "baseSHA256": "dc98f22eee3d511785d92a00758d5f0d48efed5f5813bdecc2de430c529b5c9f",
+      "derivativeSHA256": "9b370438e14068a867d5a2b1015c4267eea633bef7a0ea0d7bceafc366360df2"
+    }
+  },
+  "node": "24.x",
+  "scope": "LOCAL candidate; independent source and packaging review complete; deployment requires parent approval",
+  "advisory": "GHSA-vfj7-8cjw-p6xm remains an explicit security decision; registry results cannot establish remediation",
+  "limits": "Depth100 and plain-data AST only; width/DAG traversal and expansion cardinality not bounded.",
+  "tarballSHA256": "3c00573399bf66e59dd1fc28517260e60132cec287453da70e3182841b31dc78"
+}

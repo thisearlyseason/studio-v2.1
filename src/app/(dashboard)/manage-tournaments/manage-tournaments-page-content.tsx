@@ -797,7 +797,7 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
             <ScrollArea
               showScrollHint
               scrollHintLabel="More tournament settings"
-              className="flex-1 px-6 sm:px-8 lg:px-16 pt-12 sm:pt-16 pb-32 min-h-0 [&_[data-radix-scroll-area-viewport]>div]:block! [&_[data-radix-scroll-area-viewport]>div]:!w-full [&_[data-radix-scroll-area-viewport]>div]:!min-w-0"
+              className="flex-1 px-6 sm:px-8 lg:px-16 pt-12 sm:pt-16 pb-32 min-h-0 [&_[data-radix-scroll-area-viewport]>div]:!block [&_[data-radix-scroll-area-viewport]>div]:!w-full [&_[data-radix-scroll-area-viewport]>div]:!min-w-0"
             >
               <div className="max-w-3xl w-full min-w-0 mx-auto space-y-12">
                 {step === 1 && (

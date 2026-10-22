@@ -138,7 +138,7 @@ test('tournament and event registration responses are visible at their event-sco
   assert.match(tournament, /events', eventId as string, 'registrationEntries'/);
   assert.match(tournament, /where\('event_id', '==', eventId as string\)/);
   assert.match(tournament, /else if \(!isConfigLoading\)[\s\S]{0,500}is_active: false/);
-  assert.match(tournament, /form_schema: \[DIVISION_FIELD\]/);
+  assert.match(tournament, /form_schema: \[\]/);
   assert.match(tournament, /Required Answer/);
   assert.match(tournament, /Configure a question, answer type, form section/);
   assert.match(tournament, /value=\{editingField\?\.type \|\| ''\}/);

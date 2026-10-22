@@ -576,7 +576,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
 
   if (!activeTeam && !user) return null;
 
-  const performLogout = async (assertAuthority: () => void = () => {}) => {
+  const performLogout = async (assertAuthority: () => void = () => {}, signOutCurrent: () => Promise<void> = () => signOut(auth)) => {
     assertAuthority();
     // Demo cleanup is an authentication-lifecycle operation. Profile flags can
     // legitimately remain on migrated beta accounts, so only Firebase's
@@ -609,7 +609,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
       assertAuthority();
       await clearBrowserSession(assertAuthority);
       assertAuthority();
-      await signOut(auth);
+      await signOutCurrent();
       logoutCompleted = true;
       if (!auth.currentUser) router.push('/login');
     } catch (error) {

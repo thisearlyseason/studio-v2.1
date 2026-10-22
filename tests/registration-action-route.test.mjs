@@ -79,7 +79,7 @@ test('legacy league PIN migrates only on a correct score in the same transaction
 test('tournament scoring verifies private HMAC and migrates a valid legacy code atomically',async()=>{
   const game={id:'g',team1:'A',team1Id:'a',team2:'B',team2Id:'b',score1:0,score2:0,isCompleted:false,stage:'Pool'};
   const root={isTournament:true,teamId:'t',tournamentType:'round_robin',tournamentGames:[game]};
-  const privateSeed={'teams/t':{ownerUserId:'owner',planId:'elite'},'teams/t/events/e':root,'teams/t/events/e/private/scoring':{scorekeeperCodeHash:hashTournamentScorekeeperCode('t','e','AbC9')}};
+  const privateSeed={'teams/t':{ownerUserId:'owner',planId:'elite',isPro:true},'teams/t/events/e':root,'teams/t/events/e/private/scoring':{scorekeeperCodeHash:hashTournamentScorekeeperCode('t','e','AbC9')}};
   const first=communicationDb(privateSeed,{serializeTransactions:true}),privateApp=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',first.db,{});
   try{
     const base={kind:'tournament',action:'score',teamId:'t',eventId:'e',gameId:'g',requestId:'registration-seam-score-1',expectedLifecycleVersion:0,expectedScheduleVersion:0,expectedGameVersion:0,expectedCredentialVersion:0,score1:2,score2:1};
@@ -87,7 +87,7 @@ test('tournament scoring verifies private HMAC and migrates a valid legacy code 
     assert.equal(first.records.get('teams/t/events/e').tournamentGames[0].isCompleted,false);
     assert.equal((await privateApp.route.POST(request({...base,code:'abc9'}))).status,200);
   }finally{privateApp.dispose();}
-  const legacy=communicationDb({'teams/t':{ownerUserId:'owner',planId:'elite'},'teams/t/events/e':{...root,scoringCode:'1357'}},{serializeTransactions:true}),legacyApp=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',legacy.db,{});
+  const legacy=communicationDb({'teams/t':{ownerUserId:'owner',planId:'elite',isPro:true},'teams/t/events/e':{...root,scoringCode:'1357'}},{serializeTransactions:true}),legacyApp=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',legacy.db,{});
   try{
     assert.equal((await legacyApp.route.POST(request({kind:'tournament',action:'verify',teamId:'t',eventId:'e',code:'1357'}))).status,200);
     assert.equal(legacy.records.get('teams/t/events/e').scoringCode,'1357');

@@ -2,13 +2,14 @@
 import React, { useEffect, useRef, useState } from 'react';
 import styles from './todo-sync-panel.module.css';
 import type { User } from 'firebase/auth';
+import { freshTodoId, cloudTaskCapabilityError } from '@/lib/schedule-todos/compat';
 import { watchScheduleUser } from './sync';
 import { loadScopedTodos } from './storage';
 import { createTodoOutbox } from '@/lib/schedule-todos/outbox';
 import { contextPrefix, type CloudTodo } from '@/lib/schedule-todos/model';
 
 type Box = ReturnType<typeof createTodoOutbox>;
-const newId = () => crypto.randomUUID();
+const newId = () => freshTodoId();
 /** Separate cloud list: the device-only list is never silently uploaded/replaced. */
 export function TodoSyncPanel({ onExitBlockedChange, dark = false }: { onExitBlockedChange?: (blocked: boolean) => void; dark?: boolean } = {}) {
   const epoch = useRef(0);
@@ -17,6 +18,7 @@ export function TodoSyncPanel({ onExitBlockedChange, dark = false }: { onExitBlo
   const box = useRef<Box | null>(null);
   const [view, setView] = useState<ReturnType<Box['view']>>({ uid: null, remote: [], pending: [], context: null, locked: true, retainedCount: 0, storageError: '' });
   const [error, setError] = useState('');
+  const [unsupported, setUnsupported] = useState('');
   const [message, setMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [text, setText] = useState('');
@@ -29,6 +31,8 @@ export function TodoSyncPanel({ onExitBlockedChange, dark = false }: { onExitBlo
   useEffect(() => () => onExitBlockedChange?.(false), [onExitBlockedChange]);
   useEffect(() => {
     let active = true;
+    const unavailable = cloudTaskCapabilityError();
+    if (unavailable) { setUnsupported(unavailable); return; }
     try {
       const controller = createTodoOutbox({ storage: localStorage, getAccount: () => actor.current, fetch: (...args) => fetch(...args), changed: () => { if (active) { try { const next=controller.view(); setView(next); if(next.locked){setReview(null);setConfirmed(false);setText('');setDate('');setMessage('');} } catch {setView({uid:null,remote:[],pending:[],context:null,locked:true,retainedCount:0,storageError:''});setError('Browser storage is unavailable. Private tasks are hidden.');} } } });
       box.current = controller;
@@ -57,6 +61,7 @@ export function TodoSyncPanel({ onExitBlockedChange, dark = false }: { onExitBlo
   function change(record: CloudTodo, remove = false) {
     void run(controller => controller.queue({ id: record.id, requestId: newId(), kind: remove ? 'delete' : 'update', expectedVersion: record.version, ...(remove ? {} : { fields: { text: record.text, dueDate: record.dueDate, completed: !record.completed } }) }), 'Queued on this browser. Send pending to save to your account.');
   }
+  if (unsupported) return <section className={styles.panel} aria-label="Account cloud tasks"><h2>Account cloud tasks</h2><p role="alert">{unsupported} Device-only tasks remain available. Existing browser edits are unchanged.</p></section>;
   return <section className={styles.panel} data-theme={dark ? 'dark' : 'light'} aria-label="Account cloud tasks" aria-busy={busy}>
     <h2>Account cloud tasks</h2>
     <p className={styles.intro}>Send changes here to share them across devices. Device-only tasks stay separate.</p>

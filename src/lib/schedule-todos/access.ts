@@ -3,7 +3,7 @@ export const todoPrefix=(uid:string)=>'squad_schedule_cloud_v1:'+encodeURICompon
 export const todoLock=(uid:string)=>'squad-todo-account:'+uid;
 export const fenceKey=(uid:string)=>todoPrefix(uid)+'logout-fence';
 export type LockAPI={request<T>(name:string,options:{mode:'shared'|'exclusive';signal?:AbortSignal},callback:()=>Promise<T>):Promise<T>};
-export function browserLocks():LockAPI{if(typeof navigator==='undefined'||!navigator.locks)throw Error('This browser cannot coordinate private task changes safely. Cloud tasks remain locked.');return navigator.locks as LockAPI}
+export function browserLocks():LockAPI{if(typeof navigator==='undefined'||!navigator.locks||typeof navigator.locks.request!=='function')throw Error('This browser cannot coordinate private task changes safely. Cloud tasks remain locked.');return navigator.locks as LockAPI}
 export function rawPendingCount(storage:TodoStorage,uid:string){let n=0;for(let i=0;i<storage.length;i++)if(storage.key(i)?.startsWith(todoPrefix(uid)+'pending:'))n++;return n}
 export function writeVerified(storage:TodoStorage,key:string,value:string){storage.setItem(key,value);if(storage.getItem(key)!==value)throw Error('Browser storage did not retain the private-task change.')}
 export function removeVerified(storage:TodoStorage,key:string){storage.removeItem(key);if(storage.getItem(key)!==null)throw Error('Browser storage cleanup was incomplete. Some discarded edits may already be removed.')}

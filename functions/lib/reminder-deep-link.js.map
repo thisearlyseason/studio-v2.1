@@ -1,0 +1,1 @@
+{"version":3,"file":"reminder-deep-link.js","sourceRoot":"","sources":["../src/reminder-deep-link.ts"],"names":[],"mappings":";;AAMA,sDAMC;AAPD,6EAA6E;AAC7E,SAAgB,qBAAqB,CAAC,KAA4B;IAChE,MAAM,MAAM,GAAG,IAAI,eAAe,CAAC;QACjC,MAAM,EAAE,KAAK,CAAC,MAAM;QACpB,OAAO,EAAE,KAAK,CAAC,OAAO;KACvB,CAAC,CAAC;IACH,OAAO,aAAa,MAAM,CAAC,QAAQ,EAAE,EAAE,CAAC;AAC1C,CAAC"}

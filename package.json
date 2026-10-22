@@ -19,7 +19,9 @@
     "qa:audit-emulator": "node scripts/qa/run-phase2-emulator-audit.mjs",
     "qa:certify-local": "node scripts/qa/certification/run-local-batches.mjs",
     "verify:env": "node scripts/check-production-env.mjs",
-    "verify": "npm run typecheck && npm run lint && npm test && npm run test:rules && npm run build && npm --prefix functions run build"
+    "verify": "npm run typecheck && npm run lint && npm test && npm run test:rules && npm run build && npm --prefix functions run build",
+    "verify:legacy-compiler": "node scripts/security/verify-legacy-compiler.mjs",
+    "prebuild": "npm run verify:legacy-compiler"
   },
   "dependencies": {
     "@emnapi/core": "1.11.2",
@@ -67,7 +69,7 @@
     "react-hook-form": "^7.54.2",
     "recharts": "^2.15.1",
     "resend": "^6.12.3",
-    "sharp": "0.35.4",
+    "sharp": "0.35.5",
     "stripe": "^22.0.1",
     "tailwind-merge": "^3.0.1",
     "tailwindcss": "^3.4.1",
@@ -89,14 +91,15 @@
     "eslint-config-next": "15.5.25",
     "firebase-tools": "15.23.0",
     "tsx": "4.23.1",
-    "typescript": "^5"
+    "typescript": "^5",
+    "braces": "file:vendor/braces-3.0.3-squad.1.tgz"
   },
   "overrides": {
     "fast-uri": "4.1.2",
     "hono": "4.12.34",
-    "sharp": "0.35.4",
-    "undici": "6.28.0",
-    "dompurify": "3.4.13",
+    "sharp": "0.35.5",
+    "undici": "6.28.1",
+    "dompurify": "3.4.16",
     "fflate": "0.8.3",
     "websocket-driver": "0.7.5",
     "postcss": "$postcss",
@@ -104,13 +107,19 @@
       "uuid": "11.1.1"
     },
     "google-gax": {
-      "uuid": "11.1.1"
+      "uuid": "11.1.1",
+      "@grpc/grpc-js": "1.14.5"
     },
     "teeny-request": {
       "uuid": "11.1.1"
     },
     "@google-cloud/pubsub": {
-      "@opentelemetry/core": "2.8.0"
-    }
+      "@opentelemetry/core": "2.8.0",
+      "@grpc/grpc-js": "1.14.5"
+    },
+    "@firebase/firestore": {
+      "@grpc/grpc-js": "1.13.6"
+    },
+    "braces": "$braces"
   }
 }

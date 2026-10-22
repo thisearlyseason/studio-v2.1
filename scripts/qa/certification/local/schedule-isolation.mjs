@@ -204,3 +204,5 @@ export async function registerCompetitionDiscovery({ registry, scopeId, runId, r
   });
 }
 import { createHash } from 'node:crypto';
+
+export function competitionSnapshotIncludes(path,value,suffixes){return suffixes.some(suffix=>path.includes(suffix)||JSON.stringify(value||{}).includes(suffix));}

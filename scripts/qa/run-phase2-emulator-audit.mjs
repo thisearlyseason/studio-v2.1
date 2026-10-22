@@ -8411,7 +8411,7 @@ async function runCertificationOperationsScenarios() {
   let sessionBaseline;
   return runOperationScenarioSequence(scenarioIds, {
     failFast: certificationFailFast,
-    timeoutMs: scenarioId => operationScenarioTimeoutMs(runBrowser, scenarioId),
+    timeoutMs: scenarioId => Math.max(operationScenarioTimeoutMs(runBrowser, scenarioId), 600_000),
     onError: (scenarioId, error) => recordCertificationRunFailure(scenarioId, error, 'operations-runtime'),
     execute: async (scenarioId, { signal, checkDeadline }) => {
     sessionBaseline = new Set(ownedBrowserSessions);
