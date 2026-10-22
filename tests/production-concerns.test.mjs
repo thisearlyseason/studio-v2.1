@@ -1,6 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFile } from 'node:fs/promises';
 import test from 'node:test';
+import vm from 'node:vm';
+import ts from 'typescript';
 import { hasUnresolvedSubscription } from '../src/lib/checkout-policy.ts';
 import { getPlanTeamLimit, isStarterExperience } from '../src/lib/plan-catalog.ts';
 import { isValidFirestoreDocumentId } from '../src/lib/firestore-document-id.ts';
@@ -202,7 +204,7 @@ test('every visible logout unregisters push while the user is still authenticate
   assert.match(settingsLogout, /if \(isDemoLogout\) \{\s+const response = await fetch\('\/api\/demo\/exit', \{ method: 'POST' \}\)/);
   assert.ok(settingsLogout.indexOf('await deletePushDevice(authenticatedUserId)') < settingsLogout.indexOf('await clearBrowserSession(assertAuthority)'));
   assert.ok(settingsLogout.indexOf("await fetch('/api/demo/exit'") < settingsLogout.indexOf('await clearBrowserSession(assertAuthority)'));
-  assert.ok(settingsLogout.indexOf('await clearBrowserSession(assertAuthority)') < settingsLogout.indexOf('await signOut(auth)'));
+  // Runtime cases below verify awaited cleanup and either SDK callback path.
   const shellLogout = shell.match(/const performLogout = async [\s\S]*?\n  \};/)?.[0] || '';
   assert.match(shellLogout, /const isDemoLogout = auth\.currentUser\?\.isAnonymous === true;/);
   assert.doesNotMatch(shellLogout, /hasDemoBanner/);
@@ -215,6 +217,118 @@ test('every visible logout unregisters push while the user is still authenticate
   assert.match(deletion, /await deleteWebPushSubscription\(userId\)\.catch/);
   assert.match(pushRegistration, /try \{\s+await updateWebPushSubscription[\s\S]*?finally \{[\s\S]*?await subscription\.unsubscribe\(\)/);
 });
+
+function logoutFunction(text, file, dependencies) {
+  const ast = ts.createSourceFile(file, text, ts.ScriptTarget.Latest, true, ts.ScriptKind.TSX);
+  let expression;
+  function visit(node) {
+    if (ts.isVariableDeclaration(node) && node.name.getText(ast) === 'performLogout') {
+      assert.equal(expression, undefined, 'logout entry point must be unique');
+      expression = node.initializer.getText(ast);
+    }
+    ts.forEachChild(node, visit);
+  }
+  visit(ast);
+  assert.ok(expression, 'actual logout entry point must exist');
+  const compiled = ts.transpileModule(`(${expression})`, {
+    compilerOptions: { target: ts.ScriptTarget.ES2022 },
+  }).outputText;
+  return vm.runInNewContext(compiled, dependencies);
+}
+
+function heldCleanup() {
+  let resolve, reject;
+  const promise = new Promise((yes, no) => { resolve = yes; reject = no; });
+  return { promise, resolve, reject };
+}
+
+async function waitForCleanup(promise) {
+  let timer;
+  try {
+    await Promise.race([promise, new Promise((_, reject) => {
+      timer = setTimeout(() => reject(Error('Expected cleanup did not start')), 2000);
+    })]);
+  } finally { clearTimeout(timer); }
+}
+
+for (const file of ['../src/components/layout/Shell.tsx', '../src/app/(dashboard)/settings/page.tsx']) {
+  for (const supplied of [false, true]) {
+    const label = `${file} (${supplied ? 'guarded' : 'default'} signout)`;
+    function fixture(text, { push, session } = {}) {
+      const original = { uid: 'logout-owner', isAnonymous: false };
+      const auth = { currentUser: original };
+      const events = [];
+      const assertAuthority = () => assert.equal(auth.currentUser, original, 'captured authority changed');
+      const dependencies = {
+        auth,
+        deletePushDevice: async uid => {
+          assertAuthority(); assert.equal(uid, original.uid); events.push('push');
+          await push?.();
+        },
+        clearBrowserSession: async guard => {
+          guard(); assertAuthority(); events.push('session'); await session?.();
+        },
+        signOut: async currentAuth => {
+          assert.equal(currentAuth, auth); events.push('default SDK'); auth.currentUser = null;
+        },
+        router: { push: route => { assert.equal(route, '/login'); events.push('redirect'); } },
+        toast: () => events.push('failure'),
+        console: { warn: () => events.push('push warning') },
+        fetch: () => { throw Error('Registered user must not invoke demo cleanup'); },
+        markDemoExitPending: () => { throw Error('Registered user must not enter demo cleanup'); },
+        requireDemoExitRetry: () => { throw Error('Registered user must not enter demo cleanup'); },
+        clearDemoExitPending: () => { throw Error('Registered user must not enter demo cleanup'); },
+        cancelDemoExitPending: () => { throw Error('Registered user must not enter demo cleanup'); },
+      };
+      const action = logoutFunction(text, file, dependencies);
+      const callback = async () => { events.push('guarded SDK'); assertAuthority(); auth.currentUser = null; };
+      return { auth, original, events, run: () => action(assertAuthority, ...(supplied ? [callback] : [])) };
+    }
+    const sdkEvent = supplied ? 'guarded SDK' : 'default SDK';
+    test(`${label}: awaits push and session cleanup before SDK signout`, async () => {
+      const push = heldCleanup(), session = heldCleanup(), pushEntered = heldCleanup(), sessionEntered = heldCleanup();
+      const f = fixture(await source(file), {
+        push: () => { pushEntered.resolve(); return push.promise; },
+        session: () => { sessionEntered.resolve(); return session.promise; },
+      });
+      const work = f.run();
+      try {
+        await waitForCleanup(pushEntered.promise);
+        assert.deepEqual(f.events, ['push']); assert.equal(f.auth.currentUser, f.original);
+        push.resolve(); await waitForCleanup(sessionEntered.promise);
+        assert.deepEqual(f.events, ['push', 'session']); assert.equal(f.auth.currentUser, f.original);
+        session.resolve(); await work;
+        assert.deepEqual(f.events, ['push', 'session', sdkEvent, 'redirect']);
+        assert.equal(f.auth.currentUser, null);
+      } finally { push.resolve(); session.resolve(); await work; }
+    });
+    test(`${label}: rejected push cleanup remains best effort without moving signout earlier`, async () => {
+      const f = fixture(await source(file), { push: async () => { throw Error('Synthetic push cleanup failure'); } });
+      await f.run();
+      assert.deepEqual(f.events, ['push', 'push warning', 'session', sdkEvent, 'redirect']);
+    });
+    test(`${label}: rejected session cleanup prevents either SDK path and redirect`, async () => {
+      const f = fixture(await source(file), { session: async () => { throw Error('Synthetic session cleanup failure'); } });
+      await f.run();
+      assert.deepEqual(f.events, ['push', 'session', 'failure']); assert.equal(f.auth.currentUser, f.original);
+    });
+    test(`${label}: initial authority failure causes no cleanup or signout`, async () => {
+      const f = fixture(await source(file)); const other = { uid: 'other-account', isAnonymous: false };
+      f.auth.currentUser = other;
+      await assert.rejects(f.run(), /captured authority changed/);
+      assert.deepEqual(f.events, []); assert.equal(f.auth.currentUser, other);
+    });
+    test(`${label}: account change during awaited cleanup prevents signout of new account`, async () => {
+      const session = heldCleanup(), entered = heldCleanup();
+      const f = fixture(await source(file), { session: () => { entered.resolve(); return session.promise; } });
+      const work = f.run(); const other = { uid: 'other-account', isAnonymous: false };
+      try {
+        await waitForCleanup(entered.promise); f.auth.currentUser = other; session.resolve(); await work;
+        assert.deepEqual(f.events, ['push', 'session', 'failure']); assert.equal(f.auth.currentUser, other);
+      } finally { session.resolve(); await work; }
+    });
+  }
+}
 
 test('demo launch creates its protected profile before entering dashboard routes', async () => {
   const [login, landing, clientAuth] = await Promise.all([
