@@ -1128,8 +1128,8 @@ function ShellContent({ children }: { children: React.ReactNode }) {
               </main>
             </div>
 
-            <div className="md:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-[95vw]">
-              <nav className="flex items-center gap-1 bg-white/95 backdrop-blur-md border rounded-full px-2 py-2 shadow-2xl ring-1 ring-black/5 overflow-x-auto no-scrollbar">
+            {!isModernLayout && <div className="md:hidden fixed bottom-6 left-1/2 -translate-x-1/2 z-50 max-w-[95vw]">
+              <nav aria-label="Mobile navigation" className="flex items-center gap-1 bg-white/95 backdrop-blur-md border rounded-full px-2 py-2 shadow-2xl ring-1 ring-black/5 overflow-x-auto no-scrollbar">
                 {bottomNavItems.map((item) => {
                   if (item.gate && !item.gate()) return null;
                   const isActive = pathname === item.href;
@@ -1505,7 +1505,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
                   </SheetContent>
                 </Sheet>
               </nav>
-            </div>
+            </div>}
           </div>
         </div>
       </div>

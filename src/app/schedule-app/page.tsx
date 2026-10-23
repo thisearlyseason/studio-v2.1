@@ -310,6 +310,8 @@ export default function ScheduleApp() {
         {/* TODOS TAB */}
           <div hidden={tab !== 'todos'}>
             {process.env.NEXT_PUBLIC_SCHEDULE_TODOS_SYNC_ENABLED === 'true' && <TodoSyncPanel onExitBlockedChange={setCloudExitBlocked} dark={dark} />} 
+            <details open={process.env.NEXT_PUBLIC_SCHEDULE_TODOS_SYNC_ENABLED !== 'true' ? true : undefined} style={{ marginTop: 20 }}>
+              <summary style={{ display: process.env.NEXT_PUBLIC_SCHEDULE_TODOS_SYNC_ENABLED === 'true' ? 'list-item' : 'none', padding: '14px 0', cursor: 'pointer', fontWeight: 700, color: text }}>Older tasks on this device ({todos.length})</summary>
             <div style={{ borderTop: `2px solid ${border}`, paddingTop: 20, marginTop: 24, marginBottom: 16 }}>
               <h2 style={{ fontSize: 20, fontWeight: 850, color: text, margin: '0 0 6px' }}>Device-only tasks</h2>
               <p style={{ fontSize: 14, color: dark ? '#d4d4d8' : muted, margin: 0 }}>Saved on this device. Not shared automatically.</p>
@@ -377,6 +379,7 @@ export default function ScheduleApp() {
                 <p style={{ fontSize: 13 }}>No tasks yet. Add one above.</p>
               </div>
             )}
+            </details>
           </div>
       </main>
 
