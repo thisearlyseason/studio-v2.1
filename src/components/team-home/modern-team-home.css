@@ -197,7 +197,7 @@ html[data-squad-layout="modern"]:not(.dark) {
 .modern-app .modern-shell-frame { min-height: 0; min-width: 0; height: 100%; }
 .modern-app .modern-shell-frame > div, .modern-app .modern-shell-frame > div > div { min-height: 0; min-width: 0; }
 .modern-app .modern-home-header { flex: 0 0 auto; background: #fff; }
-.modern-app main { flex: 1 1 0%; min-height: 0; min-width: 0; overflow-y: auto; overscroll-behavior-y: contain; scroll-padding-bottom: 110px; padding-bottom: max(72px,env(safe-area-inset-bottom)); }
+.modern-app main { flex: 1 1 0%; min-height: 0; min-width: 0; overflow-y: auto; overscroll-behavior-y: contain; scroll-padding-bottom: 32px; padding-bottom: max(32px,calc(16px + env(safe-area-inset-bottom))); }
 .modern-page-trail { flex: 0 0 auto; display: flex; align-items: center; gap: 10px; padding: 14px 28px 0; color: #65758c; background: #f6f8fa; font-size: 12px; font-weight: 550; }
 .modern-page-trail > a { color: #243f62; font-weight: 700; padding: 5px 0; }
 .modern-page-trail > span { text-transform: capitalize; }
@@ -247,7 +247,6 @@ html[data-squad-layout="modern"] [role="dialog"] { border-radius: 18px; }
   .modern-app .modern-header-switch { padding: 4px; min-width: 30px; width: 30px; }
   .modern-app .modern-tools-trigger { padding: 7px; min-width: 32px; width: 32px; }
   .modern-app .modern-tools-label { display: none; }
-  .modern-app main { padding-bottom: max(152px,calc(112px + env(safe-area-inset-bottom))); }
   .modern-page-trail { padding: 10px 16px 0; font-size: 11px; }
   .modern-feature-page [data-ui="card-header"] { padding: 20px; }
   .modern-feature-page h1 { font-size: 32px; }

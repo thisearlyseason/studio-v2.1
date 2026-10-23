@@ -108,3 +108,30 @@
 
 .panel h3 { font-size: 16px; font-weight: 800; margin: 18px 0 6px; }
 .state { display: block; color: var(--cloud-muted); font-size: 12px; font-weight: 750; margin-bottom: 4px; }
+
+/* Familiar checklist; advanced recovery stays out of the everyday path. */
+.heading { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; flex-wrap: wrap; }
+.heading h2 { margin: 0; }
+.heading .summary { color: var(--cloud-muted); font-size: 13px; font-weight: 500; }
+.identity { color: var(--cloud-muted); font-size: 13px; }
+.tasks .task { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 12px; align-items: center; margin: 0; border: 0; border-bottom: 1px solid var(--cloud-border); border-radius: 0; padding: 12px 0; }
+.panel .check { display: flex; gap: 12px; align-items: center; font-weight: 600; }
+.panel .check input[type='checkbox'] { width: 24px; min-width: 24px; height: 24px; margin: 0; accent-color: var(--cloud-accent); cursor: pointer; }
+.check:has(input:focus-visible) { outline: 3px solid var(--cloud-focus); outline-offset: 5px; border-radius: 4px; }
+.completed { text-decoration: line-through; color: var(--cloud-muted); }
+.due { color: var(--cloud-muted); font-size: 13px; }
+.due small { display: block; max-width: 160px; }
+.task button { margin: 0; font-weight: 600; }
+.options { margin-top: 20px; border-top: 1px solid var(--cloud-border); padding-top: 12px; }
+.options summary { cursor: pointer; padding: 10px 0; min-height: 44px; font-weight: 600; }
+.notice { border: 1px solid var(--cloud-border); border-left: 4px solid var(--cloud-accent); border-radius: 12px; padding: 14px; margin: 16px 0; }
+.empty { padding: 20px 0; color: var(--cloud-muted); }
+@media (max-width: 520px) {
+  .tasks .task { grid-template-columns: minmax(0, 1fr) auto; gap: 8px; }
+  .task .check { grid-column: 1; grid-row: 1; }
+  .task .due { grid-column: 1; grid-row: 2; padding-left: 36px; }
+  .task button { grid-column: 2; grid-row: 1 / span 2; }
+}
+
+.panel button.danger { color: #b91c1c; background: transparent; border-color: #b91c1c; }
+.panel[data-theme='dark'] button.danger { color: #fca5a5; border-color: #fca5a5; }
