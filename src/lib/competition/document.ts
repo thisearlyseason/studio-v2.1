@@ -63,7 +63,7 @@ export const competitionSetupSchema = z.object({
     poolCount: z.number().int().min(2).max(32).optional(),
     advancePerPool: z.number().int().min(1).max(32).optional(),
     seriesLength: series.optional(),
-    seriesByRound: z.record(series).optional(),
+    seriesByRound: z.record(z.string(), series).optional(),
     customPools: z
       .array(
         z.object({
