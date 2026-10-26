@@ -9,6 +9,7 @@ import { createRequire } from 'node:module';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { PLAN_PRICE_MAP } from '../src/lib/stripe-price-map.ts';
+import { checkoutSessionFixture } from './helpers/checkout-session-fixture.mjs';
 
 const enabled = process.env.CHECKOUT_DELETION_EMULATOR_TEST === '1';
 const origin = 'https://checkout-deletion.example.test';
@@ -36,7 +37,7 @@ const stripe = {
       const previous = idempotency.get(options.idempotencyKey);
       if (previous) { assert.deepEqual(previous.params, params, 'Retry must use exact Stripe parameters'); return structuredClone(sessions.get(previous.id)); }
       const id = 'cs_test_' + (sessions.size + 1);
-      sessions.set(id, { id, object: 'checkout.session', mode: 'subscription', status: 'open', payment_status: 'unpaid', customer: params.customer, subscription: null, metadata: params.metadata, expires_at: Math.floor(Date.now() / 1000) + 86400, url: 'https://checkout.stripe.com/test/' + id });
+      sessions.set(id, checkoutSessionFixture(id, params));
       idempotency.set(options.idempotencyKey, { id, params: structuredClone(params) });
       if (loseCreateReply) throw Error('Injected lost Stripe response after session creation');
       const response = structuredClone(sessions.get(id)); await pauseReply?.(); return response;
@@ -179,11 +180,11 @@ test('late original provider response cannot restore a fence after recovery and 
   } finally { pauseReply = undefined; b.release(); await original; }
 });
 
-test('all pages of older payable checkouts are expired before a new checkout is issued', { skip: !enabled }, async () => {
+test('all pages of older same-tax-policy payable checkouts are expired before a new checkout is issued', { skip: !enabled }, async () => {
   const who = await account('paginated-checkouts');
   for (let i = 0; i < 105; i++) {
     const id = 'cs_old_page_' + i;
-    sessions.set(id, { id, mode: 'subscription', customer: 'cus_' + who.uid, status: 'open', metadata: { firebase_uid: who.uid }, expires_at: Math.floor(Date.now() / 1000) + 86400, url: 'https://checkout.stripe.com/test/' + id });
+    sessions.set(id, checkoutSessionFixture(id, { mode:'subscription', customer:'cus_'+who.uid, currency:'usd', automatic_tax:{enabled:true}, managed_payments:{enabled:false}, metadata:{firebase_uid:who.uid} }));
   }
   assert.equal((await create('canonical', who)).status, 200);
   const own = [...sessions.values()].filter(s => s.customer === 'cus_' + who.uid);
@@ -226,12 +227,15 @@ for (const name of ['canonical', 'legacy']) {
   });
 }
 
-for (const route of ['canonical','legacy']) test(`standard mode ${route}: new reservation is explicit, legacy uncertain payload stays exact`, {skip:!enabled}, async()=>{
+for (const route of ['canonical','legacy']) test(`standard mode ${route}: new taxed reservation is explicit, same-policy omitted-field payload stays exact`, {skip:!enabled}, async()=>{
   const who=await account('standard-'+route);
   assert.equal((await create(route,who)).status,200);
   const ref=db.doc('users/'+who.uid), profile=(await ref.get()).data(), lock=profile.pendingCheckout;
   assert.deepEqual(lock.request.managed_payments,{enabled:false});
-  assert.match(lock.attemptId,/^checkout-attempt-standard-v2-/);
+  assert.match(lock.attemptId,/^checkout-attempt-standard-tax-v1-/);
+  assert.deepEqual(lock.request.automatic_tax,{enabled:true});
+  assert.equal(lock.request.billing_address_collection,'required');
+  assert.deepEqual(lock.request.customer_update,{address:'auto'});
   const oldRequest=structuredClone(lock.request); delete oldRequest.managed_payments;
   const oldAttempt='checkout-attempt-legacy-'+who.uid;
   oldRequest.metadata.checkout_attempt=oldAttempt;
@@ -248,4 +252,24 @@ test('standard mode recovery rejects forged enabled Managed Payments payload', {
  const attempt='checkout-attempt-forged-'+who.uid;
  await ref.update({pendingCheckout:{...lock,attemptId:attempt,sessionId:null,expiresAt:0,request:{...lock.request,metadata:{...lock.request.metadata,checkout_attempt:attempt},managed_payments:{enabled:true}}}});
  assert.equal((await create('canonical',who)).status,409);assert.equal(idempotency.has(attempt),false);
+});
+
+for (const route of ['canonical','legacy']) test(`standard tax ${route}: truly untaxed uncertain reservation is preserved and blocked`,{skip:!enabled},async()=>{
+ const who=await account('untaxed-'+route);assert.equal((await create(route,who)).status,200);
+ const ref=db.doc('users/'+who.uid), lock=(await ref.get()).data().pendingCheckout;
+ const oldRequest=structuredClone(lock.request);delete oldRequest.automatic_tax;delete oldRequest.billing_address_collection;delete oldRequest.customer_update;
+ const oldAttempt='checkout-attempt-standard-v2-'+who.uid;oldRequest.metadata.checkout_attempt=oldAttempt;
+ sessions.delete(lock.sessionId);const pending={...lock,attemptId:oldAttempt,sessionId:null,expiresAt:0,request:oldRequest};
+ await ref.update({pendingCheckout:pending});const providerCount=idempotency.size;
+ assert.equal((await create(route,who)).status,409);
+ assert.deepEqual((await ref.get()).data().pendingCheckout,pending);
+ assert.equal(idempotency.has(oldAttempt),false);assert.equal(idempotency.size,providerCount);
+});
+
+test('later-page untaxed older checkout prevents all provider expiry and replacement',{skip:!enabled},async()=>{
+ const who=await account('mixed-tax-pagination');
+ for(let i=0;i<105;i++){const id='cs_mixed_page_'+i;sessions.set(id,checkoutSessionFixture(id,{mode:'subscription',customer:'cus_'+who.uid,currency:'usd',automatic_tax:{enabled:i!==104},managed_payments:{enabled:false},metadata:{firebase_uid:who.uid}}))}
+ const before=idempotency.size;assert.equal((await create('canonical',who)).status,409);
+ const own=[...sessions.values()].filter(s=>s.customer==='cus_'+who.uid);
+ assert.equal(own.length,105);assert.equal(own.filter(s=>s.status==='open').length,105);assert.equal(idempotency.size,before);
 });

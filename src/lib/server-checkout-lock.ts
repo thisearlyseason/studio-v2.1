@@ -1,5 +1,6 @@
 import { assertManagedPlatformRequest, assertManagedCheckoutReady } from './stripe-managed-checkout';
 import { randomUUID } from 'node:crypto';
+import { isStandardTaxCheckout, validStandardTaxRequest, sameStandardTaxPolicy, isTaxLocationFailure, isDefiniteTaxLocationRejection } from './standard-checkout-tax';
 import { isDeepStrictEqual } from 'node:util';
 import { FieldValue, type DocumentReference, type Firestore } from 'firebase-admin/firestore';
 import type Stripe from 'stripe';
@@ -17,6 +18,12 @@ type CheckoutLock = {
 
 export class CheckoutLifecycleError extends Error {
   readonly status = 409;
+}
+
+class TaxPolicyMismatch extends CheckoutLifecycleError {
+  constructor(readonly lock: CheckoutLock) {
+    super('The previous checkout uses a different or unverified tax policy. Let that checkout expire or contact support before continuing.');
+  }
 }
 
 const busy = () => new CheckoutLifecycleError('A previous checkout is still being resolved. Please wait two minutes and retry checkout before deleting your account.');
@@ -38,8 +45,22 @@ async function clearSettledCheckout(db: Firestore, userRef: DocumentReference, e
   });
 }
 
+async function clearFreshRejectedCheckout(db: Firestore, userRef: DocumentReference, expected: CheckoutLock) {
+  await db.runTransaction(async transaction => {
+    const current = (await transaction.get(userRef)).data()?.pendingCheckout as CheckoutLock | undefined;
+    if (!sameAttempt(current, expected) || current?.sessionId || current?.expiresAt !== expected.expiresAt) return;
+    transaction.update(userRef, { pendingCheckout: FieldValue.delete() });
+  });
+}
+
+function customerId(value: unknown): string | null {
+  if (typeof value === 'string' && value) return value;
+  return typeof value === 'object' && value !== null && 'id' in value && typeof value.id === 'string' && value.id ? value.id : null;
+}
+
 function assertSessionOwner(session: Stripe.Checkout.Session, userRef: DocumentReference, customer: unknown) {
-  if (session.metadata?.firebase_uid !== userRef.id || session.customer !== customer || session.mode !== 'subscription') {
+  const expected = customerId(customer);
+  if (!expected || session.metadata?.firebase_uid !== userRef.id || customerId(session.customer) !== expected || session.mode !== 'subscription') {
     throw new CheckoutLifecycleError('The pending checkout could not be verified for this account. Contact support before continuing.');
   }
 }
@@ -49,6 +70,9 @@ async function assertCompletedSubscriptionEnded(stripe: Stripe, session: Stripe.
   const id = typeof session.subscription === 'string' ? session.subscription : session.subscription?.id;
   if (!id) throw busy();
   const subscription = await stripe.subscriptions.retrieve(id);
+  const subscriptionCustomer = customerId(subscription.customer);
+  if (!subscriptionCustomer || subscriptionCustomer !== customerId(session.customer) ||
+      (subscription.metadata?.firebase_uid && subscription.metadata.firebase_uid !== session.metadata?.firebase_uid)) throw new CheckoutLifecycleError('The previous subscription ownership could not be verified.');
   // Complete Checkout is not proof that a delayed payment has settled.
   if (!['canceled', 'incomplete_expired'].includes(subscription.status)) {
     throw new CheckoutLifecycleError('Cancel or resolve the subscription in billing settings before continuing.');
@@ -60,29 +84,48 @@ async function assertCompletedSubscriptionEnded(stripe: Stripe, session: Stripe.
  */
 export async function createCheckoutSessionWithLock(userRef: DocumentReference, key: string, request: Stripe.Checkout.SessionCreateParams, stripe: Stripe) {
   assertManagedPlatformRequest(request);
+  if (!validStandardTaxRequest(request)) throw new CheckoutLifecycleError('Automatic tax checkout requires a USD subscription and buyer-provided billing address.');
   const db = userRef.firestore;
   for (let retry = 0; retry < 3; retry++) {
-    const { lock, create, recover } = await db.runTransaction(async transaction => {
-      const profile = (await transaction.get(userRef)).data();
-      assertAvailable(profile);
-      const current = profile?.pendingCheckout as CheckoutLock | undefined;
-      if (current?.sessionId) return { lock: current, create: false, recover: false };
-      if (current) {
-        // Legacy unknown outcomes cannot safely be discarded on a timer.
-        if (!current.attemptId || !current.request) throw new CheckoutLifecycleError('A previous checkout has an unconfirmed outcome. Contact support to reconcile it before starting another checkout or deleting this account.');
-        if (!Number.isFinite(current.expiresAt) || current.expiresAt! > Date.now()) throw busy();
-        const lock = { ...current, expiresAt: Date.now() + 120_000 };
+    let reservation: { lock: CheckoutLock; create: boolean; recover: boolean };
+    try {
+      reservation = await db.runTransaction(async transaction => {
+        const profile = (await transaction.get(userRef)).data();
+        assertAvailable(profile);
+        const current = profile?.pendingCheckout as CheckoutLock | undefined;
+        if (current && !sameStandardTaxPolicy(current.request, request)) throw new TaxPolicyMismatch(current);
+        if (current?.sessionId) return { lock: current, create: false, recover: false };
+        if (current) {
+          // Legacy unknown outcomes cannot safely be discarded on a timer.
+          if (!current.attemptId || !current.request) throw new CheckoutLifecycleError('A previous checkout has an unconfirmed outcome. Contact support to reconcile it before starting another checkout or deleting this account.');
+          if (!Number.isFinite(current.expiresAt) || current.expiresAt! > Date.now()) throw busy();
+          const lock = { ...current, expiresAt: Date.now() + 120_000 };
+          transaction.update(userRef, { pendingCheckout: lock });
+          return { lock, create: true, recover: true };
+        }
+        const attemptId = (request.managed_payments?.enabled === true ? 'checkout-attempt-managed-v4-' : isStandardTaxCheckout(request) ? 'checkout-attempt-standard-tax-v1-' : 'checkout-attempt-standard-v2-') + randomUUID();
+        const lock: CheckoutLock = {
+          key, attemptId, sessionId: null, expiresAt: Date.now() + 120_000,
+          request: { ...request, expires_at: Math.floor(Date.now() / 1000) + 86400, metadata: { ...request.metadata, firebase_uid: userRef.id, checkout_attempt: attemptId } },
+        };
         transaction.update(userRef, { pendingCheckout: lock });
-        return { lock, create: true, recover: true };
-      }
-      const attemptId = (request.managed_payments?.enabled === true ? 'checkout-attempt-managed-v4-' : 'checkout-attempt-standard-v2-') + randomUUID();
-      const lock: CheckoutLock = {
-        key, attemptId, sessionId: null, expiresAt: Date.now() + 120_000,
-        request: { ...request, expires_at: Math.floor(Date.now() / 1000) + 86400, metadata: { ...request.metadata, firebase_uid: userRef.id, checkout_attempt: attemptId } },
-      };
-      transaction.update(userRef, { pendingCheckout: lock });
-      return { lock, create: true, recover: false };
-    });
+        return { lock, create: true, recover: false };
+      });
+    } catch (error) {
+      if (!(error instanceof TaxPolicyMismatch)) throw error;
+      // Read-only terminal proof can release only this exact expired attempt.
+      // Open/uncertain attempts stay fenced. Completed sessions also require
+      // authoritative proof that their same-customer subscription has ended.
+      const previous = error.lock;
+      if (!previous.sessionId || !previous.request?.customer) throw error;
+      const oldSession = await stripe.checkout.sessions.retrieve(previous.sessionId);
+      assertSessionOwner(oldSession, userRef, previous.request.customer);
+      if (oldSession.status === 'complete') await assertCompletedSubscriptionEnded(stripe, oldSession);
+      else if (oldSession.status !== 'expired') throw error;
+      await clearSettledCheckout(db, userRef, previous);
+      continue;
+    }
+    const { lock, create, recover } = reservation;
 
     let session: Stripe.Checkout.Session;
     if (create) {
@@ -102,18 +145,35 @@ export async function createCheckoutSessionWithLock(userRef: DocumentReference, 
       // Paginate so older open checkouts cannot remain payable but untracked.
       let cursor: string | undefined;
       let recoveredSession: Stripe.Checkout.Session | undefined;
+      const olderOpenSessions: Stripe.Checkout.Session[] = [];
       do {
         const page = await stripe.checkout.sessions.list({ customer: String(lock.request!.customer), ...(!recover ? { status: 'open' as const } : {}), limit: 100, ...(cursor ? { starting_after: cursor } : {}) });
         for (const old of page.data) {
           if (old.metadata?.checkout_attempt === lock.attemptId) recoveredSession = old;
           else if (old.status === 'open') {
             assertSessionOwner(old, userRef, lock.request!.customer);
-            await stripe.checkout.sessions.expire(old.id);
+            if (isStandardTaxCheckout(request) && (old.automatic_tax?.enabled !== true || old.managed_payments?.enabled === true || old.currency !== 'usd')) {
+              throw new CheckoutLifecycleError('An older checkout has a different or unverified tax policy. Contact support to reconcile it before continuing.');
+            }
+            olderOpenSessions.push(old);
           }
         }
         cursor = page.has_more ? page.data.at(-1)?.id : undefined;
         if (page.has_more && !cursor) throw busy();
       } while (cursor);
+      // Check every page before expiring any owned same-policy session. A legacy
+      // tax-disabled session is held for explicit reconciliation, never replaced.
+      if (recoveredSession) {
+        assertSessionOwner(recoveredSession, userRef, lock.request!.customer);
+        if (recoveredSession.status === 'expired' || recoveredSession.status === 'complete') {
+          await assertCompletedSubscriptionEnded(stripe, recoveredSession);
+          await clearSettledCheckout(db, userRef, lock);
+          continue;
+        }
+        if (isStandardTaxCheckout(request) && (recoveredSession.automatic_tax?.enabled !== true || recoveredSession.managed_payments?.enabled === true || recoveredSession.currency !== 'usd')) {
+          throw new CheckoutLifecycleError('The recovered checkout tax configuration could not be verified. Contact support before continuing.');
+        }
+      }
       // No catch-time release: a timeout can happen AFTER Stripe creates it.
       if (!recoveredSession && Number(lock.request!.expires_at) <= Date.now() / 1000) throw new CheckoutLifecycleError('The previous checkout needs support reconciliation before it can be retried or the account deleted.');
       if (!recoveredSession) {
@@ -142,7 +202,19 @@ export async function createCheckoutSessionWithLock(userRef: DocumentReference, 
         }
         if (!isDeepStrictEqual(saved, expected)) throw new CheckoutLifecycleError('Retry the previous checkout selections to resolve that attempt, or contact support before deleting your account.');
       }
-      session = recoveredSession ?? await stripe.checkout.sessions.create(lock.request!, { idempotencyKey: lock.attemptId! });
+      if (recoveredSession) assertSessionOwner(recoveredSession, userRef, lock.request!.customer);
+      for (const old of olderOpenSessions) await stripe.checkout.sessions.expire(old.id);
+      try {
+        session = recoveredSession ?? await stripe.checkout.sessions.create(lock.request!, { idempotencyKey: lock.attemptId! });
+      } catch (error) {
+        if (isStandardTaxCheckout(lock.request) && isTaxLocationFailure(error)) {
+          // A definite first-create validation rejection cannot have created a
+          // session. An uncertain recovery must retain its original attempt.
+          if (!recover && isDefiniteTaxLocationRejection(error)) await clearFreshRejectedCheckout(db, userRef, lock);
+          throw new CheckoutLifecycleError('Tax location could not be verified. Review your billing address before retrying.');
+        }
+        throw error;
+      }
       await db.runTransaction(async transaction => {
         const profile = (await transaction.get(userRef)).data();
         if (!profile || isAccountAccessBlocked(profile) || profile.pendingCheckout?.attemptId !== lock.attemptId) throw busy();
@@ -153,12 +225,25 @@ export async function createCheckoutSessionWithLock(userRef: DocumentReference, 
       session = await stripe.checkout.sessions.retrieve(lock.sessionId!);
     }
     assertSessionOwner(session, userRef, lock.request?.customer ?? request.customer);
+    // Tax/currency readiness is relevant only while a checkout can be used.
+    // An owner-verified terminal session must not strand its exact old lock.
+    if (session.status === 'expired' || session.status === 'complete') {
+      await assertCompletedSubscriptionEnded(stripe, session);
+      await clearSettledCheckout(db, userRef, lock);
+      continue;
+    }
     if (lock.request?.managed_payments?.enabled === true) {
       if (session.managed_payments?.enabled !== true) {
         if (session.status === 'open') await stripe.checkout.sessions.expire(session.id);
         throw new CheckoutLifecycleError('Managed checkout responsibility could not be verified.');
       }
       if (session.status === 'open') await assertManagedCheckoutReady(stripe, lock.request);
+    }
+    if (isStandardTaxCheckout(request)) {
+      if (session.automatic_tax?.enabled !== true || session.managed_payments?.enabled === true || session.currency !== 'usd') {
+        throw new CheckoutLifecycleError('The previous checkout tax configuration could not be verified. Contact support before continuing.');
+      }
+      if (session.automatic_tax.status === 'failed') throw new CheckoutLifecycleError('Tax calculation is unavailable. Please try again later.');
     }
     if (session.status === 'open' && lock.key === key && session.url) return session;
     if (session.status === 'open') session = await stripe.checkout.sessions.expire(session.id);

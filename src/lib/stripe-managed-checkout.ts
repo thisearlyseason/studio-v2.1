@@ -1,4 +1,5 @@
 import type Stripe from 'stripe';
+import { standardCheckoutTaxParameters } from './standard-checkout-tax';
 import { ACTIVE_PLAN_PRICE_IDS, EXTRA_TEAM_PRICE_IDS } from './stripe-price-map';
 import { assertManagedProviderLocation } from './managed-tax-coverage';
 
@@ -16,7 +17,7 @@ export function managedSaasMetadata(): Record<string, string> {
   return managedSaasEnabled() ? { squad_payment_flow: MANAGED_SAAS_FLOW } : {};
 }
 export function platformSaasCheckoutParameters(): Stripe.Checkout.SessionCreateParams {
-  if (!managedSaasEnabled()) return { managed_payments: { enabled: false }, adaptive_pricing: { enabled: false } };
+  if (!managedSaasEnabled()) return { managed_payments: { enabled: false }, adaptive_pricing: { enabled: false }, ...standardCheckoutTaxParameters() };
   if (process.env.SQUAD_STRIPE_AUTOMATIC_TAX_ENABLED === 'true') {
     throw new ManagedCheckoutUnavailable('Conflicting payment responsibility settings.');
   }
