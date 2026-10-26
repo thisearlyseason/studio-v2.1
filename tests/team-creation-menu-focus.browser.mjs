@@ -8,7 +8,9 @@ import assert from 'node:assert/strict';
 import ts from 'typescript';
 import postcss from 'postcss';
 
-const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const engines = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
+const engine = process.env.BROWSER_ENGINE || 'chromium';
+assert(['chromium', 'webkit'].includes(engine));
 const root = path.resolve(new URL('..', import.meta.url).pathname);
 const source = path.resolve(process.env.INPUT_SOURCE || root);
 const out = process.env.AUDIT_OUTPUT;
@@ -46,7 +48,7 @@ const stubs = {
   router: `export function useRouter(){return {push:()=>window.routeTo(),back:()=>{}}}export function useSearchParams(){return new URLSearchParams('tier=starter')}`,
   link: `import React from'react';export default function Link({href,children,...p}){return <a href={href} {...p}>{children}</a>}`,
   team: `export const useTeam=()=>window.team;`,
-  distribution: `export const isStoreDistribution=true;`,
+  distribution: `export const isStoreDistribution=${process.env.APP_DISTRIBUTION === 'store'};`,
 };
 const aliases = { 'next/navigation': 'router', 'next/link': 'link', '@/components/providers/team-provider': 'team', '@/lib/app-distribution': 'distribution' };
 await build({
@@ -72,10 +74,10 @@ const server = http.createServer(async (req, res) => {
 });
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const origin = 'http://127.0.0.1:' + server.address().port;
-const result = { scope: 'Actual native Shell menu state/roots, form, Radix layers and CSS; fictional router/team; no physical keyboard or device acceptance claimed', cases: [], errors: [], externalRequests: [] };
+const result = { engine, distribution: process.env.APP_DISTRIBUTION || 'web', scope: 'Actual Shell menu state/roots, form, Radix layers and CSS; fictional router/team; no physical keyboard or device acceptance claimed', cases: [], errors: [], externalRequests: [] };
 let browser;
 try {
-  browser = await chromium.launch({ channel: 'chrome', headless: true });
+  browser = await engines[engine].launch({ ...(engine === 'chromium' ? { channel: 'chrome' } : {}), headless: true });
   for (const viewport of [{ width: 412, height: 915 }, { width: 768, height: 1024 }, { width: 1280, height: 900 }]) {
     for (const modern of [false, true]) {
       // Classic uses the context bar on phones; desktop classic uses a distinct sidebar menu.
