@@ -51,7 +51,7 @@ function plainJson(value: unknown, depth = 0): boolean {
   });
 }
 
-export function parseNativeValue<T>(schema: z.ZodType<T, z.ZodTypeDef, unknown>, input: unknown): T {
+export function parseNativeValue<T>(schema: z.ZodType<T>, input: unknown): T {
   if (!plainJson(input)) throw new NativeAuthError('invalid_request');
   const result = schema.safeParse(input);
   if (!result.success) throw new NativeAuthError('invalid_request');
