@@ -77,6 +77,14 @@ export default function LoginPage() {
     if (isStoreDistribution && user && auth.currentUser?.uid !== user.uid) return;
     if (!isUserLoading && user) {
       const fetchRole = async () => {
+        const enterAuthenticatedPage = (path: string) => {
+          // The session cookie is written by a Route Handler, which cannot
+          // invalidate an earlier signed-out redirect in the App Router cache.
+          // A fresh web document request presents the new cookie to every guard.
+          // Native handoff keeps its existing verified in-app navigation.
+          if (isStoreDistribution) router.push(path);
+          else window.location.replace(path);
+        };
         if (!user.isAnonymous && !user.emailVerified) {
           await clearBrowserSession();
           router.replace('/verify-email');
@@ -102,7 +110,7 @@ export default function LoginPage() {
         if (storedReturnPath) {
           const returnPath = safeReturnPath(storedReturnPath, APP_DISTRIBUTION);
           sessionStorage.removeItem('squad_return_path');
-          router.push(returnPath);
+          enterAuthenticatedPage(returnPath);
           return;
         }
         try {
@@ -118,16 +126,16 @@ export default function LoginPage() {
             }
             const tokenResult = await user.getIdTokenResult();
             if (tokenResult.claims.role === 'superadmin') {
-              router.push('/admin');
+              enterAuthenticatedPage('/admin');
 
             } else {
-              router.push('/dashboard');
+              enterAuthenticatedPage('/dashboard');
             }
           } else {
-            router.push('/onboarding');
+            enterAuthenticatedPage('/onboarding');
           }
         } catch (e) {
-          router.push('/onboarding');
+          enterAuthenticatedPage('/onboarding');
         }
         // Keep feedback active until navigation unmounts this page.
       };

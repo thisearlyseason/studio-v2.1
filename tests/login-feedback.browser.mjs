@@ -77,7 +77,7 @@ async function fixture(options = {}) {
         }
         return json(route, { ok: true });
       }
-      if (state.navigationGate && url.pathname === '/how-to' && url.searchParams.has('_rsc')) {
+      if (state.navigationGate && url.pathname === '/how-to' && req.isNavigationRequest()) {
         state.navigationSeen = true;
         await state.navigationGate.promise;
       }
@@ -164,11 +164,11 @@ try {
     assert.equal(f.state.submitted.at(-1).password, '  fixture-password  ');
     assert.equal(await f.page.getByRole('button', { name: 'Continue with Google' }).isDisabled(), true);
     f.state.navigationGate = deferred();
+    await f.busy('pending survives until the session exchange completes');
+    await f.page.screenshot({ path: path.join(output, 'pending-navigation.png') });
     f.state.sessionGate.resolve();
     await f.page.waitForTimeout(500);
-    assert.equal(f.state.navigationSeen, true, 'actual Next RSC navigation starts');
-    await f.busy('pending survives until navigation commits');
-    await f.page.screenshot({ path: path.join(output, 'pending-navigation.png') });
+    assert.equal(f.state.navigationSeen, true, 'fresh document navigation presents the new cookie instead of a cached redirect');
     f.state.navigationGate.resolve();
     await f.page.waitForURL('**/how-to');
     await f.close();

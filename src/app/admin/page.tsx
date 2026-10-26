@@ -1011,7 +1011,7 @@ export default function AdminPortalPage() {
             <Button size="sm" variant="ghost" className="text-gray-500 dark:text-gray-500 dark:text-gray-900 dark:text-white/40 hover:text-black dark:hover:text-gray-900 dark:text-white mr-2" onClick={() => setTheme(theme === 'light' ? 'dark' : 'light')}>
       {theme === 'light' ? '🌙 Dark Mode' : '☀️ Light Mode'}
     </Button>
-    <Button size="sm" variant="ghost" className="text-gray-500 dark:text-gray-500 dark:text-gray-900 dark:text-white/40 hover:text-black dark:hover:text-gray-900 dark:text-white" onClick={() => router.push('/dashboard')}>
+    <Button size="sm" variant="ghost" className="text-gray-500 dark:text-gray-500 dark:text-gray-900 dark:text-white/40 hover:text-black dark:hover:text-gray-900 dark:text-white" onClick={() => window.location.assign('/dashboard')}>
               <LogOut className="h-4 w-4 mr-2" /> Exit Admin
             </Button>
           </div>

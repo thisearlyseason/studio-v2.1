@@ -57,7 +57,7 @@ test('new identities require onboarding before dashboard access', async () => {
     source('../src/lib/server-dashboard-auth.ts'),
     source('../src/app/onboarding/page.tsx'),
   ]);
-  assert.match(login, /router\.push\('\/onboarding'\)/);
+  assert.match(login, /enterAuthenticatedPage\('\/onboarding'\)/);
   assert.match(serverAuth, /if \(!profile\) redirect\('\/onboarding'\)/);
   assert.match(onboarding, /batch\.set\(doc\(db, 'users', user\.uid\)/);
   assert.match(onboarding, /role/);
