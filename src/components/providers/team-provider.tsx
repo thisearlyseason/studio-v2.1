@@ -864,7 +864,7 @@ interface TeamContextType {
   firebaseUser: any;
   user: UserProfile | null;
   activeTeam: Team | null;
-  setActiveTeam: (team: Team) => void;
+  setActiveTeam: (team: Team | { id: string } | null) => void;
   teams: Team[];
   isTeamsLoading: boolean;
   members: Member[];
