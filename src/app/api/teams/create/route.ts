@@ -2,13 +2,14 @@ import { randomBytes } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyFirebaseToken, assertNonAnonymous } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
-import {
-  accountCreationLimit,
-  normalizeCreationText,
-} from '@/lib/account-creation-policy';
+import { normalizeCreationText } from '@/lib/account-creation-policy';
 import { readJsonBodyWithLimit, RequestBodyError } from '@/lib/server-request-guards';
 import { buildWaiverVersionIdentity } from '@/lib/waiver-security';
 import { AccountOwnershipError, readOwnershipAccounts } from '@/lib/server-account-ownership';
+
+// Starter teams do not consume paid squad seats. Keep the existing maximum
+// account resource bound; paid capacity is enforced when allocating Pro access.
+const MAX_OWNED_TEAMS = 100;
 
 const ALLOWED_TYPES = new Set([
   'adult',
@@ -113,8 +114,7 @@ export async function POST(request: NextRequest) {
           throw new AccountOwnershipError('Organization authorization changed. Please refresh and try again.');
         }
       }
-      const limit = auth.role === 'superadmin' ? 100 : accountCreationLimit(accounts.owner.data());
-      if (ownedTeams.size >= limit) throw new Error('TEAM_LIMIT_REACHED');
+      if (ownedTeams.size >= MAX_OWNED_TEAMS) throw new Error('TEAM_LIMIT_REACHED');
 
       const baseTeam = {
         id: teamId,
@@ -205,7 +205,7 @@ export async function POST(request: NextRequest) {
     const code = error instanceof Error ? error.message : 'TEAM_CREATE_FAILED';
     if (code === 'TEAM_LIMIT_REACHED') {
       return NextResponse.json(
-        { error: 'Your account has reached its team limit.' },
+        { error: `Your account has reached the maximum of ${MAX_OWNED_TEAMS} teams.` },
         { status: 409 }
       );
     }

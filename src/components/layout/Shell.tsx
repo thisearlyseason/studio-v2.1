@@ -438,9 +438,9 @@ function ShellContent({ children }: { children: React.ReactNode }) {
   });
 
   const [isMoreMenuOpen, setIsMoreMenuOpen] = useState(false);
-  // Controlled open state for both squad switcher instances
+  // Each mounted switcher owns a distinct open state; only one modal may open.
   const [sidebarSwitcherOpen, setSidebarSwitcherOpen] = useState(false);
-  const [mobileSwitcherOpen, setMobileSwitcherOpen] = useState(false);
+  const [mobileSwitcherOpen, setMobileSwitcherOpen] = useState<'header' | 'context' | null>(null);
 
   // PWA Installation Hook State
   const [deferredPrompt, setDeferredPrompt] = useState<PwaInstallPrompt | null>(null);
@@ -948,9 +948,9 @@ function ShellContent({ children }: { children: React.ReactNode }) {
                   {activeTeam?.teamLogoUrl ? <Avatar className="h-10 w-10 rounded-lg"><AvatarImage src={activeTeam.teamLogoUrl}/><AvatarFallback>{activeTeam.name?.[0]}</AvatarFallback></Avatar> : <BrandLogo variant="light-background" className="h-9 w-20 shrink-0"/>}
                   <span>{activeTeam?.name || 'The Squad'}</span>
                 </Link>
-                <DropdownMenu open={mobileSwitcherOpen} onOpenChange={setMobileSwitcherOpen}>
+                <DropdownMenu open={mobileSwitcherOpen === 'header'} onOpenChange={open => setMobileSwitcherOpen(open ? 'header' : null)}>
                   <DropdownMenuTrigger asChild><Button variant="ghost" aria-label="Switch squad" className="modern-header-switch"><span className="hidden lg:inline">{activeTeam?.name}</span><ChevronDown className="h-4 w-4"/></Button></DropdownMenuTrigger>
-                  <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} user={user} isSchoolMode={isSchoolMode} isPrimaryClubAuthority={isPrimaryClubAuthority} isEliteAccount={isEliteAccount} isEliteClubMode={isEliteClubMode} onClose={() => setMobileSwitcherOpen(false)} />
+                  <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} user={user} isSchoolMode={isSchoolMode} isPrimaryClubAuthority={isPrimaryClubAuthority} isEliteAccount={isEliteAccount} isEliteClubMode={isEliteClubMode} onClose={() => setMobileSwitcherOpen(null)} />
                 </DropdownMenu>
                 <nav aria-label="Main navigation" className="modern-header-nav"><Link href="/dashboard" aria-current={pathname === '/dashboard' ? 'page' : undefined}>Dashboard</Link>
                   <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="modern-tools-trigger" aria-label="Team tools"><Menu className="h-4 w-4"/><span className="modern-tools-label">Team tools</span></Button></DropdownMenuTrigger><DropdownMenuContent align="start" className="modern-tools-menu">
@@ -1098,7 +1098,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
             </header>
             {activeTeam && !(user?.role === 'league_creator' && !activeTeam) && (
               <div className="md:hidden sticky top-16 z-30 border-b bg-background/95 px-3 py-2 backdrop-blur-md">
-                <DropdownMenu open={mobileSwitcherOpen} onOpenChange={setMobileSwitcherOpen}>
+                <DropdownMenu open={mobileSwitcherOpen === 'context'} onOpenChange={open => setMobileSwitcherOpen(open ? 'context' : null)}>
                   <DropdownMenuTrigger asChild>
                     <button
                       type="button"
@@ -1113,7 +1113,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
                       <ChevronDown className="h-4 w-4 shrink-0 text-primary" />
                     </button>
                   </DropdownMenuTrigger>
-                  <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} user={user} isSchoolMode={isSchoolMode} isPrimaryClubAuthority={isPrimaryClubAuthority} isEliteAccount={isEliteAccount} isEliteClubMode={isEliteClubMode} onClose={() => setMobileSwitcherOpen(false)} />
+                  <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} user={user} isSchoolMode={isSchoolMode} isPrimaryClubAuthority={isPrimaryClubAuthority} isEliteAccount={isEliteAccount} isEliteClubMode={isEliteClubMode} onClose={() => setMobileSwitcherOpen(null)} />
                 </DropdownMenu>
               </div>
             )}
