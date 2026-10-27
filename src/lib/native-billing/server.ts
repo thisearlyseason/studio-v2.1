@@ -5,9 +5,14 @@ import { claimSubscriptionMutation, releaseSubscriptionMutation } from '@/lib/se
 import { resolveNativeEntitlement } from './catalog';
 import { isAccountAccessBlocked } from '@/lib/account-access-policy';
 
-export function nativeBillingEnabled(uid?: string) {
-  if (!process.env.REVENUECAT_SERVER_API_KEY) return false;
-  if (process.env.NATIVE_BILLING_ENABLED === 'true') return true;
+export function nativeBillingConfigured() {
+  return Boolean(process.env.REVENUECAT_SERVER_API_KEY);
+}
+export function nativePurchasesEnabled(platform: 'ios' | 'android', uid?: string) {
+  if (!nativeBillingConfigured()) return false;
+  // An explicit store setting overrides the legacy shared sales switch.
+  const enabled = platform === 'ios' ? process.env.NATIVE_BILLING_IOS_ENABLED : process.env.NATIVE_BILLING_ANDROID_ENABLED;
+  if ((enabled ?? process.env.NATIVE_BILLING_ENABLED) === 'true') return true;
   // Allow a verified test account to finish store QA before customer launch.
   const testers = (process.env.NATIVE_BILLING_TEST_USER_IDS || '').split(',').map(value => value.trim()).filter(Boolean);
   return process.env.NATIVE_BILLING_ALLOW_SANDBOX === 'true' && Boolean(uid && testers.includes(uid));
@@ -20,7 +25,8 @@ export function validWebhookAuthorization(value: string | null) {
 }
 
 export async function syncNativeBilling(uid: string, selectedTeamId?: string) {
-  if (!nativeBillingEnabled(uid)) throw new Error('Native billing is not configured');
+  // Pausing new sales must not stop restore, cancellation or expiry updates.
+  if (!nativeBillingConfigured()) throw new Error('Native billing is not configured');
   const userRef = adminDb.collection('users').doc(uid);
   const key = `revenuecat:${randomUUID()}`;
   await claimSubscriptionMutation(userRef, key);

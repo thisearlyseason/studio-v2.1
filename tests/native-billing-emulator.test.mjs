@@ -142,10 +142,78 @@ test('pre-release sandbox access is limited to the authenticated allowlisted acc
     Object.assign(process.env, { NATIVE_BILLING_ENABLED: 'false', NATIVE_BILLING_ALLOW_SANDBOX: 'true', NATIVE_BILLING_TEST_USER_IDS: tester.uid });
     assert.equal((await invoke('session', tester.token, { platform: 'android', action: 'catalog' })).status, 200);
     assert.equal((await invoke('session', other.token, { platform: 'android', action: 'catalog', userId: tester.uid })).status, 503);
-    assert.equal((await invoke('sync', other.token, {})).status, 503);
+    subscribers.set(other.uid, subscriber(true, { is_sandbox: true }));
+    assert.equal((await (await invoke('sync', other.token, {})).json()).active, false);
     process.env.NATIVE_BILLING_ALLOW_SANDBOX = 'false';
     assert.equal((await invoke('session', tester.token, { platform: 'android', action: 'catalog' })).status, 503);
   } finally {
     for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
   }
+});
+
+test('iOS-only sales keep Android purchases QA-only without disabling existing-account management', { skip: !enabled }, async () => {
+  const tester = await account('ios-rollout-qa'), customer = await account('ios-rollout-customer');
+  const keys = ['NATIVE_BILLING_ENABLED', 'NATIVE_BILLING_IOS_ENABLED', 'NATIVE_BILLING_ANDROID_ENABLED', 'NATIVE_BILLING_ALLOW_SANDBOX', 'NATIVE_BILLING_TEST_USER_IDS'];
+  const saved = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  try {
+    Object.assign(process.env, { NATIVE_BILLING_ENABLED: 'false', NATIVE_BILLING_IOS_ENABLED: 'true', NATIVE_BILLING_ANDROID_ENABLED: 'false', NATIVE_BILLING_ALLOW_SANDBOX: 'true', NATIVE_BILLING_TEST_USER_IDS: tester.uid });
+    for (const action of ['catalog', 'purchase']) {
+      const ios = await invoke('session', customer.token, { platform: 'ios', action });
+      assert.equal(ios.status, 200); assert.equal((await ios.json()).apiKey, 'appl_test');
+      assert.equal((await invoke('session', customer.token, { platform: 'android', action, userId: tester.uid })).status, 503);
+      const android = await invoke('session', tester.token, { platform: 'android', action });
+      assert.equal(android.status, 200); assert.equal((await android.json()).apiKey, 'goog_test');
+    }
+    // Explicit Android=false must also win over an accidentally enabled legacy switch.
+    process.env.NATIVE_BILLING_ENABLED = 'true';
+    assert.equal((await invoke('session', customer.token, { platform: 'android', action: 'purchase' })).status, 503);
+    for (const platform of ['ios', 'android']) for (const action of ['restore', 'manage']) {
+      assert.equal((await invoke('session', customer.token, { platform, action })).status, 200);
+    }
+    subscribers.set(customer.uid, subscriber(true, { is_sandbox: true }));
+    assert.equal((await (await invoke('sync', customer.token, {})).json()).active, false);
+    subscribers.set(tester.uid, subscriber(true, { is_sandbox: true }));
+    assert.equal((await (await invoke('sync', tester.token, {})).json()).active, true);
+  } finally {
+    for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+  }
+});
+
+test('pausing both store sales preserves real subscriber restore and webhook expiry reconciliation', { skip: !enabled }, async () => {
+  const customer = await account('paused-sales-subscriber');
+  const keys = ['NATIVE_BILLING_ENABLED', 'NATIVE_BILLING_IOS_ENABLED', 'NATIVE_BILLING_ANDROID_ENABLED'];
+  const saved = Object.fromEntries(keys.map(key => [key, process.env[key]]));
+  try {
+    Object.assign(process.env, { NATIVE_BILLING_ENABLED: 'false', NATIVE_BILLING_IOS_ENABLED: 'false', NATIVE_BILLING_ANDROID_ENABLED: 'false' });
+    subscribers.set(customer.uid, subscriber());
+    const event = { event: { type: 'INITIAL_PURCHASE', app_user_id: customer.uid } };
+    assert.equal((await invoke('webhook', authHeader, event)).status, 200);
+    assert.equal((await db.doc('teams/team_' + customer.uid).get()).data().isPro, true);
+    for (const platform of ['ios', 'android']) {
+      for (const action of ['catalog', 'purchase']) assert.equal((await invoke('session', customer.token, { platform, action })).status, 503);
+      for (const action of ['restore', 'manage']) assert.equal((await invoke('session', customer.token, { platform, action })).status, 200);
+    }
+    assert.equal((await (await invoke('sync', customer.token, {})).json()).active, true);
+    providerStatus = 503;
+    try { assert.equal((await invoke('webhook', authHeader, event)).status, 503); } finally { providerStatus = 200; }
+    assert.equal((await db.doc('teams/team_' + customer.uid).get()).data().isPro, true);
+    subscribers.set(customer.uid, subscriber(false));
+    assert.equal((await invoke('webhook', authHeader, { event: { type: 'EXPIRATION', app_user_id: customer.uid } })).status, 200);
+    assert.equal((await db.doc('teams/team_' + customer.uid).get()).data().isPro, false);
+    assert.equal((await (await invoke('sync', customer.token, {})).json()).active, false);
+  } finally {
+    for (const [key, value] of Object.entries(saved)) { if (value === undefined) delete process.env[key]; else process.env[key] = value; }
+  }
+});
+
+test('iOS sales enablement retains demo and suspended-account restrictions', { skip: !enabled }, async () => {
+  const saved = process.env.NATIVE_BILLING_IOS_ENABLED;
+  try {
+    process.env.NATIVE_BILLING_IOS_ENABLED = 'true';
+    for (const [label, profile] of [['ios-demo', { isDemo: true }], ['ios-suspended', { accountStatus: 'suspended' }]]) {
+      const who = await account(label, profile);
+      for (const action of ['catalog', 'purchase', 'restore', 'manage']) assert.equal((await invoke('session', who.token, { platform: 'ios', action })).status, 403);
+      assert.equal((await invoke('sync', who.token, {})).status, profile.isDemo ? 503 : 403);
+    }
+  } finally { if (saved === undefined) delete process.env.NATIVE_BILLING_IOS_ENABLED; else process.env.NATIVE_BILLING_IOS_ENABLED = saved; }
 });

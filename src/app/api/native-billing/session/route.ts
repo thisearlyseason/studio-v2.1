@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { verifyFirebaseToken, assertNonAnonymous } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
 import { enforceUserRateLimit, readJsonBodyWithLimit } from '@/lib/server-request-guards';
-import { nativeBillingEnabled, syncNativeBilling } from '@/lib/native-billing/server';
+import { nativeBillingConfigured, nativePurchasesEnabled, syncNativeBilling } from '@/lib/native-billing/server';
 import { activeNativeEntitlement, nativeProductIds } from '@/lib/native-billing/catalog';
 import { isBlockingSubscriptionStatus } from '@/lib/checkout-policy';
 import { isAccountAccessBlocked } from '@/lib/account-access-policy';
@@ -12,10 +12,11 @@ export async function POST(req: NextRequest) {
   if (auth instanceof NextResponse) return auth;
   const anonymous = assertNonAnonymous(auth); if (anonymous) return anonymous;
   const rate = await enforceUserRateLimit(auth.uid, 'native-billing-session', 60, 60_000); if (rate) return rate;
-  if (!nativeBillingEnabled(auth.uid)) return NextResponse.json({error:'In-app subscriptions are not available yet.'},{status:503});
+  if (!nativeBillingConfigured()) return NextResponse.json({error:'In-app subscriptions are not available yet.'},{status:503});
   try {
     const { platform, action } = await readJsonBodyWithLimit<{platform?:string;action?:string}>(req, 2048);
     if (!['ios','android'].includes(platform || '') || !['catalog','purchase','restore','manage'].includes(action || '')) return NextResponse.json({error:'Invalid request'},{status:400});
+    if ((action === 'catalog' || action === 'purchase') && !nativePurchasesEnabled(platform as 'ios'|'android', auth.uid)) return NextResponse.json({error:'In-app subscriptions are not available yet.'},{status:503});
     let user = (await adminDb.collection('users').doc(auth.uid).get()).data();
     if (!user || user.isDemo || isAccountAccessBlocked(user)) return NextResponse.json({error:'A registered active account is required.'},{status:403});
     if (action === 'purchase' || action === 'catalog') {
