@@ -50,10 +50,19 @@ export function createBillingPriceRefresh(deps: {
     void Promise.race([Promise.resolve().then(() => deps.load(current.controller.signal)), timeout]).then(data => {
       if (stopped || request !== current) return;
       const list = (data as { prices?: unknown } | null)?.prices;
+      const receivedAt = now();
+      const hasFutureQuotes = Array.isArray(list) && list.some(p => p &&
+        Number.isFinite(p.fetchedAt) && p.fetchedAt > receivedAt);
       // A successful empty/invalid catalog invalidates old quotes immediately.
-      prices = Array.isArray(list) ? list.filter((p): p is DisplayPrice => isFreshDisplayPrice(p, now())) : [];
+      prices = Array.isArray(list) ? list.filter((p): p is DisplayPrice => isFreshDisplayPrice(p, receivedAt)) : [];
       prune();
       if (!prices.length) throw new Error('Fresh prices unavailable');
+      // Small server/device clock differences can reject only the last quotes
+      // in a parallel fetch. Keep rejecting them, but retry the cached response
+      // instead of leaving those plans unavailable until the five-minute timer.
+      if (hasFutureQuotes) {
+        armRefresh(retry); retry = Math.min(retry * 2, 60000); return;
+      }
       retry = 1000;
       const remaining = Math.min(...prices.map(p => p.fetchedAt + DISPLAY_PRICE_MAX_AGE_MS - now()));
       armRefresh(remaining > 30000 ? remaining - 30000 : Math.max(1000, remaining));

@@ -13,6 +13,24 @@ function fixture(load){
 test('entry loads fresh server prices and refreshes before five-minute expiry',async()=>{const f=fixture();f.c.refresh();await settle();assert.equal(f.calls,1);assert.equal(f.state.loading,false);await f.advance(270000);assert.equal(f.calls,2);assert.equal(f.state.prices[0].fetchedAt,f.time);f.c.stop();assert.equal(f.timers.size,0)});
 test('expired cached catalog fails closed then retry recovers without manual refresh',async()=>{const f=fixture(({quote,calls})=>Promise.resolve({prices:[quote(calls===1?DISPLAY_PRICE_MAX_AGE_MS:0)]}));f.c.refresh();await settle();assert.deepEqual(f.state.prices,[]);await f.advance(1000);assert.equal(f.calls,2);assert.equal(f.state.prices.length,1);f.c.stop()});
 test('future-dated quotes are never authorized; retry can later obtain a current quote',async()=>{const f=fixture(({quote,calls})=>Promise.resolve({prices:[quote(calls===1?-1:0)]}));f.c.refresh();await settle();assert.deepEqual(f.state.prices,[]);await f.advance(1000);assert.equal(f.state.prices.length,1);f.c.stop()});
+test('a partly future-dated cached catalog retries automatically and restores every price',async()=>{
+ let cached;
+ const f=fixture(({quote,time})=>{
+  cached??=Array.from({length:10},(_,i)=>({...quote(),id:`price_fixture_${i}`,fetchedAt:time+(i===4||i===8?30:-20)}));
+  return Promise.resolve({prices:cached});
+ });
+ f.c.refresh();await settle();assert.equal(f.state.prices.length,8);
+ assert(f.state.prices.every(p=>isFreshDisplayPrice(p,f.time)));
+ await f.advance(1000);assert.equal(f.calls,2);assert.equal(f.state.prices.length,10);
+ f.c.stop();assert.equal(f.timers.size,0);
+});
+test('partial future-price retries back off and never authorize the future quote',async()=>{
+ const f=fixture(({quote,time})=>Promise.resolve({prices:[quote(),{...quote(),id:'price_future',fetchedAt:time+60000}]}));
+ f.c.refresh();await settle();await f.advance(1000);assert.equal(f.calls,2);
+ await f.advance(2000);assert.equal(f.calls,3);await f.advance(59000);assert(f.calls<=8);
+ assert.equal(f.state.prices.length,1);assert(f.state.prices.every(p=>isFreshDisplayPrice(p,f.time)));
+ f.c.stop();assert.equal(f.timers.size,0);
+});
 test('network failure retains only still-fresh quotes and invalidates them at expiry',async()=>{const f=fixture(({quote,calls})=>calls===1?Promise.resolve({prices:[quote()]}):Promise.reject(Error('offline')));f.c.refresh();await settle();await f.advance(270000);assert.equal(f.state.prices.length,1);await f.advance(30000);assert.deepEqual(f.state.prices,[]);assert(f.calls<10);f.c.stop()});
 test('empty or malformed successful response immediately removes old prices',async()=>{for(const data of [{prices:[]},{prices:'bad'},null]){const f=fixture(({quote,calls})=>Promise.resolve(calls===1?{prices:[quote()]}:data));f.c.refresh();await settle();await f.advance(1000);f.c.refresh();await settle();assert.deepEqual(f.state.prices,[]);f.c.stop()}});
 test('hidden/offline expiry and foreground/reconnect fetch; no background polling loop',async()=>{const f=fixture();f.c.refresh();await settle();f.setAvailable(false);await f.advance(600000);assert.equal(f.calls,1);assert.deepEqual(f.state.prices,[]);f.setAvailable(true);f.c.refresh();await settle();assert.equal(f.calls,2);assert.equal(f.state.prices.length,1);f.c.stop()});
