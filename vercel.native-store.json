@@ -1,0 +1,4 @@
+{
+  "buildCommand": "node native-deployment-guard.cjs && npm run verify:env && npx tsc --noEmit && npm run build",
+  "crons": []
+}
