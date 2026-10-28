@@ -56,6 +56,11 @@ test('extra-slot controls remain available with the paid team selected and with 
   for (const input of [{ selectedPro: true }, { stripe: false }]) assert.match(render(fixture(input)), /Extra Squad Slots/);
   assert.match(render(fixture({ stripe: false })), /Active - managed plan/);
 });
+test('initial web checkout keeps the intended-use choice with its dialog rather than a detached page form', () => {
+  const html = render(fixture({ stripe: false }));
+  assert.match(html, /Extra Squad Slots/);
+  assert.doesNotMatch(html, /Choose intended use|How will this subscription be used\?/);
+});
 test('viewing a Pro demo team does not turn a free account into an extra-slot customer', () => {
   assert.doesNotMatch(render(fixture({ plan: 'free', selectedPro: true })), /Extra Squad Slots/);
 });

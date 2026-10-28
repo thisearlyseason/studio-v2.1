@@ -6,7 +6,7 @@ import { SchoolPlanDeclaration } from '@/components/school-plan-declaration';
 import { schoolOrganizationDeclaration, schoolPlanEligibilityError, type SchoolOrganizationDeclaration } from '@/lib/school-plan-eligibility';
 
 import { useSubscriptionCapabilities } from '@/lib/use-subscription-capabilities';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { useTeam } from '@/components/providers/team-provider';
 import { useAuth } from '@/firebase';
@@ -41,6 +41,7 @@ import { Separator } from '@/components/ui/separator';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { SquadIdentity } from '@/components/SquadIdentity';
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog';
 import { isBillableSquadSeat } from '@/lib/team-seat-policy';
 import { getBillingPlanStatusLabel, isDemoBillingIdentity } from '@/lib/billing-plan-status';
 import {
@@ -67,28 +68,38 @@ export default function BillingDashboard() {
   const [pendingSync, setPendingSync] = useState(false);
   const [addonQty, setAddonQty] = useState(userProfile?.extra_teams || 0);
   const [taxUse, setTaxUse] = useState('');
+  const [checkoutIntent, setCheckoutIntent] = useState<{ plan: Plan | null; extraTeams?: number; context: string } | null>(null);
+  const checkoutTrigger = useRef<HTMLElement | null>(null);
   const [billingCountry, setBillingCountry] = useState('');
   const [billingCountryRequired, setBillingCountryRequired] = useState(false);
-  useEffect(() => { setTaxUse(''); setBillingCountry(''); setBillingCountryRequired(false); }, [userProfile?.id, activeTeam?.id]);
   const [organizationDeclaration, setOrganizationDeclaration] = useState<SchoolOrganizationDeclaration | ''>('');
   const declaredOrganization = organizationDeclaration || schoolOrganizationDeclaration((userProfile as any)?.organizationType) || '';
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(
     userProfile?.billing_cycle || 'monthly'
   );
-
-  useEffect(() => {
-    setAddonQty(userProfile?.extra_teams || 0);
-  }, [userProfile?.extra_teams]);
-  useEffect(() => {
-    if (userProfile?.billing_cycle) {
-      setBillingCycle(userProfile.billing_cycle);
-    }
-  }, [userProfile?.billing_cycle]);
-
   const isDemo = isDemoBillingIdentity({
     anonymous: auth?.currentUser?.isAnonymous,
     profileIsDemo: (userProfile as any)?.isDemo,
   });
+  const checkoutContext = JSON.stringify([userProfile?.id, activeTeam?.id, userProfile?.stripe_subscription_id, userProfile?.billing_provider, userProfile?.plan_type, isDemo, billingCycle]);
+  const currentCheckoutContext = useRef(checkoutContext);
+  currentCheckoutContext.current = checkoutContext;
+  useEffect(() => {
+    setCheckoutIntent(null);
+    setTaxUse('');
+    setBillingCountry('');
+    setBillingCountryRequired(false);
+    setOrganizationDeclaration('');
+  }, [checkoutContext]);
+
+  useEffect(() => {
+    setAddonQty(userProfile?.extra_teams || 0);
+  }, [userProfile?.id, userProfile?.extra_teams]);
+  useEffect(() => {
+    if (userProfile?.billing_cycle) {
+      setBillingCycle(userProfile.billing_cycle);
+    }
+  }, [userProfile?.id, userProfile?.billing_cycle]);
 
   const currentPlan = PRICING_CONFIG.find(p => p.id === userProfile?.plan_type) || null;
   const paidSeatLimit = userProfile?.team_limit ?? 0;
@@ -108,7 +119,7 @@ export default function BillingDashboard() {
   const capabilities = useSubscriptionCapabilities(auth, userProfile?.id, userProfile?.stripe_subscription_id);
 
   // ─── Handlers ────────────────────────────────────────────────────────────
-  const handleUpdatePlan = async (newPlan: Plan | null, initialAddons?: number) => {
+  const handleUpdatePlan = async (newPlan: Plan | null, initialAddons?: number, checkoutTaxUse?: string) => {
     if (!userProfile?.id) return;
     const displayPlan=newPlan || PRICING_CONFIG.find(p=>p.id===userProfile.plan_type) || PRICING_CONFIG[0];
     if(!priceReady(planPriceId(displayPlan)) || ((initialAddons||0)>0 && !priceReady(addonPriceId()))) { toast({title:'Current price unavailable',description:'Refresh prices before changing your plan.'}); return; }
@@ -127,13 +138,19 @@ export default function BillingDashboard() {
       return;
     }
 
-    if (!isStripeLinked && !taxUse) { toast({ title: 'Intended use required', description: 'Choose how this subscription will be used before checkout.' }); return; }
     const eligibilityError = schoolPlanEligibilityError(displayPlan.id, userProfile, declaredOrganization);
     if (eligibilityError) { toast({ title: 'Organization declaration required', description: eligibilityError, variant: 'destructive' }); return; }
+    if (!isStripeLinked && checkoutTaxUse !== 'personal' && checkoutTaxUse !== 'commercial') {
+      checkoutTrigger.current = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+      setTaxUse('');
+      setCheckoutIntent({ plan: newPlan, extraTeams: initialAddons, context: checkoutContext });
+      return;
+    }
     setLoading(newPlan ? 'plan_' + newPlan.id : 'addon_init');
     if (!isStripeLinked) {
       try {
         const token = await getAuthToken(auth);
+        if (currentCheckoutContext.current !== checkoutContext) { setLoading(null); return; }
         const response = await fetch('/api/stripe/create-checkout', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json', ...authHeader(token) },
@@ -142,15 +159,17 @@ export default function BillingDashboard() {
             teamId: activeTeam?.id,
             priceId: planPriceId(displayPlan),
             billingCycle,
-            taxUse,
+            taxUse: checkoutTaxUse,
             organizationDeclaration: declaredOrganization,
             extraTeamQty: initialAddons || 0,
             ...(billingCountry ? { billingCountry } : {}),
           }),
         });
         const data = await response.json();
+        if (currentCheckoutContext.current !== checkoutContext) { setLoading(null); return; }
         if (data.code === 'BILLING_COUNTRY_REQUIRED') setBillingCountryRequired(true);
         if (data.url) {
+          setCheckoutIntent(null);
           window.location.href = data.url;
         } else {
           throw new Error(data.error || 'Failed to create checkout session');
@@ -365,8 +384,35 @@ export default function BillingDashboard() {
   return (
     <div className="max-w-5xl mx-auto py-10 px-4 md:px-6 space-y-10 pb-20">
 
-      {!isStripeLinked && !isDemo && <SaasTaxUseDeclaration value={taxUse} onChange={setTaxUse} />}
-      {billingCountryRequired && <BillingCountryDeclaration value={billingCountry} onChange={setBillingCountry} />}
+      <Dialog open={checkoutIntent !== null} onOpenChange={open => {
+        if (!open && !loading) { setCheckoutIntent(null); setTaxUse(''); }
+      }}>
+        <DialogContent className="p-6 sm:max-w-md" hideClose={!!loading} onCloseAutoFocus={event => {
+          event.preventDefault();
+          if (checkoutTrigger.current?.isConnected) checkoutTrigger.current.focus();
+        }}>
+          <div className="space-y-6">
+            <DialogHeader className="pr-8">
+              <DialogTitle>Choose subscription use</DialogTitle>
+              <DialogDescription>Choose how you will use this subscription, then review your plan in Stripe.</DialogDescription>
+            </DialogHeader>
+            <fieldset disabled={!!loading} className="space-y-4">
+              <SaasTaxUseDeclaration value={taxUse} onChange={setTaxUse} />
+              {billingCountryRequired && <BillingCountryDeclaration value={billingCountry} onChange={setBillingCountry} nextStep="continue to Stripe" />}
+            </fieldset>
+            <DialogFooter className="gap-2">
+              <Button variant="outline" disabled={!!loading} onClick={() => { setCheckoutIntent(null); setTaxUse(''); }}>Back</Button>
+              <Button disabled={!!loading || (taxUse !== 'personal' && taxUse !== 'commercial') || (billingCountryRequired && !billingCountry)} onClick={() => {
+                if (!checkoutIntent || checkoutIntent.context !== checkoutContext || isStripeLinked || loading) return;
+                void handleUpdatePlan(checkoutIntent.plan, checkoutIntent.extraTeams, taxUse);
+              }}>
+                {loading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+                Continue to Stripe
+              </Button>
+            </DialogFooter>
+          </div>
+        </DialogContent>
+      </Dialog>
 
       {/* ── Header ── */}
       <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
