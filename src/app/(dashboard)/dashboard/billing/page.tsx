@@ -56,11 +56,11 @@ import {
 } from '@/components/ui/alert-dialog';
 
 export default function BillingDashboard() {
-  const { user: userProfile, isPro, teams, activeTeam, proQuotaStatus, updateTeamPlan } = useTeam();
+  const { user: userProfile, teams, activeTeam, proQuotaStatus, updateTeamPlan } = useTeam();
   const auth = useAuth();
   const displayPrices = useBillingDisplayPrices();
   const planPriceId = (plan: Plan) => billingCycle === 'annual' ? plan.annualPriceId : plan.monthlyPriceId;
-  const addonPriceId = () => billingCycle === 'annual' ? EXTRA_TEAM_CONFIG.annualPriceId : EXTRA_TEAM_CONFIG.monthlyPriceId;
+  const addonPriceId = () => addonBillingCycle === 'annual' ? EXTRA_TEAM_CONFIG.annualPriceId : EXTRA_TEAM_CONFIG.monthlyPriceId;
   const priceReady = (id: string) => displayPrices.quote(id)?.currency === 'USD';
   const router = useRouter();
   const [loading, setLoading] = useState<string | null>(null);
@@ -100,6 +100,9 @@ export default function BillingDashboard() {
   ).length;
   const isOverLimit = ownedProTeamCount > paidSeatLimit;
   const isStripeLinked = !!userProfile?.stripe_subscription_id;
+  // Existing add-ons follow the subscription, not the plan comparison toggle.
+  const addonBillingCycle = isStripeLinked ? userProfile?.billing_cycle || 'monthly' : billingCycle;
+  // Account billing remains available while a Starter squad is selected.
   const hasPaidPlan = ['team', 'elite', 'league', 'school', 'squad_pro', 'squad_pro_demo'].includes(userProfile?.plan_type || '');
 
   const capabilities = useSubscriptionCapabilities(auth, userProfile?.id, userProfile?.stripe_subscription_id);
@@ -125,7 +128,7 @@ export default function BillingDashboard() {
     }
 
     if (!isStripeLinked && !taxUse) { toast({ title: 'Intended use required', description: 'Choose how this subscription will be used before checkout.' }); return; }
-    const eligibilityError = schoolPlanEligibilityError(newPlan?.id || '', userProfile, declaredOrganization);
+    const eligibilityError = schoolPlanEligibilityError(displayPlan.id, userProfile, declaredOrganization);
     if (eligibilityError) { toast({ title: 'Organization declaration required', description: eligibilityError, variant: 'destructive' }); return; }
     setLoading(newPlan ? 'plan_' + newPlan.id : 'addon_init');
     if (!isStripeLinked) {
@@ -137,7 +140,7 @@ export default function BillingDashboard() {
           body: JSON.stringify({
             userId: userProfile.id,
             teamId: activeTeam?.id,
-            priceId: newPlan ? (billingCycle === 'annual' ? newPlan.annualPriceId : newPlan.monthlyPriceId) : null,
+            priceId: planPriceId(displayPlan),
             billingCycle,
             taxUse,
             organizationDeclaration: declaredOrganization,
@@ -441,8 +444,8 @@ export default function BillingDashboard() {
         <CardContent className="p-6 md:p-8">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
             <div className="flex items-center gap-5">
-              <div className={cn('p-4 rounded-2xl', isPro ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground')}>
-                {isPro ? <Zap className="h-7 w-7 fill-current" /> : <LockIcon className="h-7 w-7" />}
+              <div className={cn('p-4 rounded-2xl', hasPaidPlan ? 'bg-primary/10 text-primary' : 'bg-muted text-muted-foreground')}>
+                {hasPaidPlan ? <Zap className="h-7 w-7 fill-current" /> : <LockIcon className="h-7 w-7" />}
               </div>
               <div>
                 <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">Current Plan</p>
@@ -450,7 +453,7 @@ export default function BillingDashboard() {
                 <div className="flex items-center gap-2 mt-1">
                   <div className={cn('w-2 h-2 rounded-full', isStripeLinked && !isCancelling ? 'bg-green-500' : isCancelling ? 'bg-amber-500' : 'bg-muted-foreground/40')} />
                   <p className="text-[10px] font-bold text-muted-foreground uppercase">
-                    {getBillingPlanStatusLabel({ isCancelling, isStripeLinked, isDemo, hasManagedAccess: isPro && !!currentPlan && currentPlan.id !== 'free' })}
+                    {getBillingPlanStatusLabel({ isCancelling, isStripeLinked, isDemo, hasManagedAccess: hasPaidPlan && !!currentPlan && currentPlan.id !== 'free' })}
                   </p>
                 </div>
               </div>
@@ -588,7 +591,7 @@ export default function BillingDashboard() {
       </div>
 
       {/* ── Extra Squads (for Pro users) ── */}
-      {isPro && (
+      {hasPaidPlan && (
         <Card className="rounded-4xl border-2 border-dashed border-primary/20 bg-primary/2">
           <CardContent className="p-6 md:p-8">
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
@@ -599,17 +602,19 @@ export default function BillingDashboard() {
                 </div>
                 <p className="text-[10px] font-bold text-muted-foreground">
                   {capabilities.addonsAllowed ? 'Add additional team slots beyond your plan limit.' : 'Extra squad slots are temporarily unavailable.'}
-                  {displayPrices.label(addonPriceId())} per squad per {billingCycle === 'annual' ? 'year' : 'month'}.
+                  {displayPrices.label(addonPriceId())} per squad per {addonBillingCycle === 'annual' ? 'year' : 'month'}.
                 </p>
               </div>
               <div className="flex items-center gap-4">
                 <button
+                  aria-label="Decrease extra squad quantity"
                   disabled={!capabilities.addonsAllowed}
                   onClick={() => setAddonQty(q => Math.max(0, q - 1))}
                   className="w-10 h-10 rounded-xl bg-white border shadow-sm flex items-center justify-center hover:bg-black hover:text-white transition-all"
                 ><Minus className="h-4 w-4" /></button>
                 <span className="text-3xl font-black w-8 text-center">{addonQty}</span>
                 <button
+                  aria-label="Increase extra squad quantity"
                   disabled={!capabilities.addonsAllowed}
                   onClick={() => setAddonQty(q => q + 1)}
                   className="w-10 h-10 rounded-xl bg-white border shadow-sm flex items-center justify-center hover:bg-black hover:text-white transition-all"
@@ -623,7 +628,7 @@ export default function BillingDashboard() {
                     if (addonQty > currentQty) {
                       const diff = addonQty - currentQty;
                       const price = displayPrices.label(addonPriceId());
-                      if (!confirm(`Add ${diff} extra squad seat${diff > 1 ? 's' : ''} for ${price}/squad per ${billingCycle === 'annual' ? 'year' : 'month'}? Your Stripe subscription will be updated immediately.`)) return;
+                      if (!confirm(`Add ${diff} extra squad seat${diff > 1 ? 's' : ''} for ${price}/squad per ${addonBillingCycle === 'annual' ? 'year' : 'month'}? Your Stripe subscription will be updated immediately.`)) return;
                       void handleUpdateAddon(addonQty);
                     } else {
                       handleUpdateAddon(addonQty);
