@@ -1,0 +1,10 @@
+{
+  "buildCommand": "node --import tsx scripts/qa/build-saas-tax-preview.mjs",
+  "crons": [],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [{ "key": "X-Robots-Tag", "value": "noindex, nofollow, noarchive" }]
+    }
+  ]
+}

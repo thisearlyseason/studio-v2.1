@@ -1,9 +1,11 @@
+import { assertSaasTaxPreviewEnvironment, isSaasTaxPreview } from './saas-tax-preview-policy';
+
 type ProviderEnvironment = Record<string, string | undefined>;
 
 export function isOutboundProviderBlocked(
   environment: ProviderEnvironment = process.env,
 ): boolean {
-  return environment.AUDIT_OUTBOUND_PROVIDER_MODE === 'block';
+  return environment.AUDIT_OUTBOUND_PROVIDER_MODE === 'block' || isSaasTaxPreview(environment);
 }
 
 export function isApprovedLocalMailSink(
@@ -14,7 +16,7 @@ export function isApprovedLocalMailSink(
   const loopbackFirestore = /^(?:127\.0\.0\.1|localhost):\d{1,5}$/.test(firestoreHost) ||
     /^\[::1\]:\d{1,5}$/.test(firestoreHost);
   return environment.NODE_ENV !== 'production' &&
-    isOutboundProviderBlocked(environment) &&
+    environment.AUDIT_OUTBOUND_PROVIDER_MODE === 'block' &&
     environment.AUDIT_LOCAL_MAIL_TRANSPORT === 'memory-sink' &&
     projectId.startsWith('demo-') &&
     loopbackFirestore;
@@ -24,6 +26,11 @@ export function assertOutboundProviderAllowed(
   provider: 'stripe' | 'resend' | 'notification',
   environment: ProviderEnvironment = process.env,
 ): void {
+  if (isSaasTaxPreview(environment) && environment.AUDIT_OUTBOUND_PROVIDER_MODE !== 'block') {
+    assertSaasTaxPreviewEnvironment(environment);
+    if (provider === 'stripe') return;
+    throw new Error('Email and notification delivery are blocked for the isolated SaaS tax preview.');
+  }
   if (!isOutboundProviderBlocked(environment)) return;
   const label = provider === 'stripe'
     ? 'Stripe'
