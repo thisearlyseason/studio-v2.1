@@ -1428,7 +1428,7 @@ function ManualPlayerDialog({ league, isOpen, onOpenChange }: { league: League, 
 
 export function LeaguesPageContent({ embedded = false }: { embedded?: boolean }) {
   const { 
-    activeTeam, user: userProfile, createLeague, isStaff, isSuperAdmin, isPro, purchasePro, isStarter,
+    activeTeam, user: userProfile, createLeague, isStaff, isSuperAdmin, isPro, purchasePro,
     teams, removeTeamFromLeague, updateLeagueTeamDetails,
     isPrimaryClubAuthority, updateLeaguePin, isSchoolMode, updateLeague,
     updateLeagueSchedule
@@ -1440,7 +1440,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   
   const leagueLabel = isSchoolMode ? 'Program' : 'League';
   const leaguesLabel = isSchoolMode ? 'Programs' : 'Leagues';
-  const hasLeagueCreationAccess = isPrimaryClubAuthority || userProfile?.role === 'league_creator';
+  const hasLeagueCreationAccess = isStaff || isPrimaryClubAuthority || userProfile?.role === 'league_creator';
   const canManageLeagues = isStaff || userProfile?.role === 'league_creator';
   const lifecyclePolicy = leagueLifecycleClientPolicy({
     isDemo: userProfile?.isDemo === true,
@@ -1666,13 +1666,9 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
       ? result.filter(league => league.demoSeeded !== true && !league.id.startsWith('demo_'))
       : result;
   }, [ownedLeagues, memberLeagues, tenantLeagues, isSuperAdmin]);
-  const leagueCreationLimitReached =
-    userProfile?.isDemo === true &&
-    userProfile.role === 'league_creator' &&
-    allLeagues.some(league =>
-      league.creatorId === authUser?.uid && league.demoSeeded !== true
-    );
+  const leagueCreationLimitReached = ((!isPro && !isSuperAdmin) || (userProfile?.isDemo === true && userProfile.role === 'league_creator')) && allLeagues.some(league => league.creatorId === authUser?.uid && league.demoSeeded !== true);
   const canCreateLeague = hasLeagueCreationAccess && lifecyclePolicy.create && !leagueCreationLimitReached;
+  useEffect(() => { if (!isPro) setActiveTab(tab => ['players', 'portals', 'compliance'].includes(tab) ? 'teams' : tab); }, [isPro]);
   const isLeaguesLoading = ownedLeaguesLoading || memberLeaguesLoading || tenantLeaguesLoading;
 
   const canManageLeagueRecord = useCallback((league?: League) => Boolean(league && (
@@ -1726,10 +1722,10 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
 
   const activeLeagueRoot = useMemo(() => leagues.find(l => l.id === selectedLeagueId), [leagues, selectedLeagueId]);
   const activeLeaguePrivateRef = useMemoFirebase(() => (
-    db && activeLeagueRoot && lifecyclePolicy.readPrivate && canManageLeagueRecord(activeLeagueRoot)
+    db && activeLeagueRoot && isPro && lifecyclePolicy.readPrivate && canManageLeagueRecord(activeLeagueRoot)
       ? doc(db, 'leagues', activeLeagueRoot.id, 'private', 'lifecycle')
       : null
-  ), [db, activeLeagueRoot, lifecyclePolicy.readPrivate, canManageLeagueRecord]);
+  ), [db, activeLeagueRoot, isPro, lifecyclePolicy.readPrivate, canManageLeagueRecord]);
   const { data: activeLeaguePrivate } = useDoc<{
     contactEmail?: string;
     contactPhone?: string;
@@ -1781,15 +1777,15 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   }, [activeLeague, activeTeam?.id, activeTeam?.teamLogoUrl, teams]);
 
   const waiversQuery = useMemoFirebase(() => {
-    if (!db || !activeLeague?.id) return null;
+    if (!db || !activeLeague?.id || !isPro) return null;
     return collection(db, 'leagues', activeLeague.id, 'archived_waivers');
-  }, [db, activeLeague?.id]);
+  }, [db, activeLeague?.id, isPro]);
   const { data: waiversData } = useCollection<LeagueArchiveWaiver>(waiversQuery);
   const waivers = useMemo(() => waiversData || [], [waiversData]);
   const portalConfigsQuery = useMemoFirebase(() => {
-    if (!db || !activeLeague?.id) return null;
+    if (!db || !activeLeague?.id || !isPro) return null;
     return collection(db, 'leagues', activeLeague.id, 'registration');
-  }, [db, activeLeague?.id]);
+  }, [db, activeLeague?.id, isPro]);
   const { data: portalConfigs } = useCollection<any>(portalConfigsQuery);
   const portalEnabled = useCallback((id: string) => portalConfigs?.find(config => config.id === id)?.is_active === true, [portalConfigs]);
 
@@ -2149,10 +2145,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
         startDate: editLeagueForm.startDate,
         endDate: editLeagueForm.endDate,
         ages: editLeagueForm.ages,
-        contactEmail: editLeagueForm.contactEmail,
-        contactPhone: editLeagueForm.contactPhone,
-        registrationCost: editLeagueForm.registrationCost,
-        paymentInstructions: editLeagueForm.paymentInstructions,
+        ...(isPro ? { contactEmail: editLeagueForm.contactEmail, contactPhone: editLeagueForm.contactPhone, registrationCost: editLeagueForm.registrationCost, paymentInstructions: editLeagueForm.paymentInstructions } : {}),
         socialLinks: {
           twitter: editLeagueForm.twitter,
           instagram: editLeagueForm.instagram
@@ -2269,8 +2262,8 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
     if (!activeLeague || !editingTeam) return;
     setIsProcessing(true);
     try {
-      console.log("[Leagues] Updating team:", editingTeam.id, editTeamForm);
-      await updateLeagueTeamDetails(activeLeague.id, editingTeam.id, editTeamForm);
+      const details = isPro ? editTeamForm : Object.fromEntries(Object.entries(editTeamForm).filter(([key]) => !['coachName', 'coachEmail', 'coachPhone', 'organizerNotes', 'inviteCode'].includes(key)));
+      await updateLeagueTeamDetails(activeLeague.id, editingTeam.id, details);
       setEditingTeam(null);
       toast({ title: "Standings Synchronized", description: "The squad metadata has been updated successfully." });
     } catch (e: any) {
@@ -2308,7 +2301,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
             ) : null}
             {!activeLeague && hasLeagueCreationAccess && lifecyclePolicy.create && (
               <Button disabled={leagueCreationLimitReached} className="h-14 px-8 rounded-2xl text-lg font-black shadow-xl shadow-primary/20" onClick={() => setIsCreateOpen(true)}>
-                <Plus className="h-5 w-5 mr-2" /> {leagueCreationLimitReached ? `${leagueLabel} Limit Reached` : `Create ${leagueLabel}`}
+                <Plus className="h-5 w-5 mr-2" /> {leagueCreationLimitReached ? `${leagueLabel} Limit Reached` : isPro ? `Create ${leagueLabel}` : "Free League"}
               </Button>
             )}
           </div>
@@ -2323,7 +2316,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
           ) : null}
           {!activeLeague && hasLeagueCreationAccess && lifecyclePolicy.create && (
             <Button disabled={leagueCreationLimitReached} className="h-11 px-6 rounded-2xl font-black shadow-xl shadow-primary/20 text-xs" onClick={() => setIsCreateOpen(true)}>
-              <Plus className="h-4 w-4 mr-2" /> {leagueCreationLimitReached ? `${leagueLabel} Limit Reached` : `Create ${leagueLabel}`}
+              <Plus className="h-4 w-4 mr-2" /> {leagueCreationLimitReached ? `${leagueLabel} Limit Reached` : isPro ? `Create ${leagueLabel}` : "Free League"}
             </Button>
           )}
         </div>
@@ -2390,7 +2383,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                              <div className="h-8 w-8 rounded-lg bg-muted/20 flex items-center justify-center shrink-0"><Zap className="h-4 w-4 opacity-40" /></div>
                            </div>
                            <div className="flex gap-2 w-full sm:w-auto">
-                             {lifecyclePolicy.clone && canManageLeagueRecord(league) && (
+                             {isPro && lifecyclePolicy.clone && canManageLeagueRecord(league) && (
                                <Button 
                                  variant="outline" 
                                  size="sm" 
@@ -2512,7 +2505,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                               </div>
                               <div className="pt-3 border-t border-black/5 flex items-center justify-between gap-2">
                                 <div className="flex gap-2">
-                                  {lifecyclePolicy.clone && canManageLeagueRecord(divLeague) && (
+                                  {isPro && lifecyclePolicy.clone && canManageLeagueRecord(divLeague) && (
                                     <Button 
                                       variant="outline" 
                                       size="sm" 
@@ -2545,13 +2538,13 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                   </Card>
                 );
               })}
-              {canCreateLeague && (
+              {canCreateLeague && isPro && (
               <Card 
                 className="rounded-[3rem] border-2 border-dashed border-muted bg-transparent flex flex-col items-center justify-center p-12 group hover:border-primary/40 transition-all cursor-pointer min-h-[250px]"
                 onClick={() => setIsCreateOpen(true)}
               >
                 <Plus className="h-12 w-12 text-muted-foreground group-hover:text-primary transition-all mb-4" />
-                <p className="text-xs font-black uppercase text-muted-foreground group-hover:text-primary">New {leagueLabel} Hub</p>
+                <p className="text-xs font-black uppercase text-muted-foreground group-hover:text-primary">{isPro ? `New ${leagueLabel} Hub` : "Free League"}</p>
               </Card>
               )}
             </div>
@@ -2644,7 +2637,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
               </div>
               {canManageLeagueRecord(activeLeague) && (
                 <div className="flex flex-wrap gap-2 justify-start md:justify-end w-full md:w-auto">
-                  <Button 
+                  {isPro && <Button
                     aria-label="Copy public registration link"
                     onClick={() => {
                       navigator.clipboard.writeText(`${window.location.origin}/register/league/${activeLeague.slug || activeLeague.id}?protocol=team_config`);
@@ -2655,7 +2648,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                     className="h-10 w-10 md:h-12 md:w-12 rounded-xl border-white/20 border hover:bg-white/10 text-white transition-all"
                   >
                     <Share2 className="h-4 w-4 md:h-5 md:w-5" />
-                  </Button>
+                  </Button>}
                   <Button aria-label={`Edit ${leagueLabel.toLowerCase()}`} onClick={handleEditLeague} variant="ghost" size="icon" className="h-10 w-10 md:h-12 md:w-12 rounded-xl border-white/20 border hover:bg-white/10 text-white transition-all"><Settings className="h-4 w-4 md:h-5 md:w-5" /></Button>
                   <Button onClick={() => setIsSeasonOpen(true)} variant="outline" className="rounded-xl h-10 md:h-12 px-4 md:px-6 border-white/20 bg-white/5 text-white hover:bg-white hover:text-black transition-all flex items-center gap-2 text-xs">
                     Build your season schedule
@@ -2671,10 +2664,10 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                       <span className="sm:hidden">Deploy</span>
                     </Button>
                   )}
-                  {!isStarter && (
+                  {isPro && (
                   <Button 
                     variant="default" 
-                    className="rounded-xl h-10 md:h-12 px-4 md:px-6 font-black uppercase text-xs shadow-xl flex items-center gap-2 hover:text-black transition-all"
+                    className="rounded-xl h-10 md:h-12 px-4 md:px-6 font-black uppercase text-xs shadow-xl flex items-center gap-2 hover:bg-primary/90 hover:text-white transition-all"
                     onClick={() => router.push(`/leagues/registration/${activeLeague.id}`)}
                   >
                     <FileText className="h-4 w-4" />
@@ -2697,7 +2690,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                     onClick={() => setActiveTab('teams')}
                   >
                     Teams
-                    {activeTab === 'teams' && canManageLeagueRecord(activeLeague) && (
+                    {activeTab === 'teams' && isPro && canManageLeagueRecord(activeLeague) && (
                       <span 
                         onClick={(e) => { 
                           e.stopPropagation(); 
@@ -2710,10 +2703,10 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                     )}
                   </Button>
                   <Button variant={activeTab === 'schedule' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('schedule')}>Schedule</Button>
-                  {canManageLeagues && <Button variant={activeTab === 'players' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('players')}>Players</Button>}
-                  {canManageLeagues && !isStarter && <Button variant={activeTab === 'portals' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('portals')}>Portals</Button>}
+                  {canManageLeagues && isPro && <Button variant={activeTab === 'players' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('players')}>Players</Button>}
+                  {canManageLeagues && isPro && <Button variant={activeTab === 'portals' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('portals')}>Portals</Button>}
                   {canManageLeagues && <Button variant={activeTab === 'safety' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('safety')}>Safety</Button>}
-                  {canManageLeagues && !isStarter && <Button variant={activeTab === 'compliance' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('compliance')}>Compliance</Button>}
+                  {canManageLeagues && isPro && <Button variant={activeTab === 'compliance' ? 'default' : 'ghost'} className="rounded-xl font-black text-[10px] uppercase px-8 transition-all shrink-0" onClick={() => setActiveTab('compliance')}>Compliance</Button>}
                 </div>
                 
                 {activeTab === 'teams' && activeLeague.divisions && activeLeague.divisions.length > 0 && (
@@ -2746,7 +2739,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                   <Download className="h-4 w-4 mr-2" /> Download Standings
                 </Button>
               )}
-              {activeTab === 'players' && (
+              {isPro && activeTab === 'players' && (
                 <Button variant="outline" className="flex-1 sm:flex-none h-11 rounded-xl border-2 font-black uppercase text-[10px]" onClick={exportPersonnelLog}>
                   <Download className="h-4 w-4 mr-2" /> Download Personnel Log
                 </Button>
@@ -2759,7 +2752,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
               <Card className="rounded-4xl md:rounded-[2.5rem] border-none shadow-xl overflow-hidden bg-white ring-1 ring-black/5">
                 <div className="overflow-x-auto">
                     <table className="w-full text-left">
-                      <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest border-b"><tr><th className="px-4 md:px-10 py-4 md:py-5">Squad Rank</th><th className="px-3 md:px-4 py-4 md:py-5 text-center">Portal Code</th><th className="px-3 md:px-4 py-4 md:py-5 text-center">Record</th><th className="px-3 md:px-4 py-4 md:py-5 text-center">PTS</th><th className="px-3 md:px-4 py-4 md:py-5 text-center">Compliance</th><th className="px-4 md:px-10 py-4 md:py-5 text-right text-primary">Actions</th></tr></thead>
+                      <thead className="bg-muted/30 text-[9px] font-black uppercase tracking-widest border-b"><tr><th className="px-4 md:px-10 py-4 md:py-5">Squad Rank</th>{isPro && <th className="px-3 md:px-4 py-4 md:py-5 text-center">Portal Code</th>}<th className="px-3 md:px-4 py-4 md:py-5 text-center">Record</th><th className="px-3 md:px-4 py-4 md:py-5 text-center">PTS</th>{isPro && <th className="px-3 md:px-4 py-4 md:py-5 text-center">Compliance</th>}<th className="px-4 md:px-10 py-4 md:py-5 text-right text-primary">Actions</th></tr></thead>
                       <tbody className="divide-y divide-muted/50">{sortedStandings.map((team, idx) => (
                         <tr key={team.id} className="hover:bg-primary/5 transition-colors group">
                           <td className="px-4 md:px-10 py-4 md:py-6">
@@ -2782,13 +2775,13 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                               </div>
                             </div>
                           </td>
-                          <td className="px-4 py-6 text-center">
+                          {isPro && <td className="px-4 py-6 text-center">
                             {(team.inviteCode || team.teamCode || team.code) ? (
                               <Badge variant="outline" className="border-primary/20 text-primary font-black text-[9px] h-6 px-3">{team.inviteCode || team.teamCode || team.code}</Badge>
                             ) : (
                               <span className="text-[10px] font-bold text-muted-foreground/30">—</span>
                             )}
-                          </td>
+                          </td>}
                           <td className="px-4 py-6 text-center font-bold text-sm">
                             <div className="flex items-center justify-center gap-1">
                               <span className="text-green-600">{team.wins}</span>
@@ -2799,7 +2792,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                             </div>
                           </td>
                           <td className="px-4 py-6 text-center font-black text-primary">{team.points}</td>
-                          <td className="px-4 py-6 text-center">
+                          {isPro && <td className="px-4 py-6 text-center">
                             {team.signedAt ? (
                               <div className="space-y-0.5 text-center">
                                 <Badge className="bg-green-100 text-green-700 border-none font-black text-[7px] h-4">SIGNED</Badge>
@@ -2810,7 +2803,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                                 {(team.manual || team.id.startsWith('manual_')) ? "WAIVER PENDING" : "PENDING"}
                               </Badge>
                             )}
-                          </td>
+                          </td>}
                           <td className="px-4 md:px-10 py-4 md:py-6 text-right">
                             <div className="flex items-center justify-end gap-4">
                               {canManageLeagueRecord(activeLeague) && (
@@ -2980,7 +2973,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                             <td className="px-4 py-6 font-black text-xs uppercase">{waiver.signer}</td>
                             <td className="px-4 py-6 text-[10px] font-bold text-muted-foreground uppercase">{format(new Date(waiver.signedAt), 'MMM d, h:mm a')}</td>
                             <td className="px-4 md:px-10 py-4 md:py-6 text-right">
-                              {!isStarter && (
+                              {isPro && (
                               <Button variant="ghost" size="icon" className="h-10 w-10 rounded-xl hover:bg-primary/10 text-primary" onClick={() => exportWaiver(waiver)}>
                                 <Download className="h-5 w-5" />
                               </Button>
@@ -3082,7 +3075,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                 : `Create your first ${leagueLabel.toLowerCase()} to begin the competitive season.`}
             </p>
           </div>
-          {canCreateLeague && leagues.length === 0 && (
+          {canCreateLeague && leagues.length === 0 && (embedded || isPro) && (
             <Button onClick={() => setIsCreateOpen(true)} variant="outline" className="rounded-full px-10 h-12 border-2 font-black uppercase text-xs">Create Free {leagueLabel}</Button>
           )}
         </div>
@@ -3193,7 +3186,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Origin</Label>
                   <Input value={editTeamForm.origin} onChange={e => setEditTeamForm({...editTeamForm, origin: e.target.value})} className="h-12 rounded-xl border-2 font-bold" placeholder="e.g. Toronto, ON" />
                 </div>
-                <div className="space-y-2 col-span-1">
+                <div className="space-y-2 col-span-1" hidden={!isPro}>
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Portal Code</Label>
                   <Input value={editTeamForm.inviteCode || ''} onChange={e => setEditTeamForm({...editTeamForm, inviteCode: e.target.value.toUpperCase()})} className="h-12 rounded-xl border-2 font-black text-center tracking-widest" maxLength={6} placeholder="AUTO" />
                 </div>
@@ -3203,7 +3196,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Primary Coach / Contact</Label>
                   <Input value={editTeamForm.coachName} onChange={e => setEditTeamForm({...editTeamForm, coachName: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
                 </div>
-                <div className="space-y-2">
+                <div className="space-y-2" hidden={!isPro}>
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contact Email</Label>
                   <Input type="email" value={editTeamForm.coachEmail} onChange={e => setEditTeamForm({...editTeamForm, coachEmail: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
                 </div>
@@ -3240,11 +3233,11 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
                   </SelectContent>
                 </Select>
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2" hidden={!isPro}>
                 <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contact Phone</Label>
                 <Input value={editTeamForm.coachPhone} onChange={e => setEditTeamForm({...editTeamForm, coachPhone: e.target.value})} className="h-12 rounded-xl border-2 font-bold" />
               </div>
-              <div className="space-y-2">
+              <div className="space-y-2" hidden={!isPro}>
                 <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Organizer Internal Notes</Label>
                 <Textarea value={editTeamForm.organizerNotes} onChange={e => setEditTeamForm({...editTeamForm, organizerNotes: e.target.value})} className="rounded-xl border-2 font-medium min-h-[80px]" placeholder="Special notes about this squad..." />
               </div>

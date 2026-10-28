@@ -22,13 +22,17 @@ export function permitsLegacyOrPaidPortals(...planIds: Array<string | null | und
   return false;
 }
 
-export function isActiveTournamentPortal(teamId: string, team: any, event: any): boolean {
+/** Organizer access is independent of paid public-portal access and publication. */
+export function isActiveTournamentWorkspace(teamId: string, team: any, event: any): boolean {
   const teamStatus = typeof team?.status === 'string' ? team.status.trim().toLowerCase() : '';
-  const entitled = permitsLegacyOrPaidPortals(team?.planId, team?.plan_type, team?.subscriptionPlanId);
-  const advancedEntitled = event?.tournamentType === 'single_elimination' || team?.isPro === true;
-  return Boolean(team && event && entitled && advancedEntitled && event.isTournament === true && event.teamId === teamId &&
+  return Boolean(team && event && event.isTournament === true && event.teamId === teamId &&
     team.isArchived !== true && team.isDeleted !== true && team.is_active !== false && team.isActive !== false && teamStatus !== 'removed' && teamStatus !== 'cancelled' &&
-    (event.competition?.version !== 2 || event.competition.status === 'published') && event.isArchived !== true && event.isDeleted !== true && event.is_active !== false && event.isActive !== false && event.status !== 'cancelled');
+    event.isArchived !== true && event.isDeleted !== true && event.is_active !== false && event.isActive !== false && event.status !== 'cancelled');
+}
+
+export function isActiveTournamentPortal(teamId: string, team: any, event: any): boolean {
+  return isActiveTournamentWorkspace(teamId, team, event) && team?.isPro === true &&
+    (event?.competition?.version !== 2 || event.competition.status === 'published');
 }
 
 export function leagueBillingOwnerUserId(league: Record<string, unknown>): string {

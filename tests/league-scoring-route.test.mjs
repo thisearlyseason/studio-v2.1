@@ -4,8 +4,8 @@ import { communicationDb, loadCommunicationRoute } from './helpers/communication
 
 process.env.COMPETITION_CREDENTIAL_HMAC_SECRET = 'task-four-test-secret-at-least-thirty-two-bytes';
 const fixture = () => ({
-  'users/owner': { role: 'league_creator', plan_type: 'league' },
-  'teams/host': { ownerUserId: 'owner', planId: 'league' },
+  'users/owner': { role: 'league_creator', plan_type: 'league', subscription_status: 'active' },
+  'teams/host': { ownerUserId: 'owner', planId: 'league', isPro: true },
   'teams/host/members/staff': { userId: 'staff', role: 'coach', position: 'Coach', status: 'active' },
   'leagues/league-a': { creatorId: 'owner', billingOwnerUserId: 'owner', tenantId: 'host', lifecycleVersion: 4,
     name: 'Metro', is_active: true, scorekeeperPin: '8274',
@@ -65,7 +65,7 @@ test('public score and dispute validate game, credential, version, and lifecycle
 test('current billing owner, lifecycle, and credential are revalidated in committing transaction', async () => {
   for (const mutate of [
     records => records.delete('users/owner'),
-    records => Object.assign(records.get('users/owner'), { role: 'coach', plan_type: 'free' }),
+    records => Object.assign(records.get('teams/host'), { isPro: false, planId: 'free' }),
     records => Object.assign(records.get('leagues/league-a'), { isArchived: true }),
     records => Object.assign(records.get('leagues/league-a'), { scorekeeperPin: 'rotated' }),
   ]) {
@@ -202,7 +202,7 @@ test('schedule initializes versions and preserves scored-game generation across 
 test('commit-time changes to membership, billing, credential, game, tenant, and lock fence every write', async () => {
   for (const [auth, change, want] of [
     [{ uid: 'staff' }, records => { records.get('teams/host/members/staff').status = 'removed'; }, 403],
-    [null, records => { Object.assign(records.get('users/owner'), { role: 'coach', plan_type: 'free' }); }, 403],
+    [null, records => { Object.assign(records.get('teams/host'), { isPro: false, planId: 'free' }); }, 403],
     [null, records => { records.get('leagues/league-a').scorekeeperPin = 'rotated'; }, 403],
     [null, records => { records.get('leagues/league-a').schedule[0].gameVersion = 1; }, 409],
     [null, records => { records.get('leagues/league-a').schedule = []; }, 404],
@@ -264,15 +264,14 @@ test('scoring never overwrites another League official game projection with a co
   } finally { app.dispose(); }
 });
 
-test('canonical competition entitlement allows a free league creator and rejects ordinary free billing owner', async () => {
-  for (const route of ['../../src/app/api/leagues/scoring/route.ts', '../../src/app/api/public/portals/action/route.ts']) {
-    const { app, records } = await setup(route);
+test('Free organizers keep private scoring while public scorekeeper portals require Pro', async () => {
+  for (const [route, status] of [['../../src/app/api/leagues/scoring/route.ts',200], ['../../src/app/api/public/portals/action/route.ts',403]]) {
+    const {app,records}=await setup(route);
     try {
-      records.get('users/owner').plan_type = 'free'; records.get('leagues/league-a').tenantId = 'profile:owner';
-      assert.equal((await post(app, command())).status, 200);
-      records.get('users/owner').role = 'coach';
-      assert.equal((await post(app, command({ requestId: 'free-role-denied', expectedGameVersion: 1 }))).status, 403);
-    } finally { app.dispose(); }
+      Object.assign(records.get('users/owner'),{plan_type:'free',subscription_status:'inactive'});
+      records.get('leagues/league-a').tenantId='profile:owner';
+      assert.equal((await post(app,command())).status,status);
+    } finally {app.dispose();}
   }
 });
 
@@ -284,6 +283,7 @@ test('server-owned demo owner must match and a demo ID never grants public crede
     Object.assign(records.get('users/owner'), { isDemo: true, plan_type: 'free' });
     assert.equal((await post(app, command())).status, 403);
     league.demoSessionOwnerId = 'owner';
+    Object.assign(records.get('users/owner'), {plan_type:'league', subscription_status:'active'});
     assert.equal((await post(app, command())).status, 200);
     records.set('leagues/demo_forged', { ...league, isDemo: false, demoSeeded: false, demoSessionOwnerId: null, scorekeeperPin: undefined });
     delete records.get('leagues/demo_forged').scorekeeperPin;

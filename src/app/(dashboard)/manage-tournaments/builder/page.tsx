@@ -4,7 +4,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { useTeam } from "@/components/providers/team-provider";
 import CompetitionController from "@/components/tournaments/CompetitionController";
 function Builder() {
-  const { activeTeam, firebaseUser, isStarter } = useTeam();
+  const { activeTeam, firebaseUser, isPro } = useTeam();
   const [openingHub, setOpeningHub] = useState(false);
   const search = useSearchParams(),
     router = useRouter();
@@ -23,7 +23,7 @@ function Builder() {
     <div className="p-2 md:p-6">
       <CompetitionController
         startEditing={!!search.get("eventId")}
-        starter={isStarter}
+        starter={!isPro}
         teamId={activeTeam.id}
         eventId={search.get("eventId") || undefined}
         token={token}

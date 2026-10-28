@@ -1,4 +1,5 @@
 "use client";
+import { AccessRestricted } from "@/components/layout/AccessRestricted";
 
 import { TOURNAMENT_DEFAULT_WAIVER } from '@/lib/registration-waiver-text';
 
@@ -67,7 +68,7 @@ const BASE_REGISTRATION_ANSWER_LABELS: Record<string, string> = {
   phone: 'Cell Phone Number',
 };
 
-export default function TournamentRegistrationAdminPage() {
+function TournamentRegistrationAdminPageContent() {
   const { teamId, eventId } = useParams();
   const router = useRouter();
   const { isAuthResolved } = useUser();
@@ -998,4 +999,11 @@ export default function TournamentRegistrationAdminPage() {
       )} {/* end formsListMode ternary */}
     </div>
   );
+}
+
+export default function TournamentRegistrationAdminPage() {
+  const { isPro, isTeamsLoading } = useTeam();
+  if (isTeamsLoading) return <p className="p-8">Loading team access…</p>;
+  if (!isPro) return <AccessRestricted title="Pro Team required" description="Tournament registration requires Pro Team. Free teams can still build their schedules." />;
+  return <TournamentRegistrationAdminPageContent />;
 }

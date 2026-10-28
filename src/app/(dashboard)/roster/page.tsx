@@ -818,13 +818,13 @@ export default function RosterPage() {
       )}
 
       <Dialog open={!!selectedMemberId} onOpenChange={(open) => !open && setSelectedMemberId(null)}>
-        <DialogContent className="rounded-t-[3rem] sm:rounded-[3rem] sm:max-w-5xl border-none shadow-2xl p-0 flex flex-col bg-white max-h-[95dvh] sm:max-h-[90vh] text-foreground overflow-hidden">
+        <DialogContent hideClose className="rounded-t-[3rem] sm:rounded-[3rem] sm:max-w-5xl border-none shadow-2xl p-0 flex flex-col bg-white max-h-[95dvh] sm:max-h-[90vh] text-foreground overflow-hidden">
           <DialogTitle className="sr-only">Player Profile: {selectedMember?.name}</DialogTitle>
           <DialogDescription className="sr-only">Detailed athletic portfolio and personnel evaluation for {selectedMember?.name}</DialogDescription>
-          {/* Sticky close button */}
-          <div className="sticky top-0 z-50 flex justify-end p-3 shrink-0 bg-white/80 backdrop-blur-sm">
+          {/* One close control, without a separate header strip. */}
+          <div className="absolute top-3 right-3 z-50">
             <DialogClose asChild>
-              <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full bg-black/5 hover:bg-black/10 text-black/40 hover:text-black transition-all">
+              <Button aria-label="Close player profile" variant="ghost" size="icon" className="h-10 w-10 rounded-full bg-black/60 hover:bg-black/80 text-white hover:text-white transition-all">
                 <X className="h-5 w-5" />
               </Button>
             </DialogClose>
@@ -916,13 +916,13 @@ export default function RosterPage() {
                         {selectedMember.email && (
                           <div className="flex items-center gap-2 min-w-0">
                             <Mail className="h-3 w-3 shrink-0" />
-                            <span className="truncate">{selectedMember.email}</span>
+                            <span className="min-w-0 break-all text-sm normal-case tracking-normal leading-5">{selectedMember.email}</span>
                           </div>
                         )}
                         {selectedMember.parentEmail && (
                           <div className="flex items-center gap-2">
-                            <Users className="h-3 w-3" />
-                            <span>Guardian: {selectedMember.parentEmail}</span>
+                            <Users className="h-3 w-3 shrink-0" />
+                            <span className="min-w-0 break-all text-sm normal-case tracking-normal leading-5">Guardian: {selectedMember.parentEmail}</span>
                           </div>
                         )}
                       </div>

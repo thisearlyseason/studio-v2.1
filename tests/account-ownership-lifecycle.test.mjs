@@ -3,9 +3,9 @@ import test from 'node:test';
 import { communicationDb, loadCommunicationRoute } from './helpers/communication-route-harness.mjs';
 
 const seed = {
-  'users/owner': { role: 'coach', plan_type: 'league', subscription_status: 'active', team_limit: 10 },
+  'users/owner': { role: 'coach', plan_type: 'league', subscription_status: 'active', subscription_status: 'active', team_limit: 10 },
   'users/staff': { role: 'coach' },
-  'teams/school': { ownerUserId: 'owner', schoolAdminIds: ['staff'], planId: 'elite_league' },
+  'teams/school': { ownerUserId: 'owner', schoolAdminIds: ['staff'], planId: 'elite_league', isPro: true },
   'teams/school/members/staff': { userId: 'staff', position: 'Coach', status: 'active' },
   'leagues/source': { creatorId: 'owner', tenantId: 'school', name: 'Source', sport: 'Soccer', lifecycleVersion: 1, teams: {}, schedule: [] },
 };

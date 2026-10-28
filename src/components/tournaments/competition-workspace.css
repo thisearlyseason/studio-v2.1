@@ -1052,7 +1052,8 @@
 .cw .cw-format-options button:hover, .cw .cw-format-options button:focus { background: #fff1f1; }
 .cw .cw-format-options button[aria-selected=true] { border-left: 4px solid var(--cw-accent); }
 .cw-format-options [role=tooltip] { font-size: 12px; font-weight: 400; line-height: 1.5; margin-top: 8px; color: #404040; }
-.cw .cw-format-options button[aria-disabled=true] { color: #777; }
+.cw .cw-format-options button[aria-disabled=true] { color: #666; background: #eee; cursor: not-allowed; }
+.cw .cw-format-options button[aria-disabled=true]:hover { background: #eee; }
 .cw .cw-team-entry > label { margin: 0; }
 .cw .cw-team-entry input, .cw .cw-team-entry select { height: 46px; }
 

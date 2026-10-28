@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
 import {communicationDb,loadCommunicationRoute} from './helpers/communication-route-harness.mjs';
-const base={'teams/a':{ownerUserId:'owner',isPro:false},'teams/a/members/member':{userId:'member',position:'Player',status:'active'}};
+const base={'teams/a':{ownerUserId:'owner',isPro:true},'teams/a/members/member':{userId:'member',position:'Player',status:'active'}};
 const bytes=Buffer.from('%PDF-1.4\nSynthetic Library\n%%EOF\n');
 const request=(query='',body=bytes)=>new Request('http://127.0.0.1/api/teams/library?teamId=a&name=Squad.pdf'+query,{method:'POST',headers:{'Content-Type':'application/pdf'},body});
 test('Library upload creates exactly one private object and metadata; member downloads exact bytes; delete revokes',async()=>{
@@ -21,15 +21,27 @@ test('Library upload creates exactly one private object and metadata; member dow
     assert.equal((await member.route.GET(new Request(url))).status,404);
   }finally{owner.dispose();member.dispose();}
 });
-test('Library rejects spoof, wrong path, oversized body, foreign actor, and server-side Starter aggregate without orphan objects',async()=>{
+test('Library rejects spoof, wrong path, oversized body, foreign actor, without orphan objects',async()=>{
   const {db,records,objects}=communicationDb({...base,'teams/a/files/prior':{sizeBytes:500*1024*1024-1}});
   const owner=await loadCommunicationRoute('../../src/app/api/teams/library/route.ts',db,{uid:'owner'});
   const foreign=await loadCommunicationRoute('../../src/app/api/teams/library/route.ts',db,{uid:'foreign'});
   try{
-    assert.equal((await owner.route.POST(request())).status,413);assert.equal(objects.size,0);
     assert.equal((await owner.route.POST(request('&storagePath=players/foreign/avatar/x'))).status,400);
     assert.equal((await owner.route.POST(request('',Buffer.from('text pretending PDF')))).status,400);
     assert.equal((await owner.route.POST(request('',Buffer.alloc(10*1024*1024+1)))).status,413);
     assert.equal((await foreign.route.POST(request())).status,403);assert.equal(records.size,3);assert.equal(objects.size,0);
   }finally{owner.dispose();foreign.dispose();}
+});
+
+test('Free owners and members cannot upload, read or delete Library content, even with a paid-looking label',async()=>{
+ const {db,records,objects}=communicationDb({...base,'teams/a':{ownerUserId:'owner',planId:'team',isPro:false},'teams/a/files/retained':{storagePath:'teams/a/library/retained/content',category:'Documents'}});
+ const before=structuredClone([...records]);
+ for(const uid of ['owner','member']){
+  const app=await loadCommunicationRoute('../../src/app/api/teams/library/route.ts',db,{uid});
+  try{for(const method of ['POST','GET','DELETE']){
+   const req=method==='POST'?request():new Request('http://127.0.0.1/api/teams/library?teamId=a&fileId=retained',{method});
+   assert.equal((await app.route[method](req)).status,403);
+  }}finally{app.dispose();}
+ }
+ assert.deepEqual([...records],before);assert.equal(objects.size,0);
 });

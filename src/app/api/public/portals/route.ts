@@ -1,8 +1,8 @@
+import { competitionHasPro } from '@/lib/server-competition-plan';
 import { NextRequest, NextResponse } from 'next/server';
 import { createHash } from 'node:crypto';
 import { adminDb } from '@/lib/firebase-admin';
 import {
-  permitsLegacyOrPaidPortals,
   leagueBillingOwnerUserId,
   publicLeague,
   spectatorLeague, scorekeeperLeague,
@@ -42,7 +42,7 @@ export async function GET(req: NextRequest) {
       if (!league) return NextResponse.json({ error: 'League portal not found.' }, { status: 404 });
       const billingOwnerId = leagueBillingOwnerUserId(league.data() || {});
       const creator = billingOwnerId ? await adminDb.collection('users').doc(billingOwnerId).get() : null;
-      if (!creator?.exists || !permitsLegacyOrPaidPortals(creator.data()?.planId, creator.data()?.plan_type, creator.data()?.subscriptionPlanId)) {
+      if (!creator?.exists || !await competitionHasPro(adminDb, undefined, String(league.data()?.tenantId || `profile:${billingOwnerId}`))) {
         return NextResponse.json({ error: 'This subscription does not include public portals.' }, { status: 403 });
       }
       const publicLeagueData = publicLeague(league.id, league.data());
@@ -70,7 +70,7 @@ export async function GET(req: NextRequest) {
       if (event.data()?.registrationOpen !== true || event.data()?.status === 'cancelled') {
         return NextResponse.json({ error: 'Registration portal is inactive.' }, { status: 404 });
       }
-      if (!permitsLegacyOrPaidPortals(team.data()?.planId, team.data()?.plan_type, team.data()?.subscriptionPlanId)) {
+      if (team.data()?.isPro !== true) {
         return NextResponse.json({ error: 'This subscription does not include public portals.' }, { status: 403 });
       }
       // Registration must open before schedule publication. Never expose draft games here.
@@ -88,6 +88,7 @@ export async function GET(req: NextRequest) {
       if (!league) return NextResponse.json({ error: 'League portal not found.' }, { status: 404 });
       const data = await adminDb.runTransaction(async transaction => {
         const current = await readActiveScoringLeague(transaction, league.id);
+        if (!await competitionHasPro(adminDb, transaction, String(current.tenantId || `profile:${leagueBillingOwnerUserId(current)}`))) throw new ScheduleDeploymentError('PRO_REQUIRED', 'Public portals require Pro.', 403);
         if (req.nextUrl.searchParams.get('purpose') === 'spectator') return spectatorLeague(league.id, current);
         const credential = await transaction.get(league.ref.collection('private').doc('lifecycle'));
         return scorekeeperLeague(league.id, { ...current, scorekeeperConfigured: !!credential.data()?.scorekeeperPinHash || !!current.scorekeeperPin });
@@ -106,7 +107,7 @@ export async function GET(req: NextRequest) {
       if (!event.exists) return NextResponse.json({ error: 'Tournament portal not found.' }, { status: 404 });
       const team = await adminDb.collection('teams').doc(teamId).get();
       if (!team.exists) return NextResponse.json({ error: 'Tournament portal not found.' }, { status: 404 });
-      if (!permitsLegacyOrPaidPortals(team.data()?.planId, team.data()?.plan_type, team.data()?.subscriptionPlanId)) {
+      if (team.data()?.isPro !== true) {
         return NextResponse.json({ error: 'This subscription does not include public portals.' }, { status: 403 });
       }
       const eventData = event.data()!;

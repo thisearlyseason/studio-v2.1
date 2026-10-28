@@ -27,6 +27,24 @@ export function allocateTournamentOfficials(games: Row[], profiles: Row[], exter
 }
 // All reads happen before the caller starts its transaction writes.
 export async function planTournamentOfficials(db: FirebaseFirestore.Firestore, transaction: FirebaseFirestore.Transaction, teamId: string, eventId: string, event: Row, games: Row[], extraProfiles: Row[] = []) {
+  const team = await transaction.get(db.collection('teams').doc(teamId));
+  if (team.data()?.isPro !== true) return {
+    // Preserve stored assignments as history; Free scheduling cannot inject or
+    // automatically allocate officials, nor delete retained paid records.
+    games: games.map(game => {
+      const next = { ...game };
+      delete next.refereeId;
+      delete next.refereeName;
+      const retained = (event.tournamentGames || []).find((old: Row) => old.id === game.id);
+      if (retained?.refereeId) {
+        next.refereeId = retained.refereeId;
+        next.refereeName = retained.refereeName;
+      }
+      return next;
+    }),
+    writeCount: 0,
+    apply() {},
+  };
   const collection=db.collection('tournamentRefereeAssignments');
   const [profilesSnapshot,owned]=await Promise.all([transaction.get(db.collection('tournamentReferees').where('eventId','==',eventId)),transaction.get(collection.where('eventId','==',eventId))]);
   const profiles=[...profilesSnapshot.docs.filter(d=>d.data().teamId===teamId).map(d=>d.data()),...extraProfiles];

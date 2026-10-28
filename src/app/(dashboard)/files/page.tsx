@@ -148,10 +148,10 @@ export default function FilesPage() {
   const { pendingDocs, signingMembers, visibleSignedFiles, realTimeSignedDocIds, visibleWaiverDocuments } = usePendingWaivers();
 
   const filesQuery = useMemoFirebase(() => {
-    if (!activeTeam || !db) return null;
+    if (!activeTeam || !db || !isPro) return null;
     if (isStaff) return query(collection(db, 'teams', activeTeam.id, 'files'), orderBy('date', 'desc'));
     return query(collection(db, 'teams', activeTeam.id, 'files'), where('category', 'in', MEMBER_VISIBLE_FILE_CATEGORIES));
-  }, [activeTeam?.id, db, isStaff]);
+  }, [activeTeam?.id, db, isStaff, isPro]);
   const { data: rawFiles } = useCollection<TeamFile>(filesQuery);
 
   const resourceFiles = useMemo(() => {
@@ -193,6 +193,8 @@ export default function FilesPage() {
     return <div className="py-20 text-center animate-pulse"><Loader2 className="h-10 w-10 animate-spin mx-auto text-primary" /><p className="text-xs font-black uppercase mt-4">Opening Library...</p></div>;
   }
   if (!activeTeam) return <NoActiveTeamState title="Start Your Squad Library" description="Files, waivers, photos, and links are stored inside a squad. Create a free squad or join one to begin your library." />;
+
+  if (!isPro) return <AccessRestricted title="Pro Team required" description="The Library is included with Pro Team. Select a Pro team to open its files." />;
 
   const handleAddLink = async () => {
     if (!linkUrl.trim() || !linkTitle.trim()) return;

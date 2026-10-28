@@ -1,3 +1,4 @@
+import { competitionHasPro } from '@/lib/server-competition-plan';
 import { CompetitionError } from '@/lib/competition/types';
 import { enrollmentPatch } from "@/lib/competition/enrollment";
 import { registeredRosterPatch } from "@/lib/competition/registration-roster";
@@ -304,7 +305,7 @@ export async function POST(req: NextRequest) {
         const creator = billingOwnerId
           ? await adminDb.collection('users').doc(billingOwnerId).get()
           : null;
-        if (!creator?.exists || !permitsLegacyOrPaidPortals(creator.data()?.planId, creator.data()?.plan_type, creator.data()?.subscriptionPlanId)) {
+        if (!creator?.exists || !await competitionHasPro(adminDb, undefined, String(leagueSnap.data()?.tenantId || `profile:${billingOwnerId}`))) {
           return NextResponse.json({ error: 'This subscription does not include public registration.' }, { status: 403 });
         }
         parentRef = leagueSnap.ref;
@@ -514,7 +515,7 @@ export async function POST(req: NextRequest) {
           if (!freshConfig.exists || freshConfig.data()?.is_active !== true) {
             return { accepted: false as const, code: 'REGISTRATION_INACTIVE', message: 'Registration portal is inactive.', status: 409 };
           }
-          if (!freshTeam.exists || !permitsLegacyOrPaidPortals(freshTeam.data()?.planId, freshTeam.data()?.plan_type, freshTeam.data()?.subscriptionPlanId)) {
+          if (!freshTeam.exists || freshTeam.data()?.isPro !== true) {
             return { accepted: false as const, code: 'REGISTRATION_UNAVAILABLE', message: 'This subscription does not include public registration.', status: 403 };
           }
           if(manualActorUid&&!manualSuperAdmin){const memberData=freshManualMember?.data();const active=freshTeam.data()?.ownerUserId===manualActorUid||Boolean(freshManualMember?.exists&&(memberData?.userId===manualActorUid||(!memberData?.userId&&freshManualMember.id===manualActorUid))&&memberData?.status!=='removed'&&memberData?.isDeleted!==true&&hasStaffRole(memberData));if(!active)return {accepted:false as const,code:'STAFF_REVOKED',message:'Tournament staff access required.',status:403};}
@@ -586,7 +587,7 @@ export async function POST(req: NextRequest) {
         if (freshScope?.isActive === false || freshScope?.registrationOpen === false || (closeAt != null && Number.isFinite(closeAt) && closeAt <= Date.now())) {
           return { accepted: false as const, message: 'Registration portal is closed.', status: 409 };
         }
-        if (kind === 'league' && (!freshEntitlement?.exists || !permitsLegacyOrPaidPortals(freshEntitlement.data()?.planId, freshEntitlement.data()?.plan_type, freshEntitlement.data()?.subscriptionPlanId))) {
+        if (kind === 'league' && (!freshEntitlement?.exists || !await competitionHasPro(adminDb, batch, String(freshParent.data()?.tenantId || `profile:${leagueBillingOwnerUserId(freshParent.data() || {})}`)))) {
           return { accepted: false as const, message: 'This subscription does not include public registration.', status: 403 };
         }
         if (kind === 'tournament' && !permitsLegacyOrPaidPortals(freshParent.data()?.planId, freshParent.data()?.plan_type, freshParent.data()?.subscriptionPlanId)) {

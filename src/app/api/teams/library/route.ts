@@ -5,7 +5,7 @@ import {verifyFirebaseToken} from '@/lib/api-auth';
 import {getTeamAuthority} from '@/lib/server-team-access';
 import {isTeamModuleEnabled} from '@/lib/team-module-visibility';
 import {enforceUserRateLimit} from '@/lib/server-request-guards';
-import {LibraryInputError,LIBRARY_FILE_LIMIT,LIBRARY_STARTER_LIMIT,readLibraryBytes,sanitizeLibraryFilename,validateLibraryBytes} from '@/lib/library-policy';
+import {LibraryInputError,LIBRARY_FILE_LIMIT,readLibraryBytes,sanitizeLibraryFilename,validateLibraryBytes} from '@/lib/library-policy';
 import {createHash} from 'node:crypto';
 
 const validId=(value:string|null):value is string=>!!value&&/^[A-Za-z0-9_-]{1,200}$/.test(value);
@@ -17,7 +17,7 @@ async function context(req:NextRequest,staff=false){
   const params=new URL(req.url).searchParams,teamId=params.get('teamId');
   if(!validId(teamId)||[...params.keys()].some(key=>!['teamId','fileId','name','category','description'].includes(key)))return NextResponse.json({error:'Invalid Library request.'},{status:400,headers:privateHeaders});
   const authority=await getTeamAuthority(teamId,auth.uid,auth.role);
-  if(!authority||(!authority.isStaff&&!authority.member)||(staff&&!authority.isStaff)||!isTeamModuleEnabled({key:'files',legacyKey:'library'},authority.teamData.features))return NextResponse.json({error:'Library unavailable.'},{status:403,headers:privateHeaders});
+  if(!authority||authority.teamData.isPro!==true||(!authority.isStaff&&!authority.member)||(staff&&!authority.isStaff)||!isTeamModuleEnabled({key:'files',legacyKey:'library'},authority.teamData.features))return NextResponse.json({error:'Library unavailable.'},{status:403,headers:privateHeaders});
   return{auth,params,teamId,authority};
 }
 function failure(error:unknown){
@@ -40,9 +40,8 @@ export async function POST(req:NextRequest){
     try{
       await adminDb.runTransaction(async transaction=>{
         // Reading and updating the team serializes aggregate quota allocation.
-        const current=await transaction.get(authority.teamRef),existing=await transaction.get(files);
-        const total=existing.docs.reduce((sum,doc)=>sum+Math.max(0,Number(doc.data().sizeBytes)||0),0);
-        if(current.data()?.isPro!==true&&total+bytes.length>LIBRARY_STARTER_LIMIT)throw new LibraryInputError('Starter Library storage exceeds 500 MiB.',413);
+        const current=await transaction.get(authority.teamRef);
+        if(current.data()?.isPro!==true)throw new LibraryInputError('Library requires Pro Team.',403);
         transaction.create(ref,{name,type:contentType,sizeBytes:bytes.length,size:`${Math.ceil(bytes.length/1024)}KB`,url:'',storagePath:objectPath(teamId,ref.id),sha256:createHash('sha256').update(bytes).digest('hex'),contentType,category,description:(params.get('description')||'').slice(0,1000),date:new Date().toISOString(),uploadedBy:auth.uid});
         transaction.update(authority.teamRef,{libraryVersion:Number(current.data()?.libraryVersion||0)+1});
       });

@@ -14,7 +14,7 @@ const teamConfig=overrides=>{const value={title:'Tournament form',description:''
 
 test('default tournament waiver requires a signature and archives the same fallback text shown publicly',async()=>{
   const config=teamConfig({require_default_waiver:true});
-  const {db,records}=communicationDb({'teams/t':{planId:'elite'},'teams/t/events/e':{isTournament:true,registrationOpen:true,tournamentTeamsData:[],tournamentGames:[]},'teams/t/events/e/registration/team_config':config});
+  const {db,records}=communicationDb({'teams/t':{planId:'elite',isPro:true},'teams/t/events/e':{isTournament:true,registrationOpen:true,tournamentTeamsData:[],tournamentGames:[]},'teams/t/events/e/registration/team_config':config});
   const app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
   const body={kind:'tournament',action:'register',teamId:'t',eventId:'e',protocolId:'team_config',requestId:'default-waiver-receipt-001',formVersion:1,formHash:config.config_hash,answers:{teamName:'Alpha',name:'QA Coach',email:'qa-coach@example.test'}};
   try{
@@ -28,7 +28,7 @@ test('default tournament waiver requires a signature and archives the same fallb
 test('default league waiver enforces signature and preserves league-specific receipt wording',async()=>{
   const raw=teamConfig({require_default_waiver:true}),league={creatorId:'owner',is_active:true,registrationEntryCount:0};
   const config=effectiveLeagueRegistrationConfig(raw,league);
-  const {db,records}=communicationDb({'users/owner':{plan_type:'league'},'leagues/l':league,'leagues/l/registration/team_config':raw});
+  const {db,records}=communicationDb({'users/owner':{plan_type:'league',subscription_status:'active'},'leagues/l':league,'leagues/l/registration/team_config':raw});
   const app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
   const body={kind:'league',action:'register',leagueId:'l',protocolId:'team_config',requestId:'league-default-waiver-001',formVersion:1,formHash:config.config_hash,answers:{teamName:'Alpha',name:'QA Coach',email:'qa-coach@example.test',phone:'5551234567'}};
   try{
@@ -40,7 +40,7 @@ test('default league waiver enforces signature and preserves league-specific rec
 });
 
 test('public event final seat is serialized and a missing legacy counter migrates exactly',async()=>{
-  const seed={'teams/a':{planId:'team'},'teams/a/events/e':{title:'Open',date:'2099-01-01',registrationOpen:true,registrationCapacity:2,customFormFields:[],registrationFormVersion:1},'teams/a/events/e/registrations/legacy':{email:'legacy@example.test'}};
+  const seed={'teams/a':{planId:'team',isPro:true},'teams/a/events/e':{title:'Open',date:'2099-01-01',registrationOpen:true,registrationCapacity:2,customFormFields:[],registrationFormVersion:1},'teams/a/events/e/registrations/legacy':{email:'legacy@example.test'}};
   const {db,records}=communicationDb(seed,{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/event-registration/route.ts',db,{});
   const get=new Request('http://127.0.0.1/api/public/event-registration?teamId=a&eventId=e');get.nextUrl=new URL(get.url);
   try{
@@ -57,7 +57,7 @@ test('public event final seat is serialized and a missing legacy counter migrate
 
 test('league scoring verifies the private HMAC with rotation and rejects tampering',async()=>{
   const previous='previous-competition-test-secret-at-least-32-bytes',league={creatorId:'owner',tenantId:'host',name:'League',is_active:true,teams:{a:{teamName:'A',status:'accepted'},b:{teamName:'B',status:'accepted'}},schedule:[{id:'g',team1:'A',team1Id:'a',team2:'B',team2Id:'b'}]};
-  const {db}=communicationDb({'teams/host':{ownerUserId:'owner',planId:'league'},'users/owner':{role:'coach',plan_type:'league'},'leagues/l':league,'leagues/l/private/lifecycle':{scorekeeperPinHash:hashLeagueScorekeeperPin('l','8274',[previous])},'teams/a':{},'teams/b':{}},{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
+  const {db}=communicationDb({'teams/host':{ownerUserId:'owner',planId:'league',isPro:true},'users/owner':{role:'coach',plan_type:'league',subscription_status:'active'},'leagues/l':league,'leagues/l/private/lifecycle':{scorekeeperPinHash:hashLeagueScorekeeperPin('l','8274',[previous])},'teams/a':{},'teams/b':{}},{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
   try{
     assert.equal((await app.route.POST(request({kind:'league',action:'score',leagueId:'l',code:'wrong',gameId:'g',requestId:'hmac-score-first',expectedGameVersion:0,score1:2,score2:1}))).status,403);
     assert.equal((await app.route.POST(request({kind:'league',action:'score',leagueId:'l',code:'8274',gameId:'g',requestId:'hmac-score-first',expectedGameVersion:0,score1:2,score2:1}))).status,200);
@@ -67,7 +67,7 @@ test('league scoring verifies the private HMAC with rotation and rejects tamperi
 
 test('legacy league PIN migrates only on a correct score in the same transaction',async()=>{
   const league={creatorId:'owner',tenantId:'host',billingOwnerUserId:'owner',name:'Legacy League',is_active:true,scorekeeperPin:'8274',teams:{a:{teamName:'A',status:'accepted'},b:{teamName:'B',status:'accepted'}},schedule:[{id:'g',team1:'A',team1Id:'a',team2:'B',team2Id:'b'}]};
-  const {db,records}=communicationDb({'teams/host':{ownerUserId:'owner',planId:'league'},'users/owner':{role:'coach',plan_type:'league'},'leagues/l':league,'teams/a':{},'teams/b':{}},{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
+  const {db,records}=communicationDb({'teams/host':{ownerUserId:'owner',planId:'league',isPro:true},'users/owner':{role:'coach',plan_type:'league',subscription_status:'active'},'leagues/l':league,'teams/a':{},'teams/b':{}},{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
   try{
     assert.equal((await app.route.POST(request({kind:'league',action:'score',leagueId:'l',code:'wrong',gameId:'g',requestId:'hmac-score-first',expectedGameVersion:0,score1:2,score2:1}))).status,403);
     assert.equal(records.get('leagues/l').scorekeeperPin,'8274');assert.equal(records.has('leagues/l/private/lifecycle'),false);
@@ -102,7 +102,7 @@ test('tournament scoring verifies private HMAC and migrates a valid legacy code 
 
 test('league public entitlement uses the canonical billing owner rather than delegated actor plan',async()=>{
   const config=teamConfig({title:'Delegated league'}),league={creatorId:'staff',billingOwnerUserId:'owner',tenantId:'team-a',registrationEntryCount:0,is_active:true},effective=effectiveLeagueRegistrationConfig(config,league);
-  const {db}=communicationDb({'users/owner':{plan_type:'league'},'users/staff':{plan_type:'free'},'leagues/l':league,'leagues/l/registration/team_config':config},{serializeTransactions:true});
+  const {db}=communicationDb({'users/owner':{plan_type:'league',subscription_status:'active'},'users/staff':{plan_type:'free'},'teams/team-a':{ownerUserId:'owner',isPro:true,planId:'league'},'leagues/l':league,'leagues/l/registration/team_config':config},{serializeTransactions:true});
   const read=await loadCommunicationRoute('../../src/app/api/public/portals/route.ts',db,{}),write=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
   const get=new Request('http://127.0.0.1/api/public/portals?kind=league-registration&leagueId=l&protocolId=team_config');get.nextUrl=new URL(get.url);
   try{
@@ -114,7 +114,7 @@ test('league public entitlement uses the canonical billing owner rather than del
 
 test('league fee snapshot is identical from public GET through transactional POST',async()=>{
   const raw=teamConfig({title:'League form'}),league={creatorId:'owner',registrationCost:'40',paymentInstructions:'Pay at desk',registrationEntryCount:0},effective=effectiveLeagueRegistrationConfig(raw,league);
-  const {db,records}=communicationDb({'users/owner':{plan_type:'league'},'leagues/l':league,'leagues/l/registration/team_config':raw},{serializeTransactions:true});
+  const {db,records}=communicationDb({'users/owner':{plan_type:'league',subscription_status:'active'},'leagues/l':league,'leagues/l/registration/team_config':raw},{serializeTransactions:true});
   const read=await loadCommunicationRoute('../../src/app/api/public/portals/route.ts',db,{}),write=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
   const get=new Request('http://127.0.0.1/api/public/portals?kind=league-registration&leagueId=l&protocolId=team_config');get.nextUrl=new URL(get.url);
   try{
@@ -130,7 +130,7 @@ test('league fee snapshot is identical from public GET through transactional POS
 
 test('registration replay repairs a missing immutable waiver receipt from original entry time',async()=>{
   const config=teamConfig({title:'League waiver',require_default_waiver:true,default_waiver_text:'League terms'}),league={creatorId:'owner',registrationEntryCount:0};
-  const {db,records}=communicationDb({'users/owner':{plan_type:'league'},'leagues/l':league,'leagues/l/registration/team_config':config},{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{}),body={kind:'league',action:'register',leagueId:'l',protocolId:'team_config',requestId:'league-repair-request-01',formVersion:1,formHash:config.config_hash,signature:'Coach Name',answers:{teamName:'Alpha',name:'Coach',email:'coach@example.test',phone:'5551234567'}};
+  const {db,records}=communicationDb({'users/owner':{plan_type:'league',subscription_status:'active'},'leagues/l':league,'leagues/l/registration/team_config':config},{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{}),body={kind:'league',action:'register',leagueId:'l',protocolId:'team_config',requestId:'league-repair-request-01',formVersion:1,formHash:config.config_hash,signature:'Coach Name',answers:{teamName:'Alpha',name:'Coach',email:'coach@example.test',phone:'5551234567'}};
   try{
     assert.equal((await app.route.POST(request(body))).status,200);const entryPath=[...records.keys()].find(path=>path.startsWith('leagues/l/registrationEntries/')),entry=records.get(entryPath),archivePath=`leagues/l/archived_waivers/arch_waiver_${entryPath.split('/').at(-1)}`;
     assert.equal(records.get(archivePath).signedAt,entry.signature_date);records.delete(archivePath);
@@ -141,7 +141,7 @@ test('registration replay repairs a missing immutable waiver receipt from origin
 
 test('league player registration stores applicant contact data only in the private projection',async()=>{
   const raw=teamConfig({title:'Player form',type:'player',form_schema:[{id:'fullName',label:'Athlete Name',type:'short_text',required:true},{id:'email',label:'Email',type:'email',required:true},{id:'phone',label:'Phone',type:'short_text',required:true},{id:'dateOfBirth',label:'Date of Birth',type:'date',required:true}]}),league={creatorId:'owner',registrationEntryCount:0},effective=effectiveLeagueRegistrationConfig(raw,league);
-  const {db,records}=communicationDb({'users/owner':{plan_type:'league'},'leagues/l':league,'leagues/l/registration/player_config':raw},{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
+  const {db,records}=communicationDb({'users/owner':{plan_type:'league',subscription_status:'active'},'leagues/l':league,'leagues/l/registration/player_config':raw},{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
   try{
     const response=await app.route.POST(request({kind:'league',action:'register',leagueId:'l',protocolId:'player_config',requestId:'private-player-request-01',formVersion:effective.form_version,formHash:effective.config_hash,answers:{fullName:'Applicant',email:'applicant@example.test',phone:'5551234567',dateOfBirth:'2000-01-01'}}));
     assert.equal(response.status,200);const recruitId=`recruit_${(await response.json()).entryId}`,root=records.get('leagues/l'),privateData=records.get('leagues/l/private/lifecycle');
@@ -150,7 +150,7 @@ test('league player registration stores applicant contact data only in the priva
 });
 
 test('transaction-time owner demotion rejects tournament registration without writes',async()=>{
-  let demote=true;const config=teamConfig(),seed={'teams/a':{ownerUserId:'owner',planId:'team'},'teams/a/events/e':{isTournament:true,registrationOpen:true,isArchived:false,tournamentGames:[],tournamentTeamsData:[],registrationEntryCount:0},'teams/a/events/e/registration/team_config':config};
+  let demote=true;const config=teamConfig(),seed={'teams/a':{ownerUserId:'owner',planId:'team',isPro:true},'teams/a/events/e':{isTournament:true,registrationOpen:true,isArchived:false,tournamentGames:[],tournamentTeamsData:[],registrationEntryCount:0},'teams/a/events/e/registration/team_config':config};
   const {db,records}=communicationDb(seed,{beforeTransaction:({records})=>{if(demote){records.set('teams/a',{...records.get('teams/a'),ownerUserId:'replacement'});demote=false;}}});
   const app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{uid:'owner'});
   try{const response=await app.route.POST(request({kind:'tournament',action:'register',teamId:'a',eventId:'e',protocolId:'team_config',requestId:'demotion-race-0001',formVersion:1,formHash:config.config_hash,answers:{manual_enrollment:true,teamName:'Alpha',name:'Coach',email:'coach@example.test'}}));assert.equal(response.status,403);assert.equal([...records.keys()].some(path=>path.includes('/registrationEntries/')),false);}finally{app.dispose();}
@@ -162,7 +162,7 @@ test('tournament replay canonicalizes every configured email field but rejects a
     {id:'contact_name',label:'Head Coach Name',type:'short_text',required:true},
     {id:'contact_email',label:'Email Address',type:'email',required:true},
   ]});
-  const seed={'teams/a':{ownerUserId:'owner',planId:'team'},'teams/a/events/e':{isTournament:true,registrationOpen:true,isArchived:false,tournamentGames:[],tournamentTeams:[],tournamentTeamsData:[],registrationEntryCount:0},'teams/a/events/e/registration/team_config':config};
+  const seed={'teams/a':{ownerUserId:'owner',planId:'team',isPro:true},'teams/a/events/e':{isTournament:true,registrationOpen:true,isArchived:false,tournamentGames:[],tournamentTeams:[],tournamentTeamsData:[],registrationEntryCount:0},'teams/a/events/e/registration/team_config':config};
   const {db,records}=communicationDb(seed,{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{});
   const base={kind:'tournament',action:'register',teamId:'a',eventId:'e',protocolId:'team_config',formVersion:1,formHash:config.config_hash,answers:{teamName:'Alpha',name:'Coach',email:'coach@example.test',team_name:'Alpha',contact_name:'Coach',contact_email:'coach@example.test'}};
   try{
@@ -182,7 +182,7 @@ for (const scenario of [
   {name:'disabled default',overrides:{require_default_waiver:false,default_waiver_text:'Unused terms',custom_waiver_text:'Custom only'},expected:'Custom only'},
 ]) test(`dedicated tournament waiver archives complete ${scenario.name} terms`,async()=>{
   const config=teamConfig(scenario.overrides),code='VALIDCODE';
-  const {db,records}=communicationDb({'teams/a':{ownerUserId:'owner',planId:'team'},'teams/a/events/e':{isTournament:true,isArchived:false,title:'Cup',tournamentTeamsData:[{id:'p_entry',name:'Alpha',sourceTeamId:'a'}],teamAgreements:{}},'teams/a/events/e/registration/team_config':config,[`tournamentRegistrationCodes/${code}`]:{teamId:'a',eventId:'e'}},{serializeTransactions:true});
+  const {db,records}=communicationDb({'teams/a':{ownerUserId:'owner',planId:'team',isPro:true},'teams/a/events/e':{isTournament:true,isArchived:false,title:'Cup',tournamentTeamsData:[{id:'p_entry',name:'Alpha',sourceTeamId:'a'}],teamAgreements:{}},'teams/a/events/e/registration/team_config':config,[`tournamentRegistrationCodes/${code}`]:{teamId:'a',eventId:'e'}},{serializeTransactions:true});
   const app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{uid:'owner'});
   const body={kind:'tournament',action:'waiver',teamId:'a',eventId:'e',teamName:'Alpha',signer:'Coach Owner',registrationCode:code,signedDate:new Date().toISOString().slice(0,10),expectedVersion:1,expectedHash:config.config_hash};
   try{
@@ -196,7 +196,7 @@ for (const scenario of [
 });
 
 test('tournament waiver exact replay preserves signedAt and tampering fails closed',async()=>{
-  const config=teamConfig({require_default_waiver:true,default_waiver_text:'Exact terms'}),code='VALIDCODE',seed={'teams/a':{ownerUserId:'owner',planId:'team'},'teams/a/events/e':{isTournament:true,isArchived:false,title:'Cup',tournamentTeamsData:[{id:'p_entry',name:'Alpha',sourceTeamId:'a'}],teamAgreements:{}},'teams/a/events/e/registration/team_config':config,[`tournamentRegistrationCodes/${code}`]:{teamId:'a',eventId:'e'}};
+  const config=teamConfig({require_default_waiver:true,default_waiver_text:'Exact terms'}),code='VALIDCODE',seed={'teams/a':{ownerUserId:'owner',planId:'team',isPro:true},'teams/a/events/e':{isTournament:true,isArchived:false,title:'Cup',tournamentTeamsData:[{id:'p_entry',name:'Alpha',sourceTeamId:'a'}],teamAgreements:{}},'teams/a/events/e/registration/team_config':config,[`tournamentRegistrationCodes/${code}`]:{teamId:'a',eventId:'e'}};
   const {db,records}=communicationDb(seed,{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{uid:'owner'}),body={kind:'tournament',action:'waiver',teamId:'a',eventId:'e',teamName:'Alpha',signer:'Coach Owner',registrationCode:code,signedDate:new Date().toISOString().slice(0,10),expectedVersion:1,expectedHash:config.config_hash};
   try{
     assert.equal((await app.route.POST(request(body))).status,200);const archivePath=[...records.keys()].find(path=>path.includes('/archived_waivers/arch_tournament_')),signedAt=records.get(archivePath).signedAt;
@@ -211,7 +211,7 @@ test('dedicated tournament waiver accepts today in the signer timezone but rejec
   assert.ok(signatureTimeZone,'At least one supported timezone must have a different local day');
   const signedDate=new Intl.DateTimeFormat('en-CA',{timeZone:signatureTimeZone,year:'numeric',month:'2-digit',day:'2-digit'}).format(now);
   const config=teamConfig({require_default_waiver:true}),code='VALIDCODE';
-  const {db}=communicationDb({'teams/a':{ownerUserId:'owner',planId:'team'},'teams/a/events/e':{isTournament:true,isArchived:false,title:'Cup',tournamentTeamsData:[{id:'p_entry',name:'Alpha',sourceTeamId:'a'}],teamAgreements:{}},'teams/a/events/e/registration/team_config':config,[`tournamentRegistrationCodes/${code}`]:{teamId:'a',eventId:'e'}},{serializeTransactions:true});
+  const {db}=communicationDb({'teams/a':{ownerUserId:'owner',planId:'team',isPro:true},'teams/a/events/e':{isTournament:true,isArchived:false,title:'Cup',tournamentTeamsData:[{id:'p_entry',name:'Alpha',sourceTeamId:'a'}],teamAgreements:{}},'teams/a/events/e/registration/team_config':config,[`tournamentRegistrationCodes/${code}`]:{teamId:'a',eventId:'e'}},{serializeTransactions:true});
   const app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{uid:'owner'});
   const body={kind:'tournament',action:'waiver',teamId:'a',eventId:'e',teamName:'Alpha',signer:'Coach Owner',registrationCode:code,signedDate,signatureTimeZone,expectedVersion:1,expectedHash:config.config_hash};
   try{
@@ -223,7 +223,7 @@ test('dedicated tournament waiver accepts today in the signer timezone but rejec
 });
 
 test('tournament deletion migrates counters and validates archive pointer before deleting',async()=>{
-  const config=teamConfig({require_default_waiver:true,default_waiver_text:'Exact terms'}),code='VALIDCODE',seed={'teams/a':{ownerUserId:'owner',planId:'team'},'teams/a/events/e':{isTournament:true,isArchived:false,title:'Cup',tournamentGames:[],tournamentTeams:['Alpha','Bravo'],tournamentTeamsData:[{id:'p_entry',name:'Alpha',sourceTeamId:'a'},{id:'p_other',name:'Bravo'}],teamAgreements:{}},'teams/a/events/e/registration/team_config':config,'teams/a/events/e/registrationEntries/entry':{answers:{teamName:'Alpha'},event_id:'e'},'teams/a/events/e/registrationEntries/other':{answers:{teamName:'Bravo'},event_id:'e'},[`tournamentRegistrationCodes/${code}`]:{teamId:'a',eventId:'e'}};
+  const config=teamConfig({require_default_waiver:true,default_waiver_text:'Exact terms'}),code='VALIDCODE',seed={'teams/a':{ownerUserId:'owner',planId:'team',isPro:true},'teams/a/events/e':{isTournament:true,isArchived:false,title:'Cup',tournamentGames:[],tournamentTeams:['Alpha','Bravo'],tournamentTeamsData:[{id:'p_entry',name:'Alpha',sourceTeamId:'a'},{id:'p_other',name:'Bravo'}],teamAgreements:{}},'teams/a/events/e/registration/team_config':config,'teams/a/events/e/registrationEntries/entry':{answers:{teamName:'Alpha'},event_id:'e'},'teams/a/events/e/registrationEntries/other':{answers:{teamName:'Bravo'},event_id:'e'},[`tournamentRegistrationCodes/${code}`]:{teamId:'a',eventId:'e'}};
   const {db,records}=communicationDb(seed,{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{uid:'owner'}),waiver={kind:'tournament',action:'waiver',teamId:'a',eventId:'e',teamName:'Alpha',signer:'Coach Owner',registrationCode:code,signedDate:new Date().toISOString().slice(0,10),expectedVersion:1,expectedHash:config.config_hash};
   try{
     assert.equal((await app.route.POST(request(waiver))).status,200);const event=records.get('teams/a/events/e'),agreement=event.teamAgreements.Alpha,archivePath=`teams/a/archived_waivers/${agreement.archiveId}`;
@@ -235,7 +235,7 @@ test('tournament deletion migrates counters and validates archive pointer before
 });
 
 test('legacy tournament deletion uses the server path without inventing a current counter',async()=>{
-  const seed={'teams/a':{ownerUserId:'owner',planId:'team'},'teams/a/events/e':{isTournament:true,isArchived:false,tournamentGames:[],tournamentTeams:['Legacy'],tournamentTeamsData:[{id:'p_legacy',name:'Legacy'}],teamAgreements:{}},'teams/a/registrationEntries/legacy':{event_id:'e',answers:{teamName:'Legacy'}}};
+  const seed={'teams/a':{ownerUserId:'owner',planId:'team',isPro:true},'teams/a/events/e':{isTournament:true,isArchived:false,tournamentGames:[],tournamentTeams:['Legacy'],tournamentTeamsData:[{id:'p_legacy',name:'Legacy'}],teamAgreements:{}},'teams/a/registrationEntries/legacy':{event_id:'e',answers:{teamName:'Legacy'}}};
   const {db,records}=communicationDb(seed,{serializeTransactions:true}),app=await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts',db,{uid:'owner'});
   try{const response=await app.route.POST(request({kind:'tournament',action:'delete-registration',teamId:'a',eventId:'e',entryId:'legacy',legacy:true}));assert.equal(response.status,200);assert.equal(records.has('teams/a/registrationEntries/legacy'),false);assert.equal('registrationEntryCount' in records.get('teams/a/events/e'),false);}finally{app.dispose();}
 });

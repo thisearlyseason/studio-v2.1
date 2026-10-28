@@ -1936,7 +1936,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       return true;
     }
 
-    if (featureId === 'recruit_portal' || featureId === 'library_access') {
+    if (featureId === 'library_access') return isPro;
+
+    if (featureId === 'recruit_portal') {
       // Accessible to all (Starter, Pro, Elite)
       return true;
     }
@@ -1966,7 +1968,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     
     const plan = plans.find(p => p.id === effectivePlanId);
     if (plan && plan.features?.[featureId] !== undefined) return !!plan.features?.[featureId];
-    return ['live_feed_read', 'basic_scheduling', 'recruit_portal', 'library_access'].includes(featureId);
+    return ['live_feed_read', 'basic_scheduling', 'recruit_portal'].includes(featureId);
   }, [activeTeam, clubData, userProfile, plans, isSuperAdmin, isPro, isSchoolAdmin, teams, isEliteAccount, isSchoolMode]);
 
   // Parent Login Redirect: Automatically push parents to the Family Hub if they land on the main dashboard

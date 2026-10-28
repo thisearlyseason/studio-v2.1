@@ -1,4 +1,5 @@
 "use client";
+import { AccessRestricted } from "@/components/layout/AccessRestricted";
 
 import { LEAGUE_DEFAULT_WAIVER } from '@/lib/registration-waiver-text';
 
@@ -72,7 +73,7 @@ import { authHeader, getAuthToken } from '@/lib/client-auth';
 // CRITICAL BUILD FIX: Prevent static generation failures for dynamic enrollment routes
 export const dynamic = 'force-dynamic';
 
-export default function LeagueRegistrationAdminPage() {
+function LeagueRegistrationAdminPageContent() {
   const { leagueId } = useParams();
   const router = useRouter();
   const { isAuthResolved, user: authUser } = useUser();
@@ -1272,4 +1273,11 @@ export default function LeagueRegistrationAdminPage() {
       </Dialog>
     </div>
   );
+}
+
+export default function LeagueRegistrationAdminPage() {
+  const { isPro, isTeamsLoading } = useTeam();
+  if (isTeamsLoading) return <p className="p-8">Loading team access…</p>;
+  if (!isPro) return <AccessRestricted title="Pro Team required" description="League portals requires Pro Team. Free teams can still build their schedules." />;
+  return <LeagueRegistrationAdminPageContent />;
 }

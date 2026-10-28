@@ -12,9 +12,9 @@ const teamSeed = {
   'users/owner-a': { role: 'coach', plan_type: 'elite_league' },
   'users/member-a': { role: 'parent', plan_type: 'elite_league' },
   'users/owner-b': { role: 'coach', plan_type: 'elite_league' },
-  'teams/team-a': { ownerUserId: 'owner-a', planId: 'elite_league', leagueIds: {} },
+  'teams/team-a': { ownerUserId: 'owner-a', planId: 'elite_league', isPro: true, leagueIds: {} },
   'teams/team-a/members/member-a': { userId: 'member-a', position: 'Player', status: 'active' },
-  'teams/team-b': { ownerUserId: 'owner-b', planId: 'elite_league', leagueIds: {} },
+  'teams/team-b': { ownerUserId: 'owner-b', planId: 'elite_league', isPro: true, leagueIds: {} },
 };
 
 test('editor-shaped metadata with empty optional dates and slug saves without losing a schedule', async () => {
@@ -142,7 +142,7 @@ test('group hard delete replay is atomic and revalidates demotion inside the rep
   } finally { app.dispose(); }
 });
 
-test('division rename checks billing-owner quota only when normalized group count increases', async () => {
+test('renaming retained league records does not create a new league or consume a paid team seat', async () => {
   const seed = {
     ...teamSeed,
     'users/staff-a': { role: 'coach', plan_type: 'league', subscription_status: 'active', team_limit: 100 },
@@ -152,12 +152,10 @@ test('division rename checks billing-owner quota only when normalized group coun
     'leagues/silver': { creatorId: 'owner-a', tenantId: 'team-a', lifecycleVersion: 1, name: ' METRO ', divisionTitle: 'Silver' },
   };
   const { db, records } = communicationDb(seed);
-  const before = structuredClone([...records]);
-  const denied = await call(db, { uid: 'staff-a' }, { action: 'edit', requestId: 'rename-quota-0001', leagueId: 'gold', expectedVersion: 1, updates: { name: 'Another' } }, 'PATCH');
-  assert.equal(denied.response.status, 409);
-  assert.equal(denied.body.error, 'LEAGUE_LIMIT_REACHED');
-  assert.deepEqual([...records], before);
-  const same = await call(db, { uid: 'staff-a' }, { action: 'edit', requestId: 'rename-case-0001', leagueId: 'gold', expectedVersion: 1, updates: { name: 'metro' } }, 'PATCH');
+  const renamed = await call(db, { uid: 'staff-a' }, { action: 'edit', requestId: 'rename-quota-0001', leagueId: 'gold', expectedVersion: 1, updates: { name: 'Another' } }, 'PATCH');
+  assert.equal(renamed.response.status, 200);
+  assert.equal(records.get('leagues/gold').name, 'Another');
+  const same = await call(db, { uid: 'staff-a' }, { action: 'edit', requestId: 'rename-case-0001', leagueId: 'gold', expectedVersion: 2, updates: { name: 'metro' } }, 'PATCH');
   assert.equal(same.response.status, 200);
 
   // A whole single-division group can be renamed at capacity; merging groups
@@ -312,14 +310,14 @@ test('delegated staff use tenant-owner quota and owner-created legacy identity r
       action: 'create', requestId: 'staff-create-0002', teamId: 'team-a', name: 'Third', sport: 'Soccer',
     }));
     assert.equal(second.status, 201);
-    assert.equal(overQuota.status, 409);
+    assert.equal(overQuota.status, 201, 'paid league creation is unlimited regardless of the account team-seat quota');
     const created = [...records].find(([path, data]) => /^leagues\/[^/]+$/.test(path) && data.tenantId === 'team-a')?.[1];
     assert.equal(created.creatorId, 'owner-a');
     assert.equal(created.billingOwnerUserId, 'owner-a');
     assert.deepEqual(created.memberUserIds.sort(), ['owner-a', 'staff-a']);
     const audit = [...records].find(([path, data]) => path.startsWith('leagueLifecycleAudits/') && data.leagueId === created.id)?.[1];
     assert.equal(audit.actorUid, 'staff-a');
-    assert.equal([...records].filter(([path, data]) => /^leagues\/[^/]+$/.test(path) && data.tenantId === 'team-a').length, 1);
+    assert.equal([...records].filter(([path, data]) => /^leagues\/[^/]+$/.test(path) && data.tenantId === 'team-a').length, 2);
   } finally {
     app.dispose();
   }
@@ -365,7 +363,7 @@ test('a tenant change between preflight and commit cannot be overwritten by stal
   let transaction = 0;
   const { db, records } = communicationDb({
     ...teamSeed,
-    'teams/team-b': { ownerUserId: 'owner-a', planId: 'elite_league', leagueIds: {} },
+    'teams/team-b': { ownerUserId: 'owner-a', planId: 'elite_league', isPro: true, leagueIds: {} },
     'leagues/league-a': { id: 'league-a', creatorId: 'owner-a', tenantId: 'team-a', lifecycleVersion: 1, name: 'Metro', sport: 'Soccer' },
   }, {
     beforeTransaction: ({ records: mutableRecords }) => {
@@ -387,7 +385,7 @@ test('a tenant change between preflight and commit cannot be overwritten by stal
 test('name and quota checks ignore deterministic legacy leagues owned in another tenant', async () => {
   const { db, records } = communicationDb({
     ...teamSeed,
-    'teams/team-c': { ownerUserId: 'owner-a', planId: 'elite_league', leagueIds: {} },
+    'teams/team-c': { ownerUserId: 'owner-a', planId: 'elite_league', isPro: true, leagueIds: {} },
     'leagues/team-c-legacy': {
       id: 'team-c-legacy', creatorId: 'owner-a', memberTeamIds: ['team-c'], teams: { 'team-c': {} },
       lifecycleVersion: 0, name: 'Metro', sport: 'Soccer', schedule: [],

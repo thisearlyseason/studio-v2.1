@@ -8,7 +8,7 @@ const request=body=>new Request('http://127.0.0.1/api/registrations/config',{met
 test('saving a reloaded registration config ignores server audit metadata and preserves trusted attribution',async()=>{
   for(const kind of ['league','tournament']){
     const root=kind==='league'?'leagues/l':'teams/t/events/e';
-    const {db,records}=communicationDb({'leagues/l':{creatorId:'owner'},'teams/t':{ownerUserId:'owner',planId:'elite'},'teams/t/events/e':{isTournament:true,teamId:'t'}});
+    const {db,records}=communicationDb({'users/owner':{plan_type:'team',subscription_status:'active'},'leagues/l':{creatorId:'owner'},'teams/t':{ownerUserId:'owner',planId:'elite',isPro:true},'teams/t/events/e':{isTournament:true,teamId:'t'}});
     const app=await loadCommunicationRoute('../../src/app/api/registrations/config/route.ts',db,{uid:'owner'});
     const target={targetKind:kind,targetId:kind==='league'?'l':'t',eventId:'e',configId:'team_config'};
     try{
@@ -22,7 +22,7 @@ test('saving a reloaded registration config ignores server audit metadata and pr
 });
 
 test('publishing tournament registration opens its public gate; closing the last form closes it',async()=>{
-  const {db,records}=communicationDb({'teams/t':{ownerUserId:'owner',planId:'elite'},'teams/t/events/e':{isTournament:true,teamId:'t'}},{enforceReadBeforeWrite:true});
+  const {db,records}=communicationDb({'teams/t':{ownerUserId:'owner',planId:'elite',isPro:true},'teams/t/events/e':{isTournament:true,teamId:'t'}},{enforceReadBeforeWrite:true});
   const app=await loadCommunicationRoute('../../src/app/api/registrations/config/route.ts',db,{uid:'owner'});
   const save=async(configId,active)=>{
     const current=records.get(`teams/t/events/e/registration/${configId}`);
@@ -40,7 +40,7 @@ test('publishing tournament registration opens its public gate; closing the last
 
 test('cancelled tournament cannot publish registration and unauthorized actors cannot open the gate',async()=>{
   for(const [actor,status,event] of [['owner',409,{status:'cancelled'}],['other',403,{}],['owner',409,{isArchived:true}]]){
-    const {db,records}=communicationDb({'teams/t':{ownerUserId:'owner',planId:'elite'},'teams/t/events/e':{isTournament:true,teamId:'t',registrationOpen:false,...event}});
+    const {db,records}=communicationDb({'teams/t':{ownerUserId:'owner',planId:'elite',isPro:true},'teams/t/events/e':{isTournament:true,teamId:'t',registrationOpen:false,...event}});
     const app=await loadCommunicationRoute('../../src/app/api/registrations/config/route.ts',db,{uid:actor});
     try{
       const response=await app.route.POST(request({targetKind:'tournament',targetId:'t',eventId:'e',configId:'team_config',expectedVersion:0,config:base}));
@@ -50,7 +50,7 @@ test('cancelled tournament cannot publish registration and unauthorized actors c
 });
 
 test('registration config service binds organizer authority and requires exact version/hash on update',async()=>{
-  const {db,records}=communicationDb({'leagues/l':{creatorId:'owner'}}),app=await loadCommunicationRoute('../../src/app/api/registrations/config/route.ts',db,{uid:'owner'});
+  const {db,records}=communicationDb({'users/owner':{plan_type:'team',subscription_status:'active'},'leagues/l':{creatorId:'owner'}}),app=await loadCommunicationRoute('../../src/app/api/registrations/config/route.ts',db,{uid:'owner'});
   try{
     const created=await app.route.POST(request({targetKind:'league',targetId:'l',configId:'team_config',expectedVersion:0,config:base}));assert.equal(created.status,200);
     const first=records.get('leagues/l/registration/team_config');assert.equal(first.form_version,1);assert.match(first.config_hash,/^[a-f0-9]{64}$/);
@@ -61,13 +61,13 @@ test('registration config service binds organizer authority and requires exact v
 });
 
 test('registration config service rejects other organizer and invalid schema without writes',async()=>{
-  const {db,records}=communicationDb({'leagues/l':{creatorId:'owner'}}),app=await loadCommunicationRoute('../../src/app/api/registrations/config/route.ts',db,{uid:'other'});
+  const {db,records}=communicationDb({'users/owner':{plan_type:'team',subscription_status:'active'},'leagues/l':{creatorId:'owner'}}),app=await loadCommunicationRoute('../../src/app/api/registrations/config/route.ts',db,{uid:'other'});
   try{assert.equal((await app.route.POST(request({targetKind:'league',targetId:'l',configId:'team_config',expectedVersion:0,config:base}))).status,403);assert.equal(records.has('leagues/l/registration/team_config'),false);}finally{app.dispose();}
 });
 
 test('tournament registration config and private scorekeeper credential commit atomically',async()=>{
   process.env.COMPETITION_CREDENTIAL_HMAC_SECRET='test-secret-that-is-at-least-thirty-two-bytes-long';
-  const seed={'teams/t':{ownerUserId:'owner',planId:'elite'},'teams/t/events/e':{isTournament:true,teamId:'t',lifecycleVersion:3,credentialVersion:0}};
+  const seed={'teams/t':{ownerUserId:'owner',planId:'elite',isPro:true},'teams/t/events/e':{isTournament:true,teamId:'t',lifecycleVersion:3,credentialVersion:0}};
   const {db,records}=communicationDb(seed),app=await loadCommunicationRoute('../../src/app/api/registrations/config/route.ts',db,{uid:'owner'});
   try{
     const invalid=await app.route.POST(request({requestId:'registration-credential-0001',targetKind:'tournament',targetId:'t',eventId:'e',configId:'team_config',expectedVersion:0,expectedLifecycleVersion:3,expectedCredentialVersion:0,config:base,scoringCode:'12'}));
@@ -88,7 +88,7 @@ test('tournament registration config and private scorekeeper credential commit a
 
 test('standalone Tournament scorekeeper credential is versioned, replay-safe, and collision-safe',async()=>{
   process.env.COMPETITION_CREDENTIAL_HMAC_SECRET='test-secret-that-is-at-least-thirty-two-bytes-long';
-  const {db,records}=communicationDb({'teams/t':{ownerUserId:'owner',planId:'elite'},'teams/t/events/e':{isTournament:true,teamId:'t',lifecycleVersion:4,credentialVersion:0}},{serializeTransactions:true});
+  const {db,records}=communicationDb({'teams/t':{ownerUserId:'owner',planId:'elite',isPro:true},'teams/t/events/e':{isTournament:true,teamId:'t',lifecycleVersion:4,credentialVersion:0}},{serializeTransactions:true});
   const app=await loadCommunicationRoute('../../src/app/api/tournaments/credential/route.ts',db,{uid:'owner'});
   try{
     const body={requestId:'scorekeeper-credential-0001',teamId:'t',eventId:'e',scoringCode:'8642',expectedLifecycleVersion:4,expectedCredentialVersion:0};
@@ -103,7 +103,7 @@ test('standalone Tournament scorekeeper credential is versioned, replay-safe, an
 
 test('standalone Tournament credential replay revalidates current staff authority',async()=>{
   process.env.COMPETITION_CREDENTIAL_HMAC_SECRET='test-secret-that-is-at-least-thirty-two-bytes-long';
-  const {db,records}=communicationDb({'teams/t':{ownerUserId:'owner',planId:'elite'},'teams/t/events/e':{isTournament:true,teamId:'t',lifecycleVersion:1,credentialVersion:0}},{serializeTransactions:true});
+  const {db,records}=communicationDb({'teams/t':{ownerUserId:'owner',planId:'elite',isPro:true},'teams/t/events/e':{isTournament:true,teamId:'t',lifecycleVersion:1,credentialVersion:0}},{serializeTransactions:true});
   const app=await loadCommunicationRoute('../../src/app/api/tournaments/credential/route.ts',db,{uid:'owner'});
   const body={requestId:'scorekeeper-authority-0001',teamId:'t',eventId:'e',scoringCode:'8642',expectedLifecycleVersion:1,expectedCredentialVersion:0};
   try{
@@ -114,7 +114,7 @@ test('standalone Tournament credential replay revalidates current staff authorit
 
 test('concurrent standalone Tournament credential editors reject the stale version',async()=>{
   process.env.COMPETITION_CREDENTIAL_HMAC_SECRET='test-secret-that-is-at-least-thirty-two-bytes-long';
-  const {db,records}=communicationDb({'teams/t':{ownerUserId:'owner',planId:'elite'},'teams/t/events/e':{isTournament:true,teamId:'t',lifecycleVersion:2,credentialVersion:0}},{serializeTransactions:true});
+  const {db,records}=communicationDb({'teams/t':{ownerUserId:'owner',planId:'elite',isPro:true},'teams/t/events/e':{isTournament:true,teamId:'t',lifecycleVersion:2,credentialVersion:0}},{serializeTransactions:true});
   const app=await loadCommunicationRoute('../../src/app/api/tournaments/credential/route.ts',db,{uid:'owner'});
   try{
     const common={teamId:'t',eventId:'e',expectedLifecycleVersion:2,expectedCredentialVersion:0};
@@ -124,4 +124,12 @@ test('concurrent standalone Tournament credential editors reject the stale versi
     ]);
     assert.deepEqual(responses.map(response=>response.status).sort(),[200,409]);assert.equal(records.get('teams/t/events/e/private/scoring').credentialVersion,1);assert.equal(records.get('teams/t/events/e').credentialVersion,1);
   }finally{app.dispose();}
+});
+
+test('Free league and tournament organizers cannot publish registration or waiver portals through direct API calls',async()=>{
+ for(const kind of ['league','tournament']){
+  const {db,records}=communicationDb({'users/owner':{role:'coach',plan_type:'team',subscription_status:'active'},'teams/t':{ownerUserId:'owner',planId:'team',isPro:false},'leagues/l':{creatorId:'owner',tenantId:'t'},'teams/t/events/e':{isTournament:true,teamId:'t'}},{enforceReadBeforeWrite:true});
+  const before=structuredClone([...records]),app=await loadCommunicationRoute('../../src/app/api/registrations/config/route.ts',db,{uid:'owner'});
+  try{const response=await app.route.POST(request({targetKind:kind,targetId:kind==='league'?'l':'t',eventId:'e',configId:'team_config',expectedVersion:0,config:base}));assert.equal(response.status,403);assert.deepEqual([...records],before);}finally{app.dispose();}
+ }
 });

@@ -64,7 +64,7 @@ function validate(data: DocumentData, options: ValidationOptions = {}): void {
   }
 }
 function assertAdvancedEntitlement(team: DocumentData, data: DocumentData): void {
-  if (team.isPro !== true && data.tournamentType !== 'single_elimination') fail('Starter includes Single Elimination Pool only. Upgrade to unlock other tournament formats.', 403);
+  if (team.isPro !== true && !['single_elimination', 'double_elimination'].includes(data.tournamentType)) fail('Starter includes Single and Double Elimination only. Upgrade to unlock other tournament formats.', 403);
 }
 function hasSchedule(event: DocumentData): boolean {
   return Boolean(event.tournamentGames?.length || event.schedule?.length || event.deploymentStatus === 'deployed' || event.bracketStatus === 'ready');
@@ -177,7 +177,7 @@ export async function POST(request: NextRequest) {
         const names = new Set<string>();
         for (const definition of definitions) {
           if (definition.competition?.version === 2) {
-            if (team.isPro !== true && !starterTournamentAllowed(definition.competition.topology.rules)) fail('Starter includes Single Elimination Pool only.', 403);
+            if (team.isPro !== true && !starterTournamentAllowed(definition.competition.topology.rules)) fail('Starter includes Single and Double Elimination only.', 403);
             replicateCompetition(definition.competition, definition.title, 'validation');
           } else validate(definition, action === 'replicate' ? { allowEmptyRoster: true } : { allowTieredDraft: true });
           assertAdvancedEntitlement(team, definition);

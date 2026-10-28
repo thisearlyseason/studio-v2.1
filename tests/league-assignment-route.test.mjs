@@ -9,7 +9,7 @@ const routePath = '../../src/app/api/leagues/assignments/route.ts';
 const fixture = {
   'users/owner': { role: 'coach', plan_type: 'elite_league' },
   'users/staff': { role: 'coach', plan_type: 'elite_league' },
-  'teams/host': { ownerUserId: 'owner', planId: 'elite_league' },
+  'teams/host': { ownerUserId: 'owner', planId: 'elite_league', isPro: true },
   'teams/squad': { ownerUserId: 'staff', teamName: 'Squad', planId: 'elite_league', leagueIds: {} },
   'leagues/league-a': { creatorId: 'owner', tenantId: 'host', lifecycleVersion: 1, name: 'Metro', teams: {
     recruit_entry: { teamName: 'Applicant', status: 'assigned' }, squad: { teamName: 'Squad', status: 'accepted' },
@@ -268,7 +268,7 @@ test('displayed assignment versions reject reassignment and conflicting concurre
 });
 
 test('assignment commits revalidate staff demotion, entitlement, tenant and lifecycle', async () => {
-  for (const changed of ['demotion', 'plan', 'tenant', 'archive']) {
+  for (const changed of ['demotion', 'billing', 'tenant', 'archive']) {
     let count = 0;
     const { db, records } = communicationDb({ ...fixture,
       'teams/squad': { ...fixture['teams/squad'], ownerUserId: 'other-owner' },
@@ -276,7 +276,7 @@ test('assignment commits revalidate staff demotion, entitlement, tenant and life
     }, { beforeTransaction({ records: mutable }) {
       if (++count !== 3) return;
       if (changed === 'demotion') mutable.set('teams/squad/members/staff', { userId: 'staff', position: 'Player', status: 'active' });
-      if (changed === 'plan') mutable.set('teams/squad', { ...mutable.get('teams/squad'), planId: 'free' });
+      if (changed === 'billing') mutable.set('teams/host', { ...mutable.get('teams/host'), isPro: false });
       if (changed === 'tenant') mutable.set('leagues/league-a', { ...mutable.get('leagues/league-a'), tenantId: 'other' });
       if (changed === 'archive') mutable.set('leagues/league-a', { ...mutable.get('leagues/league-a'), isArchived: true });
     } });
@@ -284,7 +284,7 @@ test('assignment commits revalidate staff demotion, entitlement, tenant and life
     const app = await loadCommunicationRoute(routePath, db, { uid: 'staff' });
     try {
       const response = await app.route.PATCH(request(respond));
-      assert.equal(response.status, ['demotion', 'plan'].includes(changed) ? 403 : 409, changed);
+      assert.equal(response.status, ['demotion', 'billing', 'tenant'].includes(changed) ? 403 : 409, changed);
       assert.deepEqual(records.get('leagues/league-a/registrationEntries/entry'), entryBefore);
       assert.equal(records.has('scheduleBookings/booking'), true);
     } finally { app.dispose(); }

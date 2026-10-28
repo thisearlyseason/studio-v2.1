@@ -1,3 +1,4 @@
+import { competitionHasPro } from '@/lib/server-competition-plan';
 import { NextRequest, NextResponse } from 'next/server';
 import { FieldValue, type Transaction, type DocumentData } from 'firebase-admin/firestore';
 import { verifyFirebaseToken, type DecodedToken } from '@/lib/api-auth';
@@ -84,6 +85,7 @@ export async function PATCH(req: NextRequest) {
       // League tenant is server-owned. Responding staff authority belongs to the assigned squad.
       const tenantId = league.data()?.tenantId;
       if (typeof tenantId !== 'string' || !tenantId) conflict('The League requires an organizer ownership migration.');
+      if (actor.role !== 'superadmin' && !await competitionHasPro(adminDb, transaction, tenantId)) throw new Error('Forbidden competition mutation.');
       return tenantId;
     };
     const tenantId = await adminDb.runTransaction(transaction => authorize(transaction, auth));

@@ -1,4 +1,5 @@
 "use client";
+import { starterTournamentFormatAllowed } from "@/lib/competition/plan-access";
 import { FORMAT_DESCRIPTIONS } from "@/lib/competition/format-descriptions";
 import type { Resource } from "@/lib/competition/schedule";
 import React, { useState, useRef } from "react";
@@ -415,11 +416,11 @@ export default function CompetitionSetup({
           <div className="cw-format-field">
             <label id="tournament-format-label">Format</label>
             <button type="button" role="combobox" aria-labelledby="tournament-format-label" aria-describedby="format-description" aria-controls="tournament-formats" aria-expanded={formatsOpen} onClick={()=>setFormatsOpen(!formatsOpen)} onKeyDown={event=>{if(event.key==="Escape")setFormatsOpen(false);}} className="cw-format-trigger">
-              {starter && format==="single_elimination" ? "Single Elimination Pool" : COMPETITION_FORMATS.find(([id])=>id===format)?.[1]} <span aria-hidden>⌄</span>
+              {COMPETITION_FORMATS.find(([id])=>id===format)?.[1]} <span aria-hidden>⌄</span>
             </button>
             {formatsOpen && <div id="tournament-formats" role="listbox" aria-label="Tournament formats" className="cw-format-options" onKeyDown={event=>{if(event.key==="Escape")setFormatsOpen(false);if(["ArrowDown","ArrowUp","Home","End"].includes(event.key)){event.preventDefault();const options=Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button[role="option"]'));const index=options.indexOf(document.activeElement as HTMLButtonElement);const next=event.key==="Home"?0:event.key==="End"?options.length-1:(index+(event.key==="ArrowDown"?1:-1)+options.length)%options.length;options[next]?.focus();}}}>
-              {COMPETITION_FORMATS.map(([id,name])=><button type="button" role="option" aria-selected={format===id} aria-disabled={starter&&id!=="single_elimination"} key={id} onFocus={()=>setHighlightedFormat(id)} onMouseEnter={()=>setHighlightedFormat(id)} onClick={()=>{if(starter&&id!=="single_elimination")return;setFormat(id);setFormatsOpen(false);}}>
-                <strong>{starter&&id==="single_elimination"?"Single Elimination Pool":name}{starter&&id!=="single_elimination"?" · Locked":""}</strong>
+              {COMPETITION_FORMATS.map(([id,name])=><button type="button" role="option" aria-selected={format===id} aria-disabled={starter&&!starterTournamentFormatAllowed(id)} key={id} onFocus={()=>setHighlightedFormat(id)} onMouseEnter={()=>setHighlightedFormat(id)} onClick={()=>{if(starter&&!starterTournamentFormatAllowed(id))return;setFormat(id);setFormatsOpen(false);}}>
+                <strong>{name}{starter&&!starterTournamentFormatAllowed(id)?" · Locked":""}</strong>
                 {highlightedFormat===id&&<span role="tooltip">{FORMAT_DESCRIPTIONS[id]}</span>}
               </button>)}
             </div>}

@@ -21,7 +21,7 @@ import {
   enforceUserRateLimit,
   readJsonBodyWithLimit,
 } from "@/lib/server-request-guards";
-import { isActiveTournamentPortal } from "@/lib/public-portal-data";
+import { isActiveTournamentPortal, isActiveTournamentWorkspace } from "@/lib/public-portal-data";
 import {
   createCompetition,
   activeReservations,
@@ -193,31 +193,18 @@ export async function GET(request: NextRequest) {
     ]);
     const data = event.data(),
       competition = data?.competition as CompetitionDocument | undefined;
-    if (
-      !competition ||
-      !isActiveTournamentPortal(teamId, team.data(), {
-        ...data,
-        competition: undefined,
-      })
-    )
-      return NextResponse.json(
-        { error: "Tournament unavailable." },
-        { status: 404 },
-      );
-    if (request.nextUrl.searchParams.get("public") !== "true") {
+    const isPublic = request.nextUrl.searchParams.get("public") === "true";
+    if (!isPublic) {
       const auth = await verifyFirebaseToken(request);
       if (auth instanceof Response) return auth;
-      await resolveCompetitionAuthority({
-        actorUid: auth.uid,
-        actorRole: auth.role,
-        teamId,
-        domain: "tournament",
-      });
-    } else if (competition.status !== "published")
-      return NextResponse.json(
-        { error: "This tournament has not been published." },
-        { status: 404 },
-      );
+      await resolveCompetitionAuthority({ actorUid: auth.uid, actorRole: auth.role, teamId, domain: "tournament" });
+    }
+    if (!isActiveTournamentWorkspace(teamId, team.data(), data))
+      return NextResponse.json({ error: "Tournament unavailable. It may have been archived, removed or cancelled." }, { status: 404 });
+    if (!competition)
+      return NextResponse.json({ error: "This tournament uses the original planner. Open it from Manage Tournaments to view its schedule." }, { status: 409 });
+    if (isPublic && !isActiveTournamentPortal(teamId, team.data(), data))
+      return NextResponse.json({ error: "The spectator portal requires Pro and a published tournament." }, { status: 403 });
     // The document contains only competition display data, never credentials or participant contacts.
     const publicDocument =
       request.nextUrl.searchParams.get("public") === "true"
@@ -350,7 +337,7 @@ export async function POST(request: NextRequest) {
             if (team.isPro !== true && !starterTournamentAllowed(proposedRules))
               throw new CompetitionError(
                 "PLAN_REQUIRED",
-                "Starter includes Single Elimination Pool only. Upgrade to unlock other tournament formats and multi-game series.",
+                "Starter includes Single and Double Elimination only. Upgrade to unlock other tournament formats and multi-game series.",
               );
           },
         },

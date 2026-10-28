@@ -804,8 +804,11 @@ export async function executeTournamentScheduleCommand(input: TournamentSchedule
       privateProfilesByReferee.set(refereeId, profile);
     }
     const teamSnapshot = await transaction.get(teamRef);
-    if (event.tournamentType !== 'single_elimination' && input.action !== 'clear' && teamSnapshot.data()?.isPro !== true) {
-      throw new TournamentScheduleDeploymentError('ADVANCED_TOURNAMENT_ENTITLEMENT_REQUIRED', 'Starter includes Single Elimination Pool only. Upgrade to unlock other tournament formats.', 403);
+    if (!['single_elimination', 'double_elimination'].includes(event.tournamentType) && input.action !== 'clear' && teamSnapshot.data()?.isPro !== true) {
+      throw new TournamentScheduleDeploymentError('ADVANCED_TOURNAMENT_ENTITLEMENT_REQUIRED', 'Starter includes Single and Double Elimination only. Upgrade to unlock other tournament formats.', 403);
+    }
+    if (['add-referee', 'remove-referee', 'assign-referee'].includes(input.action) && teamSnapshot.data()?.isPro !== true) {
+      throw new TournamentScheduleDeploymentError('PRO_REQUIRED', 'Official scheduling requires Pro.', 403);
     }
     if (['assign-referee', 'remove-referee'].includes(input.action)) {
       const authoritativeAssignments = new Map<string, RawEvent>(

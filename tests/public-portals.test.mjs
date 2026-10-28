@@ -316,7 +316,7 @@ test('public recruiting DTO excludes household linkage and unsafe media', () => 
 test('league portal entry and submission checks honor current and legacy owner plan markers', async () => {
   for (const file of ['src/app/api/public/portals/route.ts','src/app/api/public/portals/action/route.ts']) {
     const source=await readFile(file,'utf8');
-    assert.match(source,/permitsLegacyOrPaidPortals\(creator\.data\(\)\?\.planId, creator\.data\(\)\?\.plan_type, creator\.data\(\)\?\.subscriptionPlanId\)/);
+    assert.match(source,/competitionHasPro\(adminDb/);
   }
   assert.equal(permitsLegacyOrPaidPortals('elite_league',undefined,undefined),true);
   assert.equal(permitsLegacyOrPaidPortals('starter',undefined,undefined),false);

@@ -211,6 +211,20 @@ service cloud.firestore {
       return exists(leaguePath) && isLeagueOrganizerData(get(leaguePath).data);
     }
 
+    function teamHasPro(teamId) {
+      return get(/databases/$(database)/documents/teams/$(teamId)).data.get('isPro', false) == true;
+    }
+
+    function leagueHasPro(leagueId) {
+      let league = get(/databases/$(database)/documents/leagues/$(leagueId)).data;
+      let tenantId = league.get('tenantId', '');
+      let ownerId = league.get('billingOwnerUserId', league.creatorId);
+      let profile = get(/databases/$(database)/documents/users/$(ownerId)).data;
+      return tenantId != '' && !tenantId.matches('profile:.*')
+        ? teamHasPro(tenantId)
+        : (profile.get('plan_type', 'free') in ['team', 'elite', 'elite_teams', 'league', 'elite_league', 'school'] && profile.get('subscription_status', '') in ['active', 'trialing']);
+    }
+
     // Subscription state is server-managed. Every browser-created team starts
     // free; a trusted server flow activates Pro only after a paid upgrade.
     function requestsPaidTeam() {
@@ -447,17 +461,17 @@ service cloud.firestore {
         // Registration forms and responses contain applicant contact details,
         // so only the squad owner and staff may access them from the client.
         match /registration/{configId} {
-          allow read: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+          allow read: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) && teamHasPro(teamId));
           allow write: if false;
         }
 
         match /registrationEntries/{entryId} {
-          allow read: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+          allow read: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) && teamHasPro(teamId));
           allow write: if false;
         }
 
         match /archived_waivers/{waiverId} {
-          allow read: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId));
+          allow read: if isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId) && teamHasPro(teamId));
           allow write: if false;
         }
 
@@ -621,17 +635,17 @@ allow create, update: if false; // Authenticated incident service only.
         allow read: if isSuperAdmin() || (
           resource.data.get('category', '') == 'Signed Certificate'
             ? canReadMemberWaiver(teamId, resource.data.get('memberId', ''))
-            : (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)))
+            : (isSignedIn() && (isTeamOwner(teamId) || isTeamMember(teamId)) && (teamHasPro(teamId) || resource.data.get('category', '') in ['Game Tape', 'Practice Session', 'Highlights']))
         );
-        // Library service owns object-backed mutations; preserve Film/link and
-        // legacy document reads without migrating those unrelated records.
+        // Library service owns object-backed mutations. Film stays independent;
+        // paid Library keeps legacy links and documents without migrating them.
         allow create: if (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId))) &&
           !request.resource.data.keys().hasAny(['storagePath']) &&
           (request.resource.data.get('category', '') in ['Game Tape', 'Practice Session', 'Highlights'] ||
-            (request.resource.data.get('category', '') == 'Link / URL' && request.resource.data.get('url', '').matches('https?://.*')));
+            (teamHasPro(teamId) && request.resource.data.get('category', '') == 'Link / URL' && request.resource.data.get('url', '').matches('https?://.*')));
         allow update: if (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId))) &&
-          !resource.data.keys().hasAny(['storagePath']) && !request.resource.data.keys().hasAny(['storagePath']);
-        allow delete: if (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId))) && !resource.data.keys().hasAny(['storagePath']);
+          (teamHasPro(teamId) || resource.data.get('category', '') in ['Game Tape', 'Practice Session', 'Highlights']) && !resource.data.keys().hasAny(['storagePath']) && !request.resource.data.keys().hasAny(['storagePath']);
+        allow delete: if (isSuperAdmin() || (isSignedIn() && isTeamStaff(teamId))) && (teamHasPro(teamId) || resource.data.get('category', '') in ['Game Tape', 'Practice Session', 'Highlights']) && !resource.data.keys().hasAny(['storagePath']);
       }
 
       match /{subCollection}/{docId} {
@@ -816,22 +830,22 @@ allow create, update: if false; // Authenticated incident service only.
       allow delete: if false;
 
       match /private/{privateId} {
-        allow read: if isSuperAdmin() || isLeagueOrganizer(leagueId);
+        allow read: if isSuperAdmin() || (isLeagueOrganizer(leagueId) && leagueHasPro(leagueId));
         allow write: if false;
       }
 
       match /registrationEntries/{entryId} {
-        allow read: if isSuperAdmin() || isLeagueOrganizer(leagueId);
+        allow read: if isSuperAdmin() || (isLeagueOrganizer(leagueId) && leagueHasPro(leagueId));
         allow write: if false;
       }
 
       match /archived_waivers/{waiverId} {
-        allow read: if isSuperAdmin() || isLeagueOrganizer(leagueId);
+        allow read: if isSuperAdmin() || (isLeagueOrganizer(leagueId) && leagueHasPro(leagueId));
         allow write: if false;
       }
 
       match /registration/{configId} {
-        allow read: if isSuperAdmin() || isLeagueOrganizer(leagueId);
+        allow read: if isSuperAdmin() || (isLeagueOrganizer(leagueId) && leagueHasPro(leagueId));
         allow write: if false;
       }
 

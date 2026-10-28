@@ -230,15 +230,15 @@ export default function JoinTeamPage() {
         <p className="text-muted-foreground font-bold uppercase tracking-widest text-[10px]">Choose what you are joining</p>
       </div>
       <div className="grid gap-4 md:grid-cols-3">
-        <div className="rounded-2xl border-2 border-primary/20 bg-primary/5 p-5"><UserPlus className="h-5 w-5 text-primary mb-3" /><p className="font-black uppercase text-sm">Join a team as a player</p><p className="text-xs text-muted-foreground mt-1">Use your coach&apos;s squad code. Parents can select a child.</p></div>
-        <div className="rounded-2xl border-2 border-black/10 bg-white p-5"><Trophy className="h-5 w-5 text-primary mb-3" /><p className="font-black uppercase text-sm">Join a league as a team</p><p className="text-xs text-muted-foreground mt-1">Team staff submit the team registration.</p></div>
-        <div className="rounded-2xl border-2 border-black/10 bg-white p-5"><CalendarDays className="h-5 w-5 text-primary mb-3" /><p className="font-black uppercase text-sm">Join a tournament as a team</p><p className="text-xs text-muted-foreground mt-1">Use the tournament code, ID, or registration link.</p></div>
+        <a href="#join-player" className="rounded-2xl border-2 border-primary/20 bg-primary/5 p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary hover:border-primary transition-colors"><UserPlus className="h-5 w-5 text-primary mb-3" /><p className="font-black uppercase text-sm">Join a team as a player</p><p className="text-xs text-muted-foreground mt-1">Use your coach&apos;s squad code. Parents can select a child.</p></a>
+        <a href={isStaff ? "#join-league" : "#team-registration-access"} className="rounded-2xl border-2 border-black/10 bg-white p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary hover:border-primary transition-colors"><Trophy className="h-5 w-5 text-primary mb-3" /><p className="font-black uppercase text-sm">Join a league as a team</p><p className="text-xs text-muted-foreground mt-1">Team staff submit the team registration.</p></a>
+        <a href={isStaff ? "#join-tournament" : "#team-registration-access"} className="rounded-2xl border-2 border-black/10 bg-white p-5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary hover:border-primary transition-colors"><CalendarDays className="h-5 w-5 text-primary mb-3" /><p className="font-black uppercase text-sm">Join a tournament as a team</p><p className="text-xs text-muted-foreground mt-1">Use the tournament code, ID, or registration link.</p></a>
       </div>
 
       <div className={cn("grid gap-8", isStaff ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1 max-w-xl mx-auto")}>
 
         {/* Every signed-in account may enroll itself as an ordinary player. */}
-        <Card className={cn("rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col", isStaff && "lg:col-span-2")}>
+        <Card id="join-player" className={cn("scroll-mt-28 rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col", isStaff && "lg:col-span-2")}>
 
             <CardHeader className="p-8 lg:p-10">
               <div className="flex items-center gap-4 mb-2">
@@ -358,7 +358,7 @@ export default function JoinTeamPage() {
         {/* League and tournament enrollment always act on the active squad. */}
         {isStaff ? (
           <>
-            <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-black text-white flex flex-col">
+            <Card id="join-league" className="scroll-mt-28 rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-black text-white flex flex-col">
 
               <CardHeader className="p-8 lg:p-10">
                 <div className="flex items-center gap-4 mb-2">
@@ -382,7 +382,7 @@ export default function JoinTeamPage() {
               <CardFooter className="p-8 lg:p-10 pt-0"><Button variant="secondary" className="w-full h-14 rounded-2xl text-lg font-black bg-white text-black hover:bg-white/90 shadow-xl" onClick={handleGoToLeague} disabled={!leagueCode.trim() || !activeTeam}><span>Open League Registration</span><ArrowRight className="ml-2 h-5 w-5" /></Button></CardFooter>
             </Card>
 
-            <Card className="rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col">
+            <Card id="join-tournament" className="scroll-mt-28 rounded-[2.5rem] border-none shadow-xl overflow-hidden ring-1 ring-black/5 bg-white flex flex-col">
 
               <CardHeader className="p-8 lg:p-10">
                 <div className="flex items-center gap-4 mb-2">
@@ -414,7 +414,7 @@ export default function JoinTeamPage() {
               <CardFooter className="p-8 lg:p-10 pt-0"><Button className="w-full h-14 rounded-2xl text-lg font-black" onClick={handleGoToTournament} disabled={!tournamentPreview || !activeTeam}><span>Open Tournament Registration</span><ArrowRight className="ml-2 h-5 w-5" /></Button></CardFooter>
             </Card>
           </>
-        ) : null}
+        ) : <p id="team-registration-access" className="scroll-mt-28 rounded-2xl border p-5 text-sm">Only team staff can register a team in a league or tournament. Ask your coach to register your squad.</p>}
       </div>
 
       {isStaff && activeTeam && (

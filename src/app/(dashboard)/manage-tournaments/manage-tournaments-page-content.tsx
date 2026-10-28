@@ -303,7 +303,8 @@ function useTieredPlayoffsMutation() {
 }
 
 function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchive, editEvent }: { isOpen: boolean, onOpenChange: (o: boolean) => void, onComplete: () => void, onArchive?: () => void, editEvent?: TeamEvent }) {
-  const { activeTeam, user, hasFeature, isStarter } = useTeam();
+  const { activeTeam, user, hasFeature, isPro: hasProAccess } = useTeam();
+  const isStarter = !hasProAccess;
   const db = useFirestore();
   const firebaseAuth = useAuth();
 
@@ -1149,16 +1150,11 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                                 <div className="space-y-2">
                                   <Label className="text-[9px] font-black uppercase text-white/40 ml-1">Tournament Format</Label>
-                                  {isStarter ? (
-                                    <div className="min-h-12 rounded-xl bg-white/5 border border-white/10 px-3 py-2 flex flex-col items-start gap-2 text-xs font-bold uppercase">
-                                      <span>Single Elimination Pool</span>
-                                      <span className="flex items-center gap-1 text-[8px] font-black uppercase text-white/30"><Lock className="h-2.5 w-2.5" /> Other formats locked</span>
-                                    </div>
-                                  ) : (
                                     <Select 
                                       value={activeConfig.tournamentType} 
                                       onValueChange={(val: any) => {
                                         let newGames = activeConfig.gamesPerTeam;
+                                        if (isStarter && !['single_elimination', 'double_elimination'].includes(val)) return;
                                         if (val === 'single_elimination') newGames = '1';
                                         if (val === 'double_elimination') newGames = '2';
                                         updateActiveConfig({
@@ -1173,14 +1169,13 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
                                         <SelectValue />
                                       </SelectTrigger>
                                       <SelectContent className="bg-black border-white/10 text-white font-black uppercase text-[10px]">
-                                        <SelectItem value="round_robin" className="focus:bg-white/10">Round Robin (Total Points)</SelectItem>
-                                        <SelectItem value="pool_play_knockout" className="focus:bg-white/10">Pool Play & Playoffs</SelectItem>
-                                        <SelectItem value="tiered_playoffs" className="focus:bg-white/10">Tiered Playoffs</SelectItem>
+                                        <SelectItem value="round_robin" disabled={isStarter} className="focus:bg-white/10">Round Robin (Total Points)</SelectItem>
+                                        <SelectItem value="pool_play_knockout" disabled={isStarter} className="focus:bg-white/10">Pool Play & Playoffs</SelectItem>
+                                        <SelectItem value="tiered_playoffs" disabled={isStarter} className="focus:bg-white/10">Tiered Playoffs</SelectItem>
                                         <SelectItem value="single_elimination" className="focus:bg-white/10">Single Elimination Matrix</SelectItem>
                                         <SelectItem value="double_elimination" className="focus:bg-white/10">Double Elimination Topology</SelectItem>
                                       </SelectContent>
                                     </Select>
-                                  )}
                                 </div>
 
                                 <div className="space-y-2">
@@ -1574,13 +1569,15 @@ function TournamentDetailView({
   onSelectEvent?: (id: string) => void,
   registrationReturnQuery?: string
 }) {
-  const { isStaff: isTeamStaff, activeTeam, db, user, isStarter } = useTeam();
+  const { isStaff: isTeamStaff, activeTeam, db, user, isPro: hasProAccess } = useTeam();
+  const isStarter = !hasProAccess;
   const firebaseAuth = useAuth();
   const isStaff = isTeamStaff || !!(event.adminEmails && user?.email && event.adminEmails.includes(user.email));
   const versioned = (event as any).competition?.version === 2;
   const workspace = (view:string) => <CompetitionController embedded initialTab={view} starter={isStarter} teamId={activeTeam!.id} eventId={event.id} token={async()=>{if(!firebaseAuth.currentUser)throw new Error("Sign in to manage tournaments.");return firebaseAuth.currentUser.getIdToken();}} />;
   const router = useRouter();
   const [activeTab, setActiveTab] = useState('itinerary');
+  useEffect(() => { if (isStarter) setActiveTab(tab => ['officials', 'architecture'].includes(tab) ? 'itinerary' : tab); }, [isStarter]);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
   const [scoreDialogOpen, setScoreDialogOpen] = useState(false);
   const [selectedGame, setSelectedGame] = useState<TournamentGame | null>(null);
@@ -2433,7 +2430,7 @@ function TournamentDetailView({
               <TabsTrigger value="standings" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white">Standings</TabsTrigger>
               <TabsTrigger value="roster" className="rounded-2xl font-black text-xs uppercase px-10 py-4 flex-1 data-[state=active]:bg-primary data-[state=active]:text-white flex items-center justify-center gap-2">
                 Roster
-                {activeTab === 'roster' && isStaff && (
+                {activeTab === 'roster' && isStaff && !isStarter && (
                   <span 
                     onClick={(e) => { 
                       e.stopPropagation(); 
@@ -3169,7 +3166,8 @@ function TournamentDetailView({
 }
 
 export function ManageTournamentsPageContent({ embedded = false }: { embedded?: boolean }) {
-  const { activeTeam, db, firebaseUser: user, isStaff, isPrimaryClubAuthority, isStarter } = useTeam();
+  const { activeTeam, db, firebaseUser: user, isStaff, isPrimaryClubAuthority, isPro: hasProAccess } = useTeam();
+  const isStarter = !hasProAccess;
   const firebaseAuth = useAuth();
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   useEffect(() => { setSelectedEventId(new URLSearchParams(window.location.search).get("eventId")); }, []);
@@ -3262,7 +3260,7 @@ export function ManageTournamentsPageContent({ embedded = false }: { embedded?: 
             <h1 className="text-4xl md:text-7xl font-black uppercase tracking-tighter leading-none italic">Manage Tournaments</h1>
             <p className="text-sm font-medium text-muted-foreground leading-relaxed italic max-w-2xl">
               {isStarter
-                ? 'Create Single Elimination Pool tournaments with manual team entry. Upgrade to Pro for advanced formats, portals, and officiating tools.'
+                ? 'Create Single or Double Elimination tournaments with manual team entry. Upgrade to Pro for advanced formats, portals, and officiating tools.'
                 : 'Elite-level institutional Series Architect for managing multi-field tournaments, synchronized officiating, and live bracket telemetry.'}
             </p>
           </div>

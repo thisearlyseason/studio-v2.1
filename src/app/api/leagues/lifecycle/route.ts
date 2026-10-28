@@ -1,6 +1,7 @@
+import { competitionHasPro } from '@/lib/server-competition-plan';
 import { FieldValue, type DocumentData, type QueryDocumentSnapshot, type Transaction } from 'firebase-admin/firestore';
 import { NextRequest, NextResponse } from 'next/server';
-import { accountCreationLimit, normalizeCreationText } from '@/lib/account-creation-policy';
+import { normalizeCreationText } from '@/lib/account-creation-policy';
 import { verifyFirebaseToken, type DecodedToken } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
 import { AccountOwnershipError, readOwnershipAccounts } from '@/lib/server-account-ownership';
@@ -15,7 +16,6 @@ import {
   type CompetitionOperationIdentity,
 } from '@/lib/server-competition-operation';
 import {
-  assertLeagueCloneCapacity,
   buildLeagueCloneDocument,
   buildLeagueClonePrivateDocument,
   buildLeagueCloneResult,
@@ -486,14 +486,14 @@ async function mutateCreate(auth: DecodedToken, input: Extract<LeagueLifecycleRe
     await assertCurrentAuthority(transaction, auth, authority.tenantId, { teamId: input.teamId });
     const ownerUid = await tenantOwnerUid(transaction, authority.tenantId);
     const accounts = await readOwnershipAccounts(adminDb, transaction, ownerUid, auth.uid);
-    const profile = accounts.owner;
     const team = input.teamId ? await transaction.get(adminDb.collection('teams').doc(input.teamId)) : null;
     const leagues = await existingTenantLeagues(transaction, authority.tenantId, auth, ownerUid);
     assertIdentityAvailable(leagues, input.name, input.divisionTitle || '');
     const nameReservation = adminDb.collection('leagueLifecycleNames').doc(reservationId(authority.tenantId, input.name, input.divisionTitle || ''));
     if ((await transaction.get(nameReservation)).exists) fail(input.divisionTitle ? 'DIVISION_ALREADY_EXISTS' : 'LEAGUE_ALREADY_EXISTS');
-    const groups = new Set(leagues.map(league => nameKey(league.data().name)).filter(Boolean));
-    if (!groups.has(nameKey(input.name)) && auth.role !== 'superadmin' && groups.size >= accountCreationLimit(profile.data())) fail('LEAGUE_LIMIT_REACHED');
+    const paid = await competitionHasPro(adminDb, transaction, authority.tenantId);
+    const owned = await transaction.get(adminDb.collection('leagues').where('creatorId', '==', ownerUid));
+    if ((!paid || accounts.owner.data()?.isDemo === true) && auth.role !== 'superadmin' && owned.docs.some(doc => doc.data().demoSeeded !== true)) fail('LEAGUE_LIMIT_REACHED');
     const now = new Date().toISOString();
     accounts.fence();
     transaction.create(nameReservation, {
@@ -525,12 +525,13 @@ async function mutateClone(auth: DecodedToken, input: Extract<LeagueLifecycleReq
     const configs = await transaction.get(sourceRef.collection('registration'));
     const ownerUid = await tenantOwnerUid(transaction, authority.tenantId);
     const accounts = await readOwnershipAccounts(adminDb, transaction, ownerUid, auth.uid);
-    const profile = accounts.owner;
     const leagues = await existingTenantLeagues(transaction, authority.tenantId, auth, ownerUid);
     const source = { id: sourceSnapshot.id, ...(sourceSnapshot.data() || {}) } as Record<string, unknown> & { id: string; name: string; divisionTitle?: string };
     if (source.isArchived === true) fail('LEAGUE_LIFECYCLE_STATE_CONFLICT');
     const existingLeagues = leagues.map(league => ({ id: league.id, ...league.data() }));
-    if (auth.role !== 'superadmin') assertLeagueCloneCapacity({ destination: input.destination, existingLeagues, leagueLimit: accountCreationLimit(profile.data()) });
+    const paid = await competitionHasPro(adminDb, transaction, authority.tenantId);
+    const owned = await transaction.get(adminDb.collection('leagues').where('creatorId', '==', ownerUid));
+    if ((!paid || accounts.owner.data()?.isDemo === true) && auth.role !== 'superadmin' && owned.docs.some(doc => doc.data().demoSeeded !== true)) fail('LEAGUE_LIMIT_REACHED');
     const cloneIdentity = resolveLeagueCloneIdentity({ source, destination: input.destination, requestedName: input.name, existingLeagues });
     const nameReservation = adminDb.collection('leagueLifecycleNames').doc(reservationId(authority.tenantId, cloneIdentity.name, cloneIdentity.divisionTitle));
     if ((await transaction.get(nameReservation)).exists) fail(cloneIdentity.divisionTitle ? 'DIVISION_ALREADY_EXISTS' : 'LEAGUE_ALREADY_EXISTS');
@@ -565,6 +566,8 @@ async function mutateEdit(auth: DecodedToken, input: Extract<LeagueLifecycleRequ
     ]);
     if (!snapshot.exists) fail('LEAGUE_NOT_FOUND');
     const league = snapshot.data() || {};
+    const paid = await competitionHasPro(adminDb, transaction, authority.tenantId);
+    if (!paid && auth.role !== 'superadmin' && (input.updates.individualRecruitUpdate || Object.keys(input.updates.teamUpdate?.privateFields || {}).length > 0 || Object.keys(input.updates).some(key => ['scorekeeperPin', 'is_active', 'registrationCost', 'paymentInstructions'].includes(key) && Boolean(input.updates[key as keyof LeagueEditableFields])))) fail('PRO_REQUIRED');
     if (auth.signInProvider === 'anonymous' && (
       league.isDemo !== true || league.demoSeeded !== true || league.demoSessionOwnerId !== auth.uid ||
       league.tenantId !== `profile:${auth.uid}`
@@ -584,15 +587,6 @@ async function mutateEdit(auth: DecodedToken, input: Extract<LeagueLifecycleRequ
       ? adminDb.collection('leagueLifecycleNames').doc(reservationId(authority.tenantId, input.updates.name, String(league.divisionTitle || '')))
       : null;
     if (renamedReservation && (await transaction.get(renamedReservation)).exists) fail('LEAGUE_ALREADY_EXISTS');
-    if (renamedReservation && auth.role !== 'superadmin') {
-      const beforeGroups = new Set(leagues.map(candidate => nameKey(candidate.data().name)).filter(Boolean));
-      const afterGroups = new Set(leagues.map(candidate => nameKey(candidate.id === input.leagueId ? input.updates.name : candidate.data().name)).filter(Boolean));
-      if (afterGroups.size > beforeGroups.size) {
-        const profile = await transaction.get(adminDb.collection('users').doc(ownerUid));
-        if (!profile.exists) fail('OWNER_PROFILE_MISSING');
-        if (afterGroups.size > accountCreationLimit(profile.data())) fail('LEAGUE_LIMIT_REACHED');
-      }
-    }
     const publicUpdates = Object.fromEntries(Object.entries(input.updates).filter(([key]) => ![
       'scorekeeperPin', 'contactEmail', 'contactPhone', 'teamUpdate', 'individualRecruitUpdate',
     ].includes(key)));
@@ -748,6 +742,7 @@ async function handle(request: NextRequest): Promise<NextResponse> {
     if (error instanceof ScheduleDeploymentError) return NextResponse.json({ error: error.message, code: error.code }, { status: error.status });
     if (error instanceof RequestBodyError) return NextResponse.json({ error: error.message }, { status: error.status });
     const code = error instanceof Error ? error.message : 'LEAGUE_LIFECYCLE_FAILED';
+    if (code === 'PRO_REQUIRED') return NextResponse.json({ error: 'Players, registration and portals require Pro.', code }, { status: 403 });
     if (code.includes('Forbidden competition mutation') || code === 'ANONYMOUS_DEMO_MUTATION_FORBIDDEN') return NextResponse.json({ error: 'You do not have permission to manage this league.' }, { status: 403 });
     if (['Request collision.', 'LEAGUE_VERSION_CONFLICT', 'LEAGUE_TENANT_CONFLICT', 'LEAGUE_LIFECYCLE_STATE_CONFLICT', 'LEAGUE_HAS_DEPENDENCIES', 'SCHEDULE_MUTATION_BOUNDARY_REQUIRED', 'DIVISION_ALREADY_EXISTS', 'LEAGUE_ALREADY_EXISTS', 'LEAGUE_LIMIT_REACHED'].includes(code)) {
       return NextResponse.json({ error: code }, { status: 409 });

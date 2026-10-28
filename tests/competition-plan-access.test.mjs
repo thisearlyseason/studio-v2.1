@@ -2,11 +2,11 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { starterTournamentAllowed } from "../src/lib/competition/plan-access.ts";
 import { COMPETITION_FORMATS } from "../src/lib/competition/types.ts";
-test("Starter permits exactly single elimination out of all 13 formats", () => {
+test("Starter permits exactly single and double elimination out of all 13 formats", () => {
   for (const [format] of COMPETITION_FORMATS)
     assert.equal(
       starterTournamentAllowed({ format }),
-      format === "single_elimination",
+      ["single_elimination", "double_elimination"].includes(format),
       format,
     );
 });

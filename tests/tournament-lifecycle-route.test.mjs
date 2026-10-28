@@ -33,13 +33,13 @@ async function call(db, body, uid = 'owner', routePath) {
 
 test('Starter cannot create an advanced Tournament format', async () => {
   const { db, records } = communicationDb({ ...seed, 'teams/team-a': { ownerUserId: 'owner', planId: 'starter_squad' } });
-  assert.equal((await call(db, create({ tournamentType: 'double_elimination' }))).status, 403);
+  assert.equal((await call(db, create({ tournamentType: 'round_robin' }))).status, 403);
   assert.equal([...records.keys()].some(path => path.includes('/events/')), false);
 });
 
 test('advanced formats require the current squad Pro allocation even with a paid-looking plan label', async () => {
   const { db } = communicationDb({ ...seed, 'teams/team-a': { ownerUserId: 'owner', planId: 'elite_squad', isPro: false } });
-  assert.equal((await call(db, create({ tournamentType: 'double_elimination' }))).status, 403);
+  assert.equal((await call(db, create({ tournamentType: 'round_robin' }))).status, 403);
 });
 
 test('Tiered Playoffs can be created as an empty draft before teams, fields, windows, or divisions exist', async () => {
@@ -393,4 +393,12 @@ test('new-format roster logos remain editable without changing authoritative tea
  assert.equal(records.get('teams/team-a/events/cup').tournamentTeamsData[0].logoUrl,'https://example.test/logo.png');
  assert.equal((await call(db,{...request,expectedVersion:2,requestId:'v2-roster-identity-rejected',payload:{tournamentTeamsData:teams.map((t,i)=>i===0?{...t,name:'Changed'}:t)}})).status,409);
  assert.equal(records.get('teams/team-a/events/cup').tournamentTeamsData[0].name,teams[0].name);
+});
+
+test('Free teams can create Double Elimination for October 31 without publishing a portal or granting Pro',async()=>{
+ const {db,records}=communicationDb({...seed,'teams/team-a':{ownerUserId:'owner',planId:'free',isPro:false}},{enforceReadBeforeWrite:true});
+ const result=await call(db,create({tournamentType:'double_elimination',gamesPerTeam:2,date:'2026-10-31',endDate:'2026-10-31',dailyWindows:[{date:'2026-10-31',startTime:'09:00',endTime:'17:00'}]}));
+ assert.equal(result.status,200,JSON.stringify(result.body));
+ const tournament=[...records].find(([path])=>/^teams\/team-a\/events\/[^/]+$/.test(path))[1];
+ assert.equal(tournament.tournamentType,'double_elimination');assert.notEqual(tournament.registrationOpen,true);assert.equal(records.get('teams/team-a').isPro,false);
 });

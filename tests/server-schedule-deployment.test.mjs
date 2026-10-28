@@ -147,7 +147,7 @@ test('failed schedule commits cannot leave partial bookings, team events or Leag
 });
 
 test('schedule authority is revalidated in the committing transaction and denies Owner B', async () => {
-  for (const changed of ['demotion', 'plan', 'tenant', 'archive', 'version']) {
+  for (const changed of ['demotion', 'tenant', 'archive', 'version']) {
     let count = 0;
     const { db, records } = communicationDb({ ...scheduleFixture, 'teams/host': { ownerUserId: 'billing-owner', planId: 'elite_league' },
       'leagues/league-a': { ...scheduleFixture['leagues/league-a'], creatorId: 'billing-owner' },
@@ -614,4 +614,10 @@ test('authenticated deployment integrity accepts a complete balanced schedule', 
   });
   const prepared = prepareLeagueScheduleForDeployment('league-1', configuredLeague, 'replace', generated);
   assert.doesNotThrow(() => validateLeagueDeploymentIntegrity(configuredLeague, prepared.games));
+});
+
+test('a Free league owner can deploy and retain a complete season schedule',async()=>{
+ const {db,records}=communicationDb({...scheduleFixture,'users/owner':{role:'coach',plan_type:'free'},'teams/host':{ownerUserId:'owner',planId:'free',isPro:false}},{serializeTransactions:true,enforceReadBeforeWrite:true});
+ const app=await loadCommunicationRoute('../../src/app/api/leagues/schedule/route.ts',db,{uid:'owner'});
+ try{const response=await app.route.POST(scheduleRequest(replacement));assert.equal(response.status,200,JSON.stringify(await response.clone().json()));assert.equal(records.get('leagues/league-a').schedule.length,1);assert.equal(records.get('leagues/league-a').schedule[0].id,'game-a');}finally{app.dispose();}
 });

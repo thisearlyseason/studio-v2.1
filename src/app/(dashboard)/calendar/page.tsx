@@ -374,12 +374,12 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl p-0 sm:rounded-[2.5rem] rounded-t-4xl border-none shadow-2xl bg-white text-foreground flex flex-col max-h-[92dvh] sm:max-h-[85vh] overflow-hidden">
+      <DialogContent hideClose className="sm:max-w-4xl p-0 sm:rounded-[2.5rem] rounded-t-4xl border-none shadow-2xl bg-white text-foreground flex flex-col max-h-[92dvh] sm:max-h-[85vh] overflow-hidden">
         <DialogTitle className="sr-only">Event Details: {event.title}</DialogTitle>
         {/* Sticky close button header */}
-        <div className="sticky top-0 z-50 flex justify-end p-3 shrink-0">
+        <div className="absolute top-3 right-3 z-50">
           <DialogClose asChild>
-            <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full bg-black/5 hover:bg-black/10 text-black/40 hover:text-black transition-all">
+            <Button aria-label="Close event details" variant="ghost" size="icon" className="h-10 w-10 rounded-full bg-black/60 hover:bg-black/80 text-white hover:text-white transition-all">
               <X className="h-5 w-5" />
             </Button>
           </DialogClose>
@@ -452,7 +452,7 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
                             disabled={isPending}
                             className={cn(
                               "h-12 rounded-2xl font-black text-xs uppercase transition-all tracking-widest border-2", 
-                              currentRsvp === 'going' ? "bg-green-600 border-none text-white shadow-xl shadow-green-600/20 active:scale-95" : "bg-white/5 border-white/10 hover:border-green-500/50 hover:bg-green-500/5"
+                              currentRsvp === 'going' ? "bg-green-600 hover:bg-green-700 hover:text-white border-none text-white shadow-xl shadow-green-600/20 active:scale-95" : "bg-white/5 text-white hover:text-white border-white/10 hover:border-green-500/50 hover:bg-green-500/5"
                             )} 
                             onClick={() => handleRSVP(p.id!, 'going')}
                           >
@@ -464,7 +464,7 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
                               disabled={isPending}
                               className={cn(
                                 "h-11 rounded-2xl font-black text-[10px] uppercase transition-all tracking-widest border-2", 
-                                currentRsvp === 'maybe' ? "bg-amber-400 text-black border-none shadow-lg shadow-amber-400/20 active:scale-95" : "bg-white/5 border-white/10 hover:border-amber-400/50 hover:bg-amber-400/5"
+                                currentRsvp === 'maybe' ? "bg-amber-400 hover:bg-amber-300 hover:text-black text-black border-none shadow-lg shadow-amber-400/20 active:scale-95" : "bg-white/5 text-white hover:text-white border-white/10 hover:border-amber-400/50 hover:bg-amber-400/5"
                               )} 
                               onClick={() => handleRSVP(p.id!, 'maybe')}
                             >
@@ -475,7 +475,7 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
                               disabled={isPending}
                               className={cn(
                                 "h-11 rounded-2xl font-black text-[10px] uppercase transition-all tracking-widest border-2", 
-                                (currentRsvp === 'declined' || currentRsvp === 'no') ? "bg-red-600 text-white border-none shadow-lg shadow-red-600/20 active:scale-95" : "bg-white/5 border-white/10 hover:border-red-500/50 hover:bg-red-500/5"
+                                (currentRsvp === 'declined' || currentRsvp === 'no') ? "bg-red-600 hover:bg-red-700 hover:text-white text-white border-none shadow-lg shadow-red-600/20 active:scale-95" : "bg-white/5 text-white hover:text-white border-white/10 hover:border-red-500/50 hover:bg-red-500/5"
                               )} 
                               onClick={() => handleRSVP(p.id!, 'declined')}
                             >

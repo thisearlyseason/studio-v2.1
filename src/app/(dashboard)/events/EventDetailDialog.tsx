@@ -236,7 +236,7 @@ export function EventDetailDialog({
                             variant="outline" 
                             className={cn(
                               "h-12 rounded-2xl font-black text-xs uppercase transition-all tracking-widest border-2", 
-                              rsvp === 'going' ? "bg-green-600 border-none text-white shadow-xl shadow-green-600/20 active:scale-95" : "bg-white/5 border-white/10 hover:border-green-500/50 hover:bg-green-500/5"
+                              rsvp === 'going' ? "bg-green-600 hover:bg-green-700 hover:text-white border-none text-white shadow-xl shadow-green-600/20 active:scale-95" : "bg-white/5 text-white hover:text-white border-white/10 hover:border-green-500/50 hover:bg-green-500/5"
                             )} 
                             onClick={() => updateRSVP((event as any).parentTournamentId || event.id, 'going', undefined, p.id)}
                           >
@@ -247,7 +247,7 @@ export function EventDetailDialog({
                               variant="outline" 
                               className={cn(
                                 "h-11 rounded-2xl font-black text-[10px] uppercase transition-all tracking-widest border-2", 
-                                rsvp === 'maybe' ? "bg-amber-400 text-black border-none shadow-lg shadow-amber-400/20 active:scale-95" : "bg-white/5 border-white/10 hover:border-amber-400/50 hover:bg-amber-400/5"
+                                rsvp === 'maybe' ? "bg-amber-400 hover:bg-amber-300 hover:text-black text-black border-none shadow-lg shadow-amber-400/20 active:scale-95" : "bg-white/5 text-white hover:text-white border-white/10 hover:border-amber-400/50 hover:bg-amber-400/5"
                               )} 
                               onClick={() => updateRSVP((event as any).parentTournamentId || event.id, 'maybe', undefined, p.id)}
                             >
@@ -257,7 +257,7 @@ export function EventDetailDialog({
                               variant="outline" 
                               className={cn(
                                 "h-11 rounded-2xl font-black text-[10px] uppercase transition-all tracking-widest border-2", 
-                                (rsvp === 'declined' || rsvp === 'no') ? "bg-red-600 text-white border-none shadow-lg shadow-red-600/20 active:scale-95" : "bg-white/5 border-white/10 hover:border-red-500/50 hover:bg-red-500/5"
+                                (rsvp === 'declined' || rsvp === 'no') ? "bg-red-600 hover:bg-red-700 hover:text-white text-white border-none shadow-lg shadow-red-600/20 active:scale-95" : "bg-white/5 text-white hover:text-white border-white/10 hover:border-red-500/50 hover:bg-red-500/5"
                               )} 
                               onClick={() => updateRSVP((event as any).parentTournamentId || event.id, 'declined', undefined, p.id)}
                             >

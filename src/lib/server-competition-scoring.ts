@@ -1,3 +1,4 @@
+import { competitionHasPro } from '@/lib/server-competition-plan';
 import { createHash } from 'node:crypto';
 import { FieldValue, type Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase-admin';
@@ -74,7 +75,7 @@ export async function readActiveScoringLeague(transaction: Transaction, leagueId
   await assertLeagueTenantOwner(transaction, league, ownerId);
   const owner = await transaction.get(adminDb.collection('users').doc(ownerId));
   const profile = owner.data();
-  if (!owner.exists || isAccountAccessBlocked(profile) || profile?.isDeleted === true || profile?.status === 'removed' || !authorizeDashboardRoute('/competition', profile || null).allowed) fail('The billing owner does not have competition access.', 403);
+  if (!owner.exists || isAccountAccessBlocked(profile) || profile?.isDeleted === true || profile?.status === 'removed' || !authorizeDashboardRoute('/manage-tournaments', profile || null).allowed) fail('The billing owner does not have competition access.', 403);
   if ((league.isDemo === true || league.demoSeeded === true) && (league.isDemo !== true || league.demoSeeded !== true || league.demoSessionOwnerId !== ownerId || league.creatorId !== ownerId || league.tenantId !== `profile:${ownerId}` || profile?.isDemo !== true)) fail('The demo League owner could not be verified.', 403);
   return league;
 }
@@ -126,6 +127,7 @@ async function runScoreCommand(input: CompetitionScoringCommand, action: Action)
       if (action === 'resolve-dispute' && league.creatorId !== input.actor.uid && authority.role !== 'owner' && authority.role !== 'superadmin') fail('Only the organizer can resolve disputes.', 403);
       actorUid = `user:${input.actor.uid}`;
     } else {
+      if (!await competitionHasPro(adminDb, transaction, authority.tenantId)) fail('Public portals require Pro.', 403);
       if (action === 'resolve-dispute') fail('Only the organizer can resolve disputes.', 403);
       const pin = typeof input.credential === 'string' ? input.credential.trim() : '';
       const legacyPin = typeof league.scorekeeperPin === 'string' ? league.scorekeeperPin.trim() : '';

@@ -1499,3 +1499,18 @@ test('versioned tournament documents cannot bypass the validated workspace',asyn
  await assertFails(setDoc(doc(owner,'teams/team-a/events/versioned-cup'),{competition:{version:2,revision:2,status:'published'}},{merge:true}));
  await assertFails(setDoc(doc(owner,'teams/team-a/events/versioned-cup'),{location:'An overlapping field'},{merge:true}));
 });
+
+test('Free Library and competition premium data are locked while team Film and basic league scheduling remain readable',async()=>{
+ await testEnv.withSecurityRulesDisabled(async context=>{
+  const db=context.firestore();
+  await setDoc(doc(db,'teams/free-team'),{ownerUserId:'owner',planId:'free',isPro:false});
+  await setDoc(doc(db,'leagues/free-league'),{creatorId:'owner',tenantId:'free-team',name:'Free League',schedule:[]});
+  for(const path of ['teams/free-team/files/document','teams/free-team/events/cup/registration/team_config','leagues/free-league/private/lifecycle','leagues/free-league/registration/team_config','leagues/free-league/registrationEntries/player','leagues/free-league/archived_waivers/waiver'])await setDoc(doc(db,path),{category:'Documents',answers:{email:'synthetic@example.test'}});
+  await setDoc(doc(db,'teams/free-team/files/film'),{category:'Game Tape'});
+ });
+ const owner=authenticatedDb('owner');
+ await assertSucceeds(getDoc(doc(owner,'leagues/free-league')));
+ for(const path of ['teams/free-team/files/document','teams/free-team/events/cup/registration/team_config','leagues/free-league/private/lifecycle','leagues/free-league/registration/team_config','leagues/free-league/registrationEntries/player','leagues/free-league/archived_waivers/waiver'])await assertFails(getDoc(doc(owner,path)));
+ await assertFails(setDoc(doc(owner,'teams/free-team/files/link'),{category:'Link / URL',url:'https://example.test/resource'}));
+ await assertSucceeds(getDoc(doc(owner,'teams/free-team/files/film')));
+});

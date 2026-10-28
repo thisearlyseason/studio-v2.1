@@ -41,9 +41,9 @@ const authoritySeed = {
   'leagues/league-a': { creatorId: 'organizer-a', tenantId: 'team-a' },
 };
 
-test('Tournament authority uses the existing team management surface without expanding default League authority', async () => {
+test('Free competition authority permits owners and staff, while excluding ordinary and unrelated members', async () => {
   const { db } = communicationDb({ ...authoritySeed, 'teams/team-a': { ownerUserId: 'owner-a', planId: 'starter_squad' } });
-  await assert.rejects(resolveCompetitionAuthority({ db, actorUid: 'owner-a', teamId: 'team-a' }), /Forbidden/);
+  assert.equal((await resolveCompetitionAuthority({ db, actorUid: 'owner-a', teamId: 'team-a' })).tenantId, 'team-a');
   for (const actorUid of ['owner-a', 'coach-a', 'staff-a']) {
     assert.equal((await resolveCompetitionAuthority({ db, actorUid, teamId: 'team-a', domain: 'tournament' })).tenantId, 'team-a');
   }
@@ -99,12 +99,9 @@ test('competition authority fails closed for ordinary, removed, cross-tenant, an
   }
 });
 
-test('a recognized free plan does not satisfy canonical competition entitlement', async () => {
-  const { db } = communicationDb({ 'teams/free-plan': { ownerUserId: 'free-owner', planId: 'free' } });
-  await assert.rejects(
-    () => resolveCompetitionAuthority({ db, actorUid: 'free-owner', teamId: 'free-plan' }),
-    /Forbidden/,
-  );
+test('Free owners can manage their basic league without gaining premium entitlement', async () => {
+  const { db } = communicationDb({ 'teams/free-plan': { ownerUserId: 'free-owner', planId: 'free', isPro: false } });
+  assert.equal((await resolveCompetitionAuthority({ db, actorUid: 'free-owner', teamId: 'free-plan' })).planId, 'free');
 });
 
 test('competition mutation authority revalidates non-UID membership inside the committing transaction', async () => {
@@ -165,6 +162,7 @@ test('teamless competition authority is derived only from the authenticated acto
   assert.deepEqual(authority, {
     actorUid: 'creator-a', tenantId: 'profile:creator-a', memberRefPath: 'users/creator-a', role: 'league_creator', planId: 'free',
   });
+  assert.equal((await db.runTransaction(transaction => resolveCompetitionAuthority({ db, transaction, actorUid: 'ineligible' }))).role, 'coach');
   await assert.rejects(() => resolveCompetitionAuthority({ db, actorUid: 'creator-a' }), /Forbidden/);
   await assert.rejects(
     () => db.runTransaction(transaction => resolveCompetitionAuthority({ db, transaction, actorUid: 'creator-a', teamId: 'profile:creator-a' })),
@@ -175,7 +173,6 @@ test('teamless competition authority is derived only from the authenticated acto
     { actorUid: 'removed' },
     { actorUid: 'disabled' },
     { actorUid: 'deleted' },
-    { actorUid: 'ineligible' },
     { actorUid: 'ordinary', actorRole: 'league_creator' },
     { actorUid: 'ordinary', profileUid: 'creator-a', actorRole: 'league_creator' },
   ]) {

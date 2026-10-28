@@ -501,3 +501,11 @@ test('new-format tournament keeps the original officials assignment workflow',as
  const app=await appFor({'teams/team-a':baseTeam,'teams/team-a/events/cup-a':event({competition:{version:2},tournamentType:'single_elimination'})});
  try{const assigned=await post(app,command());assert.equal(assigned.status,200,JSON.stringify(assigned.body));assert.equal(app.records.get('teams/team-a/events/cup-a').tournamentGames[0].refereeId,referee.id);assert.equal(app.records.get('teams/team-a/events/cup-a').competition.version,2);}finally{app.dispose();}
 });
+
+test('Free single/double tournament owners cannot add, remove or assign officials through the schedule API',async()=>{
+ for(const format of ['single_elimination','double_elimination'])for(const action of ['add-referee','remove-referee','assign-referee']){
+  const app=await appFor({'teams/team-a':{...baseTeam,planId:'free',isPro:false},'teams/team-a/events/cup':event({tournamentType:format})},{enforceReadBeforeWrite:true});
+  const before=structuredClone([...app.records]);
+  try{const result=await post(app,command({action,eventId:'cup',referee}));assert.equal(result.status,403,JSON.stringify(result.body));assert.deepEqual([...app.records],before);}finally{app.dispose();}
+ }
+});
