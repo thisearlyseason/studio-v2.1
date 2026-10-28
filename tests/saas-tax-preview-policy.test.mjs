@@ -59,6 +59,7 @@ test('invalid preview build stops before provider access and never emits credent
   });
   assert.equal(result.status, 42, result.stderr);
   assert.match(result.stderr, /GUARD BLOCKED/);
+  assert.match(result.stderr, /Failed checks: preview-markers, vercel-target-and-branch/);
   assert.doesNotMatch(result.stderr + result.stdout, /sk_live_mustneverappear/);
 });
 
