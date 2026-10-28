@@ -1,3 +1,5 @@
+import { readSaasTaxCatalog } from '../src/lib/saas-tax-catalog.ts';
+
 const required = [
   'NEXT_PUBLIC_APP_URL',
   'NEXT_PUBLIC_FCM_VAPID_KEY',
@@ -29,6 +31,21 @@ const required = [
 const placeholderPattern = /^(change[-_ ]?me|your[_-]|example|test|placeholder|todo|null|undefined)$/i;
 const missing = [];
 const invalid = [];
+// A web release must never pass preflight with an unbound tax catalog and then
+// strand every new checkout at runtime. Native store hosts do not use it.
+if (process.env.NEXT_PUBLIC_APP_DISTRIBUTION !== 'store') {
+  required.push('SQUAD_STRIPE_SAAS_TAX_CATALOG');
+  if (process.env.SQUAD_STRIPE_SAAS_TAX_CATALOG) {
+    try {
+      const catalog = readSaasTaxCatalog();
+      const liveKey = process.env.STRIPE_SECRET_KEY?.startsWith('sk_live_');
+      const aliases = new Set(required.filter(key => key.includes('STRIPE_PRICE_')).map(key => process.env[key]));
+      if (catalog.length !== 20 || catalog.some(entry => entry.livemode !== liveKey || aliases.has(entry.priceId))) throw new Error();
+    } catch {
+      invalid.push('SQUAD_STRIPE_SAAS_TAX_CATALOG must contain 20 distinct reviewed Prices matching the Stripe environment');
+    }
+  }
+}
 
 for (const name of required) {
   const value = process.env[name]?.trim();

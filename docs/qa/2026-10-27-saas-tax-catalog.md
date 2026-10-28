@@ -82,11 +82,28 @@ fixture is local only and stops before provider actions:
 node tests/helpers/saas-tax-browser.mjs
 ```
 
-An authorized Squad sandbox with actual Products/Prices is still required. The
-connected Stripe account inventory currently contains only TryOutFlow. The
+The existing authenticated Squad browser session was recovered without copying
+credentials. Exactly 10 Products and 20 Prices were created in The Squad V2.0
+sandbox (`acct_1TJMnVGu1UxxOYbP`). Their actual creation responses were retained
+and replayed through the application's validator: all 20 passed. These are real
+sandbox object readbacks, not live objects or tax-calculation results.
+
+That sandbox has a pre-existing Canada/Prince Edward Island head office and no
+tax registrations. The owner's named Current Test Sept 2026 sandbox
+(`acct_1UEhjrK8LIvBrTTZ`) was also inspected without mutations: its tax settings
+are pending, head office is null, and registrations are empty. No second catalog
+was created there; do not mix IDs from different sandbox accounts. A specific
+owner exception to add one sandbox-only Canada GST/HST standard test registration
+in the prepared sandbox has been requested and remains pending. Neither head
+office nor any test/live registration has been changed.
+
+The connected Stripe connector inventory still contains only TryOutFlow. The
 existing audit preview intentionally blocks Stripe outbound traffic; keep that
-safeguard. Do not copy credentials, use another product's sandbox, create an
-account, broaden access or use live Workbench writes to complete this gate.
+safeguard. Protected preview binding and actual calculation results remain release
+gates. Do not copy credentials, use another product's sandbox, create an account,
+broaden access or use live Workbench writes to complete them. Web preflight now
+rejects an absent/incomplete catalog or a test/live mismatch; store preflight
+keeps its existing contract without requiring a web tax catalog.
 
 Once the authorized non-live catalog exists, verify it from an already authorized
 server runtime without retrieving/copying keys:

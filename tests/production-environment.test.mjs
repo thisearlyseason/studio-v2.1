@@ -2,10 +2,13 @@ import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { saasTaxFixture } from './helpers/saas-tax-fixture.mjs';
 
 const checker = fileURLToPath(new URL('../scripts/check-production-env.mjs', import.meta.url));
+const taxCatalog = { ...saasTaxFixture().config, livemode: true };
 
 const validEnvironment = {
+  SQUAD_STRIPE_SAAS_TAX_CATALOG: JSON.stringify(taxCatalog),
   NEXT_PUBLIC_APP_URL: 'https://www.thesquad.pro',
   NEXT_PUBLIC_FCM_VAPID_KEY: 'public-vapid-key',
   NEXT_PUBLIC_WEB_PUSH_VAPID_PUBLIC_KEY: 'separate-public-web-push-key',
@@ -84,4 +87,23 @@ test('production environment requires the competition credential HMAC secret', (
   const result = runChecker({ COMPETITION_CREDENTIAL_HMAC_SECRET: '' });
   assert.equal(result.status, 1);
   assert.match(result.stderr, /COMPETITION_CREDENTIAL_HMAC_SECRET/);
+});
+
+test('web production preflight rejects an absent tax catalog before deployment', () => {
+  const result = runChecker({ SQUAD_STRIPE_SAAS_TAX_CATALOG: '' });
+  assert.equal(result.status, 1); assert.match(result.stderr, /SQUAD_STRIPE_SAAS_TAX_CATALOG/);
+});
+test('web production preflight rejects incomplete or malformed tax bindings', () => {
+  for (const value of ['{invalid', JSON.stringify({ revision: 'squad-saas-electronic-v1', livemode: true, products: {} })]) {
+    const result = runChecker({ SQUAD_STRIPE_SAAS_TAX_CATALOG: value });
+    assert.equal(result.status, 1); assert.match(result.stderr, /20 distinct reviewed Prices/);
+  }
+});
+test('web production preflight rejects sandbox bindings with a live Stripe environment', () => {
+  const result = runChecker({ SQUAD_STRIPE_SAAS_TAX_CATALOG: saasTaxFixture().raw });
+  assert.equal(result.status, 1); assert.match(result.stderr, /matching the Stripe environment/);
+});
+test('native store preflight preserves its existing contract without a web tax catalog', () => {
+  const result = runChecker({ NEXT_PUBLIC_APP_DISTRIBUTION: 'store', SQUAD_STRIPE_SAAS_TAX_CATALOG: '' });
+  assert.equal(result.status, 0, result.stderr);
 });
