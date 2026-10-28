@@ -44,3 +44,32 @@ test('recovered uncertain attempt stays reserved even after later definite inval
 test('address contract grants only buyer-entered billing address updates, leaving shipping and name untouched',()=>{reset();const p=params();assert.deepEqual(p.customer_update,{address:'auto'});assert.equal(p.shipping_address_collection,undefined);assert.equal(p.customer_update.shipping,undefined);assert.equal(p.customer_update.name,undefined);assert.equal(p.subscription_data.default_tax_rates,undefined)});
 
 test('emulator provider fixture echoes requested tax/currency/mode fields without weakening guard',()=>{reset();const p=params();const s=checkoutSessionFixture('cs_fixture',p);assert.equal(s.currency,p.currency);assert.equal(s.mode,p.mode);assert.deepEqual(s.automatic_tax,{enabled:true,status:null});assert.deepEqual(s.managed_payments,{enabled:false});const old=checkoutSessionFixture('cs_old',{customer:'cus_fixture',currency:'usd'});assert.equal(old.automatic_tax.enabled,false);assert.equal(old.subscription,null)});
+
+// Classified checkout lifecycle: synthetic provider boundary, real lock code.
+const { saasTaxFixture } = await import('./helpers/saas-tax-fixture.mjs');
+const { saasTaxMetadata } = await import('../src/lib/saas-tax-catalog.ts');
+const classifiedFixture = saasTaxFixture();
+const originalCatalog = process.env.SQUAD_STRIPE_SAAS_TAX_CATALOG;
+after(()=>{if(originalCatalog===undefined)delete process.env.SQUAD_STRIPE_SAAS_TAX_CATALOG;else process.env.SQUAD_STRIPE_SAAS_TAX_CATALOG=originalCatalog;});
+function classified(use='personal') { process.env.SQUAD_STRIPE_SAAS_TAX_CATALOG=classifiedFixture.raw;const p=params();const metadata={firebase_uid:uid,...saasTaxMetadata('team','monthly',use)};return {...p,line_items:[{price:classifiedFixture.id('team','monthly',use),quantity:1}],metadata,subscription_data:{metadata}}; }
+test('classified checkout records one declaration timestamp across concurrent retries',async()=>{
+  reset();const p=classified();const outcomes=await Promise.allSettled([call(p),call(p)]);assert(outcomes.some(r=>r.status==='fulfilled'));assert.equal(counters.creates,1);
+  const at=profile.pendingCheckout.request.metadata.squad_tax_declared_at;assert(Number.isFinite(Date.parse(at)));assert.equal(profile.pendingCheckout.request.subscription_data.metadata.squad_tax_declared_at,at);
+  const result=await call(p);assert.equal(result.metadata.squad_tax_declared_at,at);assert.equal(counters.expires,0);
+});
+test('lost classified reply retains declaration time and recovers without a duplicate',async()=>{
+  reset();const p=classified();lose=true;await assert.rejects(call(p),/lost reply/);const at=profile.pendingCheckout.request.metadata.squad_tax_declared_at;profile.pendingCheckout.expiresAt=0;await call(p);assert.equal(counters.creates,1);assert.equal(counters.expires,0);assert.equal(profile.pendingCheckout.request.metadata.squad_tax_declared_at,at);
+});
+test('changed personal/commercial use cannot expire an open attempt or create another',async()=>{
+  reset();await call(classified());const before=structuredClone(profile);await assert.rejects(call(classified('commercial'),'different-selection'),/tax policy/);assert.deepEqual(profile,before);assert.equal(counters.creates,1);assert.equal(counters.expires,0);
+  sessions.get(profile.pendingCheckout.sessionId).status='expired';await call(classified('commercial'),'different-selection');assert.equal(counters.creates,2);assert.equal(counters.expires,0);assert.equal(profile.pendingCheckout.request.metadata.squad_tax_use,'commercial');
+});
+test('new classified attempt holds untracked open checkout without expiring or duplicating it',async()=>{
+  reset();sessions.set('cs_untracked',checkoutSessionFixture('cs_untracked',params()));await assert.rejects(call(classified()),/earlier checkout is still open/);assert.equal(counters.creates,0);assert.equal(counters.expires,0);assert.equal(sessions.get('cs_untracked').status,'open');
+});
+test('old generic-tax open checkout cannot silently become a new classified purchase',async()=>{
+  reset();await call();const before=structuredClone(profile);await assert.rejects(call(classified()),/tax policy/);assert.deepEqual(profile,before);assert.equal(counters.creates,1);assert.equal(counters.expires,0);
+});
+test('classified provider response with another declared use remains fenced',async()=>{
+  reset();const p=classified();await call(p);sessions.get(profile.pendingCheckout.sessionId).metadata.squad_tax_use='commercial';await assert.rejects(call(p),/declaration could not be verified/);assert.equal(counters.creates,1);assert.equal(counters.expires,0);
+});

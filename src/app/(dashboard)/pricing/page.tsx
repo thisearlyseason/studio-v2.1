@@ -1,5 +1,6 @@
 "use client";
 import { useBillingDisplayPrices } from "@/lib/use-billing-display-prices";
+import { SaasTaxUseDeclaration } from '@/components/saas-tax-use-declaration';
 import { BillingCountryDeclaration } from '@/components/billing-country-declaration';
 import { SchoolPlanDeclaration } from '@/components/school-plan-declaration';
 import { schoolOrganizationDeclaration, schoolPlanEligibilityError, type SchoolOrganizationDeclaration } from '@/lib/school-plan-eligibility';
@@ -42,11 +43,12 @@ export default function PricingPage() {
   const router = useRouter();
   const auth = useAuth();
   const { user } = useUser();
-  const { isPro, userProfile } = useTeam();
+  const { isPro, userProfile, activeTeam } = useTeam();
   
+  const [taxUse, setTaxUse] = useState('');
   const [billingCountry, setBillingCountry] = useState('');
   const [billingCountryRequired, setBillingCountryRequired] = useState(false);
-  useEffect(() => { setBillingCountry(''); setBillingCountryRequired(false); }, [user?.uid]);
+  useEffect(() => { setTaxUse(''); setBillingCountry(''); setBillingCountryRequired(false); }, [user?.uid, activeTeam?.id]);
   const [organizationDeclaration, setOrganizationDeclaration] = useState<SchoolOrganizationDeclaration | ''>('');
   const declaredOrganization = organizationDeclaration || schoolOrganizationDeclaration((userProfile as any)?.organizationType) || '';
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
@@ -72,6 +74,7 @@ export default function PricingPage() {
       toast({ title: 'Plan changes unavailable', description: 'Plan changes and extra squad slots are temporarily unavailable. Please try again later.' });
       return;
     }
+    if (!(isPro && (userProfile as any)?.stripe_subscription_id) && !taxUse) { toast({ title: 'Intended use required', description: 'Choose how this subscription will be used before checkout.' }); return; }
     const eligibilityError = schoolPlanEligibilityError(plan.id, userProfile || {}, declaredOrganization);
     if (eligibilityError) { toast({ title: 'Organization declaration required', description: eligibilityError, variant: 'destructive' }); return; }
     if(!isCurrentPlan(plan) && (!priceReady(planPriceId(plan)) || (extraTeams>0 && !priceReady(addonPriceId())))) { toast({title:'Current price unavailable',description:'Refresh prices before subscribing.'}); return; }
@@ -128,7 +131,7 @@ export default function PricingPage() {
       const response = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ priceId, userId: user.uid, billingCycle, extraTeams, organizationDeclaration: declaredOrganization, ...(billingCountry ? { billingCountry } : {}) }),
+        body: JSON.stringify({ priceId, taxUse, userId: user.uid, billingCycle, extraTeams, organizationDeclaration: declaredOrganization, ...(billingCountry ? { billingCountry } : {}) }),
       });
       const data = await response.json();
       if (data.code === 'BILLING_COUNTRY_REQUIRED') setBillingCountryRequired(true);
@@ -204,6 +207,7 @@ export default function PricingPage() {
         </motion.div>
       </div>
 
+      {!(isPro && (userProfile as any)?.stripe_subscription_id) && <div className="max-w-3xl mx-auto px-6 my-8"><SaasTaxUseDeclaration value={taxUse} onChange={setTaxUse} /></div>}
       {billingCountryRequired && <div className="max-w-3xl mx-auto px-6 mb-16"><BillingCountryDeclaration value={billingCountry} onChange={setBillingCountry} /></div>}
 
       {/* Plans Grid */}

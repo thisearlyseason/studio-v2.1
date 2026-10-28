@@ -61,6 +61,8 @@ export function buildCheckoutIdempotencyKey(input: {
   customerId?: string | null;
   subscriptionId?: string | null;
   operationId?: string | null;
+  taxUse?: string;
+  taxRevision?: string;
   now: number;
 }): string {
   const retryScope =
@@ -77,6 +79,7 @@ export function buildCheckoutIdempotencyKey(input: {
       input.subscriptionId || '',
       input.operationId || '',
       retryScope,
+      ...(input.taxRevision ? [input.taxRevision, input.taxUse || ''] : []),
     ].join(':'))
     .digest('hex');
   return `checkout-${digest}`;

@@ -1,4 +1,5 @@
 "use client";
+import { SaasTaxUseDeclaration } from '@/components/saas-tax-use-declaration';
 import { BillingCountryDeclaration } from '@/components/billing-country-declaration';
 import { SchoolPlanDeclaration } from '@/components/school-plan-declaration';
 import { schoolOrganizationDeclaration, schoolPlanEligibilityError, type SchoolOrganizationDeclaration } from '@/lib/school-plan-eligibility';
@@ -36,9 +37,10 @@ export function StripePaywall() {
   const { isPaywallOpen, setIsPaywallOpen, user, activeTeam, isPro } = useTeam();
   const displayPrices = useBillingDisplayPrices(!isStoreDistribution);
   const auth = useAuth();
+  const [taxUse, setTaxUse] = useState('');
   const [billingCountry, setBillingCountry] = useState('');
   const [billingCountryRequired, setBillingCountryRequired] = useState(false);
-  useEffect(() => { setBillingCountry(''); setBillingCountryRequired(false); }, [user?.id]);
+  useEffect(() => { setTaxUse(''); setBillingCountry(''); setBillingCountryRequired(false); }, [user?.id, activeTeam?.id]);
   const [organizationDeclaration, setOrganizationDeclaration] = useState<SchoolOrganizationDeclaration | ''>('');
   const declaredOrganization = organizationDeclaration || schoolOrganizationDeclaration((user as any)?.organizationType) || '';
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
@@ -67,6 +69,7 @@ export function StripePaywall() {
       return;
     }
 
+    if (!(isPro && (user as any).stripe_customer_id) && !taxUse) { toast({ title: 'Intended use required', description: 'Choose how this subscription will be used before checkout.' }); return; }
     const eligibilityError = schoolPlanEligibilityError(plan.id, user || {}, declaredOrganization);
     if (eligibilityError) { toast({ title: 'Organization declaration required', description: eligibilityError, variant: 'destructive' }); return; }
     const priceId = billingCycle === 'annual' ? plan.annualPriceId : plan.monthlyPriceId;
@@ -94,7 +97,7 @@ export function StripePaywall() {
       const res = await fetch('/api/stripe/create-checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ priceId, userId: user.id, teamId: activeTeam?.id, billingCycle, extraTeamQty: 0, organizationDeclaration: declaredOrganization, ...(billingCountry ? { billingCountry } : {}) }),
+        body: JSON.stringify({ priceId, taxUse, userId: user.id, teamId: activeTeam?.id, billingCycle, extraTeamQty: 0, organizationDeclaration: declaredOrganization, ...(billingCountry ? { billingCountry } : {}) }),
       });
       const data = await res.json();
       if (data.code === 'BILLING_COUNTRY_REQUIRED') setBillingCountryRequired(true);
@@ -112,7 +115,7 @@ export function StripePaywall() {
 
   return (
     <Dialog open={isPaywallOpen} onOpenChange={setIsPaywallOpen}>
-      <DialogContent className="sm:max-w-5xl rounded-[3rem] overflow-hidden p-0 border-none shadow-2xl bg-white">
+      <DialogContent className="sm:max-w-5xl rounded-[3rem] max-h-[90dvh] overflow-y-auto p-0 border-none shadow-2xl bg-white">
         {/* Visually hidden title for screen reader accessibility (Radix requirement) */}
         <VisuallyHidden.Root>
           <DialogTitle>Upgrade — Select Your Plan</DialogTitle>
@@ -182,6 +185,7 @@ export function StripePaywall() {
               Annual plans for Elite Teams, Elite League and Schools are available on this website. Choose Annual above to view yearly pricing.
             </p>
 
+            {!(isPro && (user as any).stripe_customer_id) && <SaasTaxUseDeclaration value={taxUse} onChange={setTaxUse} />}
             {billingCountryRequired && <BillingCountryDeclaration value={billingCountry} onChange={setBillingCountry} />}
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4 flex-1">

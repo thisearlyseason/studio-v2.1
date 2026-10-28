@@ -1,5 +1,6 @@
 "use client";
 import { useBillingDisplayPrices } from "@/lib/use-billing-display-prices";
+import { SaasTaxUseDeclaration } from '@/components/saas-tax-use-declaration';
 import { BillingCountryDeclaration } from '@/components/billing-country-declaration';
 import { SchoolPlanDeclaration } from '@/components/school-plan-declaration';
 import { schoolOrganizationDeclaration, schoolPlanEligibilityError, type SchoolOrganizationDeclaration } from '@/lib/school-plan-eligibility';
@@ -65,9 +66,10 @@ export default function BillingDashboard() {
   const [loading, setLoading] = useState<string | null>(null);
   const [pendingSync, setPendingSync] = useState(false);
   const [addonQty, setAddonQty] = useState(userProfile?.extra_teams || 0);
+  const [taxUse, setTaxUse] = useState('');
   const [billingCountry, setBillingCountry] = useState('');
   const [billingCountryRequired, setBillingCountryRequired] = useState(false);
-  useEffect(() => { setBillingCountry(''); setBillingCountryRequired(false); }, [userProfile?.id]);
+  useEffect(() => { setTaxUse(''); setBillingCountry(''); setBillingCountryRequired(false); }, [userProfile?.id, activeTeam?.id]);
   const [organizationDeclaration, setOrganizationDeclaration] = useState<SchoolOrganizationDeclaration | ''>('');
   const declaredOrganization = organizationDeclaration || schoolOrganizationDeclaration((userProfile as any)?.organizationType) || '';
   const [billingCycle, setBillingCycle] = useState<BillingCycle>(
@@ -122,6 +124,7 @@ export default function BillingDashboard() {
       return;
     }
 
+    if (!isStripeLinked && !taxUse) { toast({ title: 'Intended use required', description: 'Choose how this subscription will be used before checkout.' }); return; }
     const eligibilityError = schoolPlanEligibilityError(newPlan?.id || '', userProfile, declaredOrganization);
     if (eligibilityError) { toast({ title: 'Organization declaration required', description: eligibilityError, variant: 'destructive' }); return; }
     setLoading(newPlan ? 'plan_' + newPlan.id : 'addon_init');
@@ -136,6 +139,7 @@ export default function BillingDashboard() {
             teamId: activeTeam?.id,
             priceId: newPlan ? (billingCycle === 'annual' ? newPlan.annualPriceId : newPlan.monthlyPriceId) : null,
             billingCycle,
+            taxUse,
             organizationDeclaration: declaredOrganization,
             extraTeamQty: initialAddons || 0,
             ...(billingCountry ? { billingCountry } : {}),
@@ -358,6 +362,7 @@ export default function BillingDashboard() {
   return (
     <div className="max-w-5xl mx-auto py-10 px-4 md:px-6 space-y-10 pb-20">
 
+      {!isStripeLinked && !isDemo && <SaasTaxUseDeclaration value={taxUse} onChange={setTaxUse} />}
       {billingCountryRequired && <BillingCountryDeclaration value={billingCountry} onChange={setBillingCountry} />}
 
       {/* ── Header ── */}

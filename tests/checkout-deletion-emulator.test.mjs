@@ -9,6 +9,9 @@ import { createRequire } from 'node:module';
 import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { resolve } from 'node:path';
 import { PLAN_PRICE_MAP } from '../src/lib/stripe-price-map.ts';
+import { saasTaxFixture } from './helpers/saas-tax-fixture.mjs';
+const taxFixture = saasTaxFixture();
+const originalTaxCatalog = process.env.SQUAD_STRIPE_SAAS_TAX_CATALOG;
 import { checkoutSessionFixture } from './helpers/checkout-session-fixture.mjs';
 
 const enabled = process.env.CHECKOUT_DELETION_EMULATOR_TEST === '1';
@@ -18,6 +21,7 @@ let app, db, auth, routes, actions, bundleDir;
 const fixtures = [], sessions = new Map(), idempotency = new Map(), subscriptions = new Map();
 let pauseBeforeClaim, pauseCreate, pauseReply, loseCreateReply = false, hideSubscriptions = false;
 const stripe = {
+  prices: { retrieve: taxFixture.retrieve },
   customers: { retrieve: async id => ({ id, object: 'customer', deleted: false }) },
   subscriptions: {
     list: async ({ customer }) => { await pauseBeforeClaim?.(); return { data: hideSubscriptions ? [] : [...subscriptions.values()].filter(s => s.customer === customer), has_more: false }; },
@@ -46,6 +50,7 @@ const stripe = {
 };
 before(async () => {
   if (!enabled) return;
+  process.env.SQUAD_STRIPE_SAAS_TAX_CATALOG = taxFixture.raw;
   assert.equal(process.env.FIRESTORE_EMULATOR_HOST, '127.0.0.1:8187');
   assert.equal(process.env.FIREBASE_AUTH_EMULATOR_HOST, '127.0.0.1:9197');
   Object.assign(process.env, { NEXT_PUBLIC_APP_DISTRIBUTION: 'web', GCLOUD_PROJECT: 'demo-native-auth-test', NEXT_PUBLIC_FIREBASE_WEBAPP_CONFIG: JSON.stringify({ projectId: 'demo-native-auth-test', apiKey: 'emulator-key' }) });
@@ -64,6 +69,7 @@ before(async () => {
 after(async () => {
   if (!enabled) return;
   for (const uid of fixtures) { await auth.deleteUser(uid); await db.doc('users/' + uid).delete(); await db.doc('accountDeletionRequests/' + uid).delete(); }
+  if(originalTaxCatalog===undefined)delete process.env.SQUAD_STRIPE_SAAS_TAX_CATALOG;else process.env.SQUAD_STRIPE_SAAS_TAX_CATALOG=originalTaxCatalog;
   delete globalThis[boundary]; await deleteApp(app); await rm(bundleDir, { recursive: true, force: true });
 });
 async function account(label) {
@@ -126,10 +132,14 @@ test('provider lookup failure and expiry/completion race cannot clear the checko
   assert.ok((await db.doc('users/' + who.uid).get()).data().pendingCheckout);
 });
 
-test('normal web retries reuse an open checkout; changing plan expires the former checkout', { skip: !enabled }, async () => {
+test('classified checkout retries reuse one session; changed selections wait for fresh terminal proof', { skip: !enabled }, async () => {
   const who = await account('normal-plan-change');
   const first = await create('canonical', who), firstUrl = (await first.json()).url;
   const second = await create('canonical', who); assert.equal((await second.json()).url, firstUrl);
+  assert.equal((await create('canonical', who, { extraTeamQty: 1 })).status, 409);
+  const previous = [...sessions.values()].find(s => s.customer === 'cus_' + who.uid);
+  assert.equal(previous.status, 'open');
+  previous.status = 'expired'; // Synthetic provider terminal result, not elapsed time.
   const changed = await create('canonical', who, { extraTeamQty: 1 }); assert.equal(changed.status, 200, await changed.clone().text());
   assert.notEqual((await changed.json()).url, firstUrl);
   const own = [...sessions.values()].filter(s => s.customer === 'cus_' + who.uid);
@@ -180,19 +190,23 @@ test('late original provider response cannot restore a fence after recovery and 
   } finally { pauseReply = undefined; b.release(); await original; }
 });
 
-test('all pages of older same-tax-policy payable checkouts are expired before a new checkout is issued', { skip: !enabled }, async () => {
+test('older payable checkouts stay fenced until provider terminal state, without automatic expiry', { skip: !enabled }, async () => {
   const who = await account('paginated-checkouts');
   for (let i = 0; i < 105; i++) {
     const id = 'cs_old_page_' + i;
     sessions.set(id, checkoutSessionFixture(id, { mode:'subscription', customer:'cus_'+who.uid, currency:'usd', automatic_tax:{enabled:true}, managed_payments:{enabled:false}, metadata:{firebase_uid:who.uid} }));
   }
+  assert.equal((await create('canonical', who)).status, 409);
+  assert.equal([...sessions.values()].filter(s => s.customer === 'cus_' + who.uid && s.status === 'expired').length, 0);
+  for (const session of sessions.values()) if (session.customer === 'cus_' + who.uid) session.status = 'expired';
+  await db.doc('users/' + who.uid).update({ 'pendingCheckout.expiresAt': 0 });
   assert.equal((await create('canonical', who)).status, 200);
   const own = [...sessions.values()].filter(s => s.customer === 'cus_' + who.uid);
   assert.equal(own.filter(s => s.status === 'expired').length, 105);
   assert.equal(own.filter(s => s.status === 'open').length, 1);
 });
 const priceId = Object.keys(PLAN_PRICE_MAP)[0];
-const create = (name, who, overrides = {}) => routes[name](new NextRequest(origin + '/api/checkout', { method: 'POST', headers: { Authorization: 'Bearer ' + who.token, 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: who.uid, priceId, billingCycle: 'monthly', ...overrides }) }));
+const create = (name, who, overrides = {}) => routes[name](new NextRequest(origin + '/api/checkout', { method: 'POST', headers: { Authorization: 'Bearer ' + who.token, 'Content-Type': 'application/json' }, body: JSON.stringify({ userId: who.uid, priceId, billingCycle: 'monthly', taxUse: 'personal', ...overrides }) }));
 function barrier() { let signal, release; const reached = new Promise(r => { signal = r; }); const waiting = new Promise(r => { release = r; }); return { reached, release, hold: async () => { signal(); await waiting; } }; }
 
 for (const name of ['canonical', 'legacy']) {

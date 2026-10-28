@@ -1,3 +1,5 @@
+import { parseSaasTaxUse, saasTaxMetadata, SAAS_TAX_REVISION, SaasTaxConfigurationError, SaasTaxDeclarationError } from '@/lib/saas-tax-catalog';
+import { resolveVerifiedSaasTaxPrice } from '@/lib/server-saas-tax-catalog';
 import { prepareCheckoutBillingCountry, BillingCountryDeclarationError } from '@/lib/checkout-billing-country';
 import { schoolPlanEligibilityError } from '@/lib/school-plan-eligibility';
 import { PLAN_PRICE_MAP as SCHOOL_PLAN_PRICE_MAP } from '@/lib/stripe-price-map';
@@ -8,7 +10,6 @@ import { adminDb } from '@/lib/firebase-admin';
 import { getStripe } from '@/lib/stripe-client';
 import { assertNonAnonymous, verifyFirebaseToken, assertOwner } from '@/lib/api-auth';
 import {
-  EXTRA_TEAM_PRICE_IDS,
   ACTIVE_PLAN_PRICE_IDS,
   priceMatchesBillingCycle,
 } from '@/lib/stripe-price-map';
@@ -42,6 +43,7 @@ export async function POST(req: NextRequest) {
       priceId,
       organizationDeclaration,
       billingCountry,
+      taxUse,
       userId,
       teamId,
       billingCycle = 'monthly',
@@ -50,6 +52,7 @@ export async function POST(req: NextRequest) {
       priceId?: unknown;
       organizationDeclaration?: unknown;
       billingCountry?: unknown;
+      taxUse?: unknown;
       userId?: unknown;
       teamId?: unknown;
       billingCycle?: unknown;
@@ -132,7 +135,13 @@ export async function POST(req: NextRequest) {
         { status: 403 }
       );
     }
+    const declaredUse = parseSaasTaxUse(taxUse);
     const stripe = getStripe();
+    const planId = SCHOOL_PLAN_PRICE_MAP[priceId].id;
+    const checkoutPriceId = await resolveVerifiedSaasTaxPrice(stripe, planId, billingCycle, declaredUse);
+    const extraTeamPriceId = (extraTeamQty as number) > 0
+      ? await resolveVerifiedSaasTaxPrice(stripe, 'extra_team', billingCycle, declaredUse) : null;
+    const taxMetadata = saasTaxMetadata(planId, billingCycle, declaredUse);
     const previousCustomerId = typeof userData.stripe_customer_id === 'string'
       ? userData.stripe_customer_id
       : null;
@@ -181,11 +190,8 @@ export async function POST(req: NextRequest) {
     const lineItems: any[] = [];
 
     if (priceId) {
-      lineItems.push({ price: priceId, quantity: 1 });
+      lineItems.push({ price: checkoutPriceId, quantity: 1 });
     }
-
-    const extraTeamPriceId =
-      billingCycle === 'annual' ? EXTRA_TEAM_PRICE_IDS.annual : EXTRA_TEAM_PRICE_IDS.monthly;
 
     if ((extraTeamQty as number) > 0 && extraTeamPriceId) {
       lineItems.push({ price: extraTeamPriceId, quantity: extraTeamQty as number });
@@ -198,7 +204,9 @@ export async function POST(req: NextRequest) {
     const idempotencyKey = buildCheckoutIdempotencyKey({
       route: 'stripe-create-checkout',
       userId,
-      priceId,
+      priceId: checkoutPriceId,
+      taxUse: declaredUse,
+      taxRevision: SAAS_TAX_REVISION,
       billingCycle,
       quantity: extraTeamQty as number,
       teamId: targetTeamId,
@@ -213,9 +221,9 @@ export async function POST(req: NextRequest) {
       line_items: lineItems,
       success_url: `${origin}/dashboard/billing?stripe_success=true`,
       cancel_url: `${origin}/dashboard/billing?stripe_canceled=true`,
-      metadata: { ...managedSaasMetadata(), firebase_uid: userId, ...(targetTeamId ? { team_id: targetTeamId } : {}) },
+      metadata: { ...managedSaasMetadata(), ...taxMetadata, firebase_uid: userId, ...(targetTeamId ? { team_id: targetTeamId } : {}) },
       subscription_data: {
-        metadata: { ...managedSaasMetadata(), firebase_uid: userId, ...(targetTeamId ? { team_id: targetTeamId } : {}) },
+        metadata: { ...managedSaasMetadata(), ...taxMetadata, firebase_uid: userId, ...(targetTeamId ? { team_id: targetTeamId } : {}) },
         ...(serverTrialDays > 0 ? { trial_period_days: serverTrialDays } : {}),
       },
       allow_promotion_codes: true,
@@ -223,6 +231,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ url: session.url });
   } catch (err: any) {
+    if (err instanceof SaasTaxConfigurationError || err instanceof SaasTaxDeclarationError) return NextResponse.json({ error: err.message }, { status: err.status });
     if (err instanceof BillingCountryDeclarationError) return NextResponse.json({ error: err.message, code: err.code }, { status: err.status });
     if (err instanceof ManagedCheckoutUnavailable || err instanceof ManagedCoverageUnavailable) return NextResponse.json({ error: err.message }, { status: 409 });
     if (err instanceof CheckoutLifecycleError) return NextResponse.json({ error: err.message }, { status: err.status });

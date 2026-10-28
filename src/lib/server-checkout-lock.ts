@@ -104,9 +104,12 @@ export async function createCheckoutSessionWithLock(userRef: DocumentReference, 
           return { lock, create: true, recover: true };
         }
         const attemptId = (request.managed_payments?.enabled === true ? 'checkout-attempt-managed-v4-' : isStandardTaxCheckout(request) ? 'checkout-attempt-standard-tax-v1-' : 'checkout-attempt-standard-v2-') + randomUUID();
+        const declaration: Record<string, string> = request.metadata?.squad_tax_revision ? { squad_tax_declared_at: new Date().toISOString() } : {};
         const lock: CheckoutLock = {
           key, attemptId, sessionId: null, expiresAt: Date.now() + 120_000,
-          request: { ...request, expires_at: Math.floor(Date.now() / 1000) + 86400, metadata: { ...request.metadata, firebase_uid: userRef.id, checkout_attempt: attemptId } },
+          request: { ...request, expires_at: Math.floor(Date.now() / 1000) + 86400,
+            ...(request.metadata?.squad_tax_revision ? { subscription_data: { ...request.subscription_data, metadata: { ...request.subscription_data?.metadata, ...declaration } } } : {}),
+            metadata: { ...request.metadata, ...declaration, firebase_uid: userRef.id, checkout_attempt: attemptId } },
         };
         transaction.update(userRef, { pendingCheckout: lock });
         return { lock, create: true, recover: false };
@@ -152,6 +155,9 @@ export async function createCheckoutSessionWithLock(userRef: DocumentReference, 
           if (old.metadata?.checkout_attempt === lock.attemptId) recoveredSession = old;
           else if (old.status === 'open') {
             assertSessionOwner(old, userRef, lock.request!.customer);
+            if (request.metadata?.squad_tax_revision) {
+              throw new CheckoutLifecycleError('An earlier checkout is still open. Let it expire or contact support before starting another checkout.');
+            }
             if (isStandardTaxCheckout(request) && (old.automatic_tax?.enabled !== true || old.managed_payments?.enabled === true || old.currency !== 'usd')) {
               throw new CheckoutLifecycleError('An older checkout has a different or unverified tax policy. Contact support to reconcile it before continuing.');
             }
@@ -183,8 +189,16 @@ export async function createCheckoutSessionWithLock(userRef: DocumentReference, 
         const saved = { ...lock.request!, metadata: { ...lock.request!.metadata } };
         delete saved.expires_at;
         delete saved.metadata.checkout_attempt;
-        const expected = { ...request, metadata: { ...request.metadata, firebase_uid: userRef.id } };
+        const expected: Stripe.Checkout.SessionCreateParams & { metadata: Stripe.MetadataParam } = { ...request, metadata: { ...request.metadata, firebase_uid: userRef.id } };
         delete expected.expires_at;
+        if (request.metadata?.squad_tax_revision) {
+          // The first reservation records the declaration once. Retries must
+          // retain it, not mint a fresh timestamp or reclassify the attempt.
+          const at = saved.metadata.squad_tax_declared_at;
+          if (typeof at !== 'string' || !Number.isFinite(Date.parse(at)) || saved.subscription_data?.metadata?.squad_tax_declared_at !== at) throw busy();
+          expected.metadata.squad_tax_declared_at = at;
+          expected.subscription_data = { ...expected.subscription_data, metadata: { ...expected.subscription_data?.metadata, squad_tax_declared_at: at } };
+        }
         // Pre-migration reservations retain their exact omitted mode and old
         // provider key. Permit only this known schema addition; all other saved
         // parameters still require equality with the validated route request.
@@ -245,7 +259,14 @@ export async function createCheckoutSessionWithLock(userRef: DocumentReference, 
       }
       if (session.automatic_tax.status === 'failed') throw new CheckoutLifecycleError('Tax calculation is unavailable. Please try again later.');
     }
+    if (request.metadata?.squad_tax_revision && !['squad_tax_revision', 'squad_tax_use', 'squad_plan_id', 'squad_billing_cycle', 'team_id', 'squad_tax_declared_at'].every(name =>
+      session.metadata?.[name] === lock.request?.metadata?.[name])) {
+      throw new CheckoutLifecycleError('The checkout tax declaration could not be verified. Contact support before continuing.');
+    }
     if (session.status === 'open' && lock.key === key && session.url) return session;
+    if (session.status === 'open' && request.metadata?.squad_tax_revision) {
+      throw new CheckoutLifecycleError('The previous checkout is still open. Keep its original selections or let it expire before continuing.');
+    }
     if (session.status === 'open') session = await stripe.checkout.sessions.expire(session.id);
     await assertCompletedSubscriptionEnded(stripe, session);
     if (session.status !== 'expired' && session.status !== 'complete') throw busy();

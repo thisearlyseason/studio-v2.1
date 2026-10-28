@@ -1,4 +1,5 @@
 import { PLAN_TEAM_LIMITS } from '@/lib/plan-catalog';
+import { readSaasTaxCatalog, SaasTaxConfigurationError } from './saas-tax-catalog';
 
 /**
  * Canonical Stripe Price ID → Plan mapping.
@@ -124,4 +125,15 @@ for (const [monthly, annual] of LEGACY_EXTRA_TEAM_PRICES) {
 
 export function isExtraTeamPriceId(priceId: string): boolean {
   return extraTeamPriceIds.has(priceId);
+}
+
+// Tax-specific prices are recognized for fulfillment and lifecycle operations.
+// They are deliberately NOT client-selectable plan IDs: new checkout resolves
+// the existing canonical selection alias plus the buyer declaration on server.
+for (const entry of readSaasTaxCatalog()) {
+  if (ALL_KNOWN_PRICE_IDS.has(entry.priceId)) throw new SaasTaxConfigurationError('Tax prices must be distinct from existing prices.');
+  if (entry.offer === 'extra_team') extraTeamPriceIds.add(entry.priceId);
+  else PLAN_PRICE_MAP[entry.priceId] = { id: entry.offer, teamLimit: PLAN_TEAM_LIMITS[entry.offer] };
+  PRICE_BILLING_CYCLE[entry.priceId] = entry.cycle;
+  ALL_KNOWN_PRICE_IDS.add(entry.priceId);
 }

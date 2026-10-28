@@ -6,6 +6,9 @@ import { mkdir, mkdtemp, rm } from 'node:fs/promises';
 import { join } from 'node:path';
 import { NextRequest } from 'next/server.js';
 import * as prices from '../src/lib/stripe-price-map.ts';
+import { saasTaxFixture } from './helpers/saas-tax-fixture.mjs';
+const taxFixture = saasTaxFixture();
+const originalTaxCatalog = process.env.SQUAD_STRIPE_SAAS_TAX_CATALOG;
 
 // Execute the release's real route handlers and price/policy helpers. Only
 // external Auth/Firestore/Stripe and mutation side effects are controlled.
@@ -19,6 +22,7 @@ const annual = [...prices.ACTIVE_PLAN_PRICE_IDS].find(p => prices.PLAN_PRICE_MAP
 const legacy = 'price_1TkoThKBufuw6n64Sog2etTW';
 
 before(async () => {
+  process.env.SQUAD_STRIPE_SAAS_TAX_CATALOG = taxFixture.raw;
   await mkdir('output', { recursive: true });
   directory = await mkdtemp(join(process.cwd(), 'output/squad-usd-route-'));
   const injected = {
@@ -32,18 +36,18 @@ before(async () => {
     '@/lib/server-checkout-lock': `export class CheckoutLifecycleError extends Error{}; export async function createCheckoutSessionWithLock(ref,key,params){globalThis.${boundary}.checkouts.push({key,params});return {url:'https://checkout.example.test/local'}}`,
     '@/lib/store-request-guard': `export function storePurchaseResponse(){return null}`,
   };
-  await build({entryPoints:{checkout:'src/app/api/stripe/create-checkout/route.ts',legacyCheckout:'src/app/api/checkout/route.ts',upgrade:'src/app/api/subscription/update/route.ts'},bundle:true,platform:'node',format:'cjs',packages:'external',outdir:directory,outExtension:{'.js':'.cjs'},logLevel:'silent',plugins:[{name:'controlled-external-boundaries',setup(b){b.onResolve({filter:/.*/},args=>Object.hasOwn(injected,args.path)?{path:args.path,namespace:'local-fixture'}:args.namespace==='local-fixture'?{path:args.path,external:true}:undefined);b.onLoad({filter:/.*/,namespace:'local-fixture'},args=>({contents:injected[args.path]}));}}]});
-  routes = {checkout:require(join(directory,'checkout.cjs')).POST,legacyCheckout:require(join(directory,'legacyCheckout.cjs')).POST,upgrade:require(join(directory,'upgrade.cjs')).POST};
+  await build({entryPoints:{checkout:'src/app/api/stripe/create-checkout/route.ts',legacyCheckout:'src/app/api/checkout/route.ts',upgrade:'src/app/api/subscription/update/route.ts',addon:'src/app/api/subscription/addon/route.ts',displayCatalog:'src/app/api/billing/display-catalog/route.ts',priceMap:'src/lib/stripe-price-map.ts'},bundle:true,platform:'node',format:'cjs',packages:'external',outdir:directory,outExtension:{'.js':'.cjs'},logLevel:'silent',plugins:[{name:'controlled-external-boundaries',setup(b){b.onResolve({filter:/.*/},args=>Object.hasOwn(injected,args.path)?{path:args.path,namespace:'local-fixture'}:args.namespace==='local-fixture'?{path:args.path,external:true}:undefined);b.onLoad({filter:/.*/,namespace:'local-fixture'},args=>({contents:injected[args.path]}));}}]});
+  routes = {checkout:require(join(directory,'checkout.cjs')).POST,legacyCheckout:require(join(directory,'legacyCheckout.cjs')).POST,upgrade:require(join(directory,'upgrade.cjs')).POST,addon:require(join(directory,'addon.cjs')).POST,displayCatalog:require(join(directory,'displayCatalog.cjs')).GET,priceMap:require(join(directory,'priceMap.cjs'))};
 });
-after(async () => {delete globalThis[boundary];await rm(directory,{recursive:true,force:true});});
+after(async () => {if(originalTaxCatalog===undefined)delete process.env.SQUAD_STRIPE_SAAS_TAX_CATALOG;else process.env.SQUAD_STRIPE_SAAS_TAX_CATALOG=originalTaxCatalog;delete globalThis[boundary];await rm(directory,{recursive:true,force:true});});
 
 function reset(overrides={}) {
   const subscription={id:'sub_local',customer:'cus_local',currency:'usd',status:'active',cancel_at_period_end:false,items:{data:[{id:'si_base',price:{id:monthly},quantity:1}]},...overrides};
   state={user:{email:'fixture@example.test',stripe_customer_id:'cus_local',stripe_subscription_id:'sub_local'},subscription,updates:[],reconciliations:[],checkouts:[],claims:0,releases:0,providerAccesses:0};
-  state.stripe={customers:{retrieve:async()=>({id:'cus_local',metadata:{firebase_uid:uid}})},subscriptions:{retrieve:async()=>subscription,list:async()=>({data:[]}),update:async(id,params,options)=>{state.updates.push({id,params,options});return state.updated??{...subscription,items:{data:params.items.map(i=>({id:i.id,price:{id:i.price},quantity:i.quantity??1}))}};}}};
+  state.stripe={prices:{retrieve:taxFixture.retrieve},customers:{retrieve:async()=>({id:'cus_local',metadata:{firebase_uid:uid}})},subscriptions:{retrieve:async()=>subscription,list:async()=>({data:[]}),update:async(id,params,options)=>{state.updates.push({id,params,options});return state.updated??{...subscription,items:{data:[...subscription.items.data.filter(old=>!params.items.some(i=>i.id===old.id)),...params.items.filter(i=>!i.deleted).map(i=>({id:i.id,price:{id:i.price},quantity:i.quantity??1}))]}};}}};
   globalThis[boundary]=state;
 }
-const request = body => new NextRequest('https://local.example.test/api/billing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
+const request = body => new NextRequest('https://local.example.test/api/billing',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({taxUse:'personal',...body})});
 const upgrade = (price=annual,userId=uid) => routes.upgrade(request({userId,newPriceId:price,operationId:'local_operation_123456'}));
 
 test('USD upgrade rejects a recognized legacy CAD price before provider mutation',async()=>{reset();assert.equal((await upgrade(legacy)).status,400);assert.equal(state.updates.length,0);assert.equal(state.claims,0);});
@@ -56,7 +60,7 @@ test('provider non-entitled update never grants paid capacity',async()=>{reset()
 test('repeated upgrade operation keeps its provider idempotency scope stable',async()=>{reset();await upgrade();await upgrade();assert.equal(state.updates.length,2);assert.equal(state.updates[0].options.idempotencyKey,state.updates[1].options.idempotencyKey);assert.equal(state.claims,state.releases);});
 
 for (const priceId of prices.ACTIVE_PLAN_PRICE_IDS) {
-  test(`checkout ${prices.PLAN_PRICE_MAP[priceId].id}/${prices.PRICE_BILLING_CYCLE[priceId]} uses USD and matching addon`,async()=>{reset();delete state.user.stripe_subscription_id;const cycle=prices.PRICE_BILLING_CYCLE[priceId];const response=await routes.checkout(request({userId:uid,priceId,billingCycle:cycle,extraTeamQty:2,...(prices.PLAN_PRICE_MAP[priceId].id === 'school' ? {organizationDeclaration:'school'} : {})}));assert.equal(response.status,200);const params=state.checkouts[0].params;assert.equal(params.currency,'usd');assert.equal(params.adaptive_pricing.enabled,false);assert.deepEqual(params.automatic_tax,{enabled:true});assert.equal(params.billing_address_collection,'required');assert.deepEqual(params.customer_update,{address:'auto'});assert.equal(params.subscription_data.automatic_tax,undefined);assert.deepEqual(params.line_items,[{price:priceId,quantity:1},{price:prices.EXTRA_TEAM_PRICE_IDS[cycle],quantity:2}]);assert.equal(params.metadata.firebase_uid,uid);assert.equal(params.subscription_data.trial_period_days,5);});
+  test(`checkout ${prices.PLAN_PRICE_MAP[priceId].id}/${prices.PRICE_BILLING_CYCLE[priceId]} uses USD and matching addon`,async()=>{reset();delete state.user.stripe_subscription_id;const cycle=prices.PRICE_BILLING_CYCLE[priceId];const response=await routes.checkout(request({userId:uid,priceId,billingCycle:cycle,extraTeamQty:2,...(prices.PLAN_PRICE_MAP[priceId].id === 'school' ? {organizationDeclaration:'school'} : {})}));assert.equal(response.status,200);const params=state.checkouts[0].params;assert.equal(params.currency,'usd');assert.equal(params.adaptive_pricing.enabled,false);assert.deepEqual(params.automatic_tax,{enabled:true});assert.equal(params.billing_address_collection,'required');assert.deepEqual(params.customer_update,{address:'auto'});assert.equal(params.subscription_data.automatic_tax,undefined);assert.deepEqual(params.line_items,[{price:taxFixture.id(prices.PLAN_PRICE_MAP[priceId].id,cycle),quantity:1},{price:taxFixture.id('extra_team',cycle),quantity:2}]);assert.equal(params.metadata.firebase_uid,uid);assert.equal(params.subscription_data.trial_period_days,5);});
 }
 test('checkout rejects recognized CAD price and mismatched interval before session creation',async()=>{for(const input of [{priceId:legacy,billingCycle:'monthly'},{priceId:monthly,billingCycle:'annual'}]){reset();const r=await routes.checkout(request({userId:uid,...input}));assert.equal(r.status,400);assert.equal(state.checkouts.length,0);}});
 
@@ -85,3 +89,44 @@ test('demo profile cannot create automatic-tax checkout or change entitlements',
 test('existing subscription change does not silently retrofit tax settings',async()=>{reset();await upgrade();assert.equal(state.updates.length,1);assert.equal(Object.hasOwn(state.updates[0].params,'automatic_tax'),false)});
 
 test('buyer parameters cannot disable automatic tax or replace USD/Standard mode',async()=>{reset();delete state.user.stripe_subscription_id;const r=await routes.checkout(request({userId:uid,priceId:monthly,currency:'cad',automatic_tax:{enabled:false},managed_payments:{enabled:true}}));assert.equal(r.status,200);const p=state.checkouts[0].params;assert.equal(p.currency,'usd');assert.equal(p.automatic_tax.enabled,true);assert.equal(p.managed_payments.enabled,false)});
+
+for (const route of ['checkout','legacyCheckout']) for (const priceId of prices.ACTIVE_PLAN_PRICE_IDS) for (const taxUse of ['personal','commercial']) {
+  const plan = prices.PLAN_PRICE_MAP[priceId].id, cycle = prices.PRICE_BILLING_CYCLE[priceId];
+  test(`${route}: ${plan}/${cycle}/${taxUse} selects fixed tax prices and retains canonical entitlement`, async () => {
+    reset(); delete state.user.stripe_subscription_id;
+    const r = await routes[route](request({ userId: uid, priceId, billingCycle: cycle, taxUse, extraTeams: 2, extraTeamQty: 2, organizationDeclaration: 'school' }));
+    assert.equal(r.status,200,await r.clone().text());
+    const p = state.checkouts[0].params;
+    assert.deepEqual(p.line_items,[{price:taxFixture.id(plan,cycle,taxUse),quantity:1},{price:taxFixture.id('extra_team',cycle,taxUse),quantity:2}]);
+    assert.equal(p.metadata.squad_tax_use,taxUse); assert.equal(p.subscription_data.metadata.squad_tax_use,taxUse);
+    assert.equal(routes.priceMap.PLAN_PRICE_MAP[p.line_items[0].price].id,plan);
+    assert.equal(routes.priceMap.PLAN_PRICE_MAP[p.line_items[0].price].teamLimit,prices.PLAN_PRICE_MAP[priceId].teamLimit);
+    assert(routes.priceMap.isExtraTeamPriceId(p.line_items[1].price));
+    assert(!routes.priceMap.ACTIVE_PLAN_PRICE_IDS.has(p.line_items[0].price));
+  });
+}
+for(const route of ['checkout','legacyCheckout']) test(`${route}: missing declaration and arbitrary variant reject before provider access`,async()=>{
+  for(const taxUse of [undefined,'school','business',true]) {
+    reset();const r=await routes[route](request({userId:uid,priceId:monthly,taxUse}));assert.equal(r.status,400);assert.equal(state.providerAccesses,0);assert.equal(state.checkouts.length,0);
+  }
+  reset();assert.equal((await routes[route](request({userId:uid,priceId:taxFixture.id('team','monthly'),taxUse:'personal'}))).status,400);assert.equal(state.providerAccesses,0);
+});
+test('tax catalog missing or provider tax mismatch cannot fall back to legacy preset',async()=>{
+  reset();delete process.env.SQUAD_STRIPE_SAAS_TAX_CATALOG;
+  try {assert.equal((await routes.checkout(request({userId:uid,priceId:monthly}))).status,503);assert.equal(state.checkouts.length,0);} finally {process.env.SQUAD_STRIPE_SAAS_TAX_CATALOG=taxFixture.raw;}
+  reset();state.stripe.prices.retrieve=async id=>{const p=await taxFixture.retrieve(id);p.product.tax_code='txcd_10103000';return p;};
+  assert.equal((await routes.checkout(request({userId:uid,priceId:monthly}))).status,503);assert.equal(state.checkouts.length,0);
+});
+for(const taxUse of ['personal','commercial']) test(`classified ${taxUse} subscription preserves its use through annual plan and seat changes`,async()=>{
+  reset();state.subscription.metadata={squad_tax_revision:'squad-saas-electronic-v1',squad_tax_use:taxUse};
+  state.subscription.items.data=[{id:'si_base',price:{id:taxFixture.id('team','monthly',taxUse)},quantity:1},{id:'si_extra',price:{id:taxFixture.id('extra_team','monthly',taxUse)},quantity:2}];
+  assert.equal((await upgrade()).status,200);assert.equal(state.updates[0].params.items[0].price,taxFixture.id('elite','annual',taxUse));assert.equal(state.updates[0].params.items[1].price,taxFixture.id('extra_team','annual',taxUse));
+  state.updates.length=0;
+  assert.equal((await routes.addon(request({userId:uid,quantity:3,operationId:'local_operation_123456'}))).status,200);
+  assert.equal(state.updates[0].params.items[0].price,taxFixture.id('extra_team','monthly',taxUse));
+});
+test('automatic display catalog checks both uses and retains ten existing selection aliases',async()=>{
+  reset();const r=await routes.displayCatalog();assert.equal(r.status,200);const {prices:display}=await r.json();assert.equal(display.length,10);
+  for(const p of display){assert.equal(p.currency,'USD');assert(!p.id.includes('fixture'));assert(p.amount>0);}
+  assert.equal(display.find(p=>p.id===monthly).amount,19.99);
+});

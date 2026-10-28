@@ -1,4 +1,6 @@
 import { schoolPlanEligibilityError } from '@/lib/school-plan-eligibility';
+import { SaasTaxConfigurationError } from '@/lib/saas-tax-catalog';
+import { subscriptionSaasTaxUse, resolveVerifiedSaasTaxPrice } from '@/lib/server-saas-tax-catalog';
 import { assertManagedSubscriptionChange, assertManagedReceipt, ManagedCheckoutUnavailable, ManagedCoverageUnavailable } from '@/lib/stripe-managed-checkout';
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
@@ -141,21 +143,23 @@ export async function POST(req: NextRequest) {
     const addonItem = subscription.items.data.find(item =>
       isExtraTeamPriceId(item.price.id)
     );
-    const items: any[] = [{ id: basePlanItem.id, price: newPriceId }];
+    const taxUse = subscriptionSaasTaxUse(subscription);
+    const targetPriceId = taxUse ? await resolveVerifiedSaasTaxPrice(stripe, resolvedPlan.id, billingCycle, taxUse) : newPriceId;
+    const targetAddonPriceId = taxUse && addonItem
+      ? await resolveVerifiedSaasTaxPrice(stripe, 'extra_team', billingCycle, taxUse)
+      : billingCycle === 'annual' ? EXTRA_TEAM_PRICE_IDS.annual : EXTRA_TEAM_PRICE_IDS.monthly;
+    const items: any[] = [{ id: basePlanItem.id, price: targetPriceId }];
     if (addonItem) {
       items.push({
         id: addonItem.id,
-        price:
-          billingCycle === 'annual'
-            ? EXTRA_TEAM_PRICE_IDS.annual
-            : EXTRA_TEAM_PRICE_IDS.monthly,
+        price: targetAddonPriceId,
         quantity: addonItem.quantity || 0,
       });
     }
     const idempotencyKey = buildCheckoutIdempotencyKey({
       route: 'subscription-update',
       userId,
-      priceId: newPriceId,
+      priceId: targetPriceId,
       billingCycle,
       quantity: addonItem?.quantity || 0,
       customerId: typeof subscription.customer === 'string' ? subscription.customer : subscription.customer.id,
@@ -230,6 +234,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, subscription: effectiveSubscription });
   } catch (err: any) {
+    if (err instanceof SaasTaxConfigurationError) return NextResponse.json({ error: err.message }, { status: err.status });
     if (err instanceof ManagedCheckoutUnavailable || err instanceof ManagedCoverageUnavailable) return NextResponse.json({ error: err.message }, { status: 409 });
     if (err instanceof SubscriptionMutationInProgressError) {
       return NextResponse.json(

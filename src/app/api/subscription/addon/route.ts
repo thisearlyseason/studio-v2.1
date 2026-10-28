@@ -1,4 +1,6 @@
 import { assertManagedSubscriptionChange, assertManagedReceipt, ManagedCheckoutUnavailable, ManagedCoverageUnavailable } from '@/lib/stripe-managed-checkout';
+import { SaasTaxConfigurationError } from '@/lib/saas-tax-catalog';
+import { subscriptionSaasTaxUse, resolveVerifiedSaasTaxPrice } from '@/lib/server-saas-tax-catalog';
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { getStripe } from '@/lib/stripe-client';
@@ -121,8 +123,10 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'Could not determine the subscription billing cycle.' }, { status: 409 });
     }
 
-    const targetAddonPriceId =
-      billingCycle === 'annual' ? EXTRA_TEAM_PRICE_IDS.annual : EXTRA_TEAM_PRICE_IDS.monthly;
+    const taxUse = subscriptionSaasTaxUse(subscription);
+    const targetAddonPriceId = taxUse
+      ? await resolveVerifiedSaasTaxPrice(stripe, 'extra_team', billingCycle, taxUse)
+      : billingCycle === 'annual' ? EXTRA_TEAM_PRICE_IDS.annual : EXTRA_TEAM_PRICE_IDS.monthly;
 
     // Check if add-on item already exists
     const addonItem = subscription.items.data.find(
@@ -225,6 +229,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ success: true, subscription: updatedSubscription });
   } catch (err: any) {
+    if (err instanceof SaasTaxConfigurationError) return NextResponse.json({ error: err.message }, { status: err.status });
     if (err instanceof ManagedCheckoutUnavailable || err instanceof ManagedCoverageUnavailable) return NextResponse.json({ error: err.message }, { status: 409 });
     if (err instanceof SubscriptionMutationInProgressError) {
       return NextResponse.json(
