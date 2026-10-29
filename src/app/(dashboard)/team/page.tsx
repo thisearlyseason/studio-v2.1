@@ -1,6 +1,7 @@
 
 "use client";
 import { CoverEditor } from '@/components/team-home/cover-editor';
+import { TeamCover } from '@/components/team-home/team-cover';
 
 import OrganizerGuide from '@/components/guidance/OrganizerGuide';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
@@ -238,11 +239,11 @@ export default function TeamProfilePage() {
       try {
         const uploaded=await uploadScopedMedia(`teams/${activeTeam.id}/branding/logo`,e.target.files[0],await getAuthToken(firebaseAuth));
         if(db){await updateDoc(doc(db,'teams',activeTeam.id),{teamLogoUrl:uploaded.url});setLogoRevision(revision=>revision+1);propagateLogoToLeagues(activeTeam.id,uploaded.url);}
-        toast({ title: 'Squad Branding Updated', description: 'Identity assets synchronized across the matrix.' });
+        toast({ title: 'Squad Branding Updated', description: 'Your team logo has been updated.' });
         setIsUpdatingLogo(false);
       } catch (err) {
         setIsUpdatingLogo(false);
-        toast({ title: "Branding Failed", description: "Identity synchronization interrupted.", variant: "destructive" });
+        toast({ title: "Branding Failed", description: "Your team logo could not be saved. Please try again.", variant: "destructive" });
       }
     }
   };
@@ -472,7 +473,9 @@ export default function TeamProfilePage() {
 
       <section className="relative">
         <div className="h-40 sm:h-56 w-full hero-gradient rounded-[2.5rem] shadow-2xl overflow-hidden relative">
-          {activeTeam.heroImageUrl ? (
+          {activeTeam.homeCover ? (
+            <TeamCover key={activeTeam.homeCover.id} team={activeTeam} />
+          ) : activeTeam.heroImageUrl ? (
             <img src={activeTeam.heroImageUrl} alt="Team Cover" className="w-full h-full object-cover opacity-30" />
           ) : (
             <div className="absolute inset-0 bg-primary/20" />
@@ -480,7 +483,7 @@ export default function TeamProfilePage() {
           <div className="absolute inset-0 bg-black/20" />
         </div>
         
-        <div className="container px-6 -mt-20 flex flex-col sm:flex-row items-center sm:items-end gap-6 pb-2">
+        <div className="container px-6 mt-6 sm:mt-8 flex flex-col sm:flex-row items-center sm:items-end gap-6 pb-2">
           <div className="relative group">
             <input type="file" ref={logoInputRef} className="hidden" accept="image/*" onChange={handleLogoChange} />
             <Avatar className="h-40 w-40 border-0 bg-transparent shadow-none rounded-none">
@@ -594,7 +597,7 @@ export default function TeamProfilePage() {
                  <div className="bg-white/20 p-3 rounded-2xl"><Camera className="h-6 w-6" /></div>
                  <div>
                     <CardTitle className="text-2xl font-black uppercase tracking-tight">Squad Branding</CardTitle>
-                    <CardDescription className="text-white/60 font-bold text-[10px] uppercase tracking-widest">Architectural Team Identity</CardDescription>
+                    <CardDescription className="text-white/60 font-bold text-[10px] uppercase tracking-widest">Team cover photo and logo</CardDescription>
                  </div>
               </div>
             </CardHeader>
@@ -634,8 +637,8 @@ export default function TeamProfilePage() {
                   
                   <div className="flex-1 space-y-4">
                      <div className="space-y-1">
-                        <h4 className="text-xl font-black uppercase tracking-tight">Identity Synchronization</h4>
-                        <p className="text-xs font-bold text-muted-foreground uppercase leading-relaxed">Your squad logo is the primary identifier across the entire platform. It will appear on match schedules, tournament brackets, and parent communications.</p>
+                        <h4 className="text-xl font-black uppercase tracking-tight">Team logo</h4>
+                        <p className="text-xs font-bold text-muted-foreground uppercase leading-relaxed">Upload your team’s logo here. It appears beside your team name on the dashboard, match schedules and tournament brackets. The wide photo above is your team cover.</p>
                      </div>
                      <div className="flex flex-col gap-2">
                         <div className="flex items-center gap-2 text-emerald-600">
@@ -653,7 +656,7 @@ export default function TeamProfilePage() {
                        onClick={() => logoInputRef.current?.click()}
                        disabled={isUpdatingLogo}
                      >
-                       {activeTeam.teamLogoUrl ? "Update Identity Asset" : "Initialize Branding"}
+                       {activeTeam.teamLogoUrl ? "Change team logo" : "Upload team logo"}
                      </Button>
                      {activeTeam.teamLogoUrl && (
                        <Button
