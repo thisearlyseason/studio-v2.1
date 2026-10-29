@@ -11,6 +11,7 @@ import {
   validateLeagueDeploymentIntegrity,
 } from '../src/lib/server-schedule-deployment.ts';
 import { generateLeagueSchedule } from '../src/lib/scheduler-utils.ts';
+import { generateIntelligentLeagueSchedule } from '../src/lib/intelligent-scheduler.ts';
 import { publicLeague, scorekeeperLeague } from '../src/lib/public-portal-data.ts';
 import { communicationDb, loadCommunicationRoute } from './helpers/communication-route-harness.mjs';
 
@@ -620,4 +621,28 @@ test('a Free league owner can deploy and retain a complete season schedule',asyn
  const {db,records}=communicationDb({...scheduleFixture,'users/owner':{role:'coach',plan_type:'free'},'teams/host':{ownerUserId:'owner',planId:'free',isPro:false}},{serializeTransactions:true,enforceReadBeforeWrite:true});
  const app=await loadCommunicationRoute('../../src/app/api/leagues/schedule/route.ts',db,{uid:'owner'});
  try{const response=await app.route.POST(scheduleRequest(replacement));assert.equal(response.status,200,JSON.stringify(await response.clone().json()));assert.equal(records.get('leagues/league-a').schedule.length,1);assert.equal(records.get('leagues/league-a').schedule[0].id,'game-a');}finally{app.dispose();}
+});
+
+test('Free league manual team entry reaches a generated season schedule without private portal fields',async()=>{
+ const {buildManualLeagueTeamUpdate}=await import('../src/lib/league-lifecycle-client-policy.ts');
+ const {db,records}=communicationDb({...scheduleFixture,'users/owner':{role:'coach',plan_type:'free'},'teams/host':{ownerUserId:'owner',planId:'free',isPro:false},'leagues/league-a':{...scheduleFixture['leagues/league-a'],teams:{},memberTeamIds:[]}},{serializeTransactions:true,enforceReadBeforeWrite:true});
+ const lifecycle=await loadCommunicationRoute('../../src/app/api/leagues/lifecycle/route.ts',db,{uid:'owner'}),schedule=await loadCommunicationRoute('../../src/app/api/leagues/schedule/route.ts',db,{uid:'owner'});
+ try{
+  for(const [index,id,name] of [[0,'manual_alpha','Alpha'],[1,'manual_beta','Beta']]){
+   const updates=buildManualLeagueTeamUpdate({teamId:id,teamName:name,coachName:'',coachEmail:'',inviteCode:'',createdAt:'2026-10-28T12:00:00.000Z',includePrivateFields:false});
+   assert.deepEqual(updates.teamUpdate.privateFields,{});
+   const response=await lifecycle.route.PATCH(new Request(scheduleRequest({action:'edit',leagueId:'league-a',requestId:`free-manual-stage-${index}`,expectedVersion:index+1,updates}),{method:'PATCH'}));
+   assert.equal(response.status,200,JSON.stringify(await response.clone().json()));
+  }
+  assert.equal(records.get('leagues/league-a').teams.manual_alpha.status,'accepted');
+  const resourceId='manual_owner:Community Field';
+  const configured=await schedule.route.POST(scheduleRequest({action:'configure',leagueId:'league-a',requestId:'free-manual-config-001',expectedVersion:3,config:{...scheduleFixture['leagues/league-a'].schedulerConfig,selectedFields:[resourceId]}}));
+  assert.equal(configured.status,200,JSON.stringify(await configured.clone().json()));
+  const config = records.get('leagues/league-a').schedulerConfig;
+  const {games,report}=generateIntelligentLeagueSchedule({...config,gameLength:Number(config.gameLength),breakLength:Number(config.breakLength),gamesPerTeam:Number(config.gamesPerTeam),teams:[{id:'manual_alpha',name:'Alpha'},{id:'manual_beta',name:'Beta'}],fields:[{id:resourceId,name:'Community Field'}]});
+  assert.equal(report.isValid,true,JSON.stringify(report));
+  const response=await schedule.route.POST(scheduleRequest({...replacement,expectedVersion:records.get('leagues/league-a').lifecycleVersion,games}));
+  assert.equal(response.status,200,JSON.stringify(await response.clone().json()));assert.equal(records.get('leagues/league-a').schedule.length,1);
+  assert.deepEqual(records.get('leagues/league-a/private/lifecycle')?.teamContacts?.manual_alpha || {},{});
+ }finally{lifecycle.dispose();schedule.dispose();}
 });

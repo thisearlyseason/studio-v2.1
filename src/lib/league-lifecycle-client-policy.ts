@@ -31,6 +31,7 @@ export function buildManualLeagueTeamUpdate({
   coachEmail,
   inviteCode,
   createdAt,
+  includePrivateFields = true,
 }: {
   teamId: string;
   teamName: string;
@@ -38,6 +39,7 @@ export function buildManualLeagueTeamUpdate({
   coachEmail: string;
   inviteCode: string;
   createdAt: string;
+  includePrivateFields?: boolean;
 }) {
   return {
     teamUpdate: {
@@ -52,11 +54,11 @@ export function buildManualLeagueTeamUpdate({
         manual: true,
         createdAt,
       },
-      privateFields: {
+      privateFields: includePrivateFields ? {
         coachName: coachName.trim(),
         coachEmail: coachEmail.trim().toLowerCase(),
         inviteCode: inviteCode.trim().toUpperCase(),
-      },
+      } : {},
     },
   };
 }

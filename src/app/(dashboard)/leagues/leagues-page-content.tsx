@@ -150,10 +150,12 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
   const pendingConfigurations = useRef(new Map<string, { requestId: string; expectedVersion: number; invalidateExisting: boolean }>());
   const { user: authUser } = useUser();
   const firebaseAuth = useAuth();
-  const { db, updateLeague, updateLeagueSchedule, hasFeature, isSchoolMode } = useTeam();
+  const { db, updateLeague, updateLeagueSchedule, hasFeature, isSchoolMode, isPro } = useTeam();
   const leagueLabel = isSchoolMode ? 'Program' : 'League';
   const [isProcessing, setIsProcessing] = useState(false);
   const [step, setStep] = useState(1);
+  const initializedLeague = useRef<string | null>(null);
+  const [fieldName, setFieldName] = useState('');
   const STEPS = ['Timeline', 'Parameters', 'Squads', 'Deploy'];
   
   const [newSquad, setNewSquad] = useState({ teamName: '', coachName: '', coachEmail: '' });
@@ -173,6 +175,9 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
   });
 
   useEffect(() => {
+    if (!isOpen) { initializedLeague.current = null; return; }
+    if (initializedLeague.current === league.id) return;
+    initializedLeague.current = league.id;
     if (isOpen) {
       const sc = (league as any).schedulerConfig;
       setConfig({
@@ -223,8 +228,8 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
   }, [league?.teams]);
 
   const handleAddSquad = async () => {
-    if (!newSquad.teamName.trim() || !newSquad.coachName.trim() || !newSquad.coachEmail.trim()) {
-      toast({ title: "Fields Required", description: "Team name, coach name, and coach email are all required.", variant: "destructive" });
+    if (!newSquad.teamName.trim() || (isPro && (!newSquad.coachName.trim() || !newSquad.coachEmail.trim()))) {
+      toast({ title: "Fields Required", description: isPro ? "Team name, coach name, and coach email are all required." : "Enter a team name.", variant: "destructive" });
       return;
     }
     setIsProcessing(true);
@@ -233,6 +238,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
         leagueId: league.id,
         teamId: `manual_${crypto.randomUUID()}`,
         teamName: newSquad.teamName,
+        includePrivateFields: isPro,
         coachName: newSquad.coachName,
         coachEmail: newSquad.coachEmail,
         inviteCode: crypto.randomUUID().replace(/-/g, '').slice(0, 8),
@@ -441,6 +447,19 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
               </section>
               <section className="space-y-5 pt-6 border-t border-white/10">
                 <h3 className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Venue Allocation</h3>
+                <div className="space-y-3">
+                  <Label htmlFor="season-field-name" className="text-[9px] font-black uppercase text-white/60">Field or court name</Label>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <Input id="season-field-name" value={fieldName} maxLength={80} onChange={event => setFieldName(event.target.value)} placeholder="e.g. Community Field" className="h-12 rounded-xl bg-white/10 border-white/20 text-white" />
+                    <Button type="button" disabled={!fieldName.trim()} onClick={() => {
+                      const id = `manual_${league.creatorId}:${fieldName.trim()}`;
+                      setConfig(previous => ({ ...previous, selectedFields: previous.selectedFields.includes(id) ? previous.selectedFields : [...previous.selectedFields, id] }));
+                      setFieldName('');
+                    }} className="h-12 rounded-xl">Add field</Button>
+                  </div>
+                  <p className="text-xs text-white/60">Enter a location for this schedule, or select a saved facility below.</p>
+                  {config.selectedFields.filter(id => id.startsWith('manual_')).map(id => <div key={id} className="flex items-center justify-between gap-3 text-sm text-white"><span>{id.slice(id.indexOf(':') + 1)}</span><Button type="button" variant="ghost" className="text-white hover:text-white hover:bg-white/10" aria-label={`Remove ${id.slice(id.indexOf(':') + 1)}`} onClick={() => setConfig(previous => ({ ...previous, selectedFields: previous.selectedFields.filter(value => value !== id) }))}>Remove</Button></div>)}
+                </div>
                 <ScrollArea className="h-56 border border-white/10 rounded-4xl bg-white/5 p-6">
                   {facilities?.length ? facilities.map(f => (
                     <div key={f.id} className="space-y-4 mb-8 last:mb-0">
@@ -466,7 +485,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                       <div key={team.id} className="flex items-center justify-between bg-white/5 p-4 rounded-xl border border-white/10">
                         <div>
                           <p className="text-sm font-black uppercase text-white">{team.name}</p>
-                          <p className="text-[9px] font-bold text-white/40 uppercase mt-0.5">Coach: {team.coachName || 'N/A'} • {team.coachEmail || 'N/A'}</p>
+                          {isPro && <p className="text-[9px] font-bold text-white/40 uppercase mt-0.5">Coach: {team.coachName || 'N/A'} • {team.coachEmail || 'N/A'}</p>}
                         </div>
                         <Badge className="bg-primary/20 text-primary border border-primary/30 text-[8px] font-black uppercase">Enrolled</Badge>
                       </div>
@@ -489,7 +508,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                       className="h-12 rounded-xl bg-white/10 border-white/20 font-bold text-white px-4 text-xs" 
                     />
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2" hidden={!isPro}>
                     <Label className="text-[9px] font-black uppercase text-white/60 ml-1">Coach Name</Label>
                     <Input 
                       placeholder="e.g. John Doe" 
@@ -498,7 +517,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                       className="h-12 rounded-xl bg-white/10 border-white/20 font-bold text-white px-4 text-xs" 
                     />
                   </div>
-                  <div className="space-y-2">
+                  <div className="space-y-2" hidden={!isPro}>
                     <Label className="text-[9px] font-black uppercase text-white/60 ml-1">Coach Email</Label>
                     <Input 
                       placeholder="e.g. coach@domain.com" 
