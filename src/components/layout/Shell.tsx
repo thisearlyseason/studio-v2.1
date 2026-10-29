@@ -953,6 +953,8 @@ function ShellContent({ children }: { children: React.ReactNode }) {
                   <SquadSwitcherMenu activeTeam={activeTeam} teams={teams} setActiveTeam={setActiveTeam} router={router} user={user} isSchoolMode={isSchoolMode} isPrimaryClubAuthority={isPrimaryClubAuthority} isEliteAccount={isEliteAccount} isEliteClubMode={isEliteClubMode} onClose={() => setMobileSwitcherOpen(null)} />
                 </DropdownMenu>
                 <nav aria-label="Main navigation" className="modern-header-nav"><Link href="/dashboard" aria-current={pathname === '/dashboard' ? 'page' : undefined}>Dashboard</Link>
+                  <Link href="/teams/join" aria-current={pathname.startsWith('/teams/join') ? 'page' : undefined}>Join</Link>
+                  <Link href="/sports-hub" className="modern-header-sports-link" aria-current={pathname.startsWith('/sports-hub') ? 'page' : undefined}><BookOpen className="h-4 w-4" aria-hidden="true"/>Sports Hub</Link>
                   <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="modern-tools-trigger" aria-label="Team tools"><Menu className="h-4 w-4"/><span className="modern-tools-label">Team tools</span></Button></DropdownMenuTrigger><DropdownMenuContent align="start" className="modern-tools-menu">
                     <DropdownMenuLabel>Team tools</DropdownMenuLabel>
                     {filteredCoordTabs.map(tab => <DropdownMenuItem key={tab.href} onSelect={() => { if (tab.pro && !isPro) purchasePro(); else router.push(tab.href); }}><tab.icon className="h-4 w-4"/>{tab.name}{tab.pro && !isPro && <Lock className="ml-auto h-3 w-3" aria-label="Upgrade required"/>}</DropdownMenuItem>)}
@@ -978,7 +980,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
                 </div>
               </div>}
               {!isModernLayout && <div className="md:hidden"><BrandLogo variant="light-background" className="h-6 w-28" /></div>}
-              <div className="flex items-center gap-2 md:gap-3">
+              <div className={cn("flex items-center gap-2 md:gap-3", isModernLayout && "modern-header-actions")}>
                 {isStaff && <CreateAlertButton />}
                 <AlertsHistoryDialog>
                   <AlertsBellButton unreadCount={unreadAlertsCount} />
