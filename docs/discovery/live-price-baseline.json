@@ -1,0 +1,46 @@
+{
+  "observedDate": "2026-11-03",
+  "source": "https://www.thesquad.pro/api/billing/display-catalog",
+  "prices": [
+    {
+      "formatted": "USD 19.99",
+      "interval": "month"
+    },
+    {
+      "formatted": "USD 199.00",
+      "interval": "year"
+    },
+    {
+      "formatted": "USD 119.00",
+      "interval": "month"
+    },
+    {
+      "formatted": "USD 1,119.00",
+      "interval": "year"
+    },
+    {
+      "formatted": "USD 279.00",
+      "interval": "month"
+    },
+    {
+      "formatted": "USD 2,790.00",
+      "interval": "year"
+    },
+    {
+      "formatted": "USD 175.00",
+      "interval": "month"
+    },
+    {
+      "formatted": "USD 1,750.00",
+      "interval": "year"
+    },
+    {
+      "formatted": "USD 15.99",
+      "interval": "month"
+    },
+    {
+      "formatted": "USD 159.00",
+      "interval": "year"
+    }
+  ]
+}

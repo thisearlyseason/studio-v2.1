@@ -1,3 +1,4 @@
+import { publicRobots } from '@/lib/discovery-metadata';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { getSportsHubTemplate, SPORTS_HUB_TEMPLATES } from '@/lib/sports-hub-template-catalog';
@@ -18,9 +19,10 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
   return {
     title,
     description: template.description,
+    robots: publicRobots,
     alternates: { canonical: `/sports-hub/templates/${template.slug}` },
-    openGraph: { type: 'article', url, title, description: template.description, siteName: 'The Squad' },
-    twitter: { card: 'summary_large_image', title, description: template.description },
+    openGraph: { images: [{ url: '/og-image.png', width: 1376, height: 768, alt: 'The Squad sports team management' }], type: 'article', url, title, description: template.description, siteName: 'The Squad' },
+    twitter: { images: ['/og-image.png'], card: 'summary_large_image', title, description: template.description },
   };
 }
 

@@ -1,11 +1,3 @@
-import type { Metadata } from 'next';
-
-export const metadata: Metadata = {
-  title: 'Privacy Policy | The Squad',
-  description: 'How The Squad collects, uses, protects, and manages personal information.',
-  alternates: { canonical: '/privacy' },
-};
-
-export default function PrivacyLayout({ children }: { children: React.ReactNode }) {
-  return children;
-}
+import { discoveryMetadata } from '@/lib/discovery-metadata';
+export const metadata = discoveryMetadata('/privacy', 'Privacy Policy', 'How The Squad collects, uses, protects, and manages personal information.');
+export default function Layout({ children }: { children: React.ReactNode }) { return children; }

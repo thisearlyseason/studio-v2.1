@@ -7,6 +7,11 @@
 runtime: nodejs24
 
 env:
+  - variable: SITE_INDEXING
+    value: disabled
+    availability:
+      - BUILD
+      - RUNTIME
   - variable: NEXT_PUBLIC_APP_URL
     value: https://studio--the-squad-v2-staging.us-east4.hosted.app
     availability:

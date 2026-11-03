@@ -26,7 +26,7 @@ test('canonical plans retain one capacity across every administrative surface', 
     source('../src/app/api/admin/users/[uid]/entitlement/route.ts'),
     source('../src/app/admin/page.tsx'),
     source('../src/components/providers/team-provider.tsx'),
-    source('../src/app/page.tsx'),
+    source('../src/components/marketing/home-page.tsx'),
   ]);
   assert.match(endpoint, /getPlanTeamLimit\(planId\)/);
   assert.match(endpoint, /adminAuditLogs/);
@@ -333,7 +333,7 @@ for (const file of ['../src/components/layout/Shell.tsx', '../src/app/(dashboard
 test('demo launch creates its protected profile before entering dashboard routes', async () => {
   const [login, landing, clientAuth] = await Promise.all([
     source('../src/app/login/page.tsx'),
-    source('../src/app/page.tsx'),
+    source('../src/components/marketing/home-page.tsx'),
     source('../src/lib/client-auth.ts'),
   ]);
 

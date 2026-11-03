@@ -1,3 +1,4 @@
+import { publicRobots } from '@/lib/discovery-metadata';
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -24,6 +25,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
   return {
     title: landing.seoTitle,
     description: landing.seoDescription,
+    robots: publicRobots,
     alternates: { canonical: url },
     keywords: [
       `${landing.name.toLowerCase()} team management software`,

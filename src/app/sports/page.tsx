@@ -1,3 +1,4 @@
+import { publicRobots } from '@/lib/discovery-metadata';
 import type { Metadata } from 'next';
 import Image from 'next/image';
 import Link from 'next/link';
@@ -10,7 +11,8 @@ import { SportResources } from '@/components/marketing/sport-resources';
 export const metadata: Metadata = {
   title: 'Sports Team and League Management Software by Sport',
   description: 'Explore sport-specific registration, scheduling, team communication, roster, league, and tournament management workflows in The Squad.',
-  alternates: { canonical: '/sports' },
+  robots: publicRobots,
+    alternates: { canonical: '/sports' },
   openGraph: {
     type: 'website',
     url: 'https://www.thesquad.pro/sports',

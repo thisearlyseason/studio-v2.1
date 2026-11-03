@@ -15,6 +15,7 @@ export function isDistributionContentAvailable(
 }
 
 const STORE_BLOCKED_ROOTS = [
+  '/plans',
   '/pricing',
   '/checkout',
   '/dashboard/billing',

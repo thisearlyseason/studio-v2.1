@@ -1,3 +1,4 @@
+import { publicRobots } from '@/lib/discovery-metadata';
 import React from 'react';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
@@ -57,9 +58,10 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   return {
     title,
     description: resource.description,
+    robots: publicRobots,
     alternates: { canonical: `/sports-hub/resources/${id}` },
-    openGraph: { type: 'article', url, title, description: resource.description, siteName: 'The Squad' },
-    twitter: { card: 'summary_large_image', title, description: resource.description },
+    openGraph: { images: [{ url: '/og-image.png', width: 1376, height: 768, alt: 'The Squad sports team management' }], type: 'article', url, title, description: resource.description, siteName: 'The Squad' },
+    twitter: { images: ['/og-image.png'], card: 'summary_large_image', title, description: resource.description },
   };
 }
 

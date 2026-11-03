@@ -25,7 +25,7 @@ export async function generateMetadata({ params }: Omit<Props, 'children'>): Pro
   if (!league) notFound();
   return {
     title: `${String(league.name || 'League')} | The Squad Spectator Hub`,
-    robots: { index: true, follow: true },
+    robots: { index: false, follow: false },
   };
 }
 

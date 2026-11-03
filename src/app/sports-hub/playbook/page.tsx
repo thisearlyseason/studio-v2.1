@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useState, Suspense } from 'react';
+import React, { useState, useEffect, Suspense } from 'react';
 import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
 import { motion } from 'framer-motion';
@@ -116,10 +116,14 @@ function ResourceCard({ resource }: { resource: Resource }) {
   );
 }
 
-function PlaybookContent() {
+function QueryFilter({ onType }: { onType: (type: string) => void }) {
   const searchParams = useSearchParams();
-  const initialType = searchParams.get('type') || 'all';
-  const [typeFilter, setTypeFilter] = useState(initialType);
+  useEffect(() => { onType(searchParams.get('type') || 'all'); }, [searchParams, onType]);
+  return null;
+}
+
+function PlaybookContent() {
+  const [typeFilter, setTypeFilter] = useState('all');
   const [sportFilter, setSportFilter] = useState('all');
   const [difficultyFilter, setDifficultyFilter] = useState<Difficulty | 'all'>('all');
   const [searchQuery, setSearchQuery] = useState('');
@@ -138,6 +142,7 @@ function PlaybookContent() {
 
   return (
     <div className="max-w-7xl mx-auto px-4 md:px-8 py-8 md:py-12 space-y-12">
+      <Suspense fallback={null}><QueryFilter onType={setTypeFilter} /></Suspense>
 
       {/* Header */}
       <motion.div initial="hidden" animate="visible" variants={fadeUp}>
@@ -299,8 +304,6 @@ function PlaybookContent() {
 
 export default function PlaybookPage() {
   return (
-    <Suspense fallback={<div className="min-h-screen flex items-center justify-center text-muted-foreground font-medium">Loading playbook...</div>}>
-      <PlaybookContent />
-    </Suspense>
+    <PlaybookContent />
   );
 }

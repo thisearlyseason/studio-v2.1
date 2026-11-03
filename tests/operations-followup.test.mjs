@@ -145,7 +145,7 @@ test('production configuration has no external AI provider dependency', async ()
   const envCheck = await readSource('../scripts/check-production-env.mjs');
   const coachesCorner = await readSource('../src/app/(dashboard)/coaches-corner/page.tsx');
   const chat = await readSource('../src/app/(dashboard)/chats/[chatId]/page.tsx');
-  const landing = await readSource('../src/app/page.tsx');
+  const landing = await readSource('../src/components/marketing/home-page.tsx');
   const guide = await readSource('../src/app/how-to/page.tsx');
   const packageJson = JSON.parse(await readSource('../package.json'));
   const functionsPackage = JSON.parse(await readSource('../functions/package.json'));

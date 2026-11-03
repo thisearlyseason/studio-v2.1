@@ -1,11 +1,3 @@
-import type { Metadata } from 'next';
-
-export const metadata: Metadata = {
-  title: 'Terms of Service | The Squad',
-  description: 'Terms governing use of The Squad sports management platform.',
-  alternates: { canonical: '/terms' },
-};
-
-export default function TermsLayout({ children }: { children: React.ReactNode }) {
-  return children;
-}
+import { discoveryMetadata } from '@/lib/discovery-metadata';
+export const metadata = discoveryMetadata('/terms', 'Terms of Service', 'Terms governing use of The Squad sports management platform.');
+export default function Layout({ children }: { children: React.ReactNode }) { return children; }

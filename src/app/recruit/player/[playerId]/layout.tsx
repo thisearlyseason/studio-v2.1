@@ -24,7 +24,7 @@ export async function generateMetadata({ params }: Omit<Props, 'children'>): Pro
   const name = [player.firstName, player.lastName].filter(Boolean).join(' ') || 'Athlete';
   return {
     title: `${name} | The Squad Scout Portal`,
-    robots: { index: true, follow: true },
+    robots: { index: false, follow: false },
     alternates: { canonical: `/recruit/player/${playerId}` },
   };
 }

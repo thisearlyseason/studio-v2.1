@@ -1,3 +1,4 @@
+import { publicRobots } from '@/lib/discovery-metadata';
 import { Metadata } from 'next';
 
 export const metadata: Metadata = {
@@ -8,7 +9,7 @@ export const metadata: Metadata = {
     'sports news', 'coaching news', 'youth sports', 'sports science', 'team management',
     'tournament management', 'strength conditioning', 'sports nutrition',
   ],
-  openGraph: {
+  openGraph: { images: [{ url: '/og-image.png', width: 1376, height: 768, alt: 'The Squad sports team management' }],
     title: 'Industry News | Sports Hub',
     description: 'Live sports industry news from trusted sources — updated every 30 minutes.',
     type: 'website',
@@ -20,7 +21,8 @@ export const metadata: Metadata = {
     title: 'Industry News | Sports Hub',
     description: 'Live sports industry news from trusted sources — updated every 30 minutes.',
   },
-  alternates: {
+  robots: publicRobots,
+    alternates: {
     canonical: 'https://www.thesquad.pro/sports-hub/news',
   },
 };

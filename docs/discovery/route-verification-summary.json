@@ -1,0 +1,87 @@
+{
+  "base": "http://localhost:9013",
+  "checkedAt": "2026-11-03T17:14:23.303Z",
+  "routes": 493,
+  "failures": [],
+  "duplicateTitles": [],
+  "brokenInternalLinks": [],
+  "utilities": [
+    {
+      "path": "/login",
+      "status": 200,
+      "canonicals": [],
+      "robots": "noindex, nofollow;noindex, nofollow",
+      "errors": []
+    },
+    {
+      "path": "/signup",
+      "status": 200,
+      "canonicals": [],
+      "robots": "noindex, nofollow;noindex, nofollow",
+      "errors": []
+    },
+    {
+      "path": "/beta",
+      "status": 200,
+      "canonicals": [],
+      "robots": "noindex, follow;",
+      "errors": []
+    },
+    {
+      "path": "/pricing",
+      "status": 307,
+      "canonicals": [],
+      "robots": ";",
+      "errors": []
+    },
+    {
+      "path": "/sports-hub/search",
+      "status": 200,
+      "canonicals": [],
+      "robots": "noindex, follow;",
+      "errors": []
+    },
+    {
+      "path": "/sports-hub/preferences",
+      "status": 200,
+      "canonicals": [],
+      "robots": "noindex, nofollow;",
+      "errors": []
+    },
+    {
+      "path": "/dashboard",
+      "status": 307,
+      "canonicals": [],
+      "robots": ";",
+      "errors": []
+    },
+    {
+      "path": "/sports/not-a-sport",
+      "status": 404,
+      "canonicals": [],
+      "robots": "noindex;noindex, nofollow",
+      "errors": []
+    },
+    {
+      "path": "/for/not-an-audience",
+      "status": 404,
+      "canonicals": [],
+      "robots": "noindex;noindex, nofollow",
+      "errors": []
+    },
+    {
+      "path": "/sports-hub/templates/not-a-template",
+      "status": 404,
+      "canonicals": [],
+      "robots": "noindex;noindex, nofollow",
+      "errors": []
+    },
+    {
+      "path": "/not-a-real-page",
+      "status": 404,
+      "canonicals": [],
+      "robots": "noindex;",
+      "errors": []
+    }
+  ]
+}

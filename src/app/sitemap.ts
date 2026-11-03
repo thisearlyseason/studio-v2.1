@@ -1,3 +1,4 @@
+import { isDiscoveryPreview } from '@/lib/discovery-metadata';
 import { MetadataRoute } from 'next'
 import { ARTICLES_LIST } from '@/lib/sports-hub-articles'
 import { RESOURCES } from '@/lib/sports-hub-resources'
@@ -13,6 +14,8 @@ const staticPages: Array<{
   priority: number;
 }> = [
   { path: '', changeFrequency: 'weekly', priority: 1 },
+  { path: '/plans', changeFrequency: 'monthly', priority: 0.8 },
+  { path: '/download', changeFrequency: 'monthly', priority: 0.8 },
   { path: '/how-to', changeFrequency: 'monthly', priority: 0.7 },
   { path: '/sports-hub', changeFrequency: 'daily', priority: 0.9 },
   { path: '/sports-hub/news', changeFrequency: 'daily', priority: 0.8 },
@@ -35,6 +38,7 @@ const staticPages: Array<{
 ]
  
 export default function sitemap(): MetadataRoute.Sitemap {
+  if (isDiscoveryPreview) return [];
   return [
     ...staticPages.map(page => ({
       url: `${baseUrl}${page.path}`,

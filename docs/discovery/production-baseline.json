@@ -1,0 +1,74 @@
+{
+  "observedAt": "2026-11-03T16:44:17.955Z",
+  "results": [
+    {
+      "url": "http://thesquad.pro/",
+      "status": 308,
+      "location": "https://thesquad.pro/",
+      "robots": null,
+      "responseMs": 424
+    },
+    {
+      "url": "https://thesquad.pro/",
+      "status": 307,
+      "location": "https://www.thesquad.pro/",
+      "robots": null,
+      "responseMs": 913
+    },
+    {
+      "url": "https://www.thesquad.pro/",
+      "status": 200,
+      "location": null,
+      "robots": null,
+      "responseMs": 754,
+      "title": "The Squad — Elite Sports Team Management Platform"
+    },
+    {
+      "url": "https://www.thesquad.pro/robots.txt",
+      "status": 200,
+      "location": null,
+      "robots": null,
+      "responseMs": 505,
+      "body": "User-Agent: *\nAllow: /\nDisallow: /api/\nDisallow: /admin/\nDisallow: /dashboard/\nDisallow: /embed/\nDisallow: /events/register/\nDisallow: /login\nDisallow: /onboarding\nDisallow: /public/\nDisallow: /leagues/scorekeeper/\nDisallow: /leagues/spectator/\nDisallow: /recruit/player/\nDisallow: /register/\nDisallow: /schedule-app/\nDisallow: /signup/\nDisallow: /tournaments/\nDisallow: /verify-email\n\nHost: www.thesquad.pro\nSitemap: https://www.thesquad.pro/sitemap.xml\n"
+    },
+    {
+      "url": "https://www.thesquad.pro/sitemap.xml",
+      "status": 200,
+      "location": null,
+      "robots": null,
+      "responseMs": 964,
+      "urls": 491
+    },
+    {
+      "url": "https://www.thesquad.pro/.well-known/assetlinks.json",
+      "status": 404,
+      "location": null,
+      "robots": null,
+      "responseMs": 343,
+      "title": "404: This page could not be found."
+    },
+    {
+      "url": "https://www.thesquad.pro/.well-known/apple-app-site-association",
+      "status": 404,
+      "location": null,
+      "robots": null,
+      "responseMs": 233,
+      "title": "404: This page could not be found."
+    },
+    {
+      "userAgent": "Googlebot",
+      "status": 200,
+      "containsProduct": true
+    },
+    {
+      "userAgent": "OAI-SearchBot",
+      "status": 200,
+      "containsProduct": true
+    },
+    {
+      "userAgent": "GPTBot",
+      "status": 200,
+      "containsProduct": true
+    }
+  ]
+}

@@ -116,12 +116,12 @@ function PDFTemplate({ title, description, category, content, tags }: Omit<Props
         }}>
           {category}
         </div>
-        <h1 style={{
+        <div style={{
           fontSize: '24px', fontWeight: 900, letterSpacing: '-0.03em',
           color: BRAND_DARK, margin: '0 0 8px 0', lineHeight: 1.15,
         }}>
           {title}
-        </h1>
+        </div>
         <p style={{ fontSize: '12px', color: BRAND_GRAY, margin: 0, lineHeight: 1.5, maxWidth: '680px' }}>
           {description}
         </p>

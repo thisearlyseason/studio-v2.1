@@ -57,7 +57,7 @@ test('contact delivery is accepted first and confirmed by webhook events', async
 test('admin notification and beta welcome callers check email responses', async () => {
   const notifyAdmin = await readSource('../src/app/api/public/notify-admin/route.ts');
   const admin = await readSource('../src/app/admin/page.tsx');
-  const landing = await readSource('../src/app/page.tsx');
+  const landing = await readSource('../src/components/marketing/home-page.tsx');
   const beta = await readSource('../src/app/beta/page.tsx');
 
   assert.match(notifyAdmin, /status: 502/);

@@ -21,7 +21,7 @@ test('six audience campaign pages are statically generated with unique metadata'
 test('audience pages use audience-specific features and preserve the original homepage', () => {
   const data = read('src/lib/audience-landing.ts');
   const component = read('src/components/marketing/audience-landing-page.tsx');
-  const homepage = read('src/app/page.tsx');
+  const homepage = read('src/components/marketing/home-page.tsx');
 
   assert.match(data, /Family-ready schedules/);
   assert.match(data, /Roster command/);

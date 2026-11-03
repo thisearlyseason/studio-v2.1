@@ -1,0 +1,570 @@
+route,classification,primary_intent,indexing,sitemap
+/,Public discovery,Brand and sports team management app,index; self canonical,yes
+/plans,Public discovery,"Compare web prices, team capacity and billing",index; self canonical,yes
+/download,Public discovery,Install iOS app and understand platform availability,index; self canonical,yes
+/how-to,Public discovery,Set up and use The Squad; product support,index; self canonical,yes
+/sports-hub,Public discovery,sports hub information/library,index; self canonical,yes
+/sports-hub/news,Public discovery,sports hub/news information/library,index; self canonical,yes
+/sports-hub/youth,Public discovery,sports hub/youth information/library,index; self canonical,yes
+/sports-hub/coaching,Public discovery,sports hub/coaching information/library,index; self canonical,yes
+/sports-hub/team-management,Public discovery,sports hub/team management information/library,index; self canonical,yes
+/sports-hub/parents,Public discovery,sports hub/parents information/library,index; self canonical,yes
+/sports-hub/tournaments,Public discovery,sports hub/tournaments information/library,index; self canonical,yes
+/sports-hub/resources,Public discovery,sports hub/resources information/library,index; self canonical,yes
+/sports-hub/playbook,Public discovery,sports hub/playbook information/library,index; self canonical,yes
+/sports-hub/templates,Public discovery,sports hub/templates information/library,index; self canonical,yes
+/sports-hub/featured,Public discovery,sports hub/featured information/library,index; self canonical,yes
+/cookies,Public discovery,cookies information/library,index; self canonical,yes
+/refunds,Public discovery,refunds information/library,index; self canonical,yes
+/privacy,Public discovery,privacy information/library,index; self canonical,yes
+/terms,Public discovery,terms information/library,index; self canonical,yes
+/safety,Public discovery,safety information/library,index; self canonical,yes
+/refer-a-coach,Public discovery,refer a coach information/library,index; self canonical,yes
+/sports,Public discovery,sports information/library,index; self canonical,yes
+/for/parents,Public discovery,parents sports program workflows,index; self canonical,yes
+/for/coaches,Public discovery,coaches sports program workflows,index; self canonical,yes
+/for/leagues,Public discovery,leagues sports program workflows,index; self canonical,yes
+/for/tournaments,Public discovery,tournaments sports program workflows,index; self canonical,yes
+/for/schools,Public discovery,schools sports program workflows,index; self canonical,yes
+/for/municipalities,Public discovery,municipalities sports program workflows,index; self canonical,yes
+/sports/soccer,Public discovery,soccer team and competition management,index; self canonical,yes
+/sports/basketball,Public discovery,basketball team and competition management,index; self canonical,yes
+/sports/baseball,Public discovery,baseball team and competition management,index; self canonical,yes
+/sports/rugby,Public discovery,rugby team and competition management,index; self canonical,yes
+/sports/football,Public discovery,football team and competition management,index; self canonical,yes
+/sports/cornhole,Public discovery,cornhole team and competition management,index; self canonical,yes
+/sports/gymnastics,Public discovery,gymnastics team and competition management,index; self canonical,yes
+/sports/pickleball,Public discovery,pickleball team and competition management,index; self canonical,yes
+/sports/tennis,Public discovery,tennis team and competition management,index; self canonical,yes
+/sports/golf,Public discovery,golf team and competition management,index; self canonical,yes
+/sports/swimming,Public discovery,swimming team and competition management,index; self canonical,yes
+/sports/esports,Public discovery,esports team and competition management,index; self canonical,yes
+/sports/ultimate-frisbee,Public discovery,ultimate-frisbee team and competition management,index; self canonical,yes
+/sports/disc-golf,Public discovery,disc-golf team and competition management,index; self canonical,yes
+/sports/hockey,Public discovery,hockey team and competition management,index; self canonical,yes
+/sports/slo-pitch,Public discovery,slo-pitch team and competition management,index; self canonical,yes
+/sports/field-lacrosse,Public discovery,field-lacrosse team and competition management,index; self canonical,yes
+/sports/box-lacrosse,Public discovery,box-lacrosse team and competition management,index; self canonical,yes
+/sports/volleyball,Public discovery,volleyball team and competition management,index; self canonical,yes
+/sports/ice-hockey,Public discovery,ice-hockey team and competition management,index; self canonical,yes
+/sports/softball,Public discovery,softball team and competition management,index; self canonical,yes
+/sports/lacrosse,Public discovery,lacrosse team and competition management,index; self canonical,yes
+/sports/cricket,Public discovery,cricket team and competition management,index; self canonical,yes
+/sports/badminton,Public discovery,badminton team and competition management,index; self canonical,yes
+/sports/table-tennis,Public discovery,table-tennis team and competition management,index; self canonical,yes
+/sports/handball,Public discovery,handball team and competition management,index; self canonical,yes
+/sports-hub/articles/supporting-young-athletes-without-adding-pressure,Public discovery,Informational: supporting young athletes without adding pressure,index; self canonical,yes
+/sports-hub/articles/better-post-game-conversations-for-parents,Public discovery,Informational: better post game conversations for parents,index; self canonical,yes
+/sports-hub/articles/helping-your-child-handle-playing-time-disappointment,Public discovery,Informational: helping your child handle playing time disappointment,index; self canonical,yes
+/sports-hub/articles/rebuilding-confidence-after-a-performance-slump,Public discovery,Informational: rebuilding confidence after a performance slump,index; self canonical,yes
+/sports-hub/articles/balancing-school-sports-and-family-life,Public discovery,Informational: balancing school sports and family life,index; self canonical,yes
+/sports-hub/articles/recognizing-and-preventing-youth-sports-burnout,Public discovery,Informational: recognizing and preventing youth sports burnout,index; self canonical,yes
+/sports-hub/articles/supporting-your-child-through-a-sports-injury,Public discovery,Informational: supporting your child through a sports injury,index; self canonical,yes
+/sports-hub/articles/sports-nutrition-basics-for-busy-families,Public discovery,Informational: sports nutrition basics for busy families,index; self canonical,yes
+/sports-hub/articles/sleep-and-recovery-guide-for-sports-parents,Public discovery,Informational: sleep and recovery guide for sports parents,index; self canonical,yes
+/sports-hub/articles/building-a-healthy-parent-coach-partnership,Public discovery,Informational: building a healthy parent coach partnership,index; self canonical,yes
+/sports-hub/articles/positive-sideline-behavior-for-sports-parents,Public discovery,Informational: positive sideline behavior for sports parents,index; self canonical,yes
+/sports-hub/articles/helping-young-athletes-learn-from-mistakes,Public discovery,Informational: helping young athletes learn from mistakes,index; self canonical,yes
+/sports-hub/articles/supporting-a-child-with-sports-anxiety,Public discovery,Informational: supporting a child with sports anxiety,index; self canonical,yes
+/sports-hub/articles/goal-setting-for-young-athletes-and-parents,Public discovery,Informational: goal setting for young athletes and parents,index; self canonical,yes
+/sports-hub/articles/team-conflict-bullying-and-exclusion-parent-guide,Public discovery,Informational: team conflict bullying and exclusion parent guide,index; self canonical,yes
+/sports-hub/articles/managing-the-cost-and-time-of-youth-sports,Public discovery,Informational: managing the cost and time of youth sports,index; self canonical,yes
+/sports-hub/articles/multi-sport-participation-versus-early-specialization,Public discovery,Informational: multi sport participation versus early specialization,index; self canonical,yes
+/sports-hub/articles/social-media-highlights-and-recruiting-pressure,Public discovery,Informational: social media highlights and recruiting pressure,index; self canonical,yes
+/sports-hub/articles/parenting-the-transition-to-teen-sports,Public discovery,Informational: parenting the transition to teen sports,index; self canonical,yes
+/sports-hub/articles/when-your-child-wants-to-quit-or-change-sports,Public discovery,Informational: when your child wants to quit or change sports,index; self canonical,yes
+/sports-hub/articles/how-to-run-a-youth-sports-camp,Public discovery,Informational: how to run a youth sports camp,index; self canonical,yes
+/sports-hub/articles/how-to-start-a-youth-sports-nonprofit,Public discovery,Informational: how to start a youth sports nonprofit,index; self canonical,yes
+/sports-hub/articles/youth-sports-team-name-ideas,Public discovery,Informational: youth sports team name ideas,index; self canonical,yes
+/sports-hub/articles/choosing-age-groups-for-a-youth-sports-program,Public discovery,Informational: choosing age groups for a youth sports program,index; self canonical,yes
+/sports-hub/articles/youth-sports-tryout-day-plan,Public discovery,Informational: youth sports tryout day plan,index; self canonical,yes
+/sports-hub/articles/build-a-skill-progression-for-young-athletes,Public discovery,Informational: build a skill progression for young athletes,index; self canonical,yes
+/sports-hub/articles/inclusive-youth-sports-program-checklist,Public discovery,Informational: inclusive youth sports program checklist,index; self canonical,yes
+/sports-hub/articles/writing-a-clear-youth-sports-weather-policy,Public discovery,Informational: writing a clear youth sports weather policy,index; self canonical,yes
+/sports-hub/articles/designing-a-first-practice-that-builds-belonging,Public discovery,Informational: designing a first practice that builds belonging,index; self canonical,yes
+/sports-hub/articles/why-multi-sport-development-helps-young-athletes,Public discovery,Informational: why multi sport development helps young athletes,index; self canonical,yes
+/sports-hub/articles/age-appropriate-competition-in-youth-sports,Public discovery,Informational: age appropriate competition in youth sports,index; self canonical,yes
+/sports-hub/articles/a-simple-goal-setting-workshop-for-young-athletes,Public discovery,Informational: a simple goal setting workshop for young athletes,index; self canonical,yes
+/sports-hub/articles/onboard-youth-sports-volunteers-in-one-session,Public discovery,Informational: onboard youth sports volunteers in one session,index; self canonical,yes
+/sports-hub/articles/equipment-sharing-systems-for-youth-programs,Public discovery,Informational: equipment sharing systems for youth programs,index; self canonical,yes
+/sports-hub/articles/positive-coaching-language-young-athletes-understand,Public discovery,Informational: positive coaching language young athletes understand,index; self canonical,yes
+/sports-hub/articles/how-to-run-a-developmental-athlete-review,Public discovery,Informational: how to run a developmental athlete review,index; self canonical,yes
+/sports-hub/articles/safe-drop-off-and-pickup-for-youth-sports,Public discovery,Informational: safe drop off and pickup for youth sports,index; self canonical,yes
+/sports-hub/articles/building-community-partnerships-for-youth-sports,Public discovery,Informational: building community partnerships for youth sports,index; self canonical,yes
+/sports-hub/articles/designing-a-youth-sports-scholarship-program,Public discovery,Informational: designing a youth sports scholarship program,index; self canonical,yes
+/sports-hub/articles/helping-athletes-transition-between-youth-teams,Public discovery,Informational: helping athletes transition between youth teams,index; self canonical,yes
+/sports-hub/articles/the-10-minute-youth-camp-daily-briefing,Public discovery,Informational: the 10 minute youth camp daily briefing,index; self canonical,yes
+/sports-hub/articles/a-youth-sports-feedback-survey-that-gets-answers,Public discovery,Informational: a youth sports feedback survey that gets answers,index; self canonical,yes
+/sports-hub/articles/planning-an-end-of-season-celebration-with-purpose,Public discovery,Informational: planning an end of season celebration with purpose,index; self canonical,yes
+/sports-hub/articles/quarterly-youth-program-review-template,Public discovery,Informational: quarterly youth program review template,index; self canonical,yes
+/sports-hub/articles/write-better-practice-objectives,Public discovery,Informational: write better practice objectives,index; self canonical,yes
+/sports-hub/articles/using-small-sided-games-to-teach-decisions,Public discovery,Informational: using small sided games to teach decisions,index; self canonical,yes
+/sports-hub/articles/the-coach-feedback-loop,Public discovery,Informational: the coach feedback loop,index; self canonical,yes
+/sports-hub/articles/a-practical-team-film-review-format,Public discovery,Informational: a practical team film review format,index; self canonical,yes
+/sports-hub/articles/build-a-fair-and-flexible-substitution-plan,Public discovery,Informational: build a fair and flexible substitution plan,index; self canonical,yes
+/sports-hub/articles/developing-captains-through-real-responsibility,Public discovery,Informational: developing captains through real responsibility,index; self canonical,yes
+/sports-hub/articles/injury-aware-practice-planning,Public discovery,Informational: injury aware practice planning,index; self canonical,yes
+/sports-hub/articles/how-to-reset-a-team-after-a-tough-loss,Public discovery,Informational: how to reset a team after a tough loss,index; self canonical,yes
+/sports-hub/articles/youth-friendly-opponent-scouting,Public discovery,Informational: youth friendly opponent scouting,index; self canonical,yes
+/sports-hub/articles/monthly-season-goal-reviews-for-coaches,Public discovery,Informational: monthly season goal reviews for coaches,index; self canonical,yes
+/sports-hub/articles/design-a-warm-up-that-prepares-the-whole-athlete,Public discovery,Informational: design a warm up that prepares the whole athlete,index; self canonical,yes
+/sports-hub/articles/teach-through-better-questions,Public discovery,Informational: teach through better questions,index; self canonical,yes
+/sports-hub/articles/practice-pacing-keep-athletes-moving-and-learning,Public discovery,Informational: practice pacing keep athletes moving and learning,index; self canonical,yes
+/sports-hub/articles/emotional-regulation-tools-for-coaches,Public discovery,Informational: emotional regulation tools for coaches,index; self canonical,yes
+/sports-hub/articles/a-15-minute-athlete-one-on-one,Public discovery,Informational: a 15 minute athlete one on one,index; self canonical,yes
+/sports-hub/articles/align-assistant-coaches-before-practice,Public discovery,Informational: align assistant coaches before practice,index; self canonical,yes
+/sports-hub/articles/balance-technical-and-tactical-training,Public discovery,Informational: balance technical and tactical training,index; self canonical,yes
+/sports-hub/articles/teach-recovery-as-a-team-skill,Public discovery,Informational: teach recovery as a team skill,index; self canonical,yes
+/sports-hub/articles/healthy-competition-in-practice,Public discovery,Informational: healthy competition in practice,index; self canonical,yes
+/sports-hub/articles/midseason-coaching-adjustment-meeting,Public discovery,Informational: midseason coaching adjustment meeting,index; self canonical,yes
+/sports-hub/articles/run-an-honest-end-of-season-coaching-debrief,Public discovery,Informational: run an honest end of season coaching debrief,index; self canonical,yes
+/sports-hub/articles/build-a-realistic-youth-sports-budget,Public discovery,Informational: build a realistic youth sports budget,index; self canonical,yes
+/sports-hub/articles/a-healthy-sideline-role-for-parents,Public discovery,Informational: a healthy sideline role for parents,index; self canonical,yes
+/sports-hub/articles/questions-to-ask-a-new-coach,Public discovery,Informational: questions to ask a new coach,index; self canonical,yes
+/sports-hub/articles/understanding-youth-sports-consent-forms,Public discovery,Informational: understanding youth sports consent forms,index; self canonical,yes
+/sports-hub/articles/protecting-sleep-during-competition-season,Public discovery,Informational: protecting sleep during competition season,index; self canonical,yes
+/sports-hub/articles/digital-safety-for-young-athletes,Public discovery,Informational: digital safety for young athletes,index; self canonical,yes
+/sports-hub/articles/help-your-child-set-their-own-sports-goals,Public discovery,Informational: help your child set their own sports goals,index; self canonical,yes
+/sports-hub/articles/when-should-a-young-athlete-change-teams,Public discovery,Informational: when should a young athlete change teams,index; self canonical,yes
+/sports-hub/articles/navigating-conflict-between-teammates,Public discovery,Informational: navigating conflict between teammates,index; self canonical,yes
+/sports-hub/articles/help-athletes-build-an-identity-beyond-sport,Public discovery,Informational: help athletes build an identity beyond sport,index; self canonical,yes
+/sports-hub/articles/tournament-travel-packing-for-families,Public discovery,Informational: tournament travel packing for families,index; self canonical,yes
+/sports-hub/articles/questions-to-ask-after-a-sports-injury,Public discovery,Informational: questions to ask after a sports injury,index; self canonical,yes
+/sports-hub/articles/encouraging-effort-without-empty-praise,Public discovery,Informational: encouraging effort without empty praise,index; self canonical,yes
+/sports-hub/articles/questions-about-team-fees-and-refunds,Public discovery,Informational: questions about team fees and refunds,index; self canonical,yes
+/sports-hub/articles/healthy-boundaries-for-parent-volunteers,Public discovery,Informational: healthy boundaries for parent volunteers,index; self canonical,yes
+/sports-hub/articles/supporting-a-child-trying-a-new-sport,Public discovery,Informational: supporting a child trying a new sport,index; self canonical,yes
+/sports-hub/articles/connecting-school-and-club-sports-responsibly,Public discovery,Informational: connecting school and club sports responsibly,index; self canonical,yes
+/sports-hub/articles/what-good-youth-coaching-looks-like,Public discovery,Informational: what good youth coaching looks like,index; self canonical,yes
+/sports-hub/articles/end-of-season-reflection-for-families,Public discovery,Informational: end of season reflection for families,index; self canonical,yes
+/sports-hub/articles/a-safer-team-transportation-plan,Public discovery,Informational: a safer team transportation plan,index; self canonical,yes
+/sports-hub/articles/choosing-the-right-tournament-format,Public discovery,Informational: choosing the right tournament format,index; self canonical,yes
+/sports-hub/articles/a-transparent-tournament-seeding-method,Public discovery,Informational: a transparent tournament seeding method,index; self canonical,yes
+/sports-hub/articles/tournament-venue-walkthrough-checklist,Public discovery,Informational: tournament venue walkthrough checklist,index; self canonical,yes
+/sports-hub/articles/brief-officials-before-the-first-game,Public discovery,Informational: brief officials before the first game,index; self canonical,yes
+/sports-hub/articles/fast-and-accurate-team-check-in,Public discovery,Informational: fast and accurate team check in,index; self canonical,yes
+/sports-hub/articles/tournament-weather-decision-timeline,Public discovery,Informational: tournament weather decision timeline,index; self canonical,yes
+/sports-hub/articles/live-scoring-workflow-for-tournament-directors,Public discovery,Informational: live scoring workflow for tournament directors,index; self canonical,yes
+/sports-hub/articles/schedule-tournament-volunteers-without-gaps,Public discovery,Informational: schedule tournament volunteers without gaps,index; self canonical,yes
+/sports-hub/articles/plan-tournament-concessions-responsibly,Public discovery,Informational: plan tournament concessions responsibly,index; self canonical,yes
+/sports-hub/articles/tournament-parking-and-traffic-plan,Public discovery,Informational: tournament parking and traffic plan,index; self canonical,yes
+/sports-hub/articles/tournament-complaint-escalation-path,Public discovery,Informational: tournament complaint escalation path,index; self canonical,yes
+/sports-hub/articles/a-smooth-tournament-awards-ceremony,Public discovery,Informational: a smooth tournament awards ceremony,index; self canonical,yes
+/sports-hub/articles/tournament-budget-template,Public discovery,Informational: tournament budget template,index; self canonical,yes
+/sports-hub/articles/useful-tournament-sponsor-activations,Public discovery,Informational: useful tournament sponsor activations,index; self canonical,yes
+/sports-hub/articles/why-tournament-schedules-need-buffer-time,Public discovery,Informational: why tournament schedules need buffer time,index; self canonical,yes
+/sports-hub/articles/accessibility-review-for-tournament-hosts,Public discovery,Informational: accessibility review for tournament hosts,index; self canonical,yes
+/sports-hub/articles/tournament-medical-coverage-plan,Public discovery,Informational: tournament medical coverage plan,index; self canonical,yes
+/sports-hub/articles/verify-results-before-publishing-brackets,Public discovery,Informational: verify results before publishing brackets,index; self canonical,yes
+/sports-hub/articles/post-event-survey-for-tournament-teams,Public discovery,Informational: post event survey for tournament teams,index; self canonical,yes
+/sports-hub/articles/rescheduling-a-tournament-after-a-rainout,Public discovery,Informational: rescheduling a tournament after a rainout,index; self canonical,yes
+/sports-hub/articles/tournament-director-daybook,Public discovery,Informational: tournament director daybook,index; self canonical,yes
+/sports-hub/articles/monthly-roster-audit-for-team-managers,Public discovery,Informational: monthly roster audit for team managers,index; self canonical,yes
+/sports-hub/articles/build-a-shared-team-season-calendar,Public discovery,Informational: build a shared team season calendar,index; self canonical,yes
+/sports-hub/articles/create-a-team-parent-handbook,Public discovery,Informational: create a team parent handbook,index; self canonical,yes
+/sports-hub/articles/collect-practice-requests-without-chaos,Public discovery,Informational: collect practice requests without chaos,index; self canonical,yes
+/sports-hub/articles/team-equipment-inventory-system,Public discovery,Informational: team equipment inventory system,index; self canonical,yes
+/sports-hub/articles/a-reliable-team-communication-cadence,Public discovery,Informational: a reliable team communication cadence,index; self canonical,yes
+/sports-hub/articles/manage-team-fees-transparently,Public discovery,Informational: manage team fees transparently,index; self canonical,yes
+/sports-hub/articles/define-volunteer-roles-that-get-filled,Public discovery,Informational: define volunteer roles that get filled,index; self canonical,yes
+/sports-hub/articles/a-fair-team-attendance-policy,Public discovery,Informational: a fair team attendance policy,index; self canonical,yes
+/sports-hub/articles/run-a-team-uniform-order,Public discovery,Informational: run a team uniform order,index; self canonical,yes
+/sports-hub/articles/prepare-a-travel-roster-and-contact-sheet,Public discovery,Informational: prepare a travel roster and contact sheet,index; self canonical,yes
+/sports-hub/articles/assign-game-day-roles-before-arrival,Public discovery,Informational: assign game day roles before arrival,index; self canonical,yes
+/sports-hub/articles/midseason-parent-meeting-agenda,Public discovery,Informational: midseason parent meeting agenda,index; self canonical,yes
+/sports-hub/articles/a-private-team-conflict-log,Public discovery,Informational: a private team conflict log,index; self canonical,yes
+/sports-hub/articles/protect-team-data-in-shared-tools,Public discovery,Informational: protect team data in shared tools,index; self canonical,yes
+/sports-hub/articles/season-budget-review-for-team-leaders,Public discovery,Informational: season budget review for team leaders,index; self canonical,yes
+/sports-hub/articles/coach-to-coach-handoff-notes,Public discovery,Informational: coach to coach handoff notes,index; self canonical,yes
+/sports-hub/articles/close-registration-without-loose-ends,Public discovery,Informational: close registration without loose ends,index; self canonical,yes
+/sports-hub/articles/end-of-season-team-report,Public discovery,Informational: end of season team report,index; self canonical,yes
+/sports-hub/articles/family-onboarding-for-a-new-team,Public discovery,Informational: family onboarding for a new team,index; self canonical,yes
+/sports-hub/articles/role-based-access-for-team-admins,Public discovery,Informational: role based access for team admins,index; self canonical,yes
+/sports-hub/articles/building-championship-culture,Public discovery,Informational: building championship culture,index; self canonical,yes
+/sports-hub/articles/five-day-practice-plan,Public discovery,Informational: five day practice plan,index; self canonical,yes
+/sports-hub/articles/tournament-scheduling-guide,Public discovery,Informational: tournament scheduling guide,index; self canonical,yes
+/sports-hub/articles/parent-communication-templates,Public discovery,Informational: parent communication templates,index; self canonical,yes
+/sports-hub/articles/mental-performance-youth-athletes,Public discovery,Informational: mental performance youth athletes,index; self canonical,yes
+/sports-hub/articles/sports-nutrition-for-coaches,Public discovery,Informational: sports nutrition for coaches,index; self canonical,yes
+/sports-hub/articles/volunteer-recruitment-retention,Public discovery,Informational: volunteer recruitment retention,index; self canonical,yes
+/sports-hub/articles/league-formation-guide,Public discovery,Informational: league formation guide,index; self canonical,yes
+/sports-hub/articles/injury-prevention-warm-ups,Public discovery,Informational: injury prevention warm ups,index; self canonical,yes
+/sports-hub/articles/game-day-logistics,Public discovery,Informational: game day logistics,index; self canonical,yes
+/sports-hub/articles/referee-management,Public discovery,Informational: referee management,index; self canonical,yes
+/sports-hub/articles/fundraising-sports-programs,Public discovery,Informational: fundraising sports programs,index; self canonical,yes
+/sports-hub/articles/building-team-culture-inclusivity,Public discovery,Informational: building team culture inclusivity,index; self canonical,yes
+/sports-hub/articles/strength-conditioning-youth,Public discovery,Informational: strength conditioning youth,index; self canonical,yes
+/sports-hub/articles/technology-in-sports-management,Public discovery,Informational: technology in sports management,index; self canonical,yes
+/sports-hub/articles/tournament-bracket-formats,Public discovery,Informational: tournament bracket formats,index; self canonical,yes
+/sports-hub/articles/recovery-science-athletes,Public discovery,Informational: recovery science athletes,index; self canonical,yes
+/sports-hub/articles/coaching-communication-styles,Public discovery,Informational: coaching communication styles,index; self canonical,yes
+/sports-hub/articles/season-planning-template,Public discovery,Informational: season planning template,index; self canonical,yes
+/sports-hub/articles/managing-difficult-parents,Public discovery,Informational: managing difficult parents,index; self canonical,yes
+/sports-hub/articles/youth-athlete-development,Public discovery,Informational: youth athlete development,index; self canonical,yes
+/sports-hub/articles/tournament-sponsorship-guide,Public discovery,Informational: tournament sponsorship guide,index; self canonical,yes
+/sports-hub/articles/team-travel-planning,Public discovery,Informational: team travel planning,index; self canonical,yes
+/sports-hub/articles/sport-psychology-basics,Public discovery,Informational: sport psychology basics,index; self canonical,yes
+/sports-hub/articles/equipment-management,Public discovery,Informational: equipment management,index; self canonical,yes
+/sports-hub/articles/digital-registration-systems,Public discovery,Informational: digital registration systems,index; self canonical,yes
+/sports-hub/articles/referee-training-programs,Public discovery,Informational: referee training programs,index; self canonical,yes
+/sports-hub/articles/post-season-evaluation,Public discovery,Informational: post season evaluation,index; self canonical,yes
+/sports-hub/articles/motivating-youth-athletes,Public discovery,Informational: motivating youth athletes,index; self canonical,yes
+/sports-hub/articles/halftime-adjustments,Public discovery,Informational: halftime adjustments,index; self canonical,yes
+/sports-hub/articles/building-practice-culture,Public discovery,Informational: building practice culture,index; self canonical,yes
+/sports-hub/articles/player-development-long-term,Public discovery,Informational: player development long term,index; self canonical,yes
+/sports-hub/articles/sports-program-budgeting,Public discovery,Informational: sports program budgeting,index; self canonical,yes
+/sports-hub/articles/roster-management-guide,Public discovery,Informational: roster management guide,index; self canonical,yes
+/sports-hub/articles/building-season-schedule,Public discovery,Informational: building season schedule,index; self canonical,yes
+/sports-hub/articles/team-communication-systems,Public discovery,Informational: team communication systems,index; self canonical,yes
+/sports-hub/articles/tournament-venue-checklist,Public discovery,Informational: tournament venue checklist,index; self canonical,yes
+/sports-hub/articles/tournament-scoring-systems,Public discovery,Informational: tournament scoring systems,index; self canonical,yes
+/sports-hub/articles/managing-tournament-officials,Public discovery,Informational: managing tournament officials,index; self canonical,yes
+/sports-hub/articles/youth-athlete-burnout,Public discovery,Informational: youth athlete burnout,index; self canonical,yes
+/sports-hub/articles/age-appropriate-training,Public discovery,Informational: age appropriate training,index; self canonical,yes
+/sports-hub/articles/youth-sports-parent-role,Public discovery,Informational: youth sports parent role,index; self canonical,yes
+/sports-hub/articles/pre-game-nutrition-guide,Public discovery,Informational: pre game nutrition guide,index; self canonical,yes
+/sports-hub/articles/hydration-strategies-athletes,Public discovery,Informational: hydration strategies athletes,index; self canonical,yes
+/sports-hub/articles/recovery-nutrition-guide,Public discovery,Informational: recovery nutrition guide,index; self canonical,yes
+/sports-hub/articles/athlete-meal-planning,Public discovery,Informational: athlete meal planning,index; self canonical,yes
+/sports-hub/articles/sleep-performance-athletes,Public discovery,Informational: sleep performance athletes,index; self canonical,yes
+/sports-hub/articles/overtraining-prevention,Public discovery,Informational: overtraining prevention,index; self canonical,yes
+/sports-hub/articles/vo2-max-explained,Public discovery,Informational: vo2 max explained,index; self canonical,yes
+/sports-hub/articles/periodization-for-coaches,Public discovery,Informational: periodization for coaches,index; self canonical,yes
+/sports-hub/articles/speed-development-guide,Public discovery,Informational: speed development guide,index; self canonical,yes
+/sports-hub/articles/power-training-athletes,Public discovery,Informational: power training athletes,index; self canonical,yes
+/sports-hub/articles/pre-competition-routines,Public discovery,Informational: pre competition routines,index; self canonical,yes
+/sports-hub/articles/dealing-with-performance-slumps,Public discovery,Informational: dealing with performance slumps,index; self canonical,yes
+/sports-hub/articles/youth-coaching-philosophy,Public discovery,Informational: youth coaching philosophy,index; self canonical,yes
+/sports-hub/articles/game-strategy-systems,Public discovery,Informational: game strategy systems,index; self canonical,yes
+/sports-hub/articles/recovery-protocols-performance,Public discovery,Informational: recovery protocols performance,index; self canonical,yes
+/sports-hub/articles/mental-performance-training,Public discovery,Informational: mental performance training,index; self canonical,yes
+/sports-hub/articles/conditioning-periodization,Public discovery,Informational: conditioning periodization,index; self canonical,yes
+/sports-hub/articles/online-tournament-registration,Public discovery,Informational: online tournament registration,index; self canonical,yes
+/sports-hub/articles/real-time-tournament-scoring,Public discovery,Informational: real time tournament scoring,index; self canonical,yes
+/sports-hub/articles/venue-planning-checklist,Public discovery,Informational: venue planning checklist,index; self canonical,yes
+/sports-hub/articles/tournament-awards-ceremony,Public discovery,Informational: tournament awards ceremony,index; self canonical,yes
+/sports-hub/articles/volunteer-program-guide,Public discovery,Informational: volunteer program guide,index; self canonical,yes
+/sports-hub/articles/roster-management-best-practices,Public discovery,Informational: roster management best practices,index; self canonical,yes
+/sports-hub/articles/equipment-tracking-inventory,Public discovery,Informational: equipment tracking inventory,index; self canonical,yes
+/sports-hub/articles/team-fundraising-strategies,Public discovery,Informational: team fundraising strategies,index; self canonical,yes
+/sports-hub/articles/first-team-meeting-playbook,Public discovery,Informational: first team meeting playbook,index; self canonical,yes
+/sports-hub/articles/tournament-seeding-guide,Public discovery,Informational: tournament seeding guide,index; self canonical,yes
+/sports-hub/articles/double-elimination-guide,Public discovery,Informational: double elimination guide,index; self canonical,yes
+/sports-hub/articles/pool-play-management,Public discovery,Informational: pool play management,index; self canonical,yes
+/sports-hub/articles/round-robin-scheduling,Public discovery,Informational: round robin scheduling,index; self canonical,yes
+/sports-hub/articles/conflict-resolution-tournament,Public discovery,Informational: conflict resolution tournament,index; self canonical,yes
+/sports-hub/articles/tournament-volunteer-coordination,Public discovery,Informational: tournament volunteer coordination,index; self canonical,yes
+/sports-hub/articles/digital-registration-workflow,Public discovery,Informational: digital registration workflow,index; self canonical,yes
+/sports-hub/articles/team-check-in-process,Public discovery,Informational: team check in process,index; self canonical,yes
+/sports-hub/articles/live-bracket-updates,Public discovery,Informational: live bracket updates,index; self canonical,yes
+/sports-hub/articles/scorekeeper-training,Public discovery,Informational: scorekeeper training,index; self canonical,yes
+/sports-hub/articles/trophy-medal-management,Public discovery,Informational: trophy medal management,index; self canonical,yes
+/sports-hub/articles/food-concessions-tournament,Public discovery,Informational: food concessions tournament,index; self canonical,yes
+/sports-hub/articles/tournament-communications-plan,Public discovery,Informational: tournament communications plan,index; self canonical,yes
+/sports-hub/articles/tryout-management-guide,Public discovery,Informational: tryout management guide,index; self canonical,yes
+/sports-hub/articles/player-transfer-protocol,Public discovery,Informational: player transfer protocol,index; self canonical,yes
+/sports-hub/articles/waitlist-management,Public discovery,Informational: waitlist management,index; self canonical,yes
+/sports-hub/articles/team-group-chat-rules,Public discovery,Informational: team group chat rules,index; self canonical,yes
+/sports-hub/articles/game-day-announcements,Public discovery,Informational: game day announcements,index; self canonical,yes
+/sports-hub/articles/end-of-season-communication,Public discovery,Informational: end of season communication,index; self canonical,yes
+/sports-hub/articles/parent-meeting-agenda,Public discovery,Informational: parent meeting agenda,index; self canonical,yes
+/sports-hub/articles/playing-time-philosophy,Public discovery,Informational: playing time philosophy,index; self canonical,yes
+/sports-hub/articles/sideline-behavior-policy,Public discovery,Informational: sideline behavior policy,index; self canonical,yes
+/sports-hub/articles/volunteer-onboarding,Public discovery,Informational: volunteer onboarding,index; self canonical,yes
+/sports-hub/articles/equipment-ordering-guide,Public discovery,Informational: equipment ordering guide,index; self canonical,yes
+/sports-hub/articles/jersey-management,Public discovery,Informational: jersey management,index; self canonical,yes
+/sports-hub/articles/sponsorship-outreach,Public discovery,Informational: sponsorship outreach,index; self canonical,yes
+/sports-hub/articles/program-budget-template,Public discovery,Informational: program budget template,index; self canonical,yes
+/sports-hub/articles/practice-scheduling-optimization,Public discovery,Informational: practice scheduling optimization,index; self canonical,yes
+/sports-hub/articles/drill-design-principles,Public discovery,Informational: drill design principles,index; self canonical,yes
+/sports-hub/articles/warm-up-protocols,Public discovery,Informational: warm up protocols,index; self canonical,yes
+/sports-hub/articles/practice-evaluation-system,Public discovery,Informational: practice evaluation system,index; self canonical,yes
+/sports-hub/articles/timeout-management,Public discovery,Informational: timeout management,index; self canonical,yes
+/sports-hub/articles/adjustments-at-halftime,Public discovery,Informational: adjustments at halftime,index; self canonical,yes
+/sports-hub/articles/scouting-opponent,Public discovery,Informational: scouting opponent,index; self canonical,yes
+/sports-hub/articles/teaching-sport-iq,Public discovery,Informational: teaching sport iq,index; self canonical,yes
+/sports-hub/articles/athlete-goal-setting,Public discovery,Informational: athlete goal setting,index; self canonical,yes
+/sports-hub/articles/feedback-that-improves,Public discovery,Informational: feedback that improves,index; self canonical,yes
+/sports-hub/articles/coaching-burnout,Public discovery,Informational: coaching burnout,index; self canonical,yes
+/sports-hub/articles/age-group-coaching-differences,Public discovery,Informational: age group coaching differences,index; self canonical,yes
+/sports-hub/articles/fun-vs-winning-balance,Public discovery,Informational: fun vs winning balance,index; self canonical,yes
+/sports-hub/articles/in-season-conditioning,Public discovery,Informational: in season conditioning,index; self canonical,yes
+/sports-hub/articles/off-season-program-design,Public discovery,Informational: off season program design,index; self canonical,yes
+/sports-hub/articles/managing-soreness-training,Public discovery,Informational: managing soreness training,index; self canonical,yes
+/sports-hub/articles/ice-bath-protocols,Public discovery,Informational: ice bath protocols,index; self canonical,yes
+/sports-hub/articles/building-mental-toughness,Public discovery,Informational: building mental toughness,index; self canonical,yes
+/sports-hub/articles/pre-game-routines,Public discovery,Informational: pre game routines,index; self canonical,yes
+/sports-hub/resources/score-sheet-baseball,Public discovery,Use resource: score sheet baseball,index; self canonical,yes
+/sports-hub/resources/score-sheet-slo-pitch,Public discovery,Use resource: score sheet slo pitch,index; self canonical,yes
+/sports-hub/resources/score-sheet-hockey,Public discovery,Use resource: score sheet hockey,index; self canonical,yes
+/sports-hub/resources/score-sheet-soccer,Public discovery,Use resource: score sheet soccer,index; self canonical,yes
+/sports-hub/resources/score-sheet-cornhole,Public discovery,Use resource: score sheet cornhole,index; self canonical,yes
+/sports-hub/resources/score-sheet-box-lacrosse,Public discovery,Use resource: score sheet box lacrosse,index; self canonical,yes
+/sports-hub/resources/score-sheet-field-lacrosse,Public discovery,Use resource: score sheet field lacrosse,index; self canonical,yes
+/sports-hub/resources/score-sheet-basketball,Public discovery,Use resource: score sheet basketball,index; self canonical,yes
+/sports-hub/resources/score-sheet-volleyball,Public discovery,Use resource: score sheet volleyball,index; self canonical,yes
+/sports-hub/resources/score-sheet-pickleball,Public discovery,Use resource: score sheet pickleball,index; self canonical,yes
+/sports-hub/resources/score-sheet-tennis,Public discovery,Use resource: score sheet tennis,index; self canonical,yes
+/sports-hub/resources/score-sheet-football,Public discovery,Use resource: score sheet football,index; self canonical,yes
+/sports-hub/resources/score-sheet-golf,Public discovery,Use resource: score sheet golf,index; self canonical,yes
+/sports-hub/resources/expanded-season-kickoff-plan,Public discovery,Use resource: expanded season kickoff plan,index; self canonical,yes
+/sports-hub/resources/expanded-weekly-practice-grid,Public discovery,Use resource: expanded weekly practice grid,index; self canonical,yes
+/sports-hub/resources/expanded-game-day-command-sheet,Public discovery,Use resource: expanded game day command sheet,index; self canonical,yes
+/sports-hub/resources/expanded-parent-welcome-pack,Public discovery,Use resource: expanded parent welcome pack,index; self canonical,yes
+/sports-hub/resources/expanded-volunteer-shift-planner,Public discovery,Use resource: expanded volunteer shift planner,index; self canonical,yes
+/sports-hub/resources/expanded-emergency-contact-card,Public discovery,Use resource: expanded emergency contact card,index; self canonical,yes
+/sports-hub/resources/expanded-team-fundraising-calendar,Public discovery,Use resource: expanded team fundraising calendar,index; self canonical,yes
+/sports-hub/resources/expanded-equipment-checkout-log,Public discovery,Use resource: expanded equipment checkout log,index; self canonical,yes
+/sports-hub/resources/expanded-away-game-travel-pack,Public discovery,Use resource: expanded away game travel pack,index; self canonical,yes
+/sports-hub/resources/expanded-coach-huddle-agenda,Public discovery,Use resource: expanded coach huddle agenda,index; self canonical,yes
+/sports-hub/resources/expanded-balanced-lineup-sheet,Public discovery,Use resource: expanded balanced lineup sheet,index; self canonical,yes
+/sports-hub/resources/expanded-tournament-host-pack,Public discovery,Use resource: expanded tournament host pack,index; self canonical,yes
+/sports-hub/resources/expanded-season-review-workbook,Public discovery,Use resource: expanded season review workbook,index; self canonical,yes
+/sports-hub/resources/expanded-practice-transition-map,Public discovery,Use resource: expanded practice transition map,index; self canonical,yes
+/sports-hub/resources/expanded-weather-message-kit,Public discovery,Use resource: expanded weather message kit,index; self canonical,yes
+/sports-hub/resources/expanded-accessibility-audit,Public discovery,Use resource: expanded accessibility audit,index; self canonical,yes
+/sports-hub/resources/expanded-sponsor-deliverables-sheet,Public discovery,Use resource: expanded sponsor deliverables sheet,index; self canonical,yes
+/sports-hub/resources/expanded-uniform-measurement-list,Public discovery,Use resource: expanded uniform measurement list,index; self canonical,yes
+/sports-hub/resources/expanded-tournament-officials-roster,Public discovery,Use resource: expanded tournament officials roster,index; self canonical,yes
+/sports-hub/resources/expanded-parent-meeting-agenda,Public discovery,Use resource: expanded parent meeting agenda,index; self canonical,yes
+/sports-hub/resources/expanded-team-transport-plan,Public discovery,Use resource: expanded team transport plan,index; self canonical,yes
+/sports-hub/resources/expanded-drill-first-touch-gates,Public discovery,Use resource: expanded drill first touch gates,index; self canonical,yes
+/sports-hub/resources/expanded-drill-3v2-transition,Public discovery,Use resource: expanded drill 3v2 transition,index; self canonical,yes
+/sports-hub/resources/expanded-drill-closeout-corner,Public discovery,Use resource: expanded drill closeout corner,index; self canonical,yes
+/sports-hub/resources/expanded-drill-pivot-pass-relay,Public discovery,Use resource: expanded drill pivot pass relay,index; self canonical,yes
+/sports-hub/resources/expanded-drill-serve-receive-triangles,Public discovery,Use resource: expanded drill serve receive triangles,index; self canonical,yes
+/sports-hub/resources/expanded-drill-block-footwork-ladder,Public discovery,Use resource: expanded drill block footwork ladder,index; self canonical,yes
+/sports-hub/resources/expanded-drill-hockey-support-lanes,Public discovery,Use resource: expanded drill hockey support lanes,index; self canonical,yes
+/sports-hub/resources/expanded-drill-hockey-corner-cycle,Public discovery,Use resource: expanded drill hockey corner cycle,index; self canonical,yes
+/sports-hub/resources/expanded-drill-base-stealing-read,Public discovery,Use resource: expanded drill base stealing read,index; self canonical,yes
+/sports-hub/resources/expanded-drill-infield-funnel,Public discovery,Use resource: expanded drill infield funnel,index; self canonical,yes
+/sports-hub/resources/expanded-drill-football-box-fit,Public discovery,Use resource: expanded drill football box fit,index; self canonical,yes
+/sports-hub/resources/expanded-drill-football-route-spacing,Public discovery,Use resource: expanded drill football route spacing,index; self canonical,yes
+/sports-hub/resources/expanded-drill-lacrosse-passing-box,Public discovery,Use resource: expanded drill lacrosse passing box,index; self canonical,yes
+/sports-hub/resources/expanded-drill-lacrosse-slide-recovery,Public discovery,Use resource: expanded drill lacrosse slide recovery,index; self canonical,yes
+/sports-hub/resources/expanded-drill-track-relay-handover,Public discovery,Use resource: expanded drill track relay handover,index; self canonical,yes
+/sports-hub/resources/expanded-drill-track-acceleration-wall,Public discovery,Use resource: expanded drill track acceleration wall,index; self canonical,yes
+/sports-hub/resources/expanded-drill-tennis-recovery-split,Public discovery,Use resource: expanded drill tennis recovery split,index; self canonical,yes
+/sports-hub/resources/expanded-drill-tennis-crosscourt-pattern,Public discovery,Use resource: expanded drill tennis crosscourt pattern,index; self canonical,yes
+/sports-hub/resources/expanded-drill-rugby-support-line,Public discovery,Use resource: expanded drill rugby support line,index; self canonical,yes
+/sports-hub/resources/expanded-drill-rugby-tackle-technique,Public discovery,Use resource: expanded drill rugby tackle technique,index; self canonical,yes
+/sports-hub/resources/expanded-drill-general-reaction-colors,Public discovery,Use resource: expanded drill general reaction colors,index; self canonical,yes
+/sports-hub/resources/expanded-practice-plan-1,Public discovery,Use resource: expanded practice plan 1,index; self canonical,yes
+/sports-hub/resources/expanded-practice-plan-2,Public discovery,Use resource: expanded practice plan 2,index; self canonical,yes
+/sports-hub/resources/expanded-practice-plan-3,Public discovery,Use resource: expanded practice plan 3,index; self canonical,yes
+/sports-hub/resources/expanded-practice-plan-4,Public discovery,Use resource: expanded practice plan 4,index; self canonical,yes
+/sports-hub/resources/expanded-practice-plan-5,Public discovery,Use resource: expanded practice plan 5,index; self canonical,yes
+/sports-hub/resources/expanded-practice-plan-6,Public discovery,Use resource: expanded practice plan 6,index; self canonical,yes
+/sports-hub/resources/expanded-practice-plan-7,Public discovery,Use resource: expanded practice plan 7,index; self canonical,yes
+/sports-hub/resources/expanded-practice-plan-8,Public discovery,Use resource: expanded practice plan 8,index; self canonical,yes
+/sports-hub/resources/expanded-practice-plan-9,Public discovery,Use resource: expanded practice plan 9,index; self canonical,yes
+/sports-hub/resources/expanded-practice-plan-10,Public discovery,Use resource: expanded practice plan 10,index; self canonical,yes
+/sports-hub/resources/expanded-drill-library-1,Public discovery,Use resource: expanded drill library 1,index; self canonical,yes
+/sports-hub/resources/expanded-drill-library-2,Public discovery,Use resource: expanded drill library 2,index; self canonical,yes
+/sports-hub/resources/expanded-drill-library-3,Public discovery,Use resource: expanded drill library 3,index; self canonical,yes
+/sports-hub/resources/expanded-drill-library-4,Public discovery,Use resource: expanded drill library 4,index; self canonical,yes
+/sports-hub/resources/expanded-drill-library-5,Public discovery,Use resource: expanded drill library 5,index; self canonical,yes
+/sports-hub/resources/expanded-drill-library-6,Public discovery,Use resource: expanded drill library 6,index; self canonical,yes
+/sports-hub/resources/expanded-drill-library-7,Public discovery,Use resource: expanded drill library 7,index; self canonical,yes
+/sports-hub/resources/expanded-drill-library-8,Public discovery,Use resource: expanded drill library 8,index; self canonical,yes
+/sports-hub/resources/expanded-drill-library-9,Public discovery,Use resource: expanded drill library 9,index; self canonical,yes
+/sports-hub/resources/expanded-drill-library-10,Public discovery,Use resource: expanded drill library 10,index; self canonical,yes
+/sports-hub/resources/expanded-video-library-1,Public discovery,Use resource: expanded video library 1,index; self canonical,yes
+/sports-hub/resources/expanded-video-library-2,Public discovery,Use resource: expanded video library 2,index; self canonical,yes
+/sports-hub/resources/expanded-video-library-3,Public discovery,Use resource: expanded video library 3,index; self canonical,yes
+/sports-hub/resources/expanded-video-library-4,Public discovery,Use resource: expanded video library 4,index; self canonical,yes
+/sports-hub/resources/expanded-video-library-5,Public discovery,Use resource: expanded video library 5,index; self canonical,yes
+/sports-hub/resources/expanded-video-library-6,Public discovery,Use resource: expanded video library 6,index; self canonical,yes
+/sports-hub/resources/expanded-video-library-7,Public discovery,Use resource: expanded video library 7,index; self canonical,yes
+/sports-hub/resources/expanded-video-library-8,Public discovery,Use resource: expanded video library 8,index; self canonical,yes
+/sports-hub/resources/expanded-video-library-9,Public discovery,Use resource: expanded video library 9,index; self canonical,yes
+/sports-hub/resources/expanded-video-library-10,Public discovery,Use resource: expanded video library 10,index; self canonical,yes
+/sports-hub/resources/expanded-season-planner-1,Public discovery,Use resource: expanded season planner 1,index; self canonical,yes
+/sports-hub/resources/expanded-season-planner-2,Public discovery,Use resource: expanded season planner 2,index; self canonical,yes
+/sports-hub/resources/expanded-season-planner-3,Public discovery,Use resource: expanded season planner 3,index; self canonical,yes
+/sports-hub/resources/expanded-season-planner-4,Public discovery,Use resource: expanded season planner 4,index; self canonical,yes
+/sports-hub/resources/expanded-season-planner-5,Public discovery,Use resource: expanded season planner 5,index; self canonical,yes
+/sports-hub/resources/expanded-season-planner-6,Public discovery,Use resource: expanded season planner 6,index; self canonical,yes
+/sports-hub/resources/expanded-season-planner-7,Public discovery,Use resource: expanded season planner 7,index; self canonical,yes
+/sports-hub/resources/expanded-season-planner-8,Public discovery,Use resource: expanded season planner 8,index; self canonical,yes
+/sports-hub/resources/expanded-season-planner-9,Public discovery,Use resource: expanded season planner 9,index; self canonical,yes
+/sports-hub/resources/expanded-season-planner-10,Public discovery,Use resource: expanded season planner 10,index; self canonical,yes
+/sports-hub/resources/expanded-game-day-checklist-1,Public discovery,Use resource: expanded game day checklist 1,index; self canonical,yes
+/sports-hub/resources/expanded-game-day-checklist-2,Public discovery,Use resource: expanded game day checklist 2,index; self canonical,yes
+/sports-hub/resources/expanded-game-day-checklist-3,Public discovery,Use resource: expanded game day checklist 3,index; self canonical,yes
+/sports-hub/resources/expanded-game-day-checklist-4,Public discovery,Use resource: expanded game day checklist 4,index; self canonical,yes
+/sports-hub/resources/expanded-game-day-checklist-5,Public discovery,Use resource: expanded game day checklist 5,index; self canonical,yes
+/sports-hub/resources/expanded-game-day-checklist-6,Public discovery,Use resource: expanded game day checklist 6,index; self canonical,yes
+/sports-hub/resources/expanded-game-day-checklist-7,Public discovery,Use resource: expanded game day checklist 7,index; self canonical,yes
+/sports-hub/resources/expanded-game-day-checklist-8,Public discovery,Use resource: expanded game day checklist 8,index; self canonical,yes
+/sports-hub/resources/expanded-game-day-checklist-9,Public discovery,Use resource: expanded game day checklist 9,index; self canonical,yes
+/sports-hub/resources/expanded-game-day-checklist-10,Public discovery,Use resource: expanded game day checklist 10,index; self canonical,yes
+/sports-hub/resources/expanded-tournament-checklist-1,Public discovery,Use resource: expanded tournament checklist 1,index; self canonical,yes
+/sports-hub/resources/expanded-tournament-checklist-2,Public discovery,Use resource: expanded tournament checklist 2,index; self canonical,yes
+/sports-hub/resources/expanded-tournament-checklist-3,Public discovery,Use resource: expanded tournament checklist 3,index; self canonical,yes
+/sports-hub/resources/expanded-tournament-checklist-4,Public discovery,Use resource: expanded tournament checklist 4,index; self canonical,yes
+/sports-hub/resources/expanded-tournament-checklist-5,Public discovery,Use resource: expanded tournament checklist 5,index; self canonical,yes
+/sports-hub/resources/expanded-tournament-checklist-6,Public discovery,Use resource: expanded tournament checklist 6,index; self canonical,yes
+/sports-hub/resources/expanded-tournament-checklist-7,Public discovery,Use resource: expanded tournament checklist 7,index; self canonical,yes
+/sports-hub/resources/expanded-tournament-checklist-8,Public discovery,Use resource: expanded tournament checklist 8,index; self canonical,yes
+/sports-hub/resources/expanded-tournament-checklist-9,Public discovery,Use resource: expanded tournament checklist 9,index; self canonical,yes
+/sports-hub/resources/expanded-tournament-checklist-10,Public discovery,Use resource: expanded tournament checklist 10,index; self canonical,yes
+/sports-hub/resources/expanded-emergency-plan-1,Public discovery,Use resource: expanded emergency plan 1,index; self canonical,yes
+/sports-hub/resources/expanded-emergency-plan-2,Public discovery,Use resource: expanded emergency plan 2,index; self canonical,yes
+/sports-hub/resources/expanded-emergency-plan-3,Public discovery,Use resource: expanded emergency plan 3,index; self canonical,yes
+/sports-hub/resources/expanded-emergency-plan-4,Public discovery,Use resource: expanded emergency plan 4,index; self canonical,yes
+/sports-hub/resources/expanded-emergency-plan-5,Public discovery,Use resource: expanded emergency plan 5,index; self canonical,yes
+/sports-hub/resources/expanded-emergency-plan-6,Public discovery,Use resource: expanded emergency plan 6,index; self canonical,yes
+/sports-hub/resources/expanded-emergency-plan-7,Public discovery,Use resource: expanded emergency plan 7,index; self canonical,yes
+/sports-hub/resources/expanded-emergency-plan-8,Public discovery,Use resource: expanded emergency plan 8,index; self canonical,yes
+/sports-hub/resources/expanded-emergency-plan-9,Public discovery,Use resource: expanded emergency plan 9,index; self canonical,yes
+/sports-hub/resources/expanded-emergency-plan-10,Public discovery,Use resource: expanded emergency plan 10,index; self canonical,yes
+/sports-hub/resources/expanded-parent-communication-1,Public discovery,Use resource: expanded parent communication 1,index; self canonical,yes
+/sports-hub/resources/expanded-parent-communication-2,Public discovery,Use resource: expanded parent communication 2,index; self canonical,yes
+/sports-hub/resources/expanded-parent-communication-3,Public discovery,Use resource: expanded parent communication 3,index; self canonical,yes
+/sports-hub/resources/expanded-parent-communication-4,Public discovery,Use resource: expanded parent communication 4,index; self canonical,yes
+/sports-hub/resources/expanded-parent-communication-5,Public discovery,Use resource: expanded parent communication 5,index; self canonical,yes
+/sports-hub/resources/expanded-parent-communication-6,Public discovery,Use resource: expanded parent communication 6,index; self canonical,yes
+/sports-hub/resources/expanded-parent-communication-7,Public discovery,Use resource: expanded parent communication 7,index; self canonical,yes
+/sports-hub/resources/expanded-parent-communication-8,Public discovery,Use resource: expanded parent communication 8,index; self canonical,yes
+/sports-hub/resources/expanded-parent-communication-9,Public discovery,Use resource: expanded parent communication 9,index; self canonical,yes
+/sports-hub/resources/expanded-parent-communication-10,Public discovery,Use resource: expanded parent communication 10,index; self canonical,yes
+/sports-hub/resources/pp-1,Public discovery,Use resource: pp 1,index; self canonical,yes
+/sports-hub/resources/pp-2,Public discovery,Use resource: pp 2,index; self canonical,yes
+/sports-hub/resources/pp-3,Public discovery,Use resource: pp 3,index; self canonical,yes
+/sports-hub/resources/dr-1,Public discovery,Use resource: dr 1,index; self canonical,yes
+/sports-hub/resources/dr-2,Public discovery,Use resource: dr 2,index; self canonical,yes
+/sports-hub/resources/dr-3,Public discovery,Use resource: dr 3,index; self canonical,yes
+/sports-hub/resources/dr-4,Public discovery,Use resource: dr 4,index; self canonical,yes
+/sports-hub/resources/dr-5,Public discovery,Use resource: dr 5,index; self canonical,yes
+/sports-hub/resources/sp-1,Public discovery,Use resource: sp 1,index; self canonical,yes
+/sports-hub/resources/sp-2,Public discovery,Use resource: sp 2,index; self canonical,yes
+/sports-hub/resources/gdc-1,Public discovery,Use resource: gdc 1,index; self canonical,yes
+/sports-hub/resources/tc-1,Public discovery,Use resource: tc 1,index; self canonical,yes
+/sports-hub/resources/eap-1,Public discovery,Use resource: eap 1,index; self canonical,yes
+/sports-hub/resources/pc-1,Public discovery,Use resource: pc 1,index; self canonical,yes
+/sports-hub/resources/vg-1,Public discovery,Use resource: vg 1,index; self canonical,yes
+/sports-hub/resources/cma-1,Public discovery,Use resource: cma 1,index; self canonical,yes
+/sports-hub/resources/cma-2,Public discovery,Use resource: cma 2,index; self canonical,yes
+/sports-hub/resources/lt-1,Public discovery,Use resource: lt 1,index; self canonical,yes
+/sports-hub/resources/fi-1,Public discovery,Use resource: fi 1,index; self canonical,yes
+/sports-hub/resources/el-1,Public discovery,Use resource: el 1,index; self canonical,yes
+/sports-hub/resources/trc-1,Public discovery,Use resource: trc 1,index; self canonical,yes
+/sports-hub/resources/vid-1,Public discovery,Use resource: vid 1,index; self canonical,yes
+/sports-hub/resources/vid-2,Public discovery,Use resource: vid 2,index; self canonical,yes
+/sports-hub/resources/vid-3,Public discovery,Use resource: vid 3,index; self canonical,yes
+/sports-hub/resources/vid-4,Public discovery,Use resource: vid 4,index; self canonical,yes
+/sports-hub/resources/vid-5,Public discovery,Use resource: vid 5,index; self canonical,yes
+/sports-hub/resources/vid-6,Public discovery,Use resource: vid 6,index; self canonical,yes
+/sports-hub/resources/vid-7,Public discovery,Use resource: vid 7,index; self canonical,yes
+/sports-hub/resources/vid-8,Public discovery,Use resource: vid 8,index; self canonical,yes
+/sports-hub/templates/soccer-scoresheet,Public discovery,Practical template: soccer scoresheet,index; self canonical,yes
+/sports-hub/templates/basketball-scoresheet,Public discovery,Practical template: basketball scoresheet,index; self canonical,yes
+/sports-hub/templates/baseball-scoresheet,Public discovery,Practical template: baseball scoresheet,index; self canonical,yes
+/sports-hub/templates/rugby-scoresheet,Public discovery,Practical template: rugby scoresheet,index; self canonical,yes
+/sports-hub/templates/football-scoresheet,Public discovery,Practical template: football scoresheet,index; self canonical,yes
+/sports-hub/templates/cornhole-scoresheet,Public discovery,Practical template: cornhole scoresheet,index; self canonical,yes
+/sports-hub/templates/gymnastics-scoresheet,Public discovery,Practical template: gymnastics scoresheet,index; self canonical,yes
+/sports-hub/templates/pickleball-scoresheet,Public discovery,Practical template: pickleball scoresheet,index; self canonical,yes
+/sports-hub/templates/tennis-scoresheet,Public discovery,Practical template: tennis scoresheet,index; self canonical,yes
+/sports-hub/templates/golf-scoresheet,Public discovery,Practical template: golf scoresheet,index; self canonical,yes
+/sports-hub/templates/swimming-scoresheet,Public discovery,Practical template: swimming scoresheet,index; self canonical,yes
+/sports-hub/templates/esports-scoresheet,Public discovery,Practical template: esports scoresheet,index; self canonical,yes
+/sports-hub/templates/ultimate-frisbee-scoresheet,Public discovery,Practical template: ultimate frisbee scoresheet,index; self canonical,yes
+/sports-hub/templates/disc-golf-scoresheet,Public discovery,Practical template: disc golf scoresheet,index; self canonical,yes
+/sports-hub/templates/volleyball-scoresheet,Public discovery,Practical template: volleyball scoresheet,index; self canonical,yes
+/sports-hub/templates/ice-hockey-scoresheet,Public discovery,Practical template: ice hockey scoresheet,index; self canonical,yes
+/sports-hub/templates/softball-scoresheet,Public discovery,Practical template: softball scoresheet,index; self canonical,yes
+/sports-hub/templates/lacrosse-scoresheet,Public discovery,Practical template: lacrosse scoresheet,index; self canonical,yes
+/sports-hub/templates/cricket-scoresheet,Public discovery,Practical template: cricket scoresheet,index; self canonical,yes
+/sports-hub/templates/badminton-scoresheet,Public discovery,Practical template: badminton scoresheet,index; self canonical,yes
+/sports-hub/templates/table-tennis-scoresheet,Public discovery,Practical template: table tennis scoresheet,index; self canonical,yes
+/sports-hub/templates/handball-scoresheet,Public discovery,Practical template: handball scoresheet,index; self canonical,yes
+/sports-hub/templates/hockey-scoresheet,Public discovery,Practical template: hockey scoresheet,index; self canonical,yes
+/sports-hub/templates/slo-pitch-scoresheet,Public discovery,Practical template: slo pitch scoresheet,index; self canonical,yes
+/sports-hub/templates/field-lacrosse-scoresheet,Public discovery,Practical template: field lacrosse scoresheet,index; self canonical,yes
+/sports-hub/templates/box-lacrosse-scoresheet,Public discovery,Practical template: box lacrosse scoresheet,index; self canonical,yes
+/sports-hub/templates/season-planning-spreadsheet,Public discovery,Practical template: season planning spreadsheet,index; self canonical,yes
+/sports-hub/templates/practice-plan-builder,Public discovery,Practical template: practice plan builder,index; self canonical,yes
+/sports-hub/templates/game-day-checklist,Public discovery,Practical template: game day checklist,index; self canonical,yes
+/sports-hub/templates/roster-contact-sheet,Public discovery,Practical template: roster contact sheet,index; self canonical,yes
+/sports-hub/templates/parent-communication-pack,Public discovery,Practical template: parent communication pack,index; self canonical,yes
+/sports-hub/templates/incident-report-form,Public discovery,Practical template: incident report form,index; self canonical,yes
+/sports-hub/templates/tournament-runsheet,Public discovery,Practical template: tournament runsheet,index; self canonical,yes
+/sports-hub/templates/athlete-performance-tracker,Public discovery,Practical template: athlete performance tracker,index; self canonical,yes
+/admin/moderation,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/admin/plans,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/calendar,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/chats/[chatId],Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/chats,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/club,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/coaches-corner/attendance,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/coaches-corner,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/competition,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/dashboard/billing,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/dashboard,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/dashboard/public-page,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/drills,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/equipment,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/events,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/facilities,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/family,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/family/payments,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/feed,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/files,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/fundraising,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/games,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/leagues,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/leagues/registration/[leagueId],Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/manage-tournaments/builder,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/manage-tournaments,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/manage-tournaments/registration/[teamId]/[eventId],Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/payments,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/practice,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/pricing,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/roster,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/settings,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/subscriptions,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/team,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/teams/join,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/teams/new,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/tournaments,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/volunteers,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/admin,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/admin/signup-alerts,Private application,Account/team workflow; not a discovery landing,noindex; authorization retained,no
+/app-unavailable,Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/beta,Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/embed/links,Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/embed/newsletter,Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/embed/signup,Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/embed/sports-hub,Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/embed/squad-hub,Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/embed/tournament/[teamId]/[eventId],Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/events/register/[teamId],Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/leagues/scorekeeper/[leagueId]/[gameId],Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/leagues/scorekeeper/[leagueId],Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/leagues/spectator/[leagueId],Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/login,Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/onboarding,Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/p/[slug],Conditional public publication,Published team/program page,index only when enabled and published; previews noindex,not enumerated; no private records queried
+/public/donate/[teamId]/[fundId],Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/public/volunteer/[teamId]/[oppId],Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/recruit/player/[playerId],Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/register/league/[leagueId],Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/register/squad/[teamId],Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/register/tournament/[teamId]/[eventId],Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/schedule-app,Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/signup,Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/signup/youth,Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/sports-hub/preferences,Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/sports-hub/search,Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/squad-pages,Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/tournaments/[teamId]/waiver/[eventId],Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/tournaments/live/[teamId]/[eventId],Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/tournaments/preview,Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/tournaments/public/[teamId]/[eventId],Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/tournaments/referee/[teamId]/[eventId],Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/tournaments/scorekeeper/[teamId]/[eventId]/[gameId],Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/tournaments/scorekeeper/[teamId]/[eventId],Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/tournaments/spectator/[teamId]/[eventId],Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no
+/verify-email,Public utility/share or account flow,Account/team workflow; not a discovery landing,noindex; shared links retained,no

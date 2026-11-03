@@ -143,6 +143,9 @@ const nextConfig: NextConfig = {
   // ─── HTTP Security Headers ────────────────────────────────────────────────
   async headers() {
     return [
+      ...(process.env.VERCEL_ENV === 'preview' || process.env.SITE_INDEXING === 'disabled' || process.env.NEXT_PUBLIC_APP_DISTRIBUTION === 'store'
+        ? [{ source: '/:path*', headers: [{ key: 'X-Robots-Tag', value: 'noindex, nofollow' }] }]
+        : []),
       {
         // Embed cards are intentionally frameable on external Linktree-style sites.
         source: '/embed/:path*',

@@ -1,11 +1,13 @@
+import { publicRobots } from '@/lib/discovery-metadata';
 import type { Metadata } from 'next';
 import { SportsHubClientLayout } from '@/components/sports-hub/SportsHubClientLayout';
 
 export const metadata: Metadata = {
   title: 'Sports Hub | Coaching Resources, Templates, and Sports News',
   description: 'Practical coaching resources, team management guides, sports news, and ready-to-use templates from The Squad.',
-  alternates: { canonical: '/sports-hub' },
-  openGraph: {
+  robots: publicRobots,
+    alternates: { canonical: '/sports-hub' },
+  openGraph: { images: [{ url: '/og-image.png', width: 1376, height: 768, alt: 'The Squad sports team management' }],
     type: 'website',
     url: 'https://www.thesquad.pro/sports-hub',
     title: 'Sports Hub | The Squad',

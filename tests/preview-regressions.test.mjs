@@ -481,13 +481,13 @@ test('event date override preserves collection sorting indexes', async () => {
 });
 
 test('demo role selector has an accessible description', async () => {
-  const landing = await readSource('../src/app/page.tsx');
+  const landing = await readSource('../src/components/marketing/home-page.tsx');
 
   assert.match(landing, /Choose a demo role to open an isolated sample workspace/);
 });
 
 test('landing navigation sends authenticated users to the dashboard', async () => {
-  const landing = await readSource('../src/app/page.tsx');
+  const landing = await readSource('../src/components/marketing/home-page.tsx');
 
   assert.match(landing, /const accountHref = user \? '\/dashboard' : '\/login'/);
   assert.match(landing, /const accountLabel = user \? 'Dashboard' : 'Log In'/);
@@ -495,14 +495,14 @@ test('landing navigation sends authenticated users to the dashboard', async () =
 });
 
 test('landing reveal curtain never blocks visible hero controls', async () => {
-  const landing = await readSource('../src/app/page.tsx');
+  const landing = await readSource('../src/components/marketing/home-page.tsx');
 
   assert.match(landing, /pointer-events-none absolute inset-x-0 top-0 h-1\/2 bg-black z-50 origin-top/);
   assert.match(landing, /pointer-events-none absolute inset-x-0 bottom-0 h-1\/2 bg-black z-50 origin-bottom/);
 });
 
 test('newsletter subscription and sending are handled by protected server routes', async () => {
-  const landing = await readSource('../src/app/page.tsx');
+  const landing = await readSource('../src/components/marketing/home-page.tsx');
   const adminRoute = await readSource('../src/app/api/admin/newsletter/send/route.ts');
   const renderer = await readSource('../src/lib/newsletter-content.ts');
 
@@ -679,12 +679,13 @@ test('topic gap pages publish sport solutions and the recommended articles in th
   assert.match(sitemap, /path: '\/sports-hub\/youth'/);
   assert.match(audienceCatalog, /seoTitle: 'Parks and Recreation Sports Management Software'/);
   assert.match(audiencePage, /'@type': 'BreadcrumbList'/);
-  assert.match(rootLayout, /canonical: 'https:\/\/www\.thesquad\.pro'/);
-  assert.match(rootLayout, /priceCurrency: 'USD'/);
+  assert.match(rootLayout, /metadataBase: new URL\('https:\/\/www\.thesquad\.pro'\)/);
+  assert.doesNotMatch(rootLayout, /canonical:/);
+  assert.match(rootLayout, /robots: \{ index: false/);
 });
 
 test('the Elfsight chatbot and beta reporter are restricted to the landing page', async () => {
-  const landing = await readSource('../src/app/page.tsx');
+  const landing = await readSource('../src/components/marketing/home-page.tsx');
   const chatbot = await readSource('../src/components/LandingChatbot.tsx');
   const reporter = await readSource('../src/components/BugReporter.tsx');
   const dashboardLayout = await readSource('../src/app/(dashboard)/layout.tsx');
@@ -728,7 +729,7 @@ test('Resend webhook verifies raw signed payloads and processes each delivery on
 });
 
 test('contact inquiries use a protected server delivery route', async () => {
-  const landing = await readSource('../src/app/page.tsx');
+  const landing = await readSource('../src/components/marketing/home-page.tsx');
   const route = await readSource('../src/app/api/contact/route.ts');
 
   assert.match(landing, /fetch\('\/api\/contact'/);
@@ -755,7 +756,7 @@ test('superadmin account controls link to the admin page without exposing it to 
 });
 
 test('a product transition separates contact from the permanent newsletter signup', async () => {
-  const landing = await readSource('../src/app/page.tsx');
+  const landing = await readSource('../src/components/marketing/home-page.tsx');
   const contactIndex = landing.indexOf('<section id="contact"');
   const transitionIndex = landing.indexOf('<section id="built-for"');
   const newsletterIndex = landing.indexOf('<section id="newsletter"');

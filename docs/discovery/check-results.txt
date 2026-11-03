@@ -1,0 +1,27 @@
+Full application tests:
+ℹ tests 2490
+ℹ suites 0
+ℹ pass 2426
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 64
+ℹ todo 0
+ℹ duration_ms 34011.252208
+
+Final focused tests:
+ℹ tests 10
+ℹ suites 0
+ℹ pass 10
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 464.283
+
+Build route sizes:
+┌ ○ /                                                                               32 kB         331 kB
+├ ○ /download                                                                       178 B         112 kB
+├ ○ /plans                                                                        3.35 kB         115 kB
++ First Load JS shared by all                                                      104 kB
+
+Build completed successfully; lint/type checking included. Existing warnings retained.
