@@ -83,5 +83,5 @@ jobs:
             functions/package-lock.json
       - run: npm ci
       - run: npm --prefix functions ci
-      - run: npm audit --omit=dev --audit-level=high
-      - run: npm --prefix functions audit --omit=dev --audit-level=high
+      - run: npm audit --audit-level=high
+      - run: npm --prefix functions audit --audit-level=high

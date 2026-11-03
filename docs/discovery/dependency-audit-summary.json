@@ -1,25 +1,148 @@
 {
-  "observedAt": "2026-11-03T16:50:38.169Z",
-  "counts": {
+  "date": "2026-11-03",
+  "scope": "all dependencies including development tooling",
+  "before": {
+    "high": 11,
+    "moderate": 31,
+    "critical": 0
+  },
+  "app": {
     "info": 0,
     "low": 0,
-    "moderate": 31,
-    "high": 11,
+    "moderate": 30,
+    "high": 0,
     "critical": 0,
-    "total": 42
+    "total": 30
   },
-  "highPackages": [
-    "@grpc/grpc-js",
-    "@modelcontextprotocol/sdk",
-    "ajv",
-    "basic-ftp",
-    "body-parser",
-    "fast-uri",
-    "firebase-tools",
-    "get-uri",
-    "js-yaml",
-    "pac-proxy-agent",
-    "proxy-agent"
-  ],
-  "lockfileChanged": false
+  "functions": {
+    "info": 0,
+    "low": 0,
+    "moderate": 0,
+    "high": 0,
+    "critical": 0,
+    "total": 0
+  },
+  "gate": "high",
+  "remaining": [
+    {
+      "name": "@eslint-community/eslint-utils",
+      "severity": "moderate"
+    },
+    {
+      "name": "@eslint/config-array",
+      "severity": "moderate"
+    },
+    {
+      "name": "@eslint/eslintrc",
+      "severity": "moderate"
+    },
+    {
+      "name": "@typescript-eslint/eslint-plugin",
+      "severity": "moderate"
+    },
+    {
+      "name": "@typescript-eslint/parser",
+      "severity": "moderate"
+    },
+    {
+      "name": "@typescript-eslint/type-utils",
+      "severity": "moderate"
+    },
+    {
+      "name": "@typescript-eslint/typescript-estree",
+      "severity": "moderate"
+    },
+    {
+      "name": "@typescript-eslint/utils",
+      "severity": "moderate"
+    },
+    {
+      "name": "archiver",
+      "severity": "moderate"
+    },
+    {
+      "name": "archiver-utils",
+      "severity": "moderate"
+    },
+    {
+      "name": "eslint",
+      "severity": "moderate"
+    },
+    {
+      "name": "eslint-config-next",
+      "severity": "moderate"
+    },
+    {
+      "name": "eslint-plugin-import",
+      "severity": "moderate"
+    },
+    {
+      "name": "eslint-plugin-jsx-a11y",
+      "severity": "moderate"
+    },
+    {
+      "name": "eslint-plugin-react",
+      "severity": "moderate"
+    },
+    {
+      "name": "exegesis",
+      "severity": "moderate"
+    },
+    {
+      "name": "express",
+      "severity": "moderate"
+    },
+    {
+      "name": "firebase-tools",
+      "severity": "moderate"
+    },
+    {
+      "name": "gaxios",
+      "severity": "moderate"
+    },
+    {
+      "name": "gcp-metadata",
+      "severity": "moderate"
+    },
+    {
+      "name": "glob",
+      "severity": "moderate"
+    },
+    {
+      "name": "google-auth-library",
+      "severity": "moderate"
+    },
+    {
+      "name": "google-gax",
+      "severity": "moderate"
+    },
+    {
+      "name": "googleapis-common",
+      "severity": "moderate"
+    },
+    {
+      "name": "minimatch",
+      "severity": "moderate"
+    },
+    {
+      "name": "qs",
+      "severity": "moderate"
+    },
+    {
+      "name": "readdir-glob",
+      "severity": "moderate"
+    },
+    {
+      "name": "rimraf",
+      "severity": "moderate"
+    },
+    {
+      "name": "superstatic",
+      "severity": "moderate"
+    },
+    {
+      "name": "zip-stream",
+      "severity": "moderate"
+    }
+  ]
 }
