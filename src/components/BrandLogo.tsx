@@ -23,7 +23,7 @@ export default function BrandLogo({ variant, className, priority }: BrandLogoPro
     <div className={cn("relative flex items-center justify-center", className)}>
       <Image
         src={src}
-        alt="The Squad"
+        alt="The Squad sports team management app"
         width={400}
         height={120}
         className="object-contain w-full h-full"
