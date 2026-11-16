@@ -18,12 +18,14 @@ export function HeroBackground() {
 
   useEffect(() => {
     const motion = window.matchMedia('(prefers-reduced-motion: reduce)');
+    const wideViewport = window.matchMedia('(min-width: 768px)');
     const connection = (navigator as Navigator & { connection?: { saveData?: boolean; effectiveType?: string; addEventListener?: (event: string, handler: () => void) => void; removeEventListener?: (event: string, handler: () => void) => void } }).connection;
-    const update = () => setPlayVideo(!motion.matches && !connection?.saveData && !['slow-2g', '2g'].includes(connection?.effectiveType || ''));
+    const update = () => setPlayVideo(wideViewport.matches && !motion.matches && !connection?.saveData && !['slow-2g', '2g'].includes(connection?.effectiveType || ''));
     update();
     motion.addEventListener('change', update);
+    wideViewport.addEventListener('change', update);
     connection?.addEventListener?.('change', update);
-    return () => { motion.removeEventListener('change', update); connection?.removeEventListener?.('change', update); };
+    return () => { motion.removeEventListener('change', update); wideViewport.removeEventListener('change', update); connection?.removeEventListener?.('change', update); };
   }, []);
 
   useEffect(() => {

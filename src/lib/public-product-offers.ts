@@ -20,13 +20,17 @@ export function productOffersFromCatalog(candidates: unknown, now = Date.now()) 
   return offers;
 }
 
-export async function loadPublicProductOffers() {
+export async function loadPublicDisplayPrices(): Promise<DisplayPrice[]> {
   try {
     const response = await fetch('https://www.thesquad.pro/api/billing/display-catalog', { cache: 'no-store', signal: AbortSignal.timeout(3500) });
-    if (!response.ok) return productOffersFromCatalog(null);
+    if (!response.ok) return [];
     const catalog = await response.json();
-    return productOffersFromCatalog(catalog?.prices);
+    return Array.isArray(catalog?.prices) ? catalog.prices.filter((quote: DisplayPrice) => isFreshDisplayPrice(quote)) : [];
   } catch {
-    return productOffersFromCatalog(null);
+    return [];
   }
+}
+
+export async function loadPublicProductOffers() {
+  return productOffersFromCatalog(await loadPublicDisplayPrices());
 }

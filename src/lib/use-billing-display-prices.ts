@@ -1,17 +1,24 @@
 'use client';
-import { useEffect, useRef, useState } from 'react';
+import { createContext, createElement, useContext, useEffect, useRef, useState, type ReactNode } from 'react';
 import { usePathname } from 'next/navigation';
-import { isFreshDisplayPrice } from './billing-display-price';
+import { isFreshDisplayPrice, type DisplayPrice } from './billing-display-price';
 import { createBillingPriceRefresh, type PriceRefreshState } from './billing-price-refresh';
+
+const BillingPriceSeed = createContext<DisplayPrice[]>([]);
+export function BillingDisplayPriceProvider({ prices, children }: { prices: DisplayPrice[]; children: ReactNode }) {
+  return createElement(BillingPriceSeed.Provider, { value: prices }, children);
+}
 
 export function useBillingDisplayPrices(enabled = true) {
   const pathname = usePathname();
-  const [state, setState] = useState<PriceRefreshState>({ prices: [], loading: true });
+  const initialPrices = useContext(BillingPriceSeed);
+  const [state, setState] = useState<PriceRefreshState>(() => ({ prices: enabled ? initialPrices.filter(price => isFreshDisplayPrice(price)) : [], loading: true }));
   const controller = useRef<ReturnType<typeof createBillingPriceRefresh> | null>(null);
   useEffect(() => {
-    setState({ prices: [], loading: enabled });
+    setState({ prices: enabled ? initialPrices.filter(price => isFreshDisplayPrice(price)) : [], loading: enabled });
     if (!enabled) return;
     const current = createBillingPriceRefresh({
+      initialPrices,
       available: () => document.visibilityState === 'visible' && navigator.onLine !== false,
       changed: setState,
       load: async signal => {
@@ -31,7 +38,7 @@ export function useBillingDisplayPrices(enabled = true) {
       current.stop();
       if (controller.current === current) controller.current = null;
     };
-  }, [enabled, pathname]);
+  }, [enabled, pathname, initialPrices]);
   const quote = (id: string) => enabled ? state.prices.find(price => price.id === id && isFreshDisplayPrice(price)) : undefined;
   return { quote, loading: state.loading, label: (id: string) => quote(id)?.formatted || (state.loading ? 'Loading price…' : 'Price unavailable'), refresh: () => controller.current?.refresh() };
 }

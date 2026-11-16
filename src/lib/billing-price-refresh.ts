@@ -4,6 +4,7 @@ export type PriceRefreshState = { prices: DisplayPrice[]; loading: boolean };
 
 /** GET-only scheduling; display and checkout still require a fresh server quote. */
 export function createBillingPriceRefresh(deps: {
+  initialPrices?: DisplayPrice[];
   load(signal: AbortSignal): Promise<unknown>;
   changed(state: PriceRefreshState): void;
   available(): boolean;
@@ -12,7 +13,7 @@ export function createBillingPriceRefresh(deps: {
   cancel?: typeof clearTimeout;
 }) {
   const now = deps.now ?? Date.now, schedule = deps.schedule ?? setTimeout, cancel = deps.cancel ?? clearTimeout;
-  let prices: DisplayPrice[] = [], stopped = false, loading = false;
+  let prices: DisplayPrice[] = (deps.initialPrices ?? []).filter(price => isFreshDisplayPrice(price, now())), stopped = false, loading = false;
   let retry = 1000, nextAllowed = 0;
   let refreshTimer: ReturnType<typeof setTimeout> | undefined;
   let expiryTimer: ReturnType<typeof setTimeout> | undefined;
