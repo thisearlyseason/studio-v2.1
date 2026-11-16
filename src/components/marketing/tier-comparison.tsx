@@ -11,11 +11,23 @@ function annualSaving(monthly?: DisplayPrice, annual?: DisplayPrice) {
   if (!monthly || !annual || monthly.currency !== annual.currency || monthly.interval !== 'month' || annual.interval !== 'year' || monthly.amount <= 0 || annual.amount >= monthly.amount * 12) return null;
   return Math.floor((1 - annual.amount / (monthly.amount * 12)) * 100);
 }
-export function AnnualSavings() {
+export function AnnualSavings({ compact = false }: { compact?: boolean }) {
   const prices = useBillingDisplayPrices();
   const plan = PRICING_CONFIG.find(p => p.id === 'team')!;
   const saving = annualSaving(prices.quote(plan.monthlyPriceId), prices.quote(plan.annualPriceId));
-  return saving ? <span className="text-xs text-white/80 px-2">Save {saving}% on Squad Pro with annual billing</span> : null;
+  return saving ? <span className={compact ? 'rounded-full bg-primary/20 px-2 py-1 text-[9px] font-black text-red-400' : 'text-xs text-white/80 px-2'}>{compact ? `Save ${saving}%` : `Save ${saving}% on Squad Pro with annual billing`}</span> : null;
+}
+export function ExtraTeamPrice({ cycle }: { cycle: 'monthly' | 'annual' }) {
+  const prices = useBillingDisplayPrices();
+  return <p className="text-xs font-normal leading-relaxed text-white/65">Additional squads: {prices.label(cycle === 'annual' ? EXTRA_TEAM_CONFIG.annualPriceId : EXTRA_TEAM_CONFIG.monthlyPriceId)}/{cycle === 'annual' ? 'yr' : 'mo'} per squad.</p>;
+}
+export function TeamValueAnchor() {
+  const prices = useBillingDisplayPrices();
+  const plan = PRICING_CONFIG.find(plan => plan.id === 'team')!;
+  const monthly = prices.quote(plan.monthlyPriceId);
+  if (!monthly || monthly.interval !== 'month') return null;
+  const perPlayer = new Intl.NumberFormat('en', { style: 'currency', currency: monthly.currency, currencyDisplay: 'code' }).format(monthly.amount / 20);
+  return <p className="text-xs font-normal leading-relaxed text-white/65">For a 20-player team sharing the monthly cost, about {perPlayer} per player. Billed as one team subscription.</p>;
 }
 export function ClubValueAnchor() {
   const prices = useBillingDisplayPrices();

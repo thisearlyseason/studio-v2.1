@@ -59,10 +59,11 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import BrandLogo from '@/components/BrandLogo';
 import { LandingChatbot } from '@/components/LandingChatbot';
+import { PricingReassurance, YouthDataStatement } from '@/components/marketing/pricing-reassurance';
 import { HeroBackground } from '@/components/marketing/hero-background';
 import { MarketingFaq } from '@/components/marketing/marketing-faq';
 import { AdoptionProof, CustomerStories, FounderStrip, ThirdPartyProof } from '@/components/marketing/trust-proof';
-import { TierComparison, AnnualSavings, ClubValueAnchor } from '@/components/marketing/tier-comparison';
+import { TierComparison, AnnualSavings, ClubValueAnchor, TeamValueAnchor, ExtraTeamPrice } from '@/components/marketing/tier-comparison';
 import { PlatformComparison } from '@/components/marketing/platform-comparison';
 import { LandingPwaInstallButton } from '@/components/pwa/LandingPwaInstallButton';
 import { cn } from '@/lib/utils';
@@ -90,6 +91,8 @@ import {
   SheetDescription
 } from '@/components/ui/sheet';
 import { Menu } from 'lucide-react';
+
+const FEATURE_ORDER = ['Registration and payments', 'Collect dues with Stripe', 'Printable practice plans', 'Tournaments and leagues, run end to end', 'Waiver Tracking', 'Film watch verification'];
 
 const DEMO_OPTIONS = [
   { id: 'starter_squad', name: 'Starter Plan Demo', icon: Users, desc: 'Grassroots essentials' },
@@ -162,9 +165,8 @@ function PricingToggle() {
         )}
       >
         Annual
-        <span className="bg-primary/20 text-primary font-black text-[8px] px-1.5 py-0.5 rounded-full border border-primary/30">YEARLY</span>
+        <AnnualSavings compact />
       </button>
-      <AnnualSavings />
     </div>
   );
 }
@@ -264,7 +266,7 @@ function ContactForm() {
       </div>
       <div className="space-y-2">
         <Label htmlFor="contact-inquiry" className="text-xs font-black uppercase tracking-widest">Inquiry *</Label>
-        <Textarea id="contact-inquiry" value={inquiry} onChange={e => setInquiry(e.target.value)} placeholder="Define your institutional needs..." className="min-h-[120px] rounded-xl bg-muted/50 border-none resize-none" required />
+        <Textarea id="contact-inquiry" value={inquiry} onChange={e => setInquiry(e.target.value)} placeholder="Tell us what your team needs help with..." className="min-h-[120px] rounded-xl bg-muted/50 border-none resize-none" required />
       </div>
       <Button
         type="submit"
@@ -458,6 +460,7 @@ export default function LandingPage() {
           </div>
 
           <div className="xl:hidden flex items-center gap-2">
+            <a href="#pricing" className={cn('rounded-full px-2 py-2 text-[10px] font-bold uppercase tracking-wider', isScrolled ? 'text-foreground' : 'text-white')}>Pricing</a>
             {!isScrolled && (
               <Link href={accountHref}>
                 <Button variant="ghost" size="sm" className="font-bold text-white text-[10px] uppercase tracking-widest px-2 h-8">
@@ -521,12 +524,12 @@ export default function LandingPage() {
         <div className="container relative z-20 mx-auto px-5 pb-8 text-center md:px-6 xl:pb-0">
           <div className="mx-auto max-w-5xl space-y-6">
           <p className="mx-auto w-fit rounded-full border border-white/20 bg-black/25 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.22em] text-white/85 backdrop-blur-md">One team. Every season. One Squad.</p>
-          <h1 className="text-xs font-bold uppercase tracking-[0.18em] text-white/70 md:text-sm">The Squad: Sports Team Management</h1>
-          <div aria-hidden="true" className="font-black uppercase tracking-tighter leading-[0.86]" style={{ textShadow: '0 8px 50px rgba(0,0,0,.65)', fontSize: 'clamp(3.5rem, 10.7vw, 9rem)' }}>
-            <div>DOMINATE</div>
-            <div className="mt-2 whitespace-nowrap text-[0.78em] sm:text-[1em]">YOUR <span className="italic text-primary">SEASON.</span></div>
-          </div>
-          <p className="mx-auto max-w-xl text-base font-medium leading-relaxed text-white/85 md:text-lg">Keep coaches, athletes and families connected. Schedules, rosters, team chat and competitions in one workspace.</p>
+          <h1 className="font-black uppercase tracking-tighter leading-[0.86]" style={{ textShadow: '0 8px 50px rgba(0,0,0,.65)', fontSize: 'clamp(3.5rem, 10.7vw, 9rem)' }}>
+            <span className="mb-6 block text-base font-bold normal-case leading-snug tracking-normal text-white/85 md:text-xl">Team management for clubs, leagues and schools.</span>
+            <span className="block">DOMINATE</span>
+            <span className="mt-2 block whitespace-nowrap text-[0.78em] sm:text-[1em]">YOUR <span className="italic text-primary">SEASON.</span></span>
+          </h1>
+          <p className="mx-auto max-w-xl text-base font-medium leading-relaxed text-white/85 md:text-lg">Stop chasing parents across disconnected tools. Keep schedules, waivers, dues and team chat in one workspace.</p>
           {/* Existing signup and demo paths */}
           <motion.div className="flex flex-col sm:flex-row items-center justify-center gap-3 w-full max-w-lg mx-auto">
             {user ? (
@@ -595,6 +598,7 @@ export default function LandingPage() {
           </motion.div>
           </div>
           <p className="mx-auto mt-5 max-w-lg text-xs font-medium text-white/60">Less administration. More action. One Squad.</p>
+          <p className="mt-2 text-[10px] font-medium text-white/50">The demo opens sample team, club, school and family workspaces.</p>
         </div>
         <figure className="relative z-20 mx-auto mb-8 w-[280px] max-w-[calc(100%-40px)] overflow-hidden rounded-2xl border border-white/25 bg-black/60 p-1.5 text-left shadow-2xl backdrop-blur-xl xl:absolute xl:bottom-8 xl:right-8 xl:mb-0 xl:w-[260px] xl:rotate-[-3deg] xl:transition-transform xl:hover:rotate-0">
           <div className="flex items-center justify-between px-2 pb-2 pt-1"><span className="text-[9px] font-black uppercase tracking-[0.18em] text-white">Inside The Squad</span><span className="rounded-full bg-white/10 px-2 py-1 text-[8px] font-bold uppercase tracking-wider text-white/60">Demo data</span></div>
@@ -835,30 +839,31 @@ export default function LandingPage() {
             {[
               {
                 Icon: TableIcon,
-                title: 'Run tournaments and standings',
+                title: 'Tournaments and leagues, run end to end',
                 desc: <>Automated <strong>season schedules</strong> and bracket generation with a <strong>spectator page</strong> and mobile <strong>Scorekeeper Portal</strong> for real-time results.</>,
                 items: ['Live Standings', 'Multi-Team Conflicts'],
+                image: { src: 'tournament-brackets', alt: 'The Squad tournament workspace showing match brackets with demo teams' },
                 accent: 'from-primary/20 to-transparent',
               },
               {
                 Icon: PenTool,
-                title: 'Build your season calendar',
-                desc: <>Keep games and practices in your <strong>season calendar</strong>, track RSVPs and share printable plans for each event.</>,
-                items: ['RSVPs and attendance', 'Printable schedules'],
+                title: 'Printable practice plans',
+                desc: <>Share a <strong>printable practice plan</strong> with drills, times and instructions so coaches and athletes know what comes next.</>,
+                items: ['Practice plans', 'Printable schedules'],
                 accent: 'from-blue-500/10 to-transparent',
               },
               {
                 Icon: Video,
-                title: 'Track assigned film',
-                desc: <>The <strong>75% Watch Rule</strong> ensures teammates study their assignments. See who has watched their assigned film in the roster.</>,
-                items: ['10GB Pro Storage', 'Verified Compliance'],
+                title: 'Film watch verification',
+                desc: <>Know who has watched assigned film before practice. The <strong>75% Watch Rule</strong> shows viewing progress in the roster.</>,
+                items: ['10GB Pro Storage', 'Viewing Progress'],
                 accent: 'from-purple-500/10 to-transparent',
               },
               {
                 Icon: ClipboardList,
-                title: 'Run registration and waivers',
-                desc: <>Create <strong>registration forms</strong> for your team. Collect medical waivers and fees with automated coach assignment and performance portfolios.</>,
-                items: ['Digital Signatures', 'Performance Export'],
+                title: 'Registration and payments',
+                desc: <>Open registration with <strong>forms, signed waivers and fees</strong> in one place. Track missing answers and signatures before game day.</>,
+                items: ['Digital Signatures', 'Registration Records'],
                 accent: 'from-emerald-500/10 to-transparent',
               },
               {
@@ -866,6 +871,7 @@ export default function LandingPage() {
                 title: 'Collect dues with Stripe',
                 desc: <>Accept dues, fees, and donations through Stripe. <strong>Connect an organizer account</strong> to receive payments. Processing fees and payout timing depend on Stripe and the account.</>,
                 items: ['Stripe Connect', 'Payment Tracking'],
+                image: { src: 'payment-items', alt: 'The Squad payment workspace showing team payment items using demo data' },
                 accent: 'from-orange-500/10 to-transparent',
               },
               {
@@ -875,7 +881,7 @@ export default function LandingPage() {
                 items: ['Waiver Distribution', 'Signature Status'],
                 accent: 'from-teal-500/10 to-transparent',
               },
-            ].map(({ Icon, title, desc, items, accent }, i) => (
+            ].sort((a, b) => FEATURE_ORDER.indexOf(a.title) - FEATURE_ORDER.indexOf(b.title)).map(({ Icon, title, desc, items, accent, image }, i) => (
               <motion.div
                 key={i}
                 variants={fadeUp}
@@ -893,8 +899,10 @@ export default function LandingPage() {
                       <div className="bg-primary p-4 rounded-2xl w-fit shadow-lg shadow-primary/30 group-hover:shadow-primary/50 transition-shadow">
                         <Icon className="h-8 w-8 text-white" />
                       </div>
+                      {i < 2 && <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Set up your season</p>}
                       <h3 className="text-2xl font-black uppercase tracking-tight">{title}</h3>
                       <p className="text-sm font-medium leading-relaxed opacity-70">{desc}</p>
+                      {image && <figure className="overflow-hidden rounded-2xl border border-black/10 bg-muted/20"><Image src={`/how-to/screenshots/${image.src}.webp`} width={1440} height={1000} sizes="(max-width: 768px) 90vw, 540px" alt={image.alt} className="aspect-[16/10] w-full object-cover object-top" /><figcaption className="px-3 py-2 text-[9px] font-bold uppercase tracking-wider opacity-50">Actual product workspace · demo data</figcaption></figure>}
                       <ul className="space-y-3 pt-2">
                         {items.map(item => (
                           <li key={item} className="flex items-center gap-3 text-xs font-bold uppercase">
@@ -1083,14 +1091,14 @@ export default function LandingPage() {
           <SectionHeader
             badge="Specialized Interfaces"
             title={<>Tailored <br /> <span className="text-primary italic">Account Roles.</span></>}
-            subtitle="Every member of the organization receives a custom dashboard optimized for their specific operational objectives."
+            subtitle="Coaches manage the team. Families see schedules, waivers and dues. Athletes keep up with practice and games."
           />
 
           <StaggerGrid className="grid grid-cols-1 md:grid-cols-3 gap-10">
             {[
               { Icon: Trophy, title: 'Coaches & Managers',  desc: 'Manage rosters, schedules and practice plans. Collect dues through Stripe Connect, track signed waivers and review athlete progress.', color: 'from-primary/15 via-transparent', num: '01' },
-              { Icon: Baby,   title: 'Guardian Hub',        desc: 'Manage multiple children from one unified Household Hub. Track consolidated dues, verify digital waivers, and manage volunteer assignments globally.', color: 'from-blue-500/10 via-transparent', num: '02' },
-              { Icon: User,   title: 'Athlete Performance', desc: 'A personal dashboard. Sign waivers, watch study film, track match results, and manage your Professional Recruiting Portfolio.', color: 'from-emerald-500/10 via-transparent', num: '03' },
+              { Icon: Baby,   title: 'Parents & Guardians',        desc: 'See your children’s schedules, dues and waivers together. Check what needs signing and manage volunteer shifts.', color: 'from-blue-500/10 via-transparent', num: '02' },
+              { Icon: User,   title: 'Athlete Performance', desc: 'See your schedule and results, watch assigned film and keep recruiting information together.', color: 'from-emerald-500/10 via-transparent', num: '03' },
             ].map(({ Icon, title, desc, color, num }, i) => (
               <motion.div key={i} variants={fadeUp} className="perspective-800 h-full rounded-[2.5rem] overflow-hidden">
                 <TiltCard strength={6} className="h-full rounded-[2.5rem] overflow-hidden">
@@ -1115,6 +1123,7 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <CustomerStories />
       <section id="pricing" className="py-32 bg-black relative overflow-hidden">
       <PricingCycleContext.Provider value={{ cycle: pricingCycle, setCycle: setPricingCycle }}>
         {/* Animated gradient orbs */}
@@ -1129,7 +1138,7 @@ export default function LandingPage() {
             variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.12 } } }}
           >
             <motion.div variants={fadeUp}>
-              <Badge className="bg-primary/20 text-red-400 border-primary/30 font-black px-4 py-1 uppercase tracking-widest text-[10px]">Transparent Institutional Tiers</Badge>
+              <Badge className="bg-primary/20 text-red-400 border-primary/30 font-black px-4 py-1 uppercase tracking-widest text-[10px]">Plans for teams and organizations</Badge>
             </motion.div>
             <motion.h2 variants={fadeUp} className="text-4xl sm:text-5xl md:text-7xl font-black tracking-tighter leading-[0.9] text-white sm:leading-none md:leading-none">
               SCALE YOUR <span className="text-red-400 italic">OPERATION.</span>
@@ -1180,6 +1189,8 @@ export default function LandingPage() {
             </div>
           </motion.div>
 
+          <PricingReassurance />
+          <p className="mb-8 text-center text-xs text-white/60"><a href="#youth-data" className="underline underline-offset-4">How we handle team and youth information</a></p>
           <div className="max-w-7xl mx-auto">
             {/* Row 1: 3 cards */}
             <StaggerGrid className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch mb-6">
@@ -1193,7 +1204,7 @@ export default function LandingPage() {
                     <CardTitle className="text-2xl font-black uppercase tracking-tight text-white">Starter</CardTitle>
                     <span className="text-4xl font-black tracking-tighter text-white">$0</span>
                   </div>
-                  <CardDescription className="text-[10px] font-bold text-white/70 uppercase">Foundational coordination hub.</CardDescription>
+                  <CardDescription className="text-[10px] font-bold text-white/70 uppercase">Schedules, team chat and score tracking.</CardDescription>
                 </CardHeader>
                 <CardContent className="p-8 pt-0 flex-1 space-y-6">
                   <div className="pt-4 border-t border-white/10 space-y-3">
@@ -1233,7 +1244,7 @@ export default function LandingPage() {
                     </div>
                     <div className="space-y-1">
                       <CardTitle className="text-2xl font-black uppercase tracking-tight">Squad Pro</CardTitle>
-                      <PricingDisplay planId="team" color="text-red-400" darkBg />
+                      <PricingDisplay planId="team" color="text-red-400" darkBg /><TeamValueAnchor />
                     </div>
                     <CardDescription className="text-[10px] font-bold text-white/50 uppercase">Waivers, dues and auto-brackets for one team.</CardDescription>
                   </CardHeader>
@@ -1330,7 +1341,7 @@ export default function LandingPage() {
                   <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 border-[#10b981]/30 text-[#10b981] w-fit">K-12 DISTRICT</Badge>
                   <div className="space-y-1">
                     <CardTitle className="text-2xl font-black uppercase tracking-tight text-white">School District</CardTitle>
-                    <PricingDisplay planId="school" color="text-[#10b981]" />
+                    <PricingDisplay planId="school" color="text-[#10b981]" /><ExtraTeamPrice cycle={pricingCycle} />
                   </div>
                   <CardDescription className="text-[10px] font-bold text-white/70 uppercase">15 Squads Included · Extras at School Rate.</CardDescription>
                 </CardHeader>
@@ -1364,10 +1375,10 @@ export default function LandingPage() {
           </motion.div>
         </div>
       <TierComparison cycle={pricingCycle} />
+      <YouthDataStatement />
       </PricingCycleContext.Provider>
       </section>
 
-      <CustomerStories />
       <FounderStrip />
       <ThirdPartyProof />
       <section id="contact" className="py-24 bg-white">
@@ -1380,6 +1391,7 @@ export default function LandingPage() {
                 <p className="text-muted-foreground font-medium text-lg leading-relaxed">
                   Tell us how many teams you run and what your staff need help with.
                 </p>
+                <Link href="/about" className="inline-block text-sm font-semibold text-primary underline underline-offset-4">About The Squad and Gameday Sports</Link>
               </div>
 
               <div className="space-y-6">
@@ -1552,6 +1564,10 @@ export default function LandingPage() {
                         <div className="flex flex-wrap items-center justify-center gap-8 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground text-center mb-4">
               <Link href="/about" className="hover:text-primary transition-colors">About</Link>
               <Link href="/plans" className="hover:text-primary transition-colors">Plans &amp; pricing</Link>
+              <Link href="/download" className="hover:text-primary transition-colors">Get the app</Link>
+              <Link href="/vs/teamsnap" className="hover:text-primary transition-colors">vs TeamSnap</Link>
+              <Link href="/vs/teamlinkt" className="hover:text-primary transition-colors">vs TeamLinkt</Link>
+              <Link href="/vs/spond" className="hover:text-primary transition-colors">vs Spond</Link>
               <Link href="/how-to" className="hover:text-primary transition-colors">How to Guide</Link>
               <Link href="/Tactical_User_Manual.md" className="hidden hover:text-primary transition-colors text-primary font-black scale-110">Help Guide</Link>
               <Link href="/AI_KNOWLEDGE_BASE.md" className="hidden hover:text-primary transition-colors">AI Knowledge Base</Link>

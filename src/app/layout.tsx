@@ -10,12 +10,12 @@ export const metadata: Metadata = {
   metadataBase: new URL('https://www.thesquad.pro'),
 
   title: {
-    default: 'The Squad — Elite Sports Team Management Platform',
+    default: 'Sports Team Management App for Clubs & Schools | The Squad',
     template: '%s | The Squad',
   },
 
   description:
-    'The all-in-one institutional platform for coaches, athletic directors, and club organizers. Manage rosters, automate tournament brackets, track film compliance, and recruit athletes — all in one tactical hub. Built for serious sports programs.',
+    'Manage team schedules, rosters, chat, waivers and competitions in one sports team management app. Free and paid plans for coaches, clubs, leagues and schools.',
 
   keywords: [
     // Core product
@@ -71,9 +71,9 @@ export const metadata: Metadata = {
   openGraph: {
     type: 'website',
     url: 'https://www.thesquad.pro',
-    title: 'The Squad — Elite Sports Team Management Platform',
+    title: 'Sports Team Management App for Clubs & Schools | The Squad',
     description:
-      'Coordinate rosters, automate brackets, verify film compliance, and recruit athletes — the all-in-one institutional sports hub trusted by coaches, ADs, and club organizers.',
+      'Keep schedules, rosters, team chat and competitions together. Sports team management for coaches, families, clubs and schools.',
     siteName: 'The Squad',
     locale: 'en_US',
     images: [
@@ -81,7 +81,7 @@ export const metadata: Metadata = {
         url: '/og-image.png',
         width: 1376,
         height: 768,
-        alt: 'The Squad — Elite Sports Team Management Platform',
+        alt: 'Sports Team Management App for Clubs & Schools | The Squad',
         type: 'image/png',
       },
     ],
@@ -92,9 +92,9 @@ export const metadata: Metadata = {
     card: 'summary_large_image',
     site: '@TheSquadPro',
     creator: '@TheSquadPro',
-    title: 'The Squad — Elite Sports Team Management Platform',
+    title: 'Sports Team Management App for Clubs & Schools | The Squad',
     description:
-      'The all-in-one platform for elite sports organizations. Rosters, brackets, film compliance, and recruiting — all in one tactical hub.',
+      'Schedules, rosters, team chat, waivers and competitions in one sports team management app.',
     images: [{ url: '/og-image.png', alt: 'The Squad — Elite Sports Team Management' }],
   },
 
@@ -152,17 +152,19 @@ const organizationSchema = {
 const softwareSchema = {
   '@context': 'https://schema.org',
   '@type': 'SoftwareApplication',
+  '@id': 'https://www.thesquad.pro/#software',
   name: 'The Squad',
   applicationCategory: 'SportsApplication',
   operatingSystem: 'Web, iOS, Android',
   url: 'https://www.thesquad.pro',
   description:
-    'The all-in-one institutional platform for elite sports organizations. Manage rosters, automate tournament brackets, verify film compliance, and recruit athletes.',
+    'Sports team management for clubs, leagues and schools. Manage schedules, rosters, team chat, waivers and competitions.',
   offers: {
     '@type': 'Offer',
     price: '0',
     priceCurrency: 'USD',
-    description: 'Free tier available with paid plans for advanced features',
+    description: 'Starter is free. See the plans page for current paid-plan offers.',
+    url: 'https://www.thesquad.pro/plans',
   },
   provider: {
     '@type': 'Organization',

@@ -33,6 +33,7 @@ export default function PrivacyPolicyPage() {
         </div>
       </nav>
 
+      <div className="container mx-auto px-6 pt-6"><Link href="/#youth-data" className="text-sm font-semibold underline underline-offset-4">Read the team and youth information summary</Link></div>
       <main className="container mx-auto px-6 py-12 max-w-3xl">
         <h1 className="text-4xl font-black tracking-tight mb-8">Privacy Policy</h1>
         

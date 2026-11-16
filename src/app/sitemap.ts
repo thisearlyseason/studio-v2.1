@@ -13,7 +13,7 @@ const staticPages: Array<{
   priority: number;
 }> = [
   { path: '', changeFrequency: 'weekly', priority: 1 },
-  ...['/plans', '/about', '/vs/teamsnap', '/vs/teamlinkt', '/vs/spond'].map(path => ({ path, changeFrequency: 'monthly' as const, priority: 0.7 })),
+  ...['/download', '/plans', '/about', '/vs/teamsnap', '/vs/teamlinkt', '/vs/spond'].map(path => ({ path, changeFrequency: 'monthly' as const, priority: 0.7 })),
   { path: '/how-to', changeFrequency: 'monthly', priority: 0.7 },
   { path: '/sports-hub', changeFrequency: 'daily', priority: 0.9 },
   { path: '/sports-hub/news', changeFrequency: 'daily', priority: 0.8 },

@@ -34,6 +34,7 @@ export default function SafetyCenterPage() {
         </div>
       </nav>
 
+      <div className="container mx-auto px-6 pt-6"><Link href="/#youth-data" className="text-sm font-semibold underline underline-offset-4">Read the team and youth information summary</Link></div>
       <main className="container mx-auto px-6 py-12 max-w-4xl">
         <div className="text-center space-y-4 mb-16">
           <h1 className="text-5xl font-black tracking-tight">Safety Center</h1>
