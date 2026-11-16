@@ -1,4 +1,6 @@
 "use client";
+
+import { analytics } from '@heycatch/sdk';
 import { createTeamEventRequestRegistry } from '@/lib/team-event-request';
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback, useRef } from 'react';
@@ -1230,6 +1232,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       } as unknown as UserProfile);
     });
   }, [firebaseUser, db, isAuthGatePath, userRole]);
+
+  useEffect(() => {
+    if (!firebaseUser?.emailVerified || firebaseUser.isAnonymous || userProfile?.id !== firebaseUser.uid || !userProfile.plan_type) return;
+    analytics.setPersonProperties({ plan: userProfile.plan_type });
+  }, [firebaseUser?.uid, firebaseUser?.emailVerified, firebaseUser?.isAnonymous, userProfile?.id, userProfile?.plan_type]);
 
   useEffect(() => {
     if (!userProfile?.id || !userProfile.notificationsEnabled || typeof window === 'undefined') return;

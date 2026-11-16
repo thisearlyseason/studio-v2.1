@@ -45,13 +45,13 @@ const securityHeaders = [
       "object-src 'none'",
       "base-uri 'self'",
       // Stripe Connect requires connect-js.stripe.com in script-src
-      `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV !== 'production' ? " 'unsafe-eval'" : ''} https://apis.google.com https://www.gstatic.com js.stripe.com connect-js.stripe.com *.stripe.com elfsightcdn.com *.elfsightcdn.com`,
+      `script-src 'self' 'unsafe-inline'${process.env.NODE_ENV !== 'production' ? " 'unsafe-eval'" : ''} https://apis.google.com https://www.gstatic.com js.stripe.com connect-js.stripe.com *.stripe.com https://in.heycatch.ai elfsightcdn.com *.elfsightcdn.com`,
       "style-src 'self' 'unsafe-inline' fonts.googleapis.com",
       "font-src 'self' fonts.gstatic.com",
       `img-src 'self' data: blob: https: storage.googleapis.com *.firebasestorage.app placehold.co images.unsplash.com picsum.photos api.dicebear.com freeimage.host${localEmulatorMediaSources}`,
       `media-src 'self' blob: data: https: storage.googleapis.com *.firebasestorage.app${localEmulatorMediaSources}`,
       // Stripe Connect needs several stripe.com subdomains for its onboarding iframe/XHR
-      `connect-src 'self' https://*.googleapis.com https://*.firebaseio.com https://*.firebase.com https://*.firebaseapp.com https://api.stripe.com https://*.stripe.com https://freeimage.host wss://*.firebaseio.com elfsight.com *.elfsight.com elfsightcdn.com *.elfsightcdn.com https://wttr.in https://nominatim.openstreetmap.org${localEmulatorConnectSources}`,
+      `connect-src 'self' https://in.heycatch.ai https://*.googleapis.com https://*.firebaseio.com https://*.firebase.com https://*.firebaseapp.com https://api.stripe.com https://*.stripe.com https://freeimage.host wss://*.firebaseio.com elfsight.com *.elfsight.com elfsightcdn.com *.elfsightcdn.com https://wttr.in https://nominatim.openstreetmap.org${localEmulatorConnectSources}`,
       // Stripe Connect onboarding is iframe-based
       "frame-src 'self' https://*.firebaseapp.com js.stripe.com connect-js.stripe.com *.stripe.com checkout.stripe.com hooks.stripe.com elfsight.com *.elfsight.com elfsightcdn.com *.elfsightcdn.com youtube.com *.youtube.com youtu.be *.youtu.be www.youtube-nocookie.com",
       "worker-src 'self' blob:",
@@ -139,6 +139,10 @@ const nextConfig: NextConfig = {
   // ─── Keep PDF/canvas libs server-side (they're only triggered on-click) ───
   // This removes jspdf (~800KB) and html2canvas (~400KB) from the client bundle entirely.
   serverExternalPackages: ['jspdf', 'html2canvas'],
+
+  async redirects() {
+    return [{ source: '/:l([a-z0-9])', destination: '/?utm_source=heycatch&utm_campaign=:l', permanent: false }];
+  },
 
   // ─── HTTP Security Headers ────────────────────────────────────────────────
   async headers() {

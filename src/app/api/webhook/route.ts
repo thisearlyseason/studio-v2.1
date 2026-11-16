@@ -1,3 +1,4 @@
+import { trackSubscriptionOutcome } from '@/lib/server-heycatch';
 import { assertManagedReceipt } from '@/lib/stripe-managed-checkout';
 import { notifySignup } from '@/lib/server-signup-notification';
 import { NextRequest, NextResponse } from 'next/server';
@@ -231,6 +232,7 @@ async function syncSubscriptionToFirestore(
   } catch (err: any) {
     console.error('[Webhook] Failed to write audit log:', err.message);
   }
+  return { userId, planType: hasPaidEntitlement ? planType : 'free', status, billingCycle };
 }
 
 export async function POST(req: NextRequest) {
@@ -350,7 +352,11 @@ export async function POST(req: NextRequest) {
           getStripe(),
           eventSubscription
         );
-        await syncSubscriptionToFirestore(subscription);
+        const outcome = await syncSubscriptionToFirestore(subscription);
+        // The verified event is already claimed above; no browser payment claim.
+        if (outcome && subscription.id === eventSubscription.id && outcome.planType !== 'free' && isEntitledSubscriptionStatus(outcome.status)) {
+          await trackSubscriptionOutcome('subscription_started', outcome, event.id);
+        }
         break;
       }
 
@@ -360,7 +366,8 @@ export async function POST(req: NextRequest) {
           getStripe(),
           eventSubscription
         );
-        await syncSubscriptionToFirestore(subscription);
+        const outcome = await syncSubscriptionToFirestore(subscription);
+        if (outcome && subscription.id === eventSubscription.id) await trackSubscriptionOutcome('subscription_updated', outcome, event.id);
         break;
       }
 
@@ -370,7 +377,8 @@ export async function POST(req: NextRequest) {
           getStripe(),
           deletedSubscription
         );
-        await syncSubscriptionToFirestore(subscription);
+        const outcome = await syncSubscriptionToFirestore(subscription);
+        if (outcome && subscription.id === deletedSubscription.id) await trackSubscriptionOutcome('subscription_ended', outcome, event.id);
 
         // ── Owner notification: Cancellation ──
         try {
