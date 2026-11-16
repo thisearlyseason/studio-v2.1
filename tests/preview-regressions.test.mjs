@@ -494,11 +494,16 @@ test('landing navigation sends authenticated users to the dashboard', async () =
   assert.equal((landing.match(/href=\{accountHref\}/g) || []).length, 3);
 });
 
-test('landing reveal curtain never blocks visible hero controls', async () => {
+test('landing hero exposes signup and demo controls without a reveal gate', async () => {
   const landing = await readSource('../src/app/page.tsx');
+  const hero = landing.slice(landing.lastIndexOf('<section', landing.indexOf('id="hero"')), landing.indexOf('<AdoptionProof />'));
 
-  assert.match(landing, /pointer-events-none absolute inset-x-0 top-0 h-1\/2 bg-black z-50 origin-top/);
-  assert.match(landing, /pointer-events-none absolute inset-x-0 bottom-0 h-1\/2 bg-black z-50 origin-bottom/);
+  assert.ok(hero.includes('id="hero"'));
+  assert.match(hero, /href="\/signup"/);
+  assert.match(hero, /Create Your Squad/);
+  assert.match(hero, /Experience Demo/);
+  assert.doesNotMatch(hero, /heroRevealed|shockwaveFired|initial="hidden"|initial=\{\{/);
+  assert.doesNotMatch(hero, /absolute inset-x-0 (?:top|bottom)-0 h-1\/2 bg-black z-50/);
 });
 
 test('newsletter subscription and sending are handled by protected server routes', async () => {

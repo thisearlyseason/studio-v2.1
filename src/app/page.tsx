@@ -5,7 +5,7 @@ import { useBillingDisplayPrices } from '@/lib/use-billing-display-prices';
 import { PRICING_CONFIG } from '@/lib/pricing';
 import { ParentCompanyBrand } from '@/components/ParentCompanyBrand';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { motion, useScroll, useTransform, useMotionValue, useSpring } from 'framer-motion';
+import { motion } from 'framer-motion';
 import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { 
@@ -59,6 +59,9 @@ import { Textarea } from '@/components/ui/textarea';
 import { Badge } from '@/components/ui/badge';
 import BrandLogo from '@/components/BrandLogo';
 import { LandingChatbot } from '@/components/LandingChatbot';
+import { MarketingFaq } from '@/components/marketing/marketing-faq';
+import { AdoptionProof, CustomerStories, FounderStrip, ThirdPartyProof } from '@/components/marketing/trust-proof';
+import { TierComparison, AnnualSavings, ClubValueAnchor } from '@/components/marketing/tier-comparison';
 import { PlatformComparison } from '@/components/marketing/platform-comparison';
 import { LandingPwaInstallButton } from '@/components/pwa/LandingPwaInstallButton';
 import { cn } from '@/lib/utils';
@@ -140,7 +143,7 @@ const PricingCycleContext = React.createContext<{ cycle: 'monthly' | 'annual'; s
 function PricingToggle() {
   const { cycle, setCycle } = React.useContext(PricingCycleContext);
   return (
-    <div className="flex items-center bg-white/10 p-1.5 rounded-2xl ring-1 ring-white/10 backdrop-blur-sm">
+    <div className="flex flex-wrap justify-center gap-2 bg-white/10 p-1.5 rounded-2xl ring-1 ring-white/10 backdrop-blur-sm">
       <button
         onClick={() => setCycle('monthly')}
         className={cn(
@@ -160,6 +163,7 @@ function PricingToggle() {
         Annual
         <span className="bg-primary/20 text-primary font-black text-[8px] px-1.5 py-0.5 rounded-full border border-primary/30">YEARLY</span>
       </button>
+      <AnnualSavings />
     </div>
   );
 }
@@ -278,7 +282,7 @@ function SectionHeader({ badge, title, subtitle }: { badge: string; title: React
   return (
     <motion.div
       className="text-center space-y-4 mb-24 max-w-3xl mx-auto"
-      initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.3 }}
+      initial={false} whileInView="visible" viewport={{ once: true, amount: 0.3 }}
       variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.12 } } }}
     >
       <motion.div variants={fadeUp}>
@@ -294,7 +298,7 @@ function StaggerGrid({ children, className }: { children: React.ReactNode; class
   return (
     <motion.div
       className={className}
-      initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.15 }}
+      initial={false} whileInView="visible" viewport={{ once: true, amount: 0.15 }}
       variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.1 } } }}
     >
       {children}
@@ -308,7 +312,6 @@ const BETA_MODE = false;
 // ─────────────────────────────────────────────────────────────────────────
 
 export default function LandingPage() {
-  const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [isScrolled, setIsScrolled] = useState(false);
   const [isDemoDialogOpen, setIsDemoDialogOpen] = useState(false);
   const [isDemoLoading, setIsDemoLoading] = useState(false);
@@ -323,16 +326,6 @@ export default function LandingPage() {
   const router = useRouter();
   const accountHref = user ? '/dashboard' : '/login';
   const accountLabel = user ? 'Dashboard' : 'Log In';
-
-  // ── Hero intro: curtain splits open after mount ──
-  const [heroRevealed, setHeroRevealed] = useState(false);
-  const [shockwaveFired, setShockwaveFired] = useState(false);
-  useEffect(() => {
-    // Slight delay so the black frame is seen then peels away
-    const t1 = setTimeout(() => setHeroRevealed(true), 80);
-    const t2 = setTimeout(() => setShockwaveFired(true), 900);
-    return () => { clearTimeout(t1); clearTimeout(t2); };
-  }, []);
 
   const handleNewsletterSignup = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -376,40 +369,6 @@ export default function LandingPage() {
     }
   };
 
-  const sportsVideos = [
-    {
-      sport: "Baseball",
-      src: "https://assets.mixkit.co/videos/853/853-720.mp4",
-      poster: "https://images.unsplash.com/photo-1508088062105-17d61307629d?auto=format&fit=crop&q=80&w=1200"
-    },
-    {
-      sport: "Soccer",
-      src: "https://assets.mixkit.co/videos/43494/43494-720.mp4",
-      poster: "https://images.unsplash.com/photo-1504450758481-7338eba7524a?auto=format&fit=crop&q=80&w=1200"
-    },
-    {
-      sport: "Football",
-      src: "https://assets.mixkit.co/videos/42554/42554-720.mp4",
-      poster: "https://images.unsplash.com/photo-1560272564-c83b66b1ad12?auto=format&fit=crop&q=80&w=1200"
-    },
-    {
-      sport: "Golf",
-      src: "https://cdn.pixabay.com/video/2018/10/02/18528-293467377_large.mp4",
-      poster: "https://images.unsplash.com/photo-1535131749006-b7f58c99034b?auto=format&fit=crop&q=80&w=1200"
-    },
-    {
-      sport: "Hockey",
-      src: "https://assets.mixkit.co/videos/48383/48383-720.mp4",
-      poster: "https://images.unsplash.com/photo-1515703407324-5f753afd8be8?auto=format&fit=crop&q=80&w=1200"
-    },
-  ];
-
-  const videoRefs = React.useRef<(HTMLVideoElement | null)[]>([]);
-
-  const handleVideoEnded = React.useCallback(() => {
-    setCurrentImageIndex((prev) => (prev + 1) % sportsVideos.length);
-  }, [sportsVideos.length]);
-
   useEffect(() => {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 50);
@@ -417,29 +376,6 @@ export default function LandingPage() {
     window.addEventListener('scroll', handleScroll);
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
-
-  const clipTimerRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Play the active video, pause others, and auto-advance after 5 s
-  useEffect(() => {
-    if (clipTimerRef.current) clearTimeout(clipTimerRef.current);
-
-    videoRefs.current.forEach((vid, i) => {
-      if (!vid) return;
-      if (i === currentImageIndex) {
-        vid.currentTime = 0;
-        vid.play().catch(() => {});
-      } else {
-        vid.pause();
-      }
-    });
-
-    clipTimerRef.current = setTimeout(() => {
-      setCurrentImageIndex((prev) => (prev + 1) % sportsVideos.length);
-    }, 5000);
-
-    return () => { if (clipTimerRef.current) clearTimeout(clipTimerRef.current); };
-  }, [currentImageIndex, sportsVideos.length]);
 
   const handleLaunchDemo = async (planId: string) => {
     setIsDemoLoading(true);
@@ -491,6 +427,7 @@ export default function LandingPage() {
             <a href="#features" className={cn("hover:text-primary transition-colors", isScrolled ? "text-muted-foreground" : "text-white/80")}>Features</a>
             <a href="#roles" className={cn("hover:text-primary transition-colors", isScrolled ? "text-muted-foreground" : "text-white/80")}>Roles</a>
             <a href="#comparison" className={cn("hover:text-primary transition-colors", isScrolled ? "text-muted-foreground" : "text-white/80")}>Compare</a>
+            <Link href="/about" className={cn("hover:text-primary transition-colors", isScrolled ? "text-muted-foreground" : "text-white/80")}>About</Link>
             <a href="#pricing" className={cn("hover:text-primary transition-colors", isScrolled ? "text-muted-foreground" : "text-white/80")}>Pricing</a>
             <Link href="/sports" className={cn("hover:text-primary transition-colors", isScrolled ? "text-muted-foreground" : "text-white/80")}>
               Explore Sports
@@ -545,6 +482,7 @@ export default function LandingPage() {
                   <SheetClose asChild><a href="#features" className="text-xl font-black uppercase tracking-tight hover:text-primary transition-colors py-2 border-b border-muted">Features</a></SheetClose>
                   <SheetClose asChild><a href="#roles" className="text-xl font-black uppercase tracking-tight hover:text-primary transition-colors py-2 border-b border-muted">Roles</a></SheetClose>
                   <SheetClose asChild><a href="#comparison" className="text-xl font-black uppercase tracking-tight hover:text-primary transition-colors py-2 border-b border-muted">Compare</a></SheetClose>
+                  <SheetClose asChild><Link href="/about" className="text-xl font-black py-2">About</Link></SheetClose>
                   <SheetClose asChild><a href="#pricing" className="text-xl font-black uppercase tracking-tight hover:text-primary transition-colors py-2 border-b border-muted">Pricing</a></SheetClose>
                   <SheetClose asChild><Link href="/sports" className="text-xl font-black uppercase tracking-tight text-primary py-2 border-b border-muted">Explore Sports</Link></SheetClose>
                   <SheetClose asChild><Link href="/sports-hub" className="text-xl font-black uppercase tracking-tight text-primary py-2 border-b border-muted flex items-center gap-2">Sports Hub</Link></SheetClose>
@@ -573,240 +511,16 @@ export default function LandingPage() {
         </div>
       </nav>
 
-      <section className="relative h-[calc(100svh-72px)] min-h-[620px] md:h-[calc(100vh-96px)] md:min-h-[720px] flex items-center justify-center overflow-hidden" id="hero">
-
-        {/* ── CURTAIN: two black panels split open top/bottom ── */}
-        <motion.div
-          className="pointer-events-none absolute inset-x-0 top-0 h-1/2 bg-black z-50 origin-top"
-          initial={{ scaleY: 1 }}
-          animate={{ scaleY: heroRevealed ? 0 : 1 }}
-          transition={{ duration: 1.1, ease: [0.76, 0, 0.24, 1] }}
-        />
-        <motion.div
-          className="pointer-events-none absolute inset-x-0 bottom-0 h-1/2 bg-black z-50 origin-bottom"
-          initial={{ scaleY: 1 }}
-          animate={{ scaleY: heroRevealed ? 0 : 1 }}
-          transition={{ duration: 1.1, ease: [0.76, 0, 0.24, 1] }}
-        />
-
-        {/* ── SHOCKWAVE RINGS from center ── */}
-        {shockwaveFired && (
-          <div className="absolute inset-0 flex items-center justify-center z-20 pointer-events-none">
-            {[0, 1, 2, 3].map((i) => (
-              <motion.div
-                key={i}
-                className="absolute rounded-full border-2 border-primary/40"
-                initial={{ width: 0, height: 0, opacity: 0.8 }}
-                animate={{ width: '200vmax', height: '200vmax', opacity: 0 }}
-                transition={{ duration: 1.8, delay: i * 0.18, ease: [0.2, 0, 0.8, 1] }}
-              />
-            ))}
-          </div>
-        )}
-
-        {/* ── Video backgrounds ── */}
-        {sportsVideos.map((clip, idx) => (
-          <motion.div
-            key={idx}
-            className={cn(
-              "absolute inset-0 transition-opacity duration-1000 ease-in-out",
-              currentImageIndex === idx ? "opacity-100" : "opacity-0"
-            )}
-            initial={{ scale: 1.3 }}
-            animate={{ scale: heroRevealed ? 1.05 : 1.3 }}
-            transition={{ duration: 2.2, ease: [0.16, 1, 0.3, 1] }}
-          >
-            <video
-              ref={(el) => { videoRefs.current[idx] = el; }}
-              src={clip.src}
-              poster={clip.poster}
-              muted
-              playsInline
-              autoPlay={idx === 0}
-              onEnded={handleVideoEnded}
-              className="absolute inset-0 w-full h-full object-cover"
-            />
-            <div className="absolute inset-0 bg-black/55 bg-linear-to-b from-black/50 via-black/20 to-black/80" />
-          </motion.div>
-        ))}
-
-        {/* ── RED SWEEP: diagonal streak across the screen on reveal ── */}
-        <motion.div
-          className="absolute inset-0 z-30 pointer-events-none"
-          style={{ background: 'linear-gradient(105deg, transparent 0%, rgba(196,31,31,0.18) 40%, transparent 60%)' }}
-          initial={{ x: '-100%' }}
-          animate={{ x: heroRevealed ? '200%' : '-100%' }}
-          transition={{ duration: 0.9, delay: 0.55, ease: [0.16, 1, 0.3, 1] }}
-        />
-
-        {/* ── Floating 3D geometric shapes in hero ── */}
-        <div className="absolute inset-0 z-10 pointer-events-none overflow-hidden">
-          {/* Large rotating ring */}
-          <motion.div
-            className="absolute top-[15%] right-[8%] w-64 h-64 rounded-full border border-white/8 float-slow opacity-40"
-            initial={{ opacity: 0, scale: 0.4, rotate: -30 }}
-            animate={{ opacity: 0.4, scale: 1, rotate: 0 }}
-            transition={{ delay: 1.3, duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
-          />
-          <motion.div
-            className="absolute w-48 h-48 rounded-full border border-primary/15 float-slow opacity-60"
-            style={{ top: '18%', right: '10%' }}
-            initial={{ opacity: 0, scale: 0.3 }}
-            animate={{ opacity: 0.6, scale: 1 }}
-            transition={{ delay: 1.5, duration: 1.2, ease: [0.16, 1, 0.3, 1] }}
-          />
-          {/* Tiny diamond */}
-          <motion.div
-            className="absolute top-[40%] right-[20%] w-4 h-4 bg-primary/50 rotate-45 float-fast"
-            initial={{ opacity: 0, scale: 0, rotate: 45 }}
-            animate={{ opacity: 0.6, scale: 1 }}
-            transition={{ delay: 1.7, duration: 0.6, type: 'spring', stiffness: 400 }}
-          />
-          {/* Diagonal line */}
-          <motion.div
-            className="absolute top-1/2 left-1/2 w-[600px] h-px bg-linear-to-r from-transparent via-primary/20 to-transparent -translate-x-1/2 -translate-y-1/2 rotate-[-30deg]"
-            initial={{ scaleX: 0, opacity: 0 }}
-            animate={{ scaleX: 1, opacity: 1 }}
-            transition={{ delay: 1.0, duration: 1.4, ease: [0.16, 1, 0.3, 1] }}
-          />
-          {/* Bottom-right live match card */}
-          <motion.div
-            className="absolute bottom-[20%] right-[8%] bg-white/8 backdrop-blur-md border border-white/10 rounded-2xl px-4 py-3 text-white hidden md:block"
-            initial={{ opacity: 0, x: 60, rotateY: 20 }}
-            animate={{ opacity: 1, x: 0, rotateY: 0 }}
-            transition={{ delay: 1.8, duration: 0.9, type: 'spring', stiffness: 200, damping: 20 }}
-          >
-            <motion.div animate={{ y: [0, -10, 0], rotate: [0, 1, 0] }} transition={{ duration: 5, repeat: Infinity, ease: 'easeInOut', delay: 2 }}>
-              <div className="text-[9px] font-black uppercase tracking-widest text-primary mb-1">Live Match</div>
-              <div className="text-xs font-black">🏆 Hawks 3 – 1 Bulls</div>
-              <div className="text-[8px] text-white/70 mt-0.5">Q3 · 14:32</div>
-            </motion.div>
-          </motion.div>
-          {/* Top-left roster card */}
-          <motion.div
-            className="absolute top-[30%] left-[8%] bg-white/8 backdrop-blur-md border border-white/10 rounded-2xl px-4 py-3 text-white hidden md:block"
-            initial={{ opacity: 0, x: -60, rotateY: -20 }}
-            animate={{ opacity: 1, x: 0, rotateY: 0 }}
-            transition={{ delay: 2.0, duration: 0.9, type: 'spring', stiffness: 200, damping: 20 }}
-          >
-            <motion.div animate={{ y: [0, -8, 0], rotate: [0, -0.5, 0] }} transition={{ duration: 4.5, repeat: Infinity, ease: 'easeInOut', delay: 2.5 }}>
-              <div className="text-[9px] font-black uppercase tracking-widest text-primary mb-1">Roster</div>
-              <div className="text-xs font-black">23 Athletes</div>
-              <div className="flex gap-1 mt-1.5">{[...Array(5)].map((_,i) => <div key={i} className="w-4 h-4 rounded-full bg-white/20 border border-white/30" />)}</div>
-            </motion.div>
-          </motion.div>
-        </div>
-
-        <motion.div
-          className="absolute bottom-3 md:bottom-8 left-0 right-0 z-20 flex items-center justify-center gap-1.5 md:gap-2 px-3 md:px-4 flex-wrap"
-          initial={{ opacity: 0, y: 20 }}
-          animate={{ opacity: 1, y: 0 }}
-          transition={{ delay: 2.2, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-        >
-          {sportsVideos.map((clip, idx) => (
-            <button
-              key={idx}
-              onClick={() => setCurrentImageIndex(idx)}
-              aria-pressed={currentImageIndex === idx}
-              aria-label={`Show ${clip.sport} background`}
-              className={cn(
-                "transition-all duration-300 font-black uppercase tracking-widest text-white rounded-full border",
-                currentImageIndex === idx
-                  ? "bg-primary border-primary px-3 md:px-4 py-1 md:py-1.5 text-[8px] md:text-[9px] shadow-lg shadow-primary/30"
-                  : "bg-white/10 border-white/20 backdrop-blur-sm px-2.5 md:px-3 py-1 text-[7px] md:text-[8px] opacity-60 hover:opacity-100"
-              )}
-            >
-              {clip.sport}
-            </button>
-          ))}
-        </motion.div>
-
-        {/* ── MAIN HERO CONTENT — bold 3D entry ── */}
-        <div className="container relative z-20 px-5 md:px-6 text-center space-y-5 md:space-y-8" style={{ perspective: '1200px' }}>
-
-          {/* Badge */}
-          <motion.div
-            initial={{ opacity: 0, y: -30, rotateX: 45 }}
-            animate={{ opacity: 1, y: 0, rotateX: 0 }}
-            transition={{ delay: 0.6, duration: 0.8, ease: [0.16, 1, 0.3, 1] }}
-            style={{ transformStyle: 'preserve-3d' }}
-          >
-            <Badge className="bg-primary/20 backdrop-blur-md text-primary-foreground border-primary/30 px-3 md:px-4 py-1.5 rounded-full text-[10px] md:text-xs font-black uppercase tracking-[0.2em]">
-              Institutional Team Infrastructure
-            </Badge>
-          </motion.div>
-
-          {/* H1 Headline — MASSIVE 3D slam-in with ground shudder */}
-          <h1 className="sr-only">Dominate Your Season — The Squad Elite Sports Management Platform</h1>
-          <motion.div
-            aria-hidden="true"
-            className="relative"
-            style={{ perspective: '600px', transformStyle: 'preserve-3d' }}
-            animate={heroRevealed ? { x: [0, -6, 5, -3, 2, 0], y: [0, 4, -3, 2, -1, 0] } : {}}
-            transition={{ delay: 1.35, duration: 0.5, ease: 'easeOut' }}
-          >
-
-            {/* DOMINATE — crashes straight down from above with extreme rotateX */}
-            <div className="overflow-hidden pb-2">
-              <motion.div
-                className="text-4xl sm:text-5xl md:text-9xl font-black text-white tracking-tighter leading-[0.88] sm:leading-none md:leading-none"
-                initial={{ y: '-120%', rotateX: -120, opacity: 0, scale: 1.4, filter: 'blur(8px)' }}
-                animate={{ y: 0, rotateX: 0, opacity: 1, scale: 1, filter: 'blur(0px)' }}
-                transition={{ delay: 0.7, duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
-                style={{ transformOrigin: 'top center', display: 'block', textShadow: '0 8px 40px rgba(0,0,0,0.8), 0 0 80px rgba(196,31,31,0.3)' }}
-              >
-                DOMINATE
-              </motion.div>
-            </div>
-
-            {/* YOUR SEASON — side-by-side, each slams in from the sides with huge rotateY */}
-            <div className="overflow-hidden pb-1 flex items-baseline justify-center gap-2 md:gap-6 flex-wrap">
-              <motion.span
-                className="inline-block text-4xl sm:text-5xl md:text-9xl font-black text-white tracking-tighter leading-[0.88] sm:leading-none md:leading-none"
-                initial={{ x: -200, rotateY: 90, opacity: 0, scale: 0.7, filter: 'blur(10px)' }}
-                animate={{ x: 0, rotateY: 0, opacity: 1, scale: 1, filter: 'blur(0px)' }}
-                transition={{ delay: 1.05, duration: 0.7, ease: [0.22, 1, 0.36, 1] }}
-                style={{ transformOrigin: 'left center', textShadow: '0 8px 40px rgba(0,0,0,0.8)' }}
-              >
-                YOUR
-              </motion.span>
-              <motion.span
-                className="inline-block text-4xl sm:text-5xl md:text-9xl font-black text-primary italic tracking-tighter leading-[0.88] sm:leading-none md:leading-none"
-                initial={{ x: 200, rotateY: -90, opacity: 0, scale: 0.5, filter: 'blur(12px)' }}
-                animate={{ x: 0, rotateY: 0, opacity: 1, scale: 1, filter: 'blur(0px)' }}
-                transition={{ delay: 1.15, duration: 0.75, ease: [0.22, 1, 0.36, 1] }}
-                style={{ transformOrigin: 'right center', textShadow: '0 8px 40px rgba(196,31,31,0.5), 0 0 60px rgba(196,31,31,0.4)' }}
-              >
-                SEASON.
-              </motion.span>
-            </div>
-
-            {/* Underline streak — fires after impact */}
-            <motion.div
-              className="mx-auto mt-3 h-1.5 rounded-full bg-linear-to-r from-transparent via-primary to-transparent"
-              initial={{ width: 0, opacity: 0 }}
-              animate={{ width: '70%', opacity: 1 }}
-              transition={{ delay: 1.45, duration: 0.6, ease: [0.16, 1, 0.3, 1] }}
-            />
-          </motion.div>
-
-          {/* Subtitle */}
-          <motion.p
-            className="text-base md:text-xl text-white/70 max-w-2xl mx-auto font-medium leading-relaxed md:leading-7"
-            initial={{ opacity: 0, filter: 'blur(12px)', y: 20 }}
-            animate={{ opacity: 1, filter: 'blur(0px)', y: 0 }}
-            transition={{ delay: 1.55, duration: 1.0, ease: 'easeOut' }}
-          >
-            The all-in-one tactical platform for elite sports organizations. Coordinate rosters, automate brackets, and verify performance.
-          </motion.p>
-
-          {/* Buttons */}
-          <motion.div
-            className="flex flex-col items-center justify-center gap-2 md:gap-3 pt-1 md:pt-4 w-full max-w-xs mx-auto"
-            initial={{ opacity: 0, y: 30, scale: 0.9 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            transition={{ delay: 1.8, duration: 0.7, ease: [0.16, 1, 0.3, 1] }}
-          >
+      <section className="relative bg-black text-white pt-32 pb-12 md:pb-20" id="hero">
+        <div className="container mx-auto px-5 md:px-6 grid lg:grid-cols-[0.9fr_1.1fr] gap-8 lg:gap-12 items-center">
+          <div className="space-y-6 text-center lg:text-left">
+          <p className="text-sm font-semibold text-red-400">Sports team management for club directors and school athletic directors</p>
+          <h1 className="text-lg font-bold">The Squad: Sports Team Management</h1>
+          <p className="text-4xl sm:text-5xl font-black tracking-tight leading-tight">Less administration.<br /><span className="text-red-400">More action.</span></p>
+          <p className="text-base md:text-xl text-white/80 max-w-2xl mx-auto leading-relaxed">Keep coaches, athletes and families connected. Organize team schedules, rosters, conversations and competitions in one sports management workspace.</p>
+          <p className="max-w-2xl mx-auto text-white/70">Stop running your season across disconnected tools and chasing parents for payments and waivers. From one team to a K-12 district: one Squad.</p>
+          {/* Existing signup and demo paths */}
+          <motion.div className="flex flex-col items-center justify-center gap-3 w-full max-w-xs mx-auto lg:mx-0">
             {user ? (
               <Link href="/dashboard" className="w-full">
                 <Button size="lg" className="h-12 px-8 rounded-full text-sm font-black shadow-2xl shadow-primary/40 active:scale-95 transition-all w-full">
@@ -871,8 +585,14 @@ export default function LandingPage() {
               </DialogContent>
             </Dialog>
           </motion.div>
+          </div>
+          <figure className="max-w-5xl mx-auto text-left rounded-2xl border border-white/20 overflow-hidden bg-white/5">
+            <Image src="/how-to/screenshots/league-schedule.webp" width={1440} height={1000} priority sizes="(max-width: 1024px) 100vw, 1024px" alt="The Squad league workspace showing participating squads, scheduled games, venues and schedule export controls using demo data" className="w-full h-auto" />
+            <figcaption className="p-4 text-sm text-white/80">Actual product workspace · demo data. <button type="button" onClick={() => setIsDemoDialogOpen(true)} className="underline underline-offset-4">Explore the live demo workspaces</button> · <Link href="/how-to?q=schedule" className="underline underline-offset-4">See the schedule and roster guides</Link></figcaption>
+          </figure>
         </div>
       </section>
+      <AdoptionProof />
 
       {/* ══ 3D STATS MARQUEE BAR ══ */}
       <section className="relative py-8 md:py-12 bg-black overflow-hidden grid-beam">
@@ -881,7 +601,7 @@ export default function LandingPage() {
         <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[800px] h-32 bg-primary/8 blur-[80px] pointer-events-none" />
         <motion.div
           className="container mx-auto px-6 relative z-10"
-          initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.1 }}
+          initial={false} whileInView="visible" viewport={{ once: true, amount: 0.1 }}
           variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.12 } } }}
         >
           <div className="grid grid-cols-2 md:grid-cols-4 gap-8 md:gap-0 md:divide-x md:divide-white/10">
@@ -907,7 +627,7 @@ export default function LandingPage() {
       {BETA_MODE && (
         <motion.div
           className="fixed right-0 top-1/2 -translate-y-1/2 z-50"
-          initial={{ x: 60, opacity: 0 }}
+          initial={false}
           animate={{ x: 0, opacity: 1 }}
           transition={{ delay: 1.2, type: 'spring', stiffness: 200, damping: 25 }}
         >
@@ -943,7 +663,7 @@ export default function LandingPage() {
                 {/* ── Left: Copy ── */}
                 <motion.div
                   className="space-y-8"
-                  initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.3 }}
+                  initial={false} whileInView="visible" viewport={{ once: true, amount: 0.3 }}
                   variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.12 } } }}
                 >
                   <motion.div variants={fadeUp}>
@@ -986,7 +706,7 @@ export default function LandingPage() {
 
                 {/* ── Right: Form card ── */}
                 <motion.div
-                  initial={{ opacity: 0, y: 32, scale: 0.97 }}
+                  initial={false}
                   whileInView={{ opacity: 1, y: 0, scale: 1 }}
                   viewport={{ once: true, amount: 0.3 }}
                   transition={{ duration: 0.65, ease: [0.16, 1, 0.3, 1], delay: 0.15 }}
@@ -997,13 +717,13 @@ export default function LandingPage() {
 
                     {newsletterDone ? (
                       <motion.div
-                        initial={{ opacity: 0, scale: 0.88 }}
+                        initial={false}
                         animate={{ opacity: 1, scale: 1 }}
                         transition={{ type: 'spring', stiffness: 260, damping: 20 }}
                         className="flex flex-col items-center gap-5 py-8 text-center"
                       >
                         <motion.div
-                          initial={{ scale: 0, rotate: -30 }}
+                          initial={false}
                           animate={{ scale: 1, rotate: 0 }}
                           transition={{ type: 'spring', stiffness: 300, damping: 16, delay: 0.1 }}
                           className="w-20 h-20 rounded-full bg-primary/10 ring-4 ring-primary/20 flex items-center justify-center"
@@ -1012,7 +732,7 @@ export default function LandingPage() {
                         </motion.div>
                         <div className="space-y-2">
                           <motion.p
-                            initial={{ opacity: 0, y: 8 }}
+                            initial={false}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 0.22 }}
                             className="text-2xl font-black text-gray-900 uppercase tracking-tight"
@@ -1020,7 +740,7 @@ export default function LandingPage() {
                             You Got it!
                           </motion.p>
                           <motion.p
-                            initial={{ opacity: 0, y: 6 }}
+                            initial={false}
                             animate={{ opacity: 1, y: 0 }}
                             transition={{ delay: 0.32 }}
                             className="text-gray-500 font-medium"
@@ -1092,9 +812,9 @@ export default function LandingPage() {
 
         <div className="container mx-auto px-6 relative z-10">
           <SectionHeader
-            badge="Institutional Suite"
-            title={<>PROFESSIONAL <br /> <span className="text-primary italic">INFRASTRUCTURE.</span></>}
-            subtitle="The Squad provides the foundational protocols and advanced modules required to scale from a single team to an entire league."
+            badge="Team tools"
+            title={<>One workspace.<br /> <span className="text-primary italic">Every role.</span></>}
+            subtitle="When you open registration, keep forms, waivers and fees together. Build your season calendar, track RSVPs and run competitions in the same workspace."
           />
 
           {/* 3D tilt feature cards */}
@@ -1102,35 +822,35 @@ export default function LandingPage() {
             {[
               {
                 Icon: TableIcon,
-                title: 'Tournament & League Elite Engines',
-                desc: <>Automated <strong>League Itineraries</strong> and bracket generation with a <strong>Public Spectator Hub</strong> and mobile <strong>Scorekeeper Portal</strong> for real-time results.</>,
+                title: 'Run tournaments and standings',
+                desc: <>Automated <strong>season schedules</strong> and bracket generation with a <strong>spectator page</strong> and mobile <strong>Scorekeeper Portal</strong> for real-time results.</>,
                 items: ['Live Standings', 'Multi-Team Conflicts'],
                 accent: 'from-primary/20 to-transparent',
               },
               {
                 Icon: PenTool,
-                title: 'Branded Briefing Unit',
-                desc: <>Export professionally branded <strong>Tactical PDF Briefings</strong> for every event. Automatic <strong>Image Optimization</strong> ensures drill assets load instantly.</>,
-                items: ['Printable Itineraries', 'Institutional Branding'],
+                title: 'Build your season calendar',
+                desc: <>Keep games and practices in your <strong>season calendar</strong>, track RSVPs and share printable plans for each event.</>,
+                items: ['RSVPs and attendance', 'Printable schedules'],
                 accent: 'from-blue-500/10 to-transparent',
               },
               {
                 Icon: Video,
-                title: 'Film Watch Verification',
-                desc: <>The <strong>75% Watch Rule</strong> ensures teammates study their assignments. Monitor video compliance directly in your master roster ledger.</>,
+                title: 'Track assigned film',
+                desc: <>The <strong>75% Watch Rule</strong> ensures teammates study their assignments. See who has watched their assigned film in the roster.</>,
                 items: ['10GB Pro Storage', 'Verified Compliance'],
                 accent: 'from-purple-500/10 to-transparent',
               },
               {
                 Icon: ClipboardList,
-                title: 'Recruitment Engine',
-                desc: <>Custom <strong>Form Architect</strong> for registration. Collect medical waivers and fees with automated coach assignment and performance portfolios.</>,
+                title: 'Run registration and waivers',
+                desc: <>Create <strong>registration forms</strong> for your team. Collect medical waivers and fees with automated coach assignment and performance portfolios.</>,
                 items: ['Digital Signatures', 'Performance Export'],
                 accent: 'from-emerald-500/10 to-transparent',
               },
               {
                 Icon: CreditCard,
-                title: 'Online Payments',
+                title: 'Collect dues with Stripe',
                 desc: <>Accept dues, fees, and donations through Stripe. <strong>Connect an organizer account</strong> to receive payments. Processing fees and payout timing depend on Stripe and the account.</>,
                 items: ['Stripe Connect', 'Payment Tracking'],
                 accent: 'from-orange-500/10 to-transparent',
@@ -1198,22 +918,22 @@ export default function LandingPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-20 items-center">
             <motion.div
               className="space-y-8"
-              initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.3 }}
+              initial={false} whileInView="visible" viewport={{ once: true, amount: 0.3 }}
               variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.1 } } }}
             >
               <motion.div variants={fadeUp}>
                 <Badge className="bg-primary text-white border-none font-black px-4 h-7 uppercase tracking-widest text-[10px]">Strategic Advantages</Badge>
               </motion.div>
               <motion.h2 variants={fadeUp} className="text-4xl md:text-6xl font-black tracking-tight leading-none uppercase md:leading-none">
-                CHAMPIONSHIP <br /> <span className="text-primary italic">OPERATIONS.</span>
+                Everything <br /> <span className="text-primary italic">in one place.</span>
               </motion.h2>
               
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">
                 {[
                   { Icon: ClipboardList, title: 'Scouting Profiles', desc: <>Keep <strong>Staff Evaluations</strong>, recruiting-ready notes, and athlete media together in one controlled profile.</> },
                   { Icon: Video,        title: 'Athlete Film Library',  desc: <>Archive hosted or uploaded <strong>Highlight Reels</strong> for staff review and recruiting portfolios.</> },
-                  { Icon: Building,     title: 'Institutional Hub',    desc: <><strong>Fiscal Pulse Auditing</strong> for club directors managing 20+ squads with aggregated financial visibility.</> },
-                  { Icon: ShieldAlert,  title: 'Recruiting Portfolios',desc: <><strong>Personnel Evaluations</strong> that athletes can export for recruiting conversations.</> },
+                  { Icon: Building,     title: 'Manage your club',    desc: <><strong>Payment summaries</strong> give club directors a view of dues and fees across their squads.</> },
+                  { Icon: ShieldAlert,  title: 'Recruiting Portfolios',desc: <><strong>Athlete evaluations</strong> that athletes can export for recruiting conversations.</> },
                 ].map(({ Icon, title, desc }, i) => (
                   <motion.div key={i} variants={fadeUp} className="space-y-3 group">
                     <div className="w-10 h-10 rounded-xl bg-primary/10 border border-primary/20 flex items-center justify-center group-hover:bg-primary transition-colors">
@@ -1234,7 +954,7 @@ export default function LandingPage() {
               {/* Layer 3 — back (blurred, shifted) */}
               <motion.div
                 className="absolute -bottom-6 -left-6 right-6 h-full rounded-[2.5rem] bg-white/3 border border-white/6 backdrop-blur-sm"
-                initial={{ opacity: 0, y: 20 }}
+                initial={false}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: 0.1, duration: 0.8 }}
@@ -1243,7 +963,7 @@ export default function LandingPage() {
               {/* Layer 2 — mid */}
               <motion.div
                 className="absolute -bottom-3 -left-3 right-3 h-full rounded-[2.5rem] bg-white/5 border border-white/8"
-                initial={{ opacity: 0, y: 14 }}
+                initial={false}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: 0.2, duration: 0.8 }}
@@ -1251,7 +971,7 @@ export default function LandingPage() {
               />
               {/* Layer 1 — front card */}
               <motion.div
-                initial={{ opacity: 0, y: 30, rotateX: 8 }}
+                initial={false}
                 whileInView={{ opacity: 1, y: 0, rotateX: 0 }}
                 viewport={{ once: true }}
                 transition={{ delay: 0.3, duration: 0.9, ease: [0.16,1,0.3,1] }}
@@ -1268,7 +988,7 @@ export default function LandingPage() {
                         <div className="h-10 w-10 rounded-xl bg-primary flex items-center justify-center shadow-lg shadow-primary/40 float-fast">
                           <Activity className="h-5 w-5 text-white" />
                         </div>
-                        <span className="font-black uppercase tracking-widest text-xs">Example Team Feed</span>
+                        <span className="font-black uppercase tracking-widest text-xs">Example Team Feed</span><button type="button" onClick={() => setIsDemoDialogOpen(true)} className="text-xs underline">Open live demos</button>
                       </div>
                       <Badge variant="outline" className="border-white/20 text-white font-black text-[8px] px-2 h-5 glow-red">DEMO DATA</Badge>
                     </div>
@@ -1282,7 +1002,7 @@ export default function LandingPage() {
                       ].map((item, i) => (
                         <motion.div
                           key={i}
-                          initial={{ opacity: 0, x: -12 }}
+                          initial={false}
                           whileInView={{ opacity: 1, x: 0 }}
                           viewport={{ once: true }}
                           transition={{ delay: 0.5 + i * 0.1, duration: 0.5 }}
@@ -1315,7 +1035,7 @@ export default function LandingPage() {
                           <div className="h-1.5 rounded-full bg-white/8 overflow-hidden">
                             <motion.div
                               className={cn('h-full rounded-full', color)}
-                              initial={{ width: 0 }}
+                              initial={false}
                               whileInView={{ width: `${pct}%` }}
                               viewport={{ once: true }}
                               transition={{ duration: 1.2, delay: 0.6, ease: [0.16,1,0.3,1] }}
@@ -1355,7 +1075,7 @@ export default function LandingPage() {
 
           <StaggerGrid className="grid grid-cols-1 md:grid-cols-3 gap-10">
             {[
-              { Icon: Trophy, title: 'Coaches & Managers',  desc: 'Full command of the roster, scheduling, and tactical playbooks. Accept payments via Stripe Connect, sign global waivers in one tap, and track personnel performance.', color: 'from-primary/15 via-transparent', num: '01' },
+              { Icon: Trophy, title: 'Coaches & Managers',  desc: 'Manage rosters, schedules and practice plans. Collect dues through Stripe Connect, track signed waivers and review athlete progress.', color: 'from-primary/15 via-transparent', num: '01' },
               { Icon: Baby,   title: 'Guardian Hub',        desc: 'Manage multiple children from one unified Household Hub. Track consolidated dues, verify digital waivers, and manage volunteer assignments globally.', color: 'from-blue-500/10 via-transparent', num: '02' },
               { Icon: User,   title: 'Athlete Performance', desc: 'A personal dashboard. Sign waivers, watch study film, track match results, and manage your Professional Recruiting Portfolio.', color: 'from-emerald-500/10 via-transparent', num: '03' },
             ].map(({ Icon, title, desc, color, num }, i) => (
@@ -1392,7 +1112,7 @@ export default function LandingPage() {
         <div className="container mx-auto px-6 relative z-10">
           <motion.div
             className="text-center space-y-5 mb-16 max-w-3xl mx-auto"
-            initial="hidden" whileInView="visible" viewport={{ once: true, amount: 0.3 }}
+            initial={false} whileInView="visible" viewport={{ once: true, amount: 0.3 }}
             variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.12 } } }}
           >
             <motion.div variants={fadeUp}>
@@ -1413,7 +1133,7 @@ export default function LandingPage() {
 
           {/* ── 5-Day Trial Banner ── */}
           <motion.div
-            initial={{ opacity: 0, y: 16 }}
+            initial={false}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.6, delay: 0.2 }}
@@ -1495,14 +1215,14 @@ export default function LandingPage() {
                   <div className="absolute top-0 right-0 p-4 opacity-[0.07] -rotate-12 pointer-events-none"><Zap className="h-24 w-24" /></div>
                   <CardHeader className="p-8 pb-4 space-y-4 relative z-10">
                     <div className="flex items-center justify-between">
-                      <Badge className="bg-primary text-white border-none font-black text-[8px] px-3 h-5 uppercase">TEAM PLAN</Badge>
+                      <Badge className="bg-primary text-white border-none font-black text-[8px] px-3 h-5 uppercase">Best value for one team</Badge>
                       <Sparkles className="h-5 w-5 text-red-400 animate-pulse" />
                     </div>
                     <div className="space-y-1">
                       <CardTitle className="text-2xl font-black uppercase tracking-tight">Squad Pro</CardTitle>
                       <PricingDisplay planId="team" color="text-red-400" darkBg />
                     </div>
-                    <CardDescription className="text-[10px] font-bold text-white/50 uppercase">Championship tools for one team.</CardDescription>
+                    <CardDescription className="text-[10px] font-bold text-white/50 uppercase">Waivers, dues and auto-brackets for one team.</CardDescription>
                   </CardHeader>
                   <CardContent className="p-8 pt-0 flex-1 space-y-6 relative z-10">
                     <div className="pt-4 border-t border-white/10 space-y-3">
@@ -1534,13 +1254,13 @@ export default function LandingPage() {
                   <Badge variant="outline" className="font-black uppercase text-[8px] tracking-widest px-3 h-5 border-primary/30 text-red-400 w-fit">ORGANIZATION</Badge>
                   <div className="space-y-1">
                     <CardTitle className="text-2xl font-black uppercase tracking-tight text-white">Elite Teams</CardTitle>
-                    <PricingDisplay planId="elite" color="text-red-400" />
+                    <PricingDisplay planId="elite" color="text-red-400" /><ClubValueAnchor />
                   </div>
                   <CardDescription className="text-[10px] font-bold text-white/70 uppercase">8 Pro Teams + Master Club Hub.</CardDescription>
                 </CardHeader>
                 <CardContent className="p-8 pt-0 flex-1 space-y-6">
                   <div className="pt-4 border-t border-white/10 space-y-3">
-                    <p className="text-[9px] font-black uppercase text-white/70">Institutional</p>
+                    <p className="text-[9px] font-black uppercase text-white/70">Club tools</p>
                     <ul className="space-y-2">
                       <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><CheckCircle2 className="h-3.5 w-3.5 text-red-400" /> Recruitment Portal</li>
                       <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><CheckCircle2 className="h-3.5 w-3.5 text-red-400" /> Fee Management</li>
@@ -1573,7 +1293,7 @@ export default function LandingPage() {
                 </CardHeader>
                 <CardContent className="p-8 pt-0 flex-1 space-y-6">
                   <div className="pt-4 border-t border-white/10 space-y-3">
-                    <p className="text-[9px] font-black uppercase text-white/70">Full Infrastructure</p>
+                    <p className="text-[9px] font-black uppercase text-white/70">League tools</p>
                     <ul className="space-y-2">
                       <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><ShieldCheck className="h-3.5 w-3.5 text-red-400" /> Conflict Mgmt</li>
                       <li className="flex items-center gap-2 text-[10px] font-bold uppercase text-white/70"><ShieldCheck className="h-3.5 w-3.5 text-red-400" /> Public Spectator Link</li>
@@ -1624,24 +1344,28 @@ export default function LandingPage() {
 
           <motion.div
             className="mt-10 text-center"
-            initial={{ opacity: 0 }} whileInView={{ opacity: 1 }} viewport={{ once: true }}
+            initial={false} whileInView={{ opacity: 1 }} viewport={{ once: true }}
             transition={{ duration: 0.8 }}
           >
             <p className="text-[10px] font-black uppercase text-red-500/60 tracking-widest">Web prices show the configured catalog currency. App store prices and taxes may differ by region; review the final confirmation before paying.</p>
           </motion.div>
         </div>
+      <TierComparison cycle={pricingCycle} />
       </PricingCycleContext.Provider>
       </section>
 
+      <CustomerStories />
+      <FounderStrip />
+      <ThirdPartyProof />
       <section id="contact" className="py-24 bg-white">
         <div className="container mx-auto px-6">
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-16 items-center">
             <div className="space-y-8">
               <div className="space-y-4">
                 <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">Get in touch</p>
-                <h2 className="text-4xl md:text-5xl font-black tracking-tight">Institutional Scale <br />Custom Solutions.</h2>
+                <h2 className="text-4xl md:text-5xl font-black tracking-tight">More teams.<br />Let’s talk.</h2>
                 <p className="text-muted-foreground font-medium text-lg leading-relaxed">
-                  We offer enterprise-grade configurations for national leagues and professional clubs. Connect with our strategic analysts.
+                  Tell us how many teams you run and what your staff need help with.
                 </p>
               </div>
 
@@ -1656,7 +1380,7 @@ export default function LandingPage() {
                   <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center text-primary group-hover:bg-primary group-hover:text-white transition-all">
                     <Smartphone className="h-5 w-5" />
                   </div>
-                  <span className="font-bold text-foreground">Global Tactical Support</span>
+                  <span className="font-bold text-foreground">Team support</span>
                 </div>
               </div>
             </div>
@@ -1672,7 +1396,7 @@ export default function LandingPage() {
         <div className="absolute inset-0 pointer-events-none opacity-60" style={{ backgroundImage: 'radial-gradient(circle at 1px 1px, rgba(0,0,0,0.06) 1px, transparent 0)', backgroundSize: '32px 32px' }} />
         <div className="container relative z-10 mx-auto px-6">
           <motion.div
-            initial="hidden"
+            initial={false}
             whileInView="visible"
             viewport={{ once: true, amount: 0.2 }}
             variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.1 } } }}
@@ -1729,12 +1453,13 @@ export default function LandingPage() {
         </div>
       </section>
 
+      <MarketingFaq />
       <section id="newsletter" className="relative overflow-hidden bg-black py-24 text-white">
         <div className="absolute inset-0 opacity-25" style={{ backgroundImage: 'radial-gradient(circle at 15% 20%, rgba(239,68,68,0.7), transparent 34%), radial-gradient(circle at 85% 80%, rgba(255,255,255,0.18), transparent 30%)' }} />
         <div className="container relative z-10 mx-auto px-6">
           <div className="mx-auto grid max-w-6xl grid-cols-1 items-center gap-12 rounded-[3rem] border border-white/10 bg-white/5 p-8 shadow-2xl backdrop-blur-sm md:p-14 lg:grid-cols-[1.1fr_0.9fr]">
             <motion.div
-              initial={{ opacity: 0, y: 24 }}
+              initial={false}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, amount: 0.3 }}
               className="space-y-6"
@@ -1752,7 +1477,7 @@ export default function LandingPage() {
             </motion.div>
 
             <motion.div
-              initial={{ opacity: 0, y: 24 }}
+              initial={false}
               whileInView={{ opacity: 1, y: 0 }}
               viewport={{ once: true, amount: 0.3 }}
               transition={{ delay: 0.1 }}
@@ -1812,6 +1537,8 @@ export default function LandingPage() {
               <BrandLogo variant="light-background" className="h-8 w-32" />
             </Link>
                         <div className="flex flex-wrap items-center justify-center gap-8 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground text-center mb-4">
+              <Link href="/about" className="hover:text-primary transition-colors">About</Link>
+              <Link href="/plans" className="hover:text-primary transition-colors">Plans &amp; pricing</Link>
               <Link href="/how-to" className="hover:text-primary transition-colors">How to Guide</Link>
               <Link href="/Tactical_User_Manual.md" className="hidden hover:text-primary transition-colors text-primary font-black scale-110">Help Guide</Link>
               <Link href="/AI_KNOWLEDGE_BASE.md" className="hidden hover:text-primary transition-colors">AI Knowledge Base</Link>
