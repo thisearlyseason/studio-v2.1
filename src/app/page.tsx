@@ -92,7 +92,7 @@ import {
 } from '@/components/ui/sheet';
 import { Menu } from 'lucide-react';
 
-const FEATURE_ORDER = ['Registration and payments', 'Collect dues with Stripe', 'Printable practice plans', 'Tournaments and leagues, run end to end', 'Waiver Tracking', 'Film watch verification'];
+const FEATURE_ORDER = ['Registration and payments', 'Collect dues with Stripe', 'Printable practice plans', 'Tournaments and leagues, run end to end', 'Collect signed waivers before game day', 'Film watch verification'];
 
 const DEMO_OPTIONS = [
   { id: 'starter_squad', name: 'Starter Plan Demo', icon: Users, desc: 'Grassroots essentials' },
@@ -376,7 +376,8 @@ export default function LandingPage() {
     const handleScroll = () => {
       setIsScrolled(window.scrollY > 50);
     };
-    window.addEventListener('scroll', handleScroll);
+    handleScroll();
+    window.addEventListener('scroll', handleScroll, { passive: true });
     return () => window.removeEventListener('scroll', handleScroll);
   }, []);
 
@@ -876,8 +877,8 @@ export default function LandingPage() {
               },
               {
                 Icon: ShieldCheck,
-                title: 'Waiver Tracking',
-                desc: <>Hub admins distribute waivers to coaches. <strong>Notification and tracking tools</strong> help staff identify missing signatures.</>,
+                title: 'Collect signed waivers before game day',
+                desc: <>Send waivers to coaches and <strong>track missing signatures</strong> so staff know who still needs to sign before game day.</>,
                 items: ['Waiver Distribution', 'Signature Status'],
                 accent: 'from-teal-500/10 to-transparent',
               },
@@ -943,7 +944,7 @@ export default function LandingPage() {
               variants={{ hidden: {}, visible: { transition: { staggerChildren: 0.1 } } }}
             >
               <motion.div variants={fadeUp}>
-                <Badge className="bg-primary text-white border-none font-black px-4 h-7 uppercase tracking-widest text-[10px]">Strategic Advantages</Badge>
+                <Badge className="bg-primary text-white border-none font-black px-4 h-7 uppercase tracking-widest text-[10px]">More team tools</Badge>
               </motion.div>
               <motion.h2 variants={fadeUp} className="text-4xl md:text-6xl font-black tracking-tight leading-none uppercase md:leading-none">
                 Everything <br /> <span className="text-primary italic">in one place.</span>
@@ -1089,20 +1090,23 @@ export default function LandingPage() {
 
         <div className="container mx-auto px-6 relative z-10">
           <SectionHeader
-            badge="Specialized Interfaces"
-            title={<>Tailored <br /> <span className="text-primary italic">Account Roles.</span></>}
-            subtitle="Coaches manage the team. Families see schedules, waivers and dues. Athletes keep up with practice and games."
+            badge="For your whole organization"
+            title={<>Everyone running <br /> <span className="text-primary italic">the season.</span></>}
+            subtitle="Run one team, a club, a school sports program or a competition. Give organizers, coaches, families and athletes a workspace for the jobs they do."
           />
 
           <StaggerGrid className="grid grid-cols-1 md:grid-cols-3 gap-10">
             {[
-              { Icon: Trophy, title: 'Coaches & Managers',  desc: 'Manage rosters, schedules and practice plans. Collect dues through Stripe Connect, track signed waivers and review athlete progress.', color: 'from-primary/15 via-transparent', num: '01' },
-              { Icon: Baby,   title: 'Parents & Guardians',        desc: 'See your children’s schedules, dues and waivers together. Check what needs signing and manage volunteer shifts.', color: 'from-blue-500/10 via-transparent', num: '02' },
-              { Icon: User,   title: 'Athlete Performance', desc: 'See your schedule and results, watch assigned film and keep recruiting information together.', color: 'from-emerald-500/10 via-transparent', num: '03' },
-            ].map(({ Icon, title, desc, color, num }, i) => (
+              { Icon: GraduationCap, title: 'School athletic directors', desc: 'Keep school teams, coaches and schedules together. Allocate squad spaces, share school documents and follow up on waivers across your sports program.', color: 'from-primary/15 via-transparent', num: '01', links: [{ href: '/for/schools', label: 'See school tools' }, { href: '/privacy', label: 'Read how youth data is handled' }] },
+              { Icon: TableIcon, title: 'League & tournament organizers', desc: 'Open registration, organize divisions, build schedules and brackets, and publish standings. Give scorekeepers and spectators the game-day views they need.', color: 'from-blue-500/10 via-transparent', num: '02', links: [{ href: '/for/leagues', label: 'Run a league' }, { href: '/for/tournaments', label: 'Run a tournament' }] },
+              { Icon: Building, title: 'Club directors', desc: 'Keep squads and staff in one club workspace. Review dues and fees across teams, assign staff roles and compare a club plan with paying for each team separately.', color: 'from-emerald-500/10 via-transparent', num: '03', links: [{ href: '#pricing', label: 'Compare club and team costs' }] },
+              { Icon: Trophy, title: 'Coaches & managers', desc: 'Manage rosters, schedules and practice plans. Collect dues through Stripe Connect, track signed waivers and review athlete progress.', color: 'from-primary/15 via-transparent', num: '04', links: [{ href: '/for/coaches', label: 'See coaching tools' }] },
+              { Icon: Baby, title: 'Parents & guardians', desc: 'See your children’s schedules, dues and waivers together. Check what needs signing and manage volunteer shifts.', color: 'from-blue-500/10 via-transparent', num: '05', links: [{ href: '/for/parents', label: 'See family tools' }] },
+              { Icon: User, title: 'Athletes', desc: 'See your schedule and results, watch assigned film and keep recruiting information together.', color: 'from-emerald-500/10 via-transparent', num: '06', links: [{ href: '/how-to', label: 'Find your setup guide' }] },
+            ].map(({ Icon, title, desc, color, num, links }, i) => (
               <motion.div key={i} variants={fadeUp} className="perspective-800 h-full rounded-[2.5rem] overflow-hidden">
                 <TiltCard strength={6} className="h-full rounded-[2.5rem] overflow-hidden">
-                  <Card className="rounded-[2.5rem] border-none depth-card bg-white p-10 space-y-6 h-full relative overflow-hidden group cursor-pointer hover:bg-gray-950 hover:text-white transition-colors duration-500">
+                  <Card className="rounded-[2.5rem] border-none depth-card bg-white p-10 space-y-6 h-full relative overflow-hidden group hover:bg-gray-950 hover:text-white transition-colors duration-500">
                     {/* Gradient top accent */}
                     <div className={`absolute top-0 left-0 w-full h-40 bg-linear-to-b ${color} to-transparent pointer-events-none opacity-70 group-hover:opacity-0 transition-opacity`} />
                     <div className="absolute top-0 left-0 w-full h-40 bg-linear-to-b from-primary/10 to-transparent pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity" />
@@ -1112,8 +1116,9 @@ export default function LandingPage() {
                       <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center group-hover:bg-primary transition-colors">
                         <Icon className="h-7 w-7 text-primary group-hover:text-white transition-colors" />
                       </div>
-                      <h3 className="text-2xl font-black uppercase tracking-tight">{title}</h3>
+                      <h3 className="text-2xl font-bold tracking-tight">{title}</h3>
                       <p className="text-sm font-medium text-muted-foreground leading-relaxed group-hover:text-white/60 transition-colors">{desc}</p>
+                      <div className="flex flex-wrap gap-x-5 gap-y-3 pt-1">{links.map(link => <Link key={link.href} href={link.href} className="inline-flex min-h-11 items-center gap-2 text-sm font-bold text-primary underline decoration-primary/30 underline-offset-4 hover:decoration-current focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-4 group-hover:text-white">{link.label}<ArrowRight aria-hidden="true" className="h-4 w-4 shrink-0" /></Link>)}</div>
                     </div>
                   </Card>
                 </TiltCard>
