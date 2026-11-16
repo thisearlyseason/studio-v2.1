@@ -1,6 +1,7 @@
 'use client';
 
-import React, { DependencyList, createContext, useContext, ReactNode, useMemo, useState, useEffect } from 'react';
+import { analytics } from '@heycatch/sdk';
+import React, { DependencyList, createContext, useContext, ReactNode, useMemo, useState, useEffect, useRef } from 'react';
 import { FirebaseApp } from 'firebase/app';
 import { Firestore } from 'firebase/firestore';
 import { Auth, User, onAuthStateChanged, signOut } from 'firebase/auth';
@@ -77,6 +78,8 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
   });
 
 
+  const identifiedAnalyticsUser = useRef<string | null>(null);
+
   // Effect to subscribe to Firebase auth state changes
   useEffect(() => {
     if (!auth) { // If no Auth service instance, cannot determine user state
@@ -113,6 +116,15 @@ export const FirebaseProvider: React.FC<FirebaseProviderProps> = ({
           localStorage.removeItem('squad_seeding_lock');
           localStorage.removeItem('sf_session_team_id');
           sessionStorage.removeItem('squad_demo_start_time');
+        }
+        if (firebaseUser && !firebaseUser.isAnonymous && firebaseUser.emailVerified) {
+          if (identifiedAnalyticsUser.current !== firebaseUser.uid) {
+            analytics.setIdentity(firebaseUser.uid, { email: firebaseUser.email ?? undefined, name: firebaseUser.displayName ?? undefined }, { signup_date: firebaseUser.metadata.creationTime });
+            identifiedAnalyticsUser.current = firebaseUser.uid;
+          }
+        } else if (identifiedAnalyticsUser.current) {
+          analytics.resetIdentity();
+          identifiedAnalyticsUser.current = null;
         }
         setUserAuthState({ user: firebaseUser, isUserLoading: false, userError: null });
       },

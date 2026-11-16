@@ -1,5 +1,7 @@
 "use client";
 
+import { analytics } from '@heycatch/sdk';
+
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { signOut } from 'firebase/auth';
@@ -32,6 +34,10 @@ export default function VerifyEmailPage() {
       const next = enrollment.pendingEnrollment
         ? '/dashboard'
         : sessionStorage.getItem('squad_post_verify_path') || '/dashboard';
+      if (sessionStorage.getItem('squad_post_verify_path')) {
+        analytics.setIdentity(verifiedUser.uid, { email: verifiedUser.email ?? undefined, name: verifiedUser.displayName ?? undefined }, { signup_date: verifiedUser.metadata.creationTime });
+        analytics.trackEvent('signup_completed');
+      }
       sessionStorage.removeItem('squad_post_verify_path');
       window.location.replace(safeReturnPath(next));
     } catch (error) {
