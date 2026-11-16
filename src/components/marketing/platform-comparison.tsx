@@ -142,6 +142,11 @@ const resources = [
 export function PlatformComparison() {
   return (
     <div className="space-y-8">
+      <div className="rounded-2xl border p-6 space-y-4">
+        <h3 className="text-2xl font-bold">Why pay when there are free options?</h3>
+        <p className="leading-relaxed text-muted-foreground">If schedules and team chat cover your season, a free plan may be enough. Compare registration, waivers, dues, auto-brackets and the number of teams you manage before choosing a paid plan.</p>
+        <div className="flex flex-wrap gap-4">{[['teamsnap', 'TeamSnap'], ['teamlinkt', 'TeamLinkt'], ['spond', 'Spond']].map(([slug, name]) => <Link key={slug} href={`/vs/${slug}`} className="underline font-semibold">The Squad vs {name}</Link>)}</div>
+      </div>
       <div>
         <p className="mb-4 flex items-center gap-2 text-xs font-bold text-muted-foreground xl:hidden">
           <ChevronRight className="h-4 w-4 shrink-0" aria-hidden="true" />

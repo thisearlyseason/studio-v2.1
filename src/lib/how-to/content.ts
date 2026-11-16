@@ -182,7 +182,7 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
       s(
         "squad-save",
         "Create the squad and verify it",
-        "Select Deploy Squad Hub. Wait for the success message and workspace change. Open the squad selector and select the new team if it is not already active.",
+        "Use the create-team button. Wait for the success message and workspace change. Open the squad selector and select the new team if it is not already active.",
         "the new squad is available and its details are visible.",
         "team",
         "Squad Management shows the current team identity.",
@@ -317,10 +317,10 @@ export const GUIDE_CHAPTERS: GuideChapter[] = [
       s(
         "roster-archive",
         "Remove a departing member with a reason",
-        "Open the member’s profile and its removal control. Read Personnel Decommission, enter the required archive reason, and confirm only for the intended member. Review the roster’s archived/removed view when you need that history or reinstatement.",
+        "Open the member’s profile and its removal control. Review the member-removal confirmation, enter the required archive reason, and confirm only for the intended member. Review the roster’s archived/removed view when you need that history or reinstatement.",
         "the member’s status reflects the removal.",
         "roster-remove",
-        "Personnel Decommission records a reason before removal.",
+        "Member removal records a reason before removal.",
         "Removing a team member is different from deleting their personal account.",
       ),
     ],
