@@ -1,4 +1,4 @@
-import { ARTICLE_OPENING_ANSWERS } from './sports-hub-opening-answers';
+import { ARTICLE_OPENING_ANSWERS, ARTICLE_PRACTICAL_ANSWERS } from './sports-hub-opening-answers';
 import { ARTICLE_WORKED_EXAMPLES } from './sports-hub-editorial-examples';
 import { ARTICLE_MERGES, ARTICLE_REDIRECTS } from './sports-hub-article-redirects';
 
@@ -30,6 +30,20 @@ const parentQuestions: Record<string, string> = {
   "parenting-the-transition-to-teen-sports": "How much responsibility can a teen athlete take on?"
 };
 
+const parentAnswers: Record<string, string> = {
+  "supporting-young-athletes-without-adding-pressure": "Ask what support the child prefers and praise actions they can control rather than the score.",
+  "building-a-healthy-parent-coach-partnership": "Agree on written expectations and a private process for discussing concerns before the season starts.",
+  "balancing-school-sports-and-family-life": "Put fixed commitments, transport responsibilities and rest time into one calendar before accepting optional events.",
+  "recognizing-and-preventing-youth-sports-burnout": "Ask calmly about a pattern of exhaustion or lost interest, and seek qualified support when concerns persist.",
+  "supporting-your-child-through-a-sports-injury": "Coordinate the clinician’s instructions while supporting the athlete’s connection with the team and ordinary family life.",
+  "sports-nutrition-basics-for-busy-families": "Plan familiar meals and water around activities, and use qualified advice for individual nutrition concerns.",
+  "sleep-and-recovery-guide-for-sports-parents": "Work backward from the required wake-up time, allowing time for travel home, food and settling down.",
+  "supporting-a-child-with-sports-anxiety": "Listen without correcting the feeling, ask what would help and keep the child involved in the next step.",
+  "team-conflict-bullying-and-exclusion-parent-guide": "Listen to the child, record observable events privately and use the organization’s safeguarding or reporting process.",
+  "social-media-highlights-and-recruiting-pressure": "Share footage only with the audience the family has agreed on, with appropriate permissions from others shown.",
+  "parenting-the-transition-to-teen-sports": "Agree on specific responsibilities with the teenager and keep a clear adult backup available for support."
+};
+
 function removeRepeatedParentCopy(content: string): string {
   return content
     .replace(/These prompts are intentionally open-ended\.[\s\S]*?being corrected, coached, or rushed\.\n\n/g, '')
@@ -43,7 +57,7 @@ export function prepareArticleCatalog<T extends { slug: string; title: string; c
     const definition = parentDefinitions[slug];
     if (definition) {
       content = `${definition}\n\n${content}`;
-      content = content.replace('## Start With the Relationship', `## ${parentQuestions[slug]}`)
+      content = content.replace('## Start With the Relationship', `## ${parentQuestions[slug]}\n\n${parentAnswers[slug]}`)
         .replace('## What You Can Do This Week', '## What can your family change this week?')
         .replace('## Helpful Conversation Starters', '## How can you start the conversation?')
         .replace('## Signs That More Support May Be Needed', '## When should you ask for more help?');
@@ -62,8 +76,10 @@ export function prepareArticleCatalog<T extends { slug: string; title: string; c
     if (ARTICLE_WORKED_EXAMPLES[slug]) content += `\n\n${ARTICLE_WORKED_EXAMPLES[slug]}`;
     const opening = ARTICLE_OPENING_ANSWERS[slug];
     if (opening) {
-      const [question, answer] = opening;
-      content = content.replace(/^## [^\n]+\n\n/, `## ${question}\n\n${answer}\n\n`);
+      const [question, definition] = opening;
+      const answer = ARTICLE_PRACTICAL_ANSWERS[slug];
+      if (!answer) throw new Error(`Missing direct opening answer: ${slug}`);
+      content = content.replace(/^## [^\n]+\n\n/, `${definition}\n\n## ${question}\n\n${answer}\n\n`);
     }
     if (slug === 'volunteer-program-guide') content = content.replace('They simply need to know', 'Volunteers need to know');
     if (slug === 'technology-in-sports-management') content = content.replace('This is not just inefficient.', 'Scattered sports administration records are inefficient.');
