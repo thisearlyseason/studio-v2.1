@@ -525,10 +525,8 @@ export default function LandingPage() {
         <div className="container relative z-20 mx-auto px-5 pb-8 text-center md:px-6 xl:pb-0">
           <div className="mx-auto max-w-5xl space-y-6">
           <p className="mx-auto w-fit rounded-full border border-white/20 bg-black/25 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.22em] text-white/85 backdrop-blur-md">One team. Every season. One Squad.</p>
-          <h1 className="font-black uppercase tracking-tighter leading-[0.86]" style={{ textShadow: '0 8px 50px rgba(0,0,0,.65)', fontSize: 'clamp(3.5rem, 10.7vw, 9rem)' }}>
-            <span className="mb-6 block text-base font-bold normal-case leading-snug tracking-normal text-white/85 md:text-xl">Team management for clubs, leagues and schools.</span>
-            <span className="block">DOMINATE</span>
-            <span className="mt-2 block whitespace-nowrap text-[0.78em] sm:text-[1em]">YOUR <span className="italic text-primary">SEASON.</span></span>
+          <h1 className="mx-auto max-w-5xl text-balance font-bold tracking-tight leading-[1.04]" style={{ textShadow: '0 8px 50px rgba(0,0,0,.65)', fontSize: 'clamp(2.25rem, 6vw, 5rem)' }}>
+            <span className="text-primary">The Squad:</span>{' '}sports team management for clubs, leagues and schools.
           </h1>
           <p className="mx-auto max-w-xl text-base font-medium leading-relaxed text-white/85 md:text-lg">Stop chasing parents across disconnected tools. Keep schedules, waivers, dues and team chat in one workspace.</p>
           {/* Existing signup and demo paths */}

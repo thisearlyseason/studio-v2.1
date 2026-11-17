@@ -8,7 +8,7 @@ The current displayed report is 72/100. These are report scores, not projected s
 
 | Priority | Exact action title | Disposition |
 | --- | --- | --- |
-| Quick wins | Rewrite the hero headline to the brief's category-first line | User explicitly overrides this recommendation: preserve original DOMINATE YOUR SEASON hero and small example screenshot. Do not silently replace it. |
+| Quick wins | Rewrite the hero headline to the brief's category-first line | The owner’s latest pasted action list explicitly requests the category-first headline. The hero now uses the audit’s exact line, “The Squad: sports team management for clubs, leagues and schools.” Subhead, eyebrow, CTAs and compact example remain. |
 | Quick wins | Render paid prices in the served HTML and in the product schema | Homepage server loads fresh public catalog quotes, seeds visible price components, and emits paid offers. Missing/expired quotes use the existing unavailable/loading fallback. No hardcoded paid prices. |
 | Quick wins | Surface the organizer and athletic-director paths on the homepage | Already live: six role cards, including schools, leagues/tournaments and club directors, with audience and pricing links. |
 | Quick wins | Add a named person to the About page | Clean, hidden FOUNDER slot exists; actual identity, photo, first-person story and professional-profile link must come from owner. |
@@ -22,13 +22,13 @@ The current displayed report is 72/100. These are report scores, not projected s
 
 | Finding | Current audit score | Repo disposition / remaining limit |
 | --- | --- | --- |
-| D1.1 | 4/6 | Category line exists; dominant headline retained by explicit user preference. |
+| D1.1 | 4/6 | Exact category-first headline implemented following the owner’s latest pasted instructions; brand, category and buyers are the dominant H1. |
 | D1.2 | 4/5 | Club role now names separate-team subscription stacking outside pricing. |
 | D1.3 | 2/4 | Organizer jobs, audience links and task-focused waiver copy already live. |
 | D1.4 | 2/3 | Free/migration guidance already live; new security page supplies actual data/access/operator information. No unsupported stability promises. |
 | D1.5 | 2/3 | Real product screenshots labeled demo data already live. A customer's actual after-state needs permissioned real customer evidence. |
-| D1.6 | 3/4 | Jargon labels removed; original hero wording remains an explicit exception. |
-| D2.1 | 5/7 | Category and product example already live; hero dominance/screenshot size retained by user instruction. |
+| D1.6 | 3/4 | Jargon labels removed; hero now uses the audit’s plain, specific category-first wording. |
+| D2.1 | 5/7 | Category-first H1 now replaces the abstract slogan; product example remains compact as previously requested. |
 | D2.2 | 4/5 | Existing named/described demo dialog retained; trigger now references the visible destination explanation. |
 | D2.3 | 4/5 | Sentence-case, lighter secondary headings outside hero/pricing; completed pricing design preserved. |
 | D2.4 | 3/4 | Organizer links and mobile Pricing already live; install control follows account actions. Anchor navigation is retained; unlinked /features and /customers 404s were explicitly not defects in the audit. |
