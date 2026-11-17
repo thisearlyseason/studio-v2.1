@@ -1,3 +1,4 @@
+import { withArticlePrimarySources } from './sports-hub-article-sources';
 import { PARENT_ARTICLES } from './sports-hub-parent-articles';
 import { YOUTH_ARTICLES } from './sports-hub-youth-articles';
 import { EXPANDED_ARTICLES } from './sports-hub-expanded-articles';
@@ -46,7 +47,7 @@ const AUTHORS = {
 
 // ─── Articles Database ────────────────────────────────────────────────────────
 
-export const ARTICLES_DB: Record<string, Article> = {
+const ARTICLE_SEEDS: Record<string, Article> = {
 
   ...PARENT_ARTICLES,
   ...YOUTH_ARTICLES,
@@ -9637,6 +9638,10 @@ The athletes who adapt most gracefully to disruption are those who know which el
   },
 
 };
+
+export const ARTICLES_DB: Record<string, Article> = Object.fromEntries(
+  Object.entries(ARTICLE_SEEDS).map(([slug, article]) => [slug, withArticlePrimarySources(article)]),
+);
 
 // ─── Convenience List ─────────────────────────────────────────────────────────
 
