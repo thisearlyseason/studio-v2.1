@@ -12,7 +12,7 @@ export function CustomerStories() {
 }
 export function FounderStrip() {
   if (!FOUNDER) return null;
-  return <aside className="container mx-auto px-6 py-8 flex items-center gap-4"><Image src={FOUNDER.photo} alt={FOUNDER.name} width={64} height={64} className="rounded-full" /><p>Built by {FOUNDER.name}. <Link href="/about" className="underline">Why I built The Squad</Link></p></aside>;
+  return <aside className="container mx-auto flex items-center gap-5 px-6 py-10"><Image src={FOUNDER.photo} alt={`${FOUNDER.name}, creator of The Squad`} width={96} height={144} className="h-28 w-20 shrink-0 rounded-2xl object-cover" /><div className="space-y-2"><p className="font-bold">Built by {FOUNDER.name}.</p><p className="max-w-xl text-sm font-normal leading-relaxed text-muted-foreground">{FOUNDER.story[0]}</p><Link href="/about" className="inline-flex min-h-11 items-center text-sm font-semibold underline underline-offset-4">Why I built The Squad</Link></div></aside>;
 }
 export function ThirdPartyProof() {
   if (!EXTERNAL_PROOF.length) return null;
