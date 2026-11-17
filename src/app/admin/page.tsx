@@ -1,5 +1,7 @@
 'use client';
 
+import { ARTICLE_REDIRECTS } from '@/lib/sports-hub-article-redirects';
+
 import { useState, useCallback, useEffect } from 'react';
 import { useTeam } from '@/components/providers/team-provider';
 import { useFirestore } from '@/firebase';
@@ -152,6 +154,7 @@ export default function AdminPortalPage() {
   const [addingFeed, setAddingFeed] = useState(false);
   const [refreshingFeed, setRefreshingFeed] = useState<string | null>(null);
   const [shComposeTitle, setShComposeTitle] = useState('');
+  const [shComposeSearchTitle, setShComposeSearchTitle] = useState('');
   const [shComposeExcerpt, setShComposeExcerpt] = useState('');
   const [shComposeContent, setShComposeContent] = useState('');
   const [shComposeSection, setShComposeSection] = useState('news');
@@ -400,11 +403,18 @@ export default function AdminPortalPage() {
 
   const publishHubArticle = async () => {
     if (!db || !shComposeTitle.trim() || !shComposeExcerpt.trim() || !shComposeContent.trim()) return;
+    const searchTitle = (shComposeSearchTitle || shComposeTitle).trim();
+    if (searchTitle.length < 30 || searchTitle.length > 60) {
+      toast({ title: 'Check the search title', description: 'Use a clear search title between 30 and 60 characters before publishing.', variant: 'destructive' });
+      return;
+    }
     setPublishingArticle(true);
     try {
       const slug = shComposeTitle.trim().toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+      if (ARTICLE_REDIRECTS[slug]) throw new Error('That title uses a consolidated guide URL. Choose a distinct article title before publishing.');
       await addDoc(collection(db, 'sports_hub_articles'), {
         title: shComposeTitle.trim(),
+        seoTitle: searchTitle,
         excerpt: shComposeExcerpt.trim(),
         slug,
         section: shComposeSection,
@@ -424,7 +434,17 @@ export default function AdminPortalPage() {
         tags: [],
         content: shComposeContent,
       });
+      // A publishing success is independent of the search engine notification.
+      try {
+        const token = await firebaseUser?.getIdToken();
+        if (token) await fetch('/api/admin/indexnow', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+          body: JSON.stringify({ slug }),
+        });
+      } catch (error) { console.warn('[Sports Hub] IndexNow notification failed:', error); }
       setShComposeTitle('');
+      setShComposeSearchTitle('');
       setShComposeExcerpt('');
       setShComposeContent('');
       toast({ title: '✅ Article Published', description: `"${shComposeTitle}" is now live in the Sports Hub.` });
@@ -2636,6 +2656,9 @@ export default function AdminPortalPage() {
                         onChange={e => setShComposeTitle(e.target.value)}
                         className="h-12 rounded-xl bg-gray-50 dark:bg-white/5 font-bold text-base"
                       />
+                      <Label className="mt-3 block text-sm">Search title (30–60 characters)</Label>
+                      <Input value={shComposeSearchTitle} onChange={e => setShComposeSearchTitle(e.target.value)} placeholder="Use the article title, or write a shorter search title" className="mt-2" />
+                      <p className="mt-1 text-xs text-muted-foreground">{(shComposeSearchTitle || shComposeTitle).trim().length} characters. The article headline can stay longer; the search title is never cut automatically.</p>
                     </div>
                     <div className="grid grid-cols-2 gap-4">
                       <div>

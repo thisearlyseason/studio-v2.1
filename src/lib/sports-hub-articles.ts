@@ -1,7 +1,7 @@
 import { withArticlePrimarySources } from './sports-hub-article-sources';
 import { PARENT_ARTICLES } from './sports-hub-parent-articles';
 import { YOUTH_ARTICLES } from './sports-hub-youth-articles';
-import { EXPANDED_ARTICLES } from './sports-hub-expanded-articles';
+import { prepareArticleCatalog } from './sports-hub-article-editorial';
 
 export interface Article {
   id: string;
@@ -13,6 +13,7 @@ export interface Article {
   author: { name: string; title: string };
   readingTime: number;
   publishedAt: string;
+  updatedAt?: string;
   seoTitle?: string;
   seoDescription?: string;
   isFeatured: boolean;
@@ -51,7 +52,6 @@ const ARTICLE_SEEDS: Record<string, Article> = {
 
   ...PARENT_ARTICLES,
   ...YOUTH_ARTICLES,
-  ...EXPANDED_ARTICLES,
 
   'building-championship-culture': {
     id: 'building-championship-culture',
@@ -289,7 +289,7 @@ Before you build any schedule, audit your venue capacity:
 - Divide into 8 pools of 4 teams
 - Each team plays 3 pool games (guaranteed)
 - Top 2 from each pool advance to a 16-team single-elimination bracket (4 more rounds)
-- Total games: 24 pool + 15 bracket = 39 games
+- Total games: 48 pool + 15 bracket = 63 games
 
 ### Field and Time Block Planning
 
@@ -328,7 +328,7 @@ Publish seeds at least 1 week before the tournament so teams can review and rais
 
 ## Phase 3: Referee Coordination (3 Weeks Out)
 
-A 32-team tournament with 39 games needs significant officiating coverage. Plan for:
+A 32-team tournament with 63 games needs significant officiating coverage. Plan for:
 - **2–3 referees per game** depending on sport
 - **3–5 backup officials** for no-shows
 - **Clear payment and scheduling system**
@@ -524,7 +524,7 @@ Good parent communication is the foundation of a drama-free season. Invest 20 mi
 
 We teach footwork. We teach mechanics. We run drills until movements are automatic. But most coaches never formally teach athletes how to manage their inner world during competition.
 
-Yet research consistently shows that **mental skills account for 50–90% of performance** at high levels of athletic competition, where physical abilities are roughly equal across competitors.
+Mental preparation deserves deliberate practice alongside physical skills. A coach can teach focus and preparation without assigning an unsupported percentage of performance to either.
 
 The good news: mental performance skills are trainable, teachable, and highly transferable to life beyond sports.
 
@@ -1572,7 +1572,7 @@ Key features coaches consistently highlight:
 - Data export for rosters and emergency contacts
 - Medical waiver and consent form management
 
-**Implementation tip:** Move to digital registration before anything else. Programs that digitize registration report saving 15–25 hours of administrative time per season.
+**Implementation tip:** Move to digital registration before anything else. Record the time staff spend entering forms, following up on missing answers and reconciling payments before and after the change.
 
 ### 3. Scheduling and Bracket Management
 
@@ -1630,13 +1630,9 @@ For critical operations (game-day emergency contacts, first aid), do not rely ex
 
 ## The Return on Investment
 
-Programs that adopt purpose-built sports management technology consistently report:
-- 50–70% reduction in administrative communication time
-- Higher parent satisfaction scores
-- Improved athlete attendance and engagement
-- Significantly reduced coach and administrator burnout
+Review one team’s registration and communication work over a defined four-week pilot. Record the number of families, missing forms, support questions and staff minutes spent on the same tasks.
 
-The technology investment pays for itself — not just in dollars, but in the time and energy you can redirect to the work that actually matters.`,
+Compare the pilot with the program’s previous process and record what changed. Software fees, setup time and extra tools belong in the comparison. The Squad does not promise a particular time saving or participation outcome.`,
   },
 
   'tournament-bracket-formats': {
@@ -2950,7 +2946,7 @@ Paper registration feels free. It is not. The true cost includes:
 - Physical storage and retrieval overhead
 - No searchable data for historical reference
 
-Studies of youth sports organizations that transitioned from paper to digital registration report saving **15–25 administrative hours per season**.
+A program can assess the change by recording registration work before and after adopting the new process. Keep the number of registrations and the tasks measured alongside the time record.
 
 ## Step 1: Choosing the Right Platform
 
@@ -3063,7 +3059,7 @@ Most programs see a 70–80% reduction in administrative registration work in th
     section: 'Tournament Management',
     content: `## The Official Shortage Crisis
 
-The United States Soccer Federation reported losing over 40% of its registered referees between 2018 and 2023. Similar trends exist across virtually every youth sport. The primary cited reason: verbal abuse from coaches and parents.
+An event depends on having enough appropriately qualified officials. A referee development plan should address recruitment, certification, mentoring and the conduct standards officials can expect at the venue.
 
 Tournament directors who understand this context and respond with genuine referee development programs are building one of the most valuable assets in youth sports: a reliable, experienced officiating pool.
 
@@ -9640,7 +9636,7 @@ The athletes who adapt most gracefully to disruption are those who know which el
 };
 
 export const ARTICLES_DB: Record<string, Article> = Object.fromEntries(
-  Object.entries(ARTICLE_SEEDS).map(([slug, article]) => [slug, withArticlePrimarySources(article)]),
+  Object.entries(prepareArticleCatalog(ARTICLE_SEEDS)).map(([slug, article]) => [slug, withArticlePrimarySources(article)]),
 );
 
 // ─── Convenience List ─────────────────────────────────────────────────────────

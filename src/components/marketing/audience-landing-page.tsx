@@ -96,10 +96,11 @@ export function AudienceLandingPage({ landing }: { landing: AudienceLanding }) {
               <Image
                 src={`/images/campaigns/${landing.slug}-hero.webp`}
                 alt={`${landing.audience} using a coordinated community sports environment`}
-                fill
+                width={1600}
+                height={{ parents: 1067, coaches: 1067, leagues: 901, tournaments: 900, schools: 2400, municipalities: 901 }[landing.slug]}
                 priority
                 sizes="(max-width: 1024px) 92vw, 560px"
-                className="object-cover"
+                className="absolute inset-0 h-full w-full object-cover"
               />
               <div className="absolute inset-0 bg-linear-to-t from-black via-black/5 to-transparent" />
               <div className="absolute inset-x-0 bottom-0 flex items-end justify-between gap-4 p-6 text-white sm:p-8">

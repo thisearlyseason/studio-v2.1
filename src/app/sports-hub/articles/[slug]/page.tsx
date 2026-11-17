@@ -1,4 +1,9 @@
 import React from 'react';
+import Image from 'next/image';
+import { ARTICLE_PRODUCT_EXAMPLES } from '@/lib/sports-hub-product-examples';
+import { findHubAuthor, hubAuthorSchema } from '@/lib/sports-hub-authors';
+import { pageTitle, pageDescription } from '@/lib/seo-metadata';
+import { ARTICLE_SEARCH_TITLES, ARTICLE_SEARCH_DESCRIPTIONS } from '@/lib/sports-hub-search-titles';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import Link from 'next/link';
@@ -27,11 +32,14 @@ export async function generateMetadata({ params }: Params): Promise<Metadata> {
   const { slug } = await params;
   const article = ARTICLES_DB[slug] || await getPublicSportsHubArticle(slug).catch(() => null);
   if (!article) notFound();
-  const title = article.seoTitle || `${article.title} | Sports Hub`;
-  const description = article.seoDescription || article.excerpt;
+  const originalTitle = article.seoTitle || `${article.title} | Sports Hub`;
+  const title = originalTitle.length >= 30 && originalTitle.length <= 60
+    ? originalTitle
+    : ARTICLE_SEARCH_TITLES[slug] || originalTitle;
+  const description = pageDescription(ARTICLE_SEARCH_DESCRIPTIONS[slug] || article.seoDescription || article.excerpt);
   const url = `${SITE_URL}/sports-hub/articles/${slug}`;
   return {
-    title,
+    title: pageTitle(title),
     description,
     alternates: { canonical: `/sports-hub/articles/${slug}` },
     openGraph: {
@@ -150,10 +158,13 @@ function renderContent(content: string): React.ReactNode[] {
     }
 
     if (line.startsWith('## ')) {
+      const heading = line.slice(3);
+      const explicitId = heading.match(/ \{#([a-z0-9-]+)\}$/);
+      const headingText = heading.replace(/ \{#[a-z0-9-]+\}$/, '');
       flushList(`list-${idx}`);
       elements.push(
-        <h2 key={key} className="text-2xl md:text-3xl font-black tracking-tight mt-12 mb-4 pb-3 border-b">
-          {line.slice(3)}
+        <h2 key={key} id={explicitId?.[1]} className="text-2xl md:text-3xl font-black tracking-tight mt-12 mb-4 pb-3 border-b">
+          {headingText}
         </h2>
       );
     } else if (line.startsWith('### ')) {
@@ -241,6 +252,10 @@ export default async function ArticlePage({ params }: Params) {
     news: 'Latest News',
   }[article.section] || 'Sports Hub';
 
+  const productExample = ARTICLE_PRODUCT_EXAMPLES[slug];
+  const contributor = findHubAuthor(article.author.name);
+  const contributorHref = contributor ? `/author/${contributor.slug}` : '/about';
+  const retainedSections = [...article.content.matchAll(/^## (.+) \{#([a-z0-9-]+)\}$/gm)].map(match => ({ title: match[1], id: match[2] }));
   const articleUrl = `${SITE_URL}/sports-hub/articles/${slug}`;
   const structuredData = [
     {
@@ -250,7 +265,8 @@ export default async function ArticlePage({ params }: Params) {
       description: article.seoDescription || article.excerpt,
       datePublished: article.publishedAt,
       mainEntityOfPage: articleUrl,
-      author: { '@type': 'Person', name: article.author.name },
+      author: hubAuthorSchema(article.author.name),
+      dateModified: article.updatedAt || article.publishedAt,
       publisher: {
         '@type': 'Organization',
         name: 'The Squad',
@@ -307,7 +323,7 @@ export default async function ArticlePage({ params }: Params) {
                 {article.author.name[0]}
               </div>
               <div>
-                <p className="font-black text-sm">{article.author.name}</p>
+                <p className="font-black text-sm"><Link href={contributorHref} className="underline underline-offset-4">{article.author.name}</Link></p>
                 <p className="text-xs text-muted-foreground font-medium">{article.author.title}</p>
               </div>
             </div>
@@ -328,9 +344,18 @@ export default async function ArticlePage({ params }: Params) {
           </div>
         </header>
 
+        {retainedSections.length > 0 && <nav aria-label="Sections in this guide" className="mb-10 rounded-xl border p-5">
+          <p className="font-semibold">In this guide</p>
+          <ul className="mt-3 grid gap-2 sm:grid-cols-2">{retainedSections.map(section => <li key={section.id}><a href={`#${section.id}`} className="text-sm font-normal underline underline-offset-4">{section.title}</a></li>)}</ul>
+        </nav>}
+
         {/* Article Content */}
         <article className="mb-12">
           {renderContent(article.content)}
+          {productExample && <figure className="mt-10 overflow-hidden rounded-xl border">
+            <Image src={`/how-to/screenshots/${productExample.image}.webp`} width={1440} height={1000} sizes="(max-width: 768px) 92vw, 832px" alt={productExample.alt} className="h-auto w-full" />
+            <figcaption className="p-4 text-sm font-normal leading-relaxed text-muted-foreground">{productExample.caption}</figcaption>
+          </figure>}
         </article>
 
         {/* Tags */}
@@ -351,7 +376,7 @@ export default async function ArticlePage({ params }: Params) {
             {article.author.name[0]}
           </div>
           <div>
-            <p className="font-black tracking-tight text-sm">{article.author.name}</p>
+            <p className="font-black tracking-tight text-sm"><Link href={contributorHref} className="underline underline-offset-4">{article.author.name}</Link></p>
             <p className="text-xs text-muted-foreground font-bold uppercase tracking-widest">{article.author.title}</p>
           </div>
         </div>
@@ -390,7 +415,7 @@ export default async function ArticlePage({ params }: Params) {
         )}
 
         {/* Newsletter CTA */}
-        <NewsletterSignup />
+        <div data-nosnippet><NewsletterSignup headingAs="p" /></div>
       </div>
     </>
   );

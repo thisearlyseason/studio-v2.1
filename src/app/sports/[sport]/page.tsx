@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { PUBLIC_IMAGE_DIMENSIONS } from '@/lib/public-image-dimensions';
 import Image from 'next/image';
 import Link from 'next/link';
 import { notFound } from 'next/navigation';
@@ -102,7 +103,7 @@ export default async function SportLandingPage({ params }: PageProps) {
       </header>
 
       <section className="relative flex min-h-[78vh] items-end overflow-hidden bg-black text-white">
-        <Image src={landing.heroImage} alt={landing.heroAlt} fill priority className="object-cover object-[70%_center]" sizes="100vw" />
+        <Image src={landing.heroImage} alt={landing.heroAlt} {...PUBLIC_IMAGE_DIMENSIONS[landing.heroImage]} priority className="absolute inset-0 h-full w-full object-cover object-[70%_center]" sizes="100vw" />
         <div className="absolute inset-0 bg-linear-to-r from-black/85 via-black/60 to-black/20" />
         <div className="relative mx-auto w-full max-w-7xl px-5 pb-16 pt-36 sm:px-8 sm:pb-20">
           <p className="text-xs font-black uppercase text-primary">The Squad for {landing.name}</p>

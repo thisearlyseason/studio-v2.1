@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Privacy Policy | The Squad',
-  description: 'How The Squad collects, uses, protects, and manages personal information.',
+  title: { absolute: 'The Squad Privacy and Personal Data Policy' },
+  description: 'Read how The Squad collects, uses and protects personal information. Find details on account data, sharing, retention and your privacy choices.',
   alternates: { canonical: '/privacy' },
 };
 

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
+import { ARTICLE_REDIRECTS } from '../src/lib/sports-hub-article-redirects.ts';
 import { ARTICLES_DB, ARTICLES_LIST } from '../src/lib/sports-hub-articles.ts';
 import { ARTICLE_SOURCE_GROUPS, ARTICLE_PRIMARY_SOURCES } from '../src/lib/sports-hub-article-sources.ts';
 import { renderSafeRichTextInline } from '../src/lib/rich-text.ts';
@@ -19,6 +20,10 @@ test('reviewed article source assignments are unique and refer to existing artic
   const seen = new Set();
   for (const slugs of Object.values(ARTICLE_SOURCE_GROUPS)) {
     for (const slug of slugs) {
+      if (ARTICLE_REDIRECTS[slug]) {
+        assert.ok(ARTICLES_DB[ARTICLE_REDIRECTS[slug]], `Missing consolidation destination: ${slug}`);
+        continue;
+      }
       assert.ok(ARTICLES_DB[slug], `Unknown article: ${slug}`);
       assert.ok(!seen.has(slug), `Duplicate source assignment: ${slug}`);
       seen.add(slug);

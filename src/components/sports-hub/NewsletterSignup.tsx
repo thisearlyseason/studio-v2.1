@@ -6,7 +6,8 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { cn } from '@/lib/utils';
 
-export function NewsletterSignup({ className }: { className?: string }) {
+export function NewsletterSignup({ className, headingAs = 'h2' }: { className?: string; headingAs?: 'h2' | 'p' }) {
+  const Heading = headingAs;
   const [email, setEmail] = useState('');
   const [loading, setLoading] = useState(false);
   const [success, setSuccess] = useState(false);
@@ -41,9 +42,9 @@ export function NewsletterSignup({ className }: { className?: string }) {
           <Mail className="h-3 w-3" />
           The Squad Newsletter
         </div>
-        <h2 className="text-3xl md:text-4xl font-black tracking-tighter text-white mb-3">
+        <Heading className="text-3xl md:text-4xl font-black tracking-tighter text-white mb-3">
           Stay Ahead of the Game
-        </h2>
+        </Heading>
         <p className="text-white/70 font-medium text-sm md:text-base mb-8 leading-relaxed">
           Coaching tips, drills, resources, and product updates — delivered to your inbox.
         </p>

@@ -64,7 +64,7 @@ export default function YouthSportsPage() {
           </div>
         </div>
         <p className="max-w-3xl text-sm font-medium leading-relaxed text-muted-foreground">
-          Practical guidance for youth coaches, parents, program directors, and community organizers - from athlete development and wellbeing to camps, governance, and team operations.
+          Read guides for youth coaches, parents and program organizers. Find athlete development, wellbeing, camp planning, governance and team operations in one place.
         </p>
         <p className="mt-2 text-[11px] font-bold uppercase text-muted-foreground"><span className="text-primary">{youthArticles.length}</span> Articles</p>
       </motion.header>

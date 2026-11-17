@@ -610,16 +610,16 @@ test('Sports Hub admin combines built-in and custom articles without one failed 
   assert.match(articlePage, /renderSafeRichTextInline/);
 });
 
-test('Sports Hub exposes every category without horizontal scrolling and includes 20 parent articles', async () => {
+test('Sports Hub exposes every category without horizontal scrolling and includes consolidated parent guides', async () => {
   const sectionNav = await readSource('../src/components/sports-hub/SectionNav.tsx');
   const news = await readSource('../src/app/sports-hub/news/page.tsx');
   const parentsPage = await readSource('../src/app/sports-hub/parents/page.tsx');
   const catalog = await import('../src/lib/sports-hub-articles.ts');
   const parentArticles = catalog.ARTICLES_LIST.filter(article => article.categories.includes('Parents'));
 
-  assert.equal(parentArticles.length, 40);
+  assert.equal(parentArticles.length, 11);
   assert.equal(parentArticles.every(article => article.section === 'parents'), true);
-  assert.equal(parentArticles.every(article => article.content.includes('## What You Can Do This Week')), true);
+  assert.equal(parentArticles.every(article => /## [^\n]*\?/.test(article.content)), true);
   assert.match(sectionNav, /name: 'Parents'/);
   assert.match(sectionNav, /flex flex-wrap/);
   assert.doesNotMatch(sectionNav, /overflow-x-auto/);
