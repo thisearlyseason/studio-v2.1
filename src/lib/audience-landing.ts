@@ -136,7 +136,7 @@ export const AUDIENCE_LANDINGS: Record<AudienceSlug, AudienceLanding> = {
     eyebrow: 'For leagues',
     headline: 'Coordinate every team.',
     accent: 'Protect every boundary.',
-    description: 'Manage invitation-based league access, enrolled teams, schedules, standings, registration, facilities, communication, and payments without exposing private league data.',
+    description: 'The Squad is sports league management software for enrolled teams, schedules, registration and standings. Organizers control access to private league records.',
     primaryCta: 'Start Your League',
     primaryHref: '/signup',
     secondaryCta: 'Review League Plans',

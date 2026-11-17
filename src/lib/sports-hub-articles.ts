@@ -1693,7 +1693,7 @@ Format selection is a design decision that directly affects athlete experience, 
 
 **The math:**
 - Number of games = (2N - 1) or (2N - 2) depending on if a bracket reset is used in the final
-- For 16 teams: approximately 28–30 games
+- For 16 teams: 30 games without a championship reset, or 31 with a reset
 - Requires approximately twice the time and field resources of single elimination
 
 **Structure:**
