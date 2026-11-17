@@ -1,0 +1,98 @@
+{
+  "url": "https://app.heycatch.ai/audit/hck_pk_APvOG4sebjLfK6k-1DXlNpFKJICaSF8m/seo",
+  "checked": "2026-11-15",
+  "score": 76,
+  "actionPlan": null,
+  "findings": [
+    {
+      "code": "a_external_sources",
+      "status": "Partial",
+      "was": "0.6/4",
+      "finding": "a_external_sources \u2014 Links to primary sources (Partial, 0.6/4, effort medium, severity high \u2014 this week)"
+    },
+    {
+      "code": "a_ai_slop",
+      "status": "Partial",
+      "was": "1.0/3",
+      "finding": "a_ai_slop \u2014 The corpus does not read as one template (Partial, 1.0/3, effort medium, severity high \u2014 this week)"
+    },
+    {
+      "code": "c_thin",
+      "status": "Partial",
+      "was": "0.2/2",
+      "finding": "c_thin \u2014 Pages are not thin (Partial, 0.2/2, effort high, severity high \u2014 this week)"
+    },
+    {
+      "code": "c_title",
+      "status": "Partial",
+      "was": "0.9/2",
+      "finding": "c_title \u2014 Page title (Partial, 0.9/2, effort low, severity high \u2014 this week)"
+    },
+    {
+      "code": "a_author_schema",
+      "status": "Fail",
+      "was": "0.0/3",
+      "finding": "a_author_schema \u2014 The author is marked up as a Person (Fail, 0.0/3, effort medium, severity medium \u2014 this month)"
+    },
+    {
+      "code": "t_sitemap_fresh",
+      "status": "Fail",
+      "was": "0.0/2",
+      "finding": "t_sitemap_fresh \u2014 sitemap.xml keeps up with the site (Fail, 0.0/2, effort medium, severity medium \u2014 this month)"
+    },
+    {
+      "code": "a_author_page",
+      "status": "Fail",
+      "was": "0.0/2",
+      "finding": "a_author_page \u2014 The author has a page (Fail, 0.0/2, effort medium, severity medium \u2014 this month)"
+    },
+    {
+      "code": "c_question_headings",
+      "status": "Partial",
+      "was": "0.1/2",
+      "finding": "c_question_headings \u2014 Question-shaped subheadings (Partial, 0.1/2, effort medium, severity medium \u2014 this month)"
+    },
+    {
+      "code": "c_image_dimensions",
+      "status": "Partial",
+      "was": "0.1/1",
+      "finding": "c_image_dimensions \u2014 Images declare width and height (Partial, 0.1/1, effort low, severity medium \u2014 this month)"
+    },
+    {
+      "code": "g_definition",
+      "status": "Partial",
+      "was": "1.2/2",
+      "finding": "g_definition \u2014 A definition up front (Partial, 1.2/2, effort low, severity medium \u2014 this month)"
+    },
+    {
+      "code": "c_meta_description",
+      "status": "Partial",
+      "was": "1.6/2",
+      "finding": "c_meta_description \u2014 Meta description (Partial, 1.6/2, effort low, severity medium \u2014 this month)"
+    },
+    {
+      "code": "g_self_contained",
+      "status": "Partial",
+      "was": "2.7/3",
+      "finding": "g_self_contained \u2014 Paragraphs stand on their own (Partial, 2.7/3, effort medium, severity medium \u2014 this month)"
+    },
+    {
+      "code": "g_sentence_length",
+      "status": "Partial",
+      "was": "1.7/2",
+      "finding": "g_sentence_length \u2014 Sentence length (Partial, 1.7/2, effort medium, severity medium \u2014 this month)"
+    },
+    {
+      "code": "a_sameas",
+      "status": "Fail",
+      "was": "0.0/2",
+      "finding": "a_sameas \u2014 sameAs links to company profiles (Fail, 0.0/2, effort low, severity low \u2014 when convenient)"
+    },
+    {
+      "code": "c_image_format",
+      "status": "Partial",
+      "was": "0.1/1",
+      "finding": "c_image_format \u2014 Modern image formats (Partial, 0.1/1, effort medium, severity low \u2014 when convenient)"
+    }
+  ]
+}

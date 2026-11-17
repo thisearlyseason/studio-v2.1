@@ -155,7 +155,7 @@ export default function ResourcesPage() {
           </div>
         </div>
         <p className="text-muted-foreground font-medium max-w-xl mt-2">
-          The Squad&apos;s original resource library. Practice plans, drills, templates, and guides — built by coaches, for coaches.
+          A sports resource library is a collection of practice plans, drills, templates and operating guides. Choose a resource for your next session or event.
         </p>
       </motion.div>
 

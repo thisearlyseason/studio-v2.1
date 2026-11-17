@@ -1,3 +1,4 @@
+import { ARTICLE_MERGES, ARTICLE_REDIRECTS } from './src/lib/sports-hub-article-redirects';
 import type {NextConfig} from 'next';
 
 const configuredDistribution = process.env.NEXT_PUBLIC_APP_DISTRIBUTION;
@@ -141,7 +142,14 @@ const nextConfig: NextConfig = {
   serverExternalPackages: ['jspdf', 'html2canvas'],
 
   async redirects() {
-    return [{ source: '/:l([a-z0-9])', destination: '/?utm_source=heycatch&utm_campaign=:l', permanent: false }];
+    return [
+      ...Object.entries(ARTICLE_REDIRECTS).map(([slug, destination]) => ({
+        source: `/sports-hub/articles/${slug}`,
+        destination: `/sports-hub/articles/${destination}${(ARTICLE_MERGES[destination] || []).includes(slug) ? `#${slug}` : ''}`,
+        permanent: true,
+      })),
+      { source: '/:l([a-z0-9])', destination: '/?utm_source=heycatch&utm_campaign=:l', permanent: false },
+    ];
   },
 
   // ─── HTTP Security Headers ────────────────────────────────────────────────

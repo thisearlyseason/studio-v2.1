@@ -62,7 +62,7 @@ export default function ParentsPage() {
           </div>
         </div>
         <p className="max-w-2xl text-sm font-medium leading-relaxed text-muted-foreground">
-          Practical support, encouragement, communication tools, health guidance, and perspective for families helping young athletes thrive.
+          Sports parenting is the practical and emotional support a family gives a young athlete. Find guides on communication, wellbeing and participation.
         </p>
         <p className="mt-2 text-[11px] font-bold uppercase tracking-widest text-muted-foreground">
           <span className="text-primary">{parentArticles.length}</span> Articles

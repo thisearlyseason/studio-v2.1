@@ -44,6 +44,7 @@ function normalizePublicArticle(id: string, data: FirebaseFirestore.DocumentData
     },
     readingTime: Number.isFinite(data.readingTime) ? Math.max(1, Math.min(120, Number(data.readingTime))) : 1,
     publishedAt: publishedDate(data.publishedAt),
+    updatedAt: data.updatedAt ? publishedDate(data.updatedAt) : undefined,
     isFeatured: data.isFeatured === true,
     seoTitle: text(data.seoTitle) || undefined,
     seoDescription: text(data.seoDescription) || undefined,

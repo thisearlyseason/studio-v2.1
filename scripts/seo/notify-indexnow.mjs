@@ -1,0 +1,10 @@
+import { indexNowPayload, INDEXNOW_KEY } from '../../src/lib/indexnow.ts';
+const sitemap = await fetch('https://www.thesquad.pro/sitemap.xml');
+if (!sitemap.ok) throw new Error(`Sitemap HTTP ${sitemap.status}`);
+const xml = await sitemap.text();
+const urls = [...xml.matchAll(/<loc>([^<]+)<\/loc>/g)].map(match => match[1].replaceAll('&amp;', '&'));
+const keyResponse = await fetch(`https://www.thesquad.pro/${INDEXNOW_KEY}.txt`);
+if (!keyResponse.ok || (await keyResponse.text()).trim() !== INDEXNOW_KEY) throw new Error('Deploy the ownership key before notifying IndexNow.');
+const response = await fetch('https://api.indexnow.org/indexnow', { method: 'POST', headers: { 'Content-Type': 'application/json; charset=utf-8' }, body: JSON.stringify(indexNowPayload(urls)) });
+console.log(`IndexNow: HTTP ${response.status}, ${urls.length} public URLs submitted. Receipt does not guarantee indexing.`);
+if (![200, 202].includes(response.status)) throw new Error(await response.text());

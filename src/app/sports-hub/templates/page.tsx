@@ -141,7 +141,7 @@ export default function TemplatesPage() {
           </div>
         </div>
         <p className="text-muted-foreground font-medium text-sm max-w-2xl leading-relaxed">
-          Ready-to-use templates built by coaches, for coaches. View and use every template directly in your browser — no signup, no download required.
+          A sports team template is an editable starting point for a plan, checklist or record. View and use these templates in your browser without signing up.
         </p>
       </motion.div>
 

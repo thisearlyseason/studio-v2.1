@@ -138,8 +138,8 @@ function buildAdditionalLanding(slug: Exclude<SportSlug, 'soccer' | 'basketball'
   return {
     slug, name: config.name,
     scoresheetSlug: `${slug}-scoresheet`,
-    seoTitle: `${config.name} Team and League Management Software`,
-    seoDescription: `Manage ${lower} registration, rosters, schedules, communication, events, and family access with The Squad.`,
+    seoTitle: `${config.name} ${['ultimate-frisbee', 'field-lacrosse'].includes(slug) ? 'League' : 'Team and League'} Management Software`,
+    seoDescription: `Manage ${lower} registration, rosters, schedules, communication, events, and family access with The Squad. See setup guides.`,
     heroImage: config.heroImage, heroAlt: config.heroAlt,
     headline: `${config.name} team and league management software`,
     description: `Connect ${config.focus} in one workspace built for the organizations and communities that run ${lower}.`,

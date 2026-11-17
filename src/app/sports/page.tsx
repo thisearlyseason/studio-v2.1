@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { PUBLIC_IMAGE_DIMENSIONS } from '@/lib/public-image-dimensions';
 import Image from 'next/image';
 import Link from 'next/link';
 import { ArrowRight, CalendarDays, ClipboardCheck, MessageCircle, Trophy } from 'lucide-react';
@@ -8,7 +9,7 @@ import { SquadFooter } from '@/components/marketing/squad-footer';
 import { SportResources } from '@/components/marketing/sport-resources';
 
 export const metadata: Metadata = {
-  title: 'Sports Team and League Management Software by Sport',
+  title: 'Sports Team Management by Sport',
   description: 'Explore sport-specific registration, scheduling, team communication, roster, league, and tournament management workflows in The Squad.',
   alternates: { canonical: '/sports' },
   openGraph: {
@@ -55,7 +56,7 @@ export default function SportsIndexPage() {
       </header>
 
       <section className="relative flex min-h-[78vh] items-end overflow-hidden bg-black text-white">
-        <Image src="/images/campaigns/leagues-hero.webp" alt="A multi-sport community facility with fields and courts" fill priority className="object-cover" sizes="100vw" />
+        <Image src="/images/campaigns/leagues-hero.webp" alt="A multi-sport community facility with fields and courts" width={1600} height={901} priority className="absolute inset-0 h-full w-full object-cover" sizes="100vw" />
         <div className="absolute inset-0 bg-black/65" />
         <div className="relative mx-auto w-full max-w-7xl px-5 pb-16 pt-36 sm:px-8 sm:pb-20">
           <p className="text-xs font-black uppercase text-primary">Built around the sport you run</p>
@@ -85,7 +86,7 @@ export default function SportsIndexPage() {
               return (
                 <Link key={slug} href={`/sports/${slug}`} className="group overflow-hidden rounded-lg border bg-white shadow-sm transition hover:-translate-y-1 hover:border-primary hover:shadow-xl">
                   <div className="relative aspect-16/8 overflow-hidden bg-zinc-900">
-                    <Image src={sport.heroImage} alt={sport.heroAlt} fill className="object-cover transition duration-500 group-hover:scale-105" sizes="(max-width: 768px) 100vw, 50vw" />
+                    <Image src={sport.heroImage} alt={sport.heroAlt} {...PUBLIC_IMAGE_DIMENSIONS[sport.heroImage]} className="absolute inset-0 h-full w-full object-cover transition duration-500 group-hover:scale-105" sizes="(max-width: 768px) 100vw, 50vw" />
                     <div className="absolute inset-0 bg-black/35" />
                     <h2 className="absolute bottom-5 left-5 text-3xl font-black uppercase tracking-normal text-white sm:text-4xl">{sport.name}</h2>
                   </div>

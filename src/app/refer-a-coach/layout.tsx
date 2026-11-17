@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
   title: 'Refer Your Coach to The Squad',
-  description: 'Send your coach a friendly, one-time introduction to The Squad sports management platform.',
+  description: 'Introduce your coach to The Squad with a one-time referral email. Share a way to manage your team’s schedules, messages and parent updates together.',
   alternates: { canonical: 'https://www.thesquad.pro/refer-a-coach' },
   openGraph: {
     type: 'website',

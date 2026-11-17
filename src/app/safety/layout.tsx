@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
 
 export const metadata: Metadata = {
-  title: 'Safety Center | The Squad',
-  description: 'Membership, communication, parental oversight, and reporting safeguards in The Squad.',
+  title: { absolute: 'Sports Community Safety | The Squad' },
+  description: 'Learn about membership controls, team communication, parental oversight and reporting tools that help families and organizers use The Squad safely.',
   alternates: { canonical: '/safety' },
 };
 

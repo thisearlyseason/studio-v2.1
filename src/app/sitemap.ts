@@ -1,9 +1,23 @@
 import { MetadataRoute } from 'next'
-import { ARTICLES_LIST } from '@/lib/sports-hub-articles'
+import { ARTICLES_LIST, ARTICLES_DB, type Article } from '@/lib/sports-hub-articles'
 import { RESOURCES } from '@/lib/sports-hub-resources'
 import { SPORTS_HUB_TEMPLATES } from '@/lib/sports-hub-template-catalog'
 import { AUDIENCE_SLUGS } from '@/lib/audience-landing'
 import { SPORT_SLUGS } from '@/lib/sport-landing'
+import { ARTICLE_REDIRECTS } from '@/lib/sports-hub-article-redirects'
+import { HUB_AUTHORS } from '@/lib/sports-hub-authors'
+import { listPublicSportsHubArticles } from '@/lib/server-sports-hub'
+
+export const revalidate = 3600
+// This release changes article bylines, search metadata and shared brand assets.
+// This is an editorial revision date, never a build/request clock.
+const editorialRevision = new Date('2026-11-16T00:00:00Z')
+
+function articleLastModified(article: Article): Date | undefined {
+  if (ARTICLES_DB[article.slug]) return new Date(article.updatedAt || editorialRevision);
+  const timestamp = Date.parse(article.updatedAt || article.publishedAt);
+  return Number.isFinite(timestamp) && timestamp > 0 ? new Date(timestamp) : undefined;
+}
 
 const baseUrl = 'https://www.thesquad.pro'
 
@@ -35,29 +49,35 @@ const staticPages: Array<{
   { path: '/sports', changeFrequency: 'monthly', priority: 0.8 },
 ]
  
-export default function sitemap(): MetadataRoute.Sitemap {
+export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
+  const cms = await listPublicSportsHubArticles().catch(() => []);
+  const articles = new Map([...cms.filter(article => !ARTICLE_REDIRECTS[article.slug]), ...ARTICLES_LIST].map(article => [article.slug, article]));
   return [
     ...staticPages.map(page => ({
       url: `${baseUrl}${page.path}`,
+      lastModified: editorialRevision,
       changeFrequency: page.changeFrequency,
       priority: page.priority,
     })),
     ...AUDIENCE_SLUGS.map(audience => ({
       url: `${baseUrl}/for/${audience}`,
+      lastModified: editorialRevision,
       changeFrequency: 'monthly' as const,
       priority: 0.7,
     })),
     ...SPORT_SLUGS.map(sport => ({
       url: `${baseUrl}/sports/${sport}`,
+      lastModified: editorialRevision,
       changeFrequency: 'monthly' as const,
       priority: 0.8,
     })),
-    ...ARTICLES_LIST.map(article => ({
+    ...Array.from(articles.values()).map(article => ({
       url: `${baseUrl}/sports-hub/articles/${article.slug}`,
-      lastModified: new Date(article.publishedAt),
+      lastModified: articleLastModified(article),
       changeFrequency: 'monthly' as const,
       priority: article.isFeatured ? 0.8 : 0.6,
     })),
+    ...HUB_AUTHORS.map(author => ({ url: `${baseUrl}/author/${author.slug}`, lastModified: editorialRevision, changeFrequency: 'monthly' as const, priority: 0.5 })),
     ...RESOURCES.map(resource => ({
       url: `${baseUrl}/sports-hub/resources/${resource.id}`,
       changeFrequency: 'monthly' as const,

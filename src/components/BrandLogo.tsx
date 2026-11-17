@@ -16,7 +16,7 @@ export default function BrandLogo({ variant, className, priority }: BrandLogoPro
   const isDarkBg = variant === 'dark-background';
   
   // Use the specific file names requested for the project assets
-  const src = isDarkBg ? '/logo-light.png' : '/logo-dark.png';
+  const src = isDarkBg ? '/logo-light.webp' : '/logo-dark.webp';
   const hint = isDarkBg ? 'white logo' : 'black logo';
 
   return (
@@ -24,8 +24,9 @@ export default function BrandLogo({ variant, className, priority }: BrandLogoPro
       <Image
         src={src}
         alt="The Squad sports team management app"
-        width={400}
-        height={120}
+        width={2000}
+        height={800}
+        sizes="200px"
         className="object-contain w-full h-full"
         data-ai-hint={hint}
         priority={priority}

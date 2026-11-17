@@ -305,7 +305,7 @@ export default function NewsPage() {
           </div>
         </div>
         <p className="text-sm text-muted-foreground font-medium max-w-2xl leading-relaxed">
-          Original, in-depth articles from The Squad covering coaching, team management, tournaments, nutrition, sports science, and athlete development.
+          Sports Hub articles cover coaching, team management and tournament operations. Browse nutrition, recovery and athlete-development guidance by topic.
         </p>
         <div className="flex items-center gap-2 mt-2 text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
           <span className="h-2 w-2 rounded-full hero-gradient" />

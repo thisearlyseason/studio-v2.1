@@ -140,6 +140,7 @@ const organizationSchema = {
   '@type': 'Organization',
   name: 'The Squad',
   url: 'https://www.thesquad.pro',
+  sameAs: ['https://www.facebook.com/thesquadpro', 'https://www.instagram.com/thesquadpro'],
   logo: 'https://www.thesquad.pro/app-icon-512-v5.png',
   contactPoint: {
     '@type': 'ContactPoint',

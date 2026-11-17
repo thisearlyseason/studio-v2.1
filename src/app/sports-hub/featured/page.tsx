@@ -69,7 +69,7 @@ export default function FeaturedPage() {
           </div>
         </div>
         <p className="text-muted-foreground font-medium text-sm max-w-2xl">
-          Hand-curated stories, deep dives, and must-reads from The Squad team.
+          Featured Sports Hub guides cover coaching and team operations. Start with a topic below, then follow the sources linked in each guide.
         </p>
       </motion.div>
 
