@@ -244,6 +244,9 @@ export const ARTICLE_SEARCH_TITLES: Record<string, string> = {
 };
 
 export const ARTICLE_SEARCH_DESCRIPTIONS: Record<string, string> = {
+  'building-team-culture-inclusivity': 'Build an inclusive sports team culture with clear conduct standards, practical access checks and specific support for athlete participation.',
+  'season-planning-template': 'Plan a sports season around training, competition and recovery. Use phase-by-phase guidance, review questions and a linked scheduling example.',
+  'sports-program-budgeting': 'Build a sports program budget with income, costs and payment timing. Review cash-flow checks and responsibilities before committing funds.',
   'balancing-school-sports-and-family-life': 'Plan a family sports week around school, sleep, travel and costs. Use a worked example to agree on responsibilities and review optional commitments.',
   'supporting-your-child-through-a-sports-injury': 'Help an injured athlete stay connected while a clinician guides recovery. Coordinate appointments, school needs, team updates and return-to-activity questions.',
   'sports-nutrition-basics-for-busy-families': 'Plan familiar food, water and practical meals around youth sport. Find family routines, travel examples and the limits of general nutrition guidance.',
