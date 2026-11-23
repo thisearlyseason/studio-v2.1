@@ -1302,7 +1302,7 @@ export default function MasterCalendarPage() {
                   const isSelected = selectedDay && isSameDay(day, selectedDay);
 
                   return (
-                    <div key={i} className={cn("p-2 border-r border-b min-h-[120px] transition-all cursor-pointer relative", !isCurrentMonth ? "bg-muted/5 opacity-30" : "bg-white", isTodayDate && "bg-primary/2", isSelected && "bg-primary/5 ring-2 ring-inset ring-primary/20")} onClick={() => setSelectedDay(day)}>
+                    <div key={i} className={cn("px-px py-2 md:p-2 border-r border-b min-h-[120px] transition-all cursor-pointer relative", !isCurrentMonth ? "bg-muted/5 opacity-30" : "bg-white", isTodayDate && "bg-primary/2", isSelected && "bg-primary/5 ring-2 ring-inset ring-primary/20")} onClick={() => setSelectedDay(day)}>
                       <div className="flex justify-between items-center mb-2">
                         <span className={cn("h-7 w-7 flex items-center justify-center rounded-full text-xs font-black transition-all", isTodayDate ? "bg-primary text-white" : (isSelected ? "bg-black text-white" : "text-muted-foreground"))}>{format(day, 'd')}</span>
                       </div>
@@ -1317,7 +1317,7 @@ export default function MasterCalendarPage() {
                                 type="button"
                                 aria-label={`View ${event.title}`}
                                 className={cn(
-                                  "flex h-9 w-full min-w-0 items-center justify-center gap-1 rounded-lg px-1 shadow-sm hover:brightness-90 focus-visible:ring-2 focus-visible:ring-ring md:justify-start md:px-2",
+                                  "flex h-9 w-full min-w-0 items-center justify-start gap-0.5 rounded-lg px-0.5 shadow-sm hover:brightness-90 focus-visible:ring-2 focus-visible:ring-ring md:gap-1 md:px-2",
                                   EVENT_TYPE_COLORS[type as EventType] || EVENT_TYPE_COLORS.other
                                 )}
                                 onClick={(e) => {
@@ -1326,8 +1326,8 @@ export default function MasterCalendarPage() {
                                   setDetailTeamId(event.teamId); setActiveDetailedEventId(event.id);
                                 }}
                               >
-                                <Icon aria-hidden="true" className="h-5 w-5 shrink-0" />
-                                <span className="hidden truncate text-xs font-bold md:block">{event.title}</span>
+                                <Icon aria-hidden="true" className="h-4 w-4 shrink-0 md:h-5 md:w-5" />
+                                <span className="min-w-0 line-clamp-2 break-all text-left text-[11px] font-bold leading-tight md:block md:truncate md:text-xs">{event.title}</span>
                               </button>
                             </TooltipTrigger>
                             <TooltipContent side="bottom" className="text-[10px] font-black">
