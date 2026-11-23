@@ -316,7 +316,7 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
                 subtitle={user?.institutionTitle || 'Club Organizer'}
                 initial={(user?.clubName || user?.schoolName || 'E')[0]}
                 isActive={!activeTeam}
-                onClick={() => { if (!confirmPageContextSwitch(null)) return; setActiveTeam(null); router.push('/club'); onClose?.(); }}
+                onClick={() => { if (!confirmPageContextSwitch(null)) return; setActiveTeam(null); router.push(activeTeam ? '/club?from=' + encodeURIComponent(activeTeam.id) : '/club'); onClose?.(); }}
                 variant="elite"
               />
               <DropdownMenuSeparator className="my-1.5" />
@@ -1195,7 +1195,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
                           <div className="space-y-2">
                             {/* Hub link — clears activeTeam so hub shows in institution mode */}
                             <button
-                              onClick={() => { if (!confirmPageContextSwitch(null)) return; setActiveTeam(null as any); router.push('/club'); setIsMoreMenuOpen(false); }}
+                              onClick={() => { if (!confirmPageContextSwitch(null)) return; setActiveTeam(null as any); router.push(activeTeam ? '/club?from=' + encodeURIComponent(activeTeam.id) : '/club'); setIsMoreMenuOpen(false); }}
                               className={cn(
                                 "w-full flex items-center justify-between p-4 rounded-2xl border bg-primary text-white transition-all active:scale-[0.98]",
                                 pathname === '/club' ? "ring-2 ring-white ring-offset-2 ring-offset-primary" : ""

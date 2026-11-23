@@ -240,6 +240,7 @@ export type GlobalDrill = Drill & {
 };
 
 export type Team = {
+  hubDisplayName?: string;
   id: string;
   name: string;
   code: string;

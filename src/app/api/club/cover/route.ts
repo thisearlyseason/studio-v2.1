@@ -19,9 +19,13 @@ async function cover(request: NextRequest) {
   const explicitHub = team && ['club','club_hub'].includes(team.teamData.type);
   if (!team?.isOwner || (!isHubTeamType(team.teamData.type) && !team.isSuperAdmin &&
       !isHubPlan((await profile.get()).data()?.plan_type))) {
-    return NextResponse.json({error:'Only the Club Hub owner can manage this photo.'},{status:403});
+    return NextResponse.json({error:'Only the hub owner can manage this photo.'},{status:403});
   }
-  const ref = profile.collection('hubBranding').doc(explicitHub ? 'club_'+teamId : 'club');
+  const school = ['school','school_hub'].includes(team.teamData.type) ||
+    (!explicitHub && new URL(request.url).searchParams.get('kind') === 'school');
+  const key = school ? (isHubTeamType(team.teamData.type) ? 'school_'+teamId : 'school') :
+    (explicitHub ? 'club_'+teamId : 'club');
+  const ref = profile.collection('hubBranding').doc(key);
   if (request.method === 'GET') {
     const photo = (await ref.get()).data()?.photo;
     return photo ? new NextResponse(new Uint8Array(photo), {headers:{...headers,'Content-Type':'image/webp'}}) : new NextResponse(null,{status:204,headers});
