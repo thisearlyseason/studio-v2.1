@@ -15,7 +15,7 @@ const privateHeaders={'Cache-Control':'private, no-store','X-Content-Type-Option
 async function context(req:NextRequest,staff=false){
   const auth=await verifyFirebaseToken(req);if(auth instanceof NextResponse)return auth;
   const params=new URL(req.url).searchParams,teamId=params.get('teamId');
-  if(!validId(teamId)||[...params.keys()].some(key=>!['teamId','fileId','name','category','description'].includes(key)))return NextResponse.json({error:'Invalid Library request.'},{status:400,headers:privateHeaders});
+  if(!validId(teamId)||[...params.keys()].some(key=>!['teamId','fileId','name','category','description','displayName'].includes(key)))return NextResponse.json({error:'Invalid Library request.'},{status:400,headers:privateHeaders});
   const authority=await getTeamAuthority(teamId,auth.uid,auth.role);
   if (!authority || (!authority.isStaff && !authority.member))
     return NextResponse.json({error:'You need active membership in this team to access its Library.'},{status:403,headers:privateHeaders});
@@ -58,7 +58,7 @@ export async function POST(req:NextRequest){
         const current=await transaction.get(authority.teamRef),existing=await transaction.get(files);
         const total=existing.docs.reduce((sum,doc)=>sum+Math.max(0,Number(doc.data().sizeBytes)||0),0);
         if(current.data()?.isPro!==true&&total+bytes.length>LIBRARY_STARTER_LIMIT)throw new LibraryInputError('Starter Library storage exceeds 500 MiB.',413);
-        transaction.create(ref,{name,type:contentType,sizeBytes:bytes.length,size:`${Math.ceil(bytes.length/1024)}KB`,url:'',storagePath:objectPath(teamId,ref.id),sha256:createHash('sha256').update(bytes).digest('hex'),contentType,category,description:(params.get('description')||'').slice(0,1000),date:new Date().toISOString(),uploadedBy:auth.uid});
+        transaction.create(ref,{name,displayName:params.get('displayName')?.trim().slice(0,120)||name,type:contentType,sizeBytes:bytes.length,size:`${Math.ceil(bytes.length/1024)}KB`,url:'',storagePath:objectPath(teamId,ref.id),sha256:createHash('sha256').update(bytes).digest('hex'),contentType,category,description:(params.get('description')||'').slice(0,1000),date:new Date().toISOString(),uploadedBy:auth.uid});
         transaction.update(authority.teamRef,{libraryVersion:Number(current.data()?.libraryVersion||0)+1});
       });
     }catch(error){await file.delete({ignoreNotFound:true});throw error;}

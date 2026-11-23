@@ -53,6 +53,7 @@ import { collection, query, orderBy, limit } from 'firebase/firestore';
 import { useRouter } from 'next/navigation';
 import { 
   Dialog, 
+  DialogClose,
   DialogContent, 
   DialogHeader, 
   DialogTitle, 
@@ -151,7 +152,9 @@ export default function FeedPage() {
   const [isPollDialogOpen, setIsPollDialogOpen] = useState(false);
   const [pollQuestion, setPollQuestion] = useState('');
   const [pollOptions, setPollOptions] = useState<{text: string, image?: string}[]>([{text: '', image: undefined}, {text: '', image: undefined}]);
-  const [lightboxImage, setLightboxImage] = useState<string | null>(null);
+  const [photo, setPhoto] = useState<{url:string;teamId:string;uid:string} | null>(null);
+  const lightboxImage = photo && photo.teamId === activeTeam?.id && photo.uid === user?.id ? photo.url : null;
+  const setLightboxImage = (url:string | null) => setPhoto(url && activeTeam && user ? {url,teamId:activeTeam.id,uid:user.id} : null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
   const heroInputRef = useRef<HTMLInputElement>(null);
@@ -482,7 +485,7 @@ export default function FeedPage() {
                 ) : (
                   <p className="text-base lg:text-lg leading-relaxed font-medium text-foreground/80 wrap-break-word">{post.content}</p>
                 )}
-                {post.imagePath ? <FeedMedia teamId={activeTeam.id} postId={post.id}/> : post.imageUrl && <img src={post.imageUrl} className="rounded-2xl lg:rounded-2xl w-full h-auto object-cover max-h-[400px] lg:max-h-[600px] border shadow-inner" alt="Feed media" />}
+                {post.imagePath ? <FeedMedia teamId={activeTeam.id} postId={post.id} onOpen={setLightboxImage}/> : post.imageUrl && <button type="button" aria-label="View full-screen photo" className="block w-full cursor-zoom-in" onClick={() => setLightboxImage(post.imageUrl)}><img src={post.imageUrl} className="rounded-2xl lg:rounded-2xl w-full h-auto object-cover max-h-[400px] lg:max-h-[600px] border shadow-inner" alt="Feed media" /></button>}
               </CardContent>
               <CardFooter className="flex flex-col border-t border-muted/30 pt-4 lg:pt-6 pb-6 lg:pb-8 gap-4 lg:gap-6 px-6 lg:px-8">
                 <div className="flex items-center gap-4 lg:gap-8 w-full">
@@ -589,10 +592,11 @@ export default function FeedPage() {
       }} />
 
       <Dialog open={!!lightboxImage} onOpenChange={() => setLightboxImage(null)}>
-        <DialogContent className="max-w-[95vw] sm:max-w-3xl p-0 overflow-hidden bg-black/95 border-none rounded-2xl lg:rounded-2xl">
+        <DialogContent hideClose className="h-dvh sm:h-dvh w-screen max-w-none sm:max-w-none bg-black p-0 border-0 rounded-none sm:rounded-none">
           <DialogTitle className="sr-only">Image Preview</DialogTitle>
           <DialogDescription className="sr-only">Enlarged view of shared media</DialogDescription>
-          {lightboxImage && <img src={lightboxImage} className="w-full h-auto max-h-[85vh] object-contain" alt="Enlarged view" />}
+          <DialogClose aria-label="Close photo" className="activity-dialog-close absolute right-4 top-[max(1rem,env(safe-area-inset-top))] z-10"><X aria-hidden="true" /></DialogClose>
+          {lightboxImage && <img src={lightboxImage} className="h-full min-h-0 w-full object-contain" alt="Enlarged feed photo" />}
         </DialogContent>
       </Dialog>
     </div>
