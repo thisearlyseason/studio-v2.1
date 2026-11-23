@@ -41,8 +41,10 @@ export function useTeamNavigation() {
         : ['/events', '/roster', '/chats', '/practice', '/games'];
 
   const navigationPriority = (href: string) => {
-    const index = roleNavigationOrder.indexOf(href);
-    return index === -1 ? roleNavigationOrder.length : index;
+    const saved = isStaff && activeTeam ? user?.sidebarOrder?.[activeTeam.id] : undefined;
+    const order = Array.isArray(saved) && saved.length ? saved : roleNavigationOrder;
+    const index = order.indexOf(href);
+    return index === -1 ? Number.MAX_SAFE_INTEGER : index;
   };
 
   const filteredCoordTabs = coordinationTabs
@@ -87,6 +89,8 @@ export function useTeamNavigation() {
     if (isTeamModuleRouteDisabled(tab.href, moduleFlags)) return false;
     return true;
   });
+
+  if (isStaff && activeTeam && user?.sidebarOrder?.[activeTeam.id]?.length) filteredAdminTabs.sort((a,b) => navigationPriority(a.href) - navigationPriority(b.href));
 
   return { moduleFlags, filteredCoordTabs, filteredAdminTabs, isAdminTabLocked };
 }

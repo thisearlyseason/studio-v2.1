@@ -18,6 +18,8 @@ const ACTIONS = new Set([
   'create-post',
   'create-comment',
   'delete-post',
+  'pin-post',
+  'unpin-post',
   'delete-comment',
   'toggle-like',
   'vote',
@@ -69,7 +71,12 @@ export async function GET(req: NextRequest) {
     return NextResponse.json({comments:comments.docs.map(doc=>({...doc.data(),id:doc.id}))},{headers});
   }
   const posts = await feed.orderBy('createdAt','desc').limit(100).get();
-  return NextResponse.json({posts:posts.docs.filter(doc=>visible(doc.data())).slice(0,20).map(doc=>({...doc.data(),id:doc.id}))},{headers});
+  const pinId = authority.teamData.pinnedFeedPostId;
+  const pin = validId(pinId) ? posts.docs.find(doc => doc.id === pinId) ?? await feed.doc(pinId).get() : null;
+  const visiblePin = pin?.exists && visible(pin.data() || {}) ? pin : null;
+  const recent = posts.docs.filter(doc => doc.id !== visiblePin?.id && visible(doc.data()));
+  const ordered = visiblePin ? [visiblePin, ...recent] : recent;
+  return NextResponse.json({posts:ordered.slice(0,20).map(doc => ({...doc.data(), id:doc.id, isPinned:doc.id === visiblePin?.id}))},{headers});
 }
 
 export async function POST(req: NextRequest) {
@@ -187,6 +194,18 @@ export async function POST(req: NextRequest) {
 
     if (!postId) return NextResponse.json({ error: 'A valid post is required.' }, { status: 400 });
     const postRef = feed.doc(postId);
+    if (action === 'pin-post' || action === 'unpin-post') {
+      if (!authority.isStaff) return NextResponse.json({error:'Only team staff can pin posts.'},{status:403});
+      await adminDb.runTransaction(async tx => {
+        const team = await tx.get(authority.teamRef);
+        const post = await tx.get(postRef);
+        if (!post.exists || !canReadFeedAudience(post.data()?.audience,authority.isStaff,isParent)) throw new Error('NOT_FOUND');
+        if (action === 'pin-post' || team.data()?.pinnedFeedPostId === postId) {
+          tx.update(authority.teamRef, {pinnedFeedPostId:action === 'pin-post' ? postId : null});
+        }
+      });
+      return NextResponse.json({success:true});
+    }
     if (['create-comment', 'toggle-like', 'vote'].includes(action)) {
       const post = await postRef.get();
       if (post.exists && await hasBlockBetween(auth.uid, String(post.data()?.authorId || ''))) {

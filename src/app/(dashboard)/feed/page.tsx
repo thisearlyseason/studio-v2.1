@@ -10,6 +10,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { 
   ImagePlus, 
   MessageSquare, 
+  Pin,
   Trash2, 
   Send, 
   Heart, 
@@ -435,6 +436,11 @@ export default function FeedPage() {
                     {formatFeedDistance(post.createdAt)}
                   </div>
                 </div>
+                {post.isPinned && <Badge variant="secondary"><Pin aria-hidden="true" className="mr-1 size-3"/>Pinned</Badge>}
+                {isAdmin && <Button variant="ghost" size="sm" aria-label={post.isPinned ? 'Unpin post' : 'Pin post to top'} onClick={async () => {
+                  try { await runFeedAction({action:post.isPinned ? 'unpin-post' : 'pin-post',postId:post.id}); }
+                  catch (error) { reportFeedError(error); }
+                }}><Pin className="size-4" /><span className="sr-only sm:not-sr-only">{post.isPinned ? 'Unpin' : 'Pin'}</span></Button>}
                 <ContentSafety target={{ teamId: activeTeam.id, kind: 'post', contentId: post.id }} authorId={post.authorId} authorName={post.author?.name || 'Squad member'} />
                 {(isAdmin || post.authorId === user?.id) && (
                   <Tooltip>
