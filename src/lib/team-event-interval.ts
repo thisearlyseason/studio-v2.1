@@ -59,7 +59,7 @@ export function normalizeTeamEventInterval(data: Record<string, unknown>): TeamE
   const startMinute = parseTime(data.startTime ?? data.time);
   if (!date || startMinute === null) return null;
   const explicitEnd = parseTime(data.endTime);
-  if (data.endTime !== undefined && explicitEnd === null) return null;
+  if (data.endTime != null && explicitEnd === null) return null;
   const requestedDuration = Number(data.durationMinutes);
   if (data.durationMinutes !== undefined &&
       (!Number.isInteger(requestedDuration) || requestedDuration < 1 || requestedDuration > 24 * 60)) return null;

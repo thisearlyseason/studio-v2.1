@@ -20,7 +20,10 @@ export function validateTeamEventInput(value: Record<string, unknown>): void {
   const title = typeof value.title === 'string' ? value.title.trim() : '';
   if (!title || title.length > 200) throw new Error('A valid event title is required.');
   const date = cleanCalendarDate(value.date);
-  if (!date || !normalizeTeamEventInterval(value)) throw new Error('A valid event date and time are required.');
+  const startTime = value.startTime ?? value.time;
+  const timePending = startTime === undefined || startTime === '';
+  if (timePending && value.endTime) throw new Error('Set a start time before setting an end time.');
+  if (!date || (!timePending && !normalizeTeamEventInterval(value))) throw new Error('A valid event date and time are required.');
   if (value.endDate === undefined) return;
   const endDate = cleanCalendarDate(value.endDate);
   if (!endDate || endDate < date) throw new Error('A valid event end date is required.');
@@ -29,7 +32,5 @@ export function validateTeamEventInput(value: Record<string, unknown>): void {
   if (endDate === date && start !== null && end !== null && end <= start) {
     throw new Error('An event end time must follow its start time on the same day.');
   }
-  if (endDate > date && endDate !== new Date(new Date(`${date}T00:00:00.000Z`).getTime() + 86_400_000).toISOString().slice(0, 10)) {
-    throw new Error('An event may not span more than one day.');
-  }
+
 }
