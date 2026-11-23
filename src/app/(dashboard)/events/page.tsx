@@ -619,7 +619,7 @@ function TeamEventsPage() {
           setRepeat(item.recurrence);
         }}><Badge variant="secondary">Draft</Badge><span>{item.event.title}</span></button>)}
       </section>}
-      <Dialog open={isCreateOpen} onOpenChange={(o) => { if (busy) return; if(!o) resetForm(); setIsCreateOpen(o); }}>
+      <Dialog open={isCreateOpen && conflicts.length === 0} onOpenChange={(o) => { if (busy) return; if(!o) resetForm(); setIsCreateOpen(o); }}>
         <DialogContent data-testid="launch-activity-form" hideClose className="w-[calc(100vw-1rem)] max-w-6xl sm:max-w-6xl h-[calc(100dvh-1rem)] sm:h-auto max-h-[calc(100dvh-1rem)] p-0 rounded-3xl sm:rounded-[2.5rem] border-none shadow-2xl bg-white overflow-hidden flex flex-col">
           <DialogTitle className="sr-only">Schedule New Team Activity</DialogTitle>
           <DialogDescription className="sr-only">
