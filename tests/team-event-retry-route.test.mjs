@@ -117,3 +117,60 @@ test('selected dates preserve a multi-day TBD activity span on every occurrence'
       [['2026-03-01','2026-03-03'], ['2026-03-11','2026-03-13'], ['2026-05-01','2026-05-03']]);
   });
 });
+
+test('a private draft stays out of the team schedule and is consumed once on publication', async () => {
+  const state = communicationDb({ ...seed, 'teams/team-a/members/other': { userId:'other', position:'Coach', status:'active' } });
+  let draft;
+  await using(state, async call => {
+    const result = await call({ action:'save-draft', teamId:'team-a', eventId:'private-draft', event:request.event });
+    assert.equal(result.status, 200);
+    draft = { id:'private-draft', version:(await result.json()).version };
+    assert.equal((await (await call({ action:'list-drafts', teamId:'team-a' })).json()).drafts.length, 1);
+    assert.equal(events(state).length, 0);
+    assert.equal(state.notifications.length, 0);
+  });
+  await using(state, async call => {
+    assert.deepEqual((await (await call({action:'list-drafts', teamId:'team-a'})).json()).drafts, []);
+    assert.equal((await call({ ...request, publishOptions:{draft} })).status, 409);
+  }, { uid:'other', role:'coach' });
+  await using(state, async call => {
+    assert.equal((await call({action:'list-drafts',teamId:'team-a'})).status, 403);
+  }, { uid:'player' });
+  await using(state, async call => {
+    const publish = { ...request, publishOptions:{draft} };
+    assert.equal((await call(publish)).status, 200);
+    assert.equal((await call(publish)).status, 200);
+    assert.equal(events(state).length, 1);
+    assert.equal((await (await call({action:'list-drafts',teamId:'team-a'})).json()).drafts.length, 0);
+  });
+});
+
+test('repeat publication lists all conflicts and atomically skips or replaces only matching team activities', async () => {
+  const state = communicationDb(seed);
+  await using(state, async call => {
+    const existing = [];
+    for (const [i,date] of ['2026-10-10','2026-10-17'].entries()) {
+      const response = await call({ ...request, requestId:'existing-event-000' + i, event:{ ...request.event, date, title:'Practice ' + i } });
+      existing.push((await response.json()).eventId);
+    }
+    const series = { ...request, action:'create-series', recurrence:{ frequency:'weekly', count:3 } };
+    const first = await call(series);
+    assert.equal(first.status, 409);
+    const { conflicts } = await first.json();
+    assert.deepEqual(conflicts.map(c => c.title), ['Practice 0','Practice 1']);
+    assert.equal(events(state).length, 2);
+    const path = 'teams/team-a/events/' + existing[1];
+    state.records.set(path, { ...state.records.get(path), title:'Changed practice' });
+    const options = { skipDates:[conflicts[0].date], replace:[{ id:existing[1], revision:conflicts[1].revision }] };
+    const stale = await call({ ...series, publishOptions:options });
+    assert.equal(stale.status, 409);
+    assert.equal(events(state).length, 2);
+    options.replace[0].revision = (await stale.json()).conflicts[0].revision;
+    const resolved = await call({ ...series, publishOptions:options });
+    assert.equal(resolved.status, 200);
+    assert.equal((await resolved.json()).eventIds.length, 2);
+    assert.equal(state.records.has(path), false);
+    assert.equal(state.records.has('teams/team-a/events/' + existing[0]), true);
+    assert.equal(events(state).length, 3);
+  });
+});

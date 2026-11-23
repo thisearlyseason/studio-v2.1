@@ -39,11 +39,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '@/components/ui/alert-dialog';
-import { 
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -97,6 +92,11 @@ interface EventDetailDialogProps {
   members: Member[];
   /** If provided, the dialog opens on this tab instead of 'attendance' */
   defaultTab?: 'attendance' | 'matches' | 'plan' | 'assignments' | 'intel';
+}
+
+function formatActivityTime(value: string): string {
+  try { return format(new Date('2000-01-01T' + value), 'h:mm a'); }
+  catch { return value; }
 }
 
 export function EventDetailDialog({ 
@@ -173,7 +173,7 @@ export function EventDetailDialog({
     <Dialog>
       <DialogTrigger asChild>{children}</DialogTrigger>
       <DialogContent hideClose className="sm:max-w-4xl w-[95vw] sm:w-screen p-0 sm:rounded-[2.5rem] border-none shadow-2xl overflow-hidden bg-white text-foreground max-h-[90vh] flex flex-col">
-        <DialogTitle className="sr-only">Event Intelligence: {event.title}</DialogTitle>
+        <DialogTitle className="sr-only">Event details for {event.title}</DialogTitle>
         <DialogDescription className="sr-only">
           Event details, attendance, logistics, registration responses, and staff actions for {event.title}.
         </DialogDescription>
@@ -184,13 +184,13 @@ export function EventDetailDialog({
         </DialogClose>
         <div className="flex flex-col lg:flex-row flex-1 overflow-y-auto w-full">
           {/* LEFT PANEL: ELITE STATUS & RSVP */}
-          <div className="w-full lg:w-2/5 flex flex-col text-white bg-black p-8 relative shrink-0">
+          <div className="w-full lg:w-2/5 flex flex-col text-white bg-black px-5 py-6 sm:p-7 relative shrink-0">
             <div className="absolute top-0 right-0 p-8 opacity-10 -rotate-12 pointer-events-none">
               <Zap className="h-48 w-48" />
             </div>
             
             <div className="space-y-6 relative z-10 overflow-visible flex flex-col">
-              <div className="flex gap-2 mb-4">
+              <div className="flex gap-2 pr-10">
                 <Badge className="uppercase font-black tracking-widest text-[9px] h-6 px-3 bg-primary text-white border-none">{(event.eventType || 'other').toUpperCase()}</Badge>
                 {event.isLeagueGame && (
                   <Badge className={cn("uppercase font-black tracking-widest text-[9px] h-6 px-3 border-none", event.isHome ? "bg-white text-black" : "bg-primary/20 text-white")}>
@@ -206,7 +206,7 @@ export function EventDetailDialog({
 
               <div className="bg-white/5 p-5 rounded-4xl border border-white/10 space-y-4 font-bold text-sm shadow-inner mt-8">
                 <div className="flex items-center gap-4 text-white/80"><CalendarDays className="h-5 w-5 text-primary" />{formatDateRange(event.date, event.endDate)}</div>
-                <div className="flex items-center gap-4 text-white/80"><Clock className="h-5 w-5 text-primary" />{event.startTime ? (() => { try { return format(new Date(`2000-01-01T${event.startTime}`), 'h:mm a'); } catch { return event.startTime; } })() : 'TBD'}</div>
+                <div className="flex items-center gap-4 text-white/80"><Clock className="h-5 w-5 text-primary" />{event.startTime ? formatActivityTime(event.startTime) : 'TBD'}{event.endTime && ' – ' + formatActivityTime(event.endTime)}</div>
                 <div className="flex items-center gap-4 text-white/80"><MapPin className="h-5 w-5 text-primary" /><span className="truncate">{event.location}</span></div>
               </div>
               
@@ -317,28 +317,17 @@ export function EventDetailDialog({
               )}
 
               {isAdmin && (
-                <div className="mt-8 pt-8 border-t border-white/10 flex flex-col gap-3">
+                <div className="mt-5 pt-4 border-t border-white/15 flex flex-col gap-2">
                   <Button variant="outline" className="w-full h-12 rounded-2xl border-white/20 bg-white/5 text-white hover:bg-primary hover:border-transparent font-black uppercase text-[10px] transition-all" onClick={() => exportAttendanceCSV(event.id)}>
-                    <Download className="h-4 w-4 mr-2" /> <span>Export Attendance Ledger</span>
+                    <Download className="h-4 w-4 mr-2" /> <span>Export attendance</span>
                   </Button>
-                  <div className="flex gap-2">
-                    <Button variant="secondary" className="flex-1 rounded-2xl h-12 font-black uppercase text-[10px]" onClick={() => onEdit(event)}>Edit Activity</Button>
-                    <Tooltip>
-                      <TooltipTrigger asChild>
-                        <Button aria-label={`Delete ${event.title}`} variant="destructive" size="icon" className="h-12 w-12 rounded-2xl shadow-lg shadow-red-600/10" onClick={() => setDeleteConfirmationOpen(true)}>
-                          <Trash2 className="h-5 w-5" />
-                        </Button>
-                      </TooltipTrigger>
-                      <TooltipContent className="bg-destructive text-white border-none">
-                        Destroy Activity Log
-                      </TooltipContent>
-                    </Tooltip>
+                  <div className="grid grid-cols-2 gap-2">
+                    <DialogClose asChild><Button variant="secondary" className="h-11 rounded-xl px-3" onClick={() => onEdit(event)}>Edit activity</Button></DialogClose>
+                    {onDuplicate && <DialogClose asChild><Button variant="secondary" className="h-11 rounded-xl px-3" onClick={() => onDuplicate(event)}>Duplicate event</Button></DialogClose>}
                   </div>
-                  {onDuplicate && (
-                    <DialogClose asChild>
-                      <Button variant="secondary" onClick={() => onDuplicate(event)}>Duplicate event</Button>
-                    </DialogClose>
-                  )}
+                  <Button aria-label={`Delete ${event.title}`} variant="ghost" className="h-10 justify-start rounded-xl px-3 text-red-200 hover:bg-white/10 hover:text-red-100" onClick={() => setDeleteConfirmationOpen(true)}>
+                    <Trash2 className="mr-2 h-4 w-4" />Delete activity
+                  </Button>
                   {event.recurrenceSeriesId && onEditSeries && (
                     <Button variant="outline" className="w-full h-11 rounded-2xl border-white/20 bg-transparent text-white hover:bg-white/10 font-black uppercase text-[9px]" onClick={() => onEditSeries(event)}>
                       Edit Entire Series

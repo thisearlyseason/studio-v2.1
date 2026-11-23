@@ -7,7 +7,7 @@ import { eventMutationFailureMessage } from '../src/lib/event-mutation-feedback.
 const source = readFileSync(new URL('../src/app/(dashboard)/events/page.tsx', import.meta.url), 'utf8');
 
 test('event creation preserves the date selected in the calendar instead of converting it through UTC', () => {
-  const createHandler = source.slice(source.indexOf('const handleCreateEvent = async () =>'), source.indexOf('const resetForm = () =>'));
+  const createHandler = source.slice(source.indexOf('const handleCreateEvent = async ('), source.indexOf('const resetForm = () =>'));
   assert.match(createHandler, /date: newDate,/);
   assert.match(createHandler, /endDate: newEndDate \|\| newDate,/);
   assert.doesNotMatch(createHandler, /new Date\(`\$\{newDate\}T\$\{newTime/);
@@ -19,7 +19,7 @@ test('event creation shows the server schedule-conflict reason', () => {
     'This squad already has an event during the selected time.',
   );
   assert.equal(eventMutationFailureMessage('unknown'), 'Unable to save this activity. Please try again.');
-  assert.match(source, /title: "Activity Not Scheduled"/);
+  assert.match(source, /"Activity Not Scheduled"/);
   assert.match(source, /description: eventMutationFailureMessage\(e\)/);
 });
 
