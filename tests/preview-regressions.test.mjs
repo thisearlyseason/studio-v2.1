@@ -937,7 +937,7 @@ test('mobile Super Admin headers and newsletter sections stay inside the viewpor
   );
 });
 
-test('household realtime listeners ignore permission errors after authentication ends', async () => {
+test('family schedules reuse scoped team listeners and demo logout stops private listeners', async () => {
   const [provider, shell, layout, collectionHook, firebaseProvider] = await Promise.all([
     readSource('../src/components/providers/team-provider.tsx'),
     readSource('../src/components/layout/Shell.tsx'),
@@ -945,12 +945,10 @@ test('household realtime listeners ignore permission errors after authentication
     readSource('../src/firebase/firestore/use-collection.tsx'),
     readSource('../src/firebase/provider.tsx'),
   ]);
-  const householdListeners = provider.match(/allTeamIds\.forEach\(tid => \{[\s\S]*?unsubscribers\.push\(eu, gu\);/)?.[0] || '';
-
-  assert.match(householdListeners, /if \(!firebaseAuth\?\.currentUser\) return;/);
-  assert.match(householdListeners, /localStorage\.getItem\(DEMO_EXIT_PENDING_KEY\) === 'true'/);
-  assert.match(householdListeners, /Event Sync Error:/);
-  assert.match(householdListeners, /Game Sync Error:/);
+  const scheduleScope = provider.slice(provider.indexOf('const allTeamIds ='), provider.indexOf('const { data: householdEvents'));
+  assert.match(scheduleScope, /pathname !== '\/family'/);
+  assert.match(scheduleScope, /child => child.joinedTeamIds/);
+  assert.doesNotMatch(scheduleScope, /teamsData|teamsRaw/);
   assert.ok(
     shell.indexOf('markDemoExitPending()') < shell.indexOf("await fetch('/api/demo/exit'"),
     'demo logout must mark listener teardown before the server revokes the anonymous session',

@@ -10,8 +10,8 @@ test('legacy subcollection events inherit their containing team ID', () => {
   );
 });
 
-test('an explicit event team ID is preserved', () => {
-  assert.equal(normalizeTeamEvent({ id: 'event-2', teamId: 'team-b' }, 'team-a').teamId, 'team-b');
+test('events claiming a different team than their collection fail closed', () => {
+  assert.equal(normalizeTeamEvent({ id: 'event-2', teamId: 'team-b' }, 'team-a'), null);
 });
 
 test('events without any team context fail closed', () => {

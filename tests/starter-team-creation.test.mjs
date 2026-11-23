@@ -92,3 +92,23 @@ test('Starter creation retains anonymous, ownership and deleting-account boundar
     } finally { app.dispose(); }
   }
 });
+
+test('selecting Pro uses the last paid seat atomically and persists the same tier in the switcher', async () => {
+  const { db, records } = communicationDb({
+    'users/owner': { role: 'coach', plan_type: 'team', subscription_status: 'active', team_limit: 1 },
+  }, { serializeTransactions: true, enforceReadBeforeWrite: true });
+  const app = await loadCommunicationRoute(routePath, db, owner);
+  try {
+    const results = await Promise.all(['DVSS', 'Second team'].map(name =>
+      app.route.POST(request({ ...body, name, requestPro: true, requirePro: true }))
+    ));
+    assert.deepEqual(results.map(result => result.status).sort(), [201, 409]);
+    const { teamId, isPro } = await results.find(result => result.status === 201).json();
+    assert.equal(isPro, true);
+    for (const path of [`teams/${teamId}`, `users/owner/teamMemberships/${teamId}`]) {
+      assert.equal(records.get(path).isPro, true);
+      assert.equal(records.get(path).planId, 'team');
+    }
+    assert.equal([...records.keys()].filter(path => /^teams\/[^/]+$/.test(path)).length, 1);
+  } finally { app.dispose(); }
+});

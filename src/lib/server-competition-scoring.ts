@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { FieldValue, type Transaction } from 'firebase-admin/firestore';
 import { adminDb } from '@/lib/firebase-admin';
 import { isAccountAccessBlocked } from '@/lib/account-access-policy';
-import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
+import { hasCurrentPaidSubscription } from '@/lib/native-billing/entitlements';
+import { authorizeDashboardRoute, canHostTeamLeague } from '@/lib/dashboard-route-policy';
 import { resolveCompetitionAuthority } from '@/lib/server-competition-authority';
 import { canonicalCompetitionRequest, runCompetitionOperation } from '@/lib/server-competition-operation';
 import { hashLeagueScorekeeperPin, hashTournamentScorekeeperCode, verifyLeagueScorekeeperPin, verifyTournamentScorekeeperCode } from '@/lib/server-competition-credential';
@@ -46,7 +47,7 @@ export function isActiveCompetitionTeam(team: Data | undefined): boolean {
   return !!team && !isAccountAccessBlocked(team) && team.isDeleted !== true && team.isArchived !== true && team.is_active !== false && team.isActive !== false && (status == null || status === '' || status === 'active');
 }
 
-async function assertLeagueTenantOwner(transaction: Transaction, league: Data, ownerId: string): Promise<void> {
+async function assertLeagueTenantOwner(transaction: Transaction, league: Data, ownerId: string): Promise<boolean> {
   const tenants = new Set<string>();
   for (const value of [league.tenantId, league.hostTeamId, league.ownerTeamId, league.teamId]) {
     if (value == null || value === '') continue;
@@ -57,10 +58,11 @@ async function assertLeagueTenantOwner(transaction: Transaction, league: Data, o
   const [tenantId] = tenants;
   if (tenantId.startsWith('profile:')) {
     if (tenantId !== `profile:${ownerId}` || league.creatorId !== ownerId) fail('League profile ownership is inconsistent.', 403);
-    return;
+    return false;
   }
   const tenant = await transaction.get(adminDb.collection('teams').doc(tenantId));
   if (!tenant.exists || !isActiveCompetitionTeam(tenant.data()) || tenant.data()?.ownerUserId !== ownerId) fail('League tenant ownership is inactive or inconsistent.', 403);
+  return canHostTeamLeague(tenant.data()?.planId, tenant.data()?.isPro);
 }
 
 /** Every caller reads lifecycle and the canonical billing owner in its transaction. */
@@ -71,10 +73,14 @@ export async function readActiveScoringLeague(transaction: Transaction, leagueId
   if (league.isArchived === true || league.is_active === false || league.isDeleted === true) fail('League portal is inactive.', 404);
   const ownerId = leagueBillingOwnerUserId(league);
   if (!ownerId || !/^[^/\s]{1,200}$/.test(ownerId)) fail('League billing owner is unavailable.', 403);
-  await assertLeagueTenantOwner(transaction, league, ownerId);
+  const teamCanHost = await assertLeagueTenantOwner(transaction, league, ownerId);
   const owner = await transaction.get(adminDb.collection('users').doc(ownerId));
   const profile = owner.data();
-  if (!owner.exists || isAccountAccessBlocked(profile) || profile?.isDeleted === true || profile?.status === 'removed' || !authorizeDashboardRoute('/competition', profile || null).allowed) fail('The billing owner does not have competition access.', 403);
+  const teamPlanAccess = teamCanHost && canHostTeamLeague(profile?.plan_type, true) && hasCurrentPaidSubscription(profile || {});
+  if (!owner.exists || isAccountAccessBlocked(profile) || profile?.isDeleted === true || profile?.status === 'removed' ||
+      (!authorizeDashboardRoute('/competition', profile || null).allowed && !teamPlanAccess)) {
+    fail('The billing owner does not have competition access.', 403);
+  }
   if ((league.isDemo === true || league.demoSeeded === true) && (league.isDemo !== true || league.demoSeeded !== true || league.demoSessionOwnerId !== ownerId || league.creatorId !== ownerId || league.tenantId !== `profile:${ownerId}` || profile?.isDemo !== true)) fail('The demo League owner could not be verified.', 403);
   return league;
 }

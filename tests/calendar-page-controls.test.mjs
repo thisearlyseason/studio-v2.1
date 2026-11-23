@@ -39,8 +39,10 @@ test('Calendar filter popover uses Radix available height and internal scroll co
   assert.match(filterPopover, /overscroll-contain/);
 });
 
-test('Calendar defaults a parent to every authorized household team, not only the active squad', () => {
-  assert.match(source, /if \(!isParent && activeTeam\?\.id && discoveryTeamIds\.includes\(activeTeam\.id\)\)/);
+test('Calendar scopes parent and staff schedules and athlete filters to the selected team', () => {
+  assert.doesNotMatch(source, /householdEvents|householdGames/);
+  assert.match(source, /return activeTeam\?\.id \? \[activeTeam\.id\] : \[\]/);
+  assert.match(source, /child\.joinedTeamIds\.filter\(.*teamId === activeTeam\?\.id/);
   assert.match(source, /setSelectedTeamIds\(discoveryTeamIds\)/);
 });
 

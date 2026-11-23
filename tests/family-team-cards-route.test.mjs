@@ -85,9 +85,10 @@ test('family team cards reject non-guardian roles without revealing squad existe
   assert.deepEqual(await response.json(), { error: 'Family access required.' });
 });
 
-test('family cards merge server-derived child squads into every family consumer', async () => {
+test('family cards display children and details for the selected team', async () => {
   const source = await readFile(new URL('../src/app/(dashboard)/family/page.tsx', import.meta.url), 'utf8');
-  assert.match(source, /fetch\('\/api\/family\/teams'/);
+  assert.doesNotMatch(source, /fetch\('\/api\/family\/teams'/);
+  assert.match(source, /joinedTeamIds: \[activeTeam\.id\]/);
   assert.match(source, /const familyTeams = useMemo/);
   assert.match(source, /<ChildCard key=\{child\.id\} child=\{child\} teams=\{familyTeams\}/);
   assert.match(source, /fetch\('\/api\/family\/children'/);

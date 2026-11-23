@@ -63,7 +63,10 @@ test('competition queries avoid fragile OR filters and isolate tab failures', as
   ]);
 
   assert.doesNotMatch(leagues, /\bor\(/);
-  assert.match(leagues, /ownedLeaguesQuery/);
+  const accountQuery = leagues.slice(leagues.indexOf('const ownedLeaguesQuery'), leagues.indexOf('const [memberLeagues'));
+  assert.match(accountQuery, /!isAccountTeamHub\) return null/);
+  assert.match(leagues, /where\('tenantId', '==', activeTeam\.id\)/);
+  assert.match(leagues, /if \(activeTeam\?\.id\) return league\.tenantId === activeTeam\.id/);
   assert.match(leagues, /fetch\('\/api\/leagues\/scoring\?purpose=member&teamId='/);
   assert.match(scoring, /where\('memberTeamIds', 'array-contains', teamId\)/);
   assert.match(scoring, /isActiveCompetitionTeam\(team\.data\(\)\)/);

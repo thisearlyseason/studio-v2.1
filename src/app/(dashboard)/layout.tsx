@@ -650,7 +650,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
           setIsSeedingDemo={setIsSeedingDemo}
         />
         <ErrorBoundary>
-          <Shell>{userProfile && !user?.isAnonymous && !userProfile.isDemo && !userProfile.homeScreenLayout && !userProfile.homeLayoutInvitationDismissed ? (
+          <Shell key={JSON.stringify([user?.uid, activeTeam?.id])}>{userProfile && !user?.isAnonymous && !userProfile.isDemo && !userProfile.homeScreenLayout && !userProfile.homeLayoutInvitationDismissed ? (
             <div className="mx-auto w-full max-w-lg"><HomeLayoutSelector invitation /></div>
           ) : activeTeam && moduleDisabled ? null : children}</Shell>
         </ErrorBoundary>

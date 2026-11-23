@@ -63,7 +63,7 @@ function UniversalAccountDashboard() {
   const { 
     user, activeTeam, activeTeamEvents, 
     householdBalance, isYouth, isParent, isPlayer,
-    householdEvents, householdGames, myChildren, teams,
+    myChildren, teams,
     isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isStaff, isSuperAdmin,
     alerts, seenAlertIds, isTeamsLoading, games
   } = useTeam();
@@ -142,11 +142,12 @@ function UniversalAccountDashboard() {
         ];
 
   const upcomingItinerary = useMemo(() => {
-    const list = isParent ? (householdEvents || []) : (activeTeamEvents || []);
-    const rawGames = isParent ? (householdGames || []) : [];
+    const list = activeTeamEvents || [];
+    const rawGames = isParent ? games : [];
     
     const synthesizedGames = rawGames.map(g => ({
        ...g,
+       teamId: activeTeam?.id,
        eventType: 'game',
        title: g.title || `Match: ${g.team1} vs ${g.team2}`,
        startTime: g.startTime || g.time,
@@ -211,7 +212,7 @@ function UniversalAccountDashboard() {
             return (dA?.getTime() || 0) - (dB?.getTime() || 0);
         })
         .slice(0, 6);
-  }, [isParent, householdEvents, activeTeamEvents, myChildren, teams, householdGames]);
+  }, [isParent, activeTeamEvents, activeTeam?.id, teams, games]);
 
   if (!mounted || !user) return (
     <div className="flex flex-col items-center justify-center py-20 animate-pulse">
@@ -289,7 +290,7 @@ function UniversalAccountDashboard() {
           </Card>
         ) : (
           <Card className="rounded-4xl sm:rounded-[2.5rem] shadow-xl bg-muted/20 p-5 sm:p-8 space-y-2">
-            <p className="text-[9px] sm:text-[10px] font-black uppercase text-muted-foreground">Household</p>
+            <p className="text-[9px] sm:text-[10px] font-black uppercase text-muted-foreground">Team balance</p>
             <p className="text-2xl sm:text-3xl font-black text-foreground">${householdBalance.toLocaleString()}</p>
             <Button variant="ghost" size="sm" className="h-6 px-2 text-[8px] font-black uppercase border mt-2 text-foreground" onClick={() => router.push('/family/payments')}>Payment Details</Button>
           </Card>

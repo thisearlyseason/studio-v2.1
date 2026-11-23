@@ -1,3 +1,4 @@
+import { isActiveTeamMembership } from '@/lib/team-membership-security';
 import { getAuth, onAuthStateChanged, type User } from 'firebase/auth';
 import { getFirestore, collection, getDocs, doc, getDoc } from 'firebase/firestore';
 import { getOrInitializeFirebaseApp } from '@/firebase/config';
@@ -68,6 +69,7 @@ function waitForScheduleUser(): Promise<User | null> {
 
 export async function syncFromFirestore(): Promise<SyncResult> {
   let userId = '';
+  let targetTeamId = '';
   try {
     const app = getOrInitializeFirebaseApp();
     const db   = getFirestore(app);
@@ -79,7 +81,6 @@ export async function syncFromFirestore(): Promise<SyncResult> {
     userId = user.uid;
 
     const selectedTeamId = localStorage.getItem(TEAM_KEY) || '';
-    let targetTeamId = '';
     let teamName = '';
 
     try {
@@ -88,11 +89,15 @@ export async function syncFromFirestore(): Promise<SyncResult> {
         localStorage.removeItem(scopedLastTeamKey(user.uid));
         return { events: [], source: 'none', userId: user.uid, error: 'No team memberships found' };
       }
-      const membershipIds = membershipsSnap.docs.map(membership => membership.id);
-      targetTeamId = membershipIds.includes(selectedTeamId) ? selectedTeamId : membershipIds[0];
+      const membershipIds = membershipsSnap.docs.filter(membership => isActiveTeamMembership(membership.data())).map(membership => membership.id);
+      if (!membershipIds.length || (selectedTeamId && !membershipIds.includes(selectedTeamId))) {
+        return { events: [], source: 'none', userId, error: 'Selected team membership is unavailable' };
+      }
+      targetTeamId = selectedTeamId || membershipIds[0];
       localStorage.setItem(scopedLastTeamKey(user.uid), targetTeamId);
     } catch (membershipError: any) {
-      targetTeamId = localStorage.getItem(scopedLastTeamKey(user.uid)) || '';
+      if (membershipError?.code !== 'unavailable') throw membershipError;
+      targetTeamId = selectedTeamId || localStorage.getItem(scopedLastTeamKey(user.uid)) || '';
       const cached = loadScopedEvents(localStorage, user.uid, targetTeamId);
       return {
         events: cached,
@@ -153,8 +158,7 @@ export async function syncFromFirestore(): Promise<SyncResult> {
     return { events, source: 'firestore', teamName, teamId: targetTeamId, userId: user.uid };
   } catch (err: any) {
     console.error('[ScheduleSync] Firestore error:', err?.message || err);
-    const targetTeamId = userId ? localStorage.getItem(scopedLastTeamKey(userId)) || '' : '';
-    const cached = userId ? loadScopedEvents(localStorage, userId, targetTeamId) : [];
+    const cached = userId && err?.code === 'unavailable' ? loadScopedEvents(localStorage, userId, targetTeamId) : [];
     return {
       events: cached,
       source: cached.length ? 'cache' : 'none',
