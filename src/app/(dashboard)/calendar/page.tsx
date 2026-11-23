@@ -23,6 +23,8 @@ import {
 import { 
   ChevronLeft, 
   ChevronRight, 
+  Flag,
+  Dumbbell,
   Calendar as CalendarIcon, 
   Filter, 
   LayoutGrid, 
@@ -84,6 +86,8 @@ import { useCollection, useMemoFirebase } from '@/firebase';
 import { collection, limit, orderBy, query } from 'firebase/firestore';
 import { rsvpParticipantId } from '@/lib/team-rsvp-policy';
 import { calendarDateLabel, calendarEventDate, calendarEventIsUpcoming } from '@/lib/calendar-event-date';
+
+const EVENT_TYPE_ICONS: Record<EventType, typeof Flag> = { game: Flag, practice: Dumbbell, meeting: Users, tournament: Trophy, other: CalendarDays };
 
 const EVENT_TYPE_COLORS: Record<EventType, string> = {
   game: 'bg-primary border-primary text-white',
@@ -1303,33 +1307,36 @@ export default function MasterCalendarPage() {
                         <span className={cn("h-7 w-7 flex items-center justify-center rounded-full text-xs font-black transition-all", isTodayDate ? "bg-primary text-white" : (isSelected ? "bg-black text-white" : "text-muted-foreground"))}>{format(day, 'd')}</span>
                       </div>
                       <div className="flex flex-wrap gap-1">
-                      {dayEvents.map(event => (
+                      {dayEvents.map(event => {
+                          const type = event.isTournament ? 'tournament' : event.eventType || 'other';
+                          const Icon = EVENT_TYPE_ICONS[type as EventType] || CalendarDays;
+                          return (
                           <Tooltip key={event.id}>
                             <TooltipTrigger asChild>
-                              <div
-                                role="button"
-                                tabIndex={0}
+                              <button
+                                type="button"
                                 aria-label={`View ${event.title}`}
                                 className={cn(
-                                  "p-1 rounded-md flex items-center justify-center shrink-0 border border-white/10 cursor-pointer hover:scale-125 hover:shadow-md transition-all active:scale-95",
-                                  EVENT_TYPE_COLORS[event.eventType as EventType || 'other']
+                                  "flex h-9 w-full min-w-0 items-center justify-center gap-1 rounded-lg px-1 shadow-sm hover:brightness-90 focus-visible:ring-2 focus-visible:ring-ring md:justify-start md:px-2",
+                                  EVENT_TYPE_COLORS[type as EventType] || EVENT_TYPE_COLORS.other
                                 )}
                                 onClick={(e) => {
                                   e.stopPropagation();
                                   setSelectedDay(day);
                                   setDetailTeamId(event.teamId); setActiveDetailedEventId(event.id);
                                 }}
-                                onKeyDown={(e) => e.key === 'Enter' && (e.stopPropagation(), setDetailTeamId(event.teamId), setActiveDetailedEventId(event.id))}
                               >
-                                {event.isTournament ? <Trophy className="h-3 w-3" /> : (event.eventType === 'game' ? <Activity className="h-3 w-3" /> : <div className="h-3 w-3 rounded-full border-2 border-white/50" />)}
-                              </div>
+                                <Icon aria-hidden="true" className="h-5 w-5 shrink-0" />
+                                <span className="hidden truncate text-xs font-bold md:block">{event.title}</span>
+                              </button>
                             </TooltipTrigger>
                             <TooltipContent side="bottom" className="text-[10px] font-black">
                               <span className="opacity-60">{event.startTime}</span>{event.startTime ? ' · ' : ''}{event.title}
                               <div className="text-[9px] opacity-50 mt-0.5">Click to view details</div>
                             </TooltipContent>
                           </Tooltip>
-                        ))}
+                          );
+                        })}
                       </div>
                     </div>
                   );
