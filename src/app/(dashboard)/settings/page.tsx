@@ -72,7 +72,7 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useTeam } from '@/components/providers/team-provider';
-import { useAuth, useStorage } from '@/firebase';
+import { useAuth, useStorage, useDoc, useFirestore, useMemoFirebase } from '@/firebase';
 import { signOut, reauthenticateWithCredential, EmailAuthProvider, verifyBeforeUpdateEmail } from 'firebase/auth';
 import {uploadScopedMedia,mediaReadUrl} from '@/lib/media-client';
 import {getAuthToken} from '@/lib/client-auth';
@@ -95,7 +95,18 @@ import {
   TEAM_MODULE_SETTINGS_DEFINITIONS,
   isTeamModuleEnabled,
   teamModuleFeaturePatch,
+  visibleTeamModules,
+  type ModuleAudience,
 } from '@/lib/team-module-visibility';
+
+import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
+
+function SquadOptionName({ id, fallback }: { id: string; fallback: string }) {
+  const db = useFirestore();
+  const ref = useMemoFirebase(() => doc(db, 'teams', id), [db, id]);
+  const { data } = useDoc(ref);
+  return <>{data?.name || data?.teamName || fallback}</>;
+}
 
 const TEAM_MODULE_ICONS = {
   competition: LayoutDashboard,
@@ -789,28 +800,30 @@ export default function SettingsPage() {
               const team = teams.find(candidate => candidate.id === id);
               if (team) setActiveTeam(team);
             }}>
-              <SelectTrigger aria-label="Team for module visibility"><SelectValue /></SelectTrigger>
-              <SelectContent>{teams.map(team => <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>)}</SelectContent>
+              <SelectTrigger aria-label="Team for module visibility"><SelectValue>{activeTeam.name}</SelectValue></SelectTrigger>
+              <SelectContent>{teams.map(team => <SelectItem key={team.id} value={team.id}><SquadOptionName id={team.id} fallback={team.name} /></SelectItem>)}</SelectContent>
             </Select>
           )}
           <p className="text-[10px] text-muted-foreground px-2 mb-4 font-bold uppercase tracking-widest leading-relaxed">
-            Toggle which squad modules are visible in the sidebar. Disabled modules are completely hidden and inaccessible to all users in this squad.
+            Choose which modules players and parents see on this team. Coaches and staff keep their full view. Team permissions and plan limits still apply.
           </p>
           <div className="grid grid-cols-[repeat(auto-fit,minmax(min(100%,240px),1fr))] gap-4">
             {TEAM_MODULE_SETTINGS_DEFINITIONS.map(module => {
               const Icon = TEAM_MODULE_ICONS[module.key];
-              // features is undefined by default, so we treat undefined as true (enabled)
-              const isEnabled = isTeamModuleEnabled(module, activeTeam.features);
-              
-              const handleToggle = async (checked: boolean) => {
+              const audiences = (['player', 'parent'] as const).filter(audience =>
+                authorizeDashboardRoute(module.route, { role: audience === 'player' ? 'adult_player' : 'parent' }).allowed
+              );
+              if (!audiences.length) return null;
+
+              const handleToggle = async (audience: ModuleAudience, checked: boolean) => {
                 if (!db) return;
                 try {
                   const teamRef = doc(db, 'teams', activeTeam.id);
                   const patch = teamModuleFeaturePatch(module, checked);
                   await updateDoc(teamRef, Object.fromEntries(
-                    Object.entries(patch).map(([key, value]) => [`features.${key}`, value]),
+                    Object.entries(patch).map(([key, value]) => [`features.byRole.${audience}.${key}`, value]),
                   ));
-                  toast({ title: 'Module Updated', description: `${module.name} is now ${checked ? 'visible' : 'hidden'}.` });
+                  toast({ title: 'Module Updated', description: `${module.name} is now ${checked ? 'visible' : 'hidden'} for ${audience}s on ${activeTeam.name}.` });
                 } catch (e) {
                   console.error('Failed to update feature', e);
                   toast({ title: 'Error', description: 'Failed to update module visibility.', variant: 'destructive' });
@@ -818,19 +831,18 @@ export default function SettingsPage() {
               };
 
               return (
-                <div key={module.key} className={cn(
-                  "p-4 min-w-0 rounded-2xl border shadow-sm flex items-center justify-between gap-4 transition-all",
-                  isEnabled ? "bg-white" : "bg-muted/50 grayscale-[0.5]"
-                )}>
-                  <div className="flex min-w-0 flex-1 items-center gap-3">
-                    <div className={cn("p-2 shrink-0 rounded-xl", isEnabled ? "bg-primary/10 text-primary" : "bg-muted text-muted-foreground")}>
-                      {isEnabled ? <Icon className="h-4 w-4" /> : <EyeOff className="h-4 w-4" />}
-                    </div>
-                    <span className={cn("text-sm font-semibold leading-snug wrap-break-word", !isEnabled && "text-muted-foreground")}>
-                      {module.name}
-                    </span>
-                  </div>
-                  <Switch className="shrink-0" aria-label={`${module.name} visibility`} checked={isEnabled} onCheckedChange={handleToggle} />
+                <div key={module.key} className="min-w-0 space-y-3 rounded-2xl border bg-background p-4">
+                  <div className="flex items-center gap-2 font-semibold"><Icon className="h-4 w-4" />{module.name}</div>
+                  {audiences.map(audience => {
+                    const unavailable = (module.key === 'feed' && audience === 'parent' && activeTeam.parentFeedEnabled === false)
+                      || (module.key === 'tacticalChat' && activeTeam.features?.tacticalChat === false);
+                    return <label key={audience} className="flex items-center justify-between gap-2 text-sm capitalize">
+                      {audience}{unavailable && <small className="normal-case">Disabled for team</small>}
+                      <Switch aria-label={`${module.name} visibility for ${audience}s`} disabled={unavailable}
+                        checked={!unavailable && isTeamModuleEnabled(module, visibleTeamModules(activeTeam.features, false, audience === 'parent'))}
+                        onCheckedChange={checked => handleToggle(audience, checked)} />
+                    </label>;
+                  })}
                 </div>
               );
             })}

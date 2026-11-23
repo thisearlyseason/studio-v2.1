@@ -22,7 +22,7 @@ import { toast } from '@/hooks/use-toast';
 import { Button } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { DEMO_EXIT_PENDING_KEY, DEMO_START_KEY, getAuthToken, authHeader, clearBrowserSession, markDemoExitPending } from '@/lib/client-auth';
-import { isTeamModuleRouteDisabled } from '@/lib/team-module-visibility';
+import { visibleTeamModules, isTeamModuleRouteDisabled } from '@/lib/team-module-visibility';
 import { isStoreDistribution, safeReturnPath } from '@/lib/app-distribution';
 import { shouldRedirectParentFromDashboard } from '@/lib/demo-plan-config';
 
@@ -281,10 +281,11 @@ function BetaDemoSeeder({
 function LayoutContent({ children }: { children: React.ReactNode }) {
   const { user, isUserLoading, isAuthResolved } = useUser();
   const auth = useAuth();
-  const { teams, isTeamsLoading, isSeedingDemo, setIsSeedingDemo, user: userProfile, activeTeam, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isParent, isSuperAdmin } = useTeam();
+  const { teams, isTeamsLoading, isSeedingDemo, setIsSeedingDemo, user: userProfile, activeTeam, isStaff, isMembersLoading, isPrimaryClubAuthority, isSchoolMode, isEliteClubMode, isParent, isSuperAdmin } = useTeam();
   const router = useRouter();
   const pathname = usePathname();
   const searchParams = useSearchParams();
+  const moduleDisabled = isTeamModuleRouteDisabled(pathname, visibleTeamModules(activeTeam?.features, isStaff, isParent));
   
   const [mounted, setMounted] = useState(false);
   const [isDemoInitializing, setIsDemoInitializing] = useState(false);
@@ -356,12 +357,12 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
     }
 
     // Module Visibility Guard against Side-Gating
-    if (activeTeam && isTeamModuleRouteDisabled(pathname, activeTeam.features)) {
+    if (activeTeam && !isMembersLoading && moduleDisabled) {
         toast({ title: 'Access Denied', description: 'This module has been disabled by your squad administrator.', variant: 'destructive' });
         router.replace('/dashboard');
         return;
     }
-  }, [user, userProfile, isAuthResolved, router, mounted, isDemoInitializing, pathname, searchParams, isPrimaryClubAuthority, isSuperAdmin, isSchoolMode, isEliteClubMode, isParent, activeTeam, isTeamsLoading, teams.length]);
+  }, [user, userProfile, isAuthResolved, router, mounted, isDemoInitializing, pathname, searchParams, isPrimaryClubAuthority, isSuperAdmin, isSchoolMode, isEliteClubMode, isParent, activeTeam, isMembersLoading, moduleDisabled, isTeamsLoading, teams.length]);
 
   useEffect(() => {
     // Wait for both the profile and team hydration before deciding that the
@@ -651,7 +652,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
         <ErrorBoundary>
           <Shell>{userProfile && !user?.isAnonymous && !userProfile.isDemo && !userProfile.homeScreenLayout && !userProfile.homeLayoutInvitationDismissed ? (
             <div className="mx-auto w-full max-w-lg"><HomeLayoutSelector invitation /></div>
-          ) : activeTeam && isTeamModuleRouteDisabled(pathname, activeTeam.features) ? null : children}</Shell>
+          ) : activeTeam && moduleDisabled ? null : children}</Shell>
         </ErrorBoundary>
       </div>
     </div>
