@@ -4,6 +4,7 @@ import {finished} from 'node:stream/promises';
 import {randomUUID} from 'node:crypto';
 import type {FileMetadata} from '@google-cloud/storage';
 import sharp from 'sharp';
+import {adminDb} from '@/lib/firebase-admin';
 import {mediaBucket} from '@/lib/server-media-storage';
 import {mediaResumableOptions,cancelMediaUpload,mediaUploadAbortAdapter} from '@/lib/media-resumable';
 import {mediaActor,mediaAuthorityState,mediaFailure,mediaHeaders} from '@/lib/server-media';
@@ -63,7 +64,16 @@ export async function POST(req:NextRequest){
       }
       throw new MediaInputError('Media privacy verification failed.',503);
     }
-    return NextResponse.json({path:target.path,url:'/api/media?path='+encodeURIComponent(target.path)},{status:201,headers:mediaHeaders});
+    const url = '/api/media?path=' + encodeURIComponent(target.path);
+    if (target.kind === 'team' && target.path === `teams/${target.subjectId}/branding/logo`) {
+      const team = adminDb.doc('teams/' + target.subjectId);
+      await adminDb.runTransaction(async transaction => {
+        const current = await transaction.get(team);
+        if (!current.exists || !canManageMedia(target, actor, {team: current.data()})) throw new MediaInputError('Team owner access required.', 403);
+        transaction.update(team, {teamLogoUrl: url});
+      });
+    }
+    return NextResponse.json({path:target.path,url},{status:201,headers:mediaHeaders});
   }catch(error){return mediaFailure(error);}
 }
 export async function GET(req:NextRequest){

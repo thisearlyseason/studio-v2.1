@@ -20,7 +20,8 @@ export async function uploadScopedMedia(path:string,file:File,token:string|null)
   const target=parseMediaPath(path),error=target.category==='videos'?validatePracticeFilmFile(file):validateRasterImage(file);
   if(error)throw Error(error);if(!token)throw Error('Your session has expired.');
   const response=await fetch('/api/media?path='+encodeURIComponent(path),{method:'POST',headers:{Authorization:`Bearer ${token}`,'Content-Type':file.type},body:file,signal:AbortSignal.timeout(120_000)});
-  const result=await response.json();if(!response.ok)throw Error(result.error||'Media upload failed.');
+  const result=await response.json().catch(() => ({}));
+  if(!response.ok)throw Error(response.status === 413 ? 'The image is too large. Choose a smaller file.' : result.error || 'Media upload failed. Please try again.');
   if(result.path!==path||result.url!=='/api/media?path='+encodeURIComponent(path))throw Error('Media upload returned an unexpected identity.');
   return result as {path:string;url:string};
 }
