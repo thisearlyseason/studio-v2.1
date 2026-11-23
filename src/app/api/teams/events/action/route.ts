@@ -1,3 +1,4 @@
+import { ActivityConflictError, type ActivityConflict, type ActivityPublishOptions } from '@/lib/activity-publish';
 import { teamEventRequestFingerprint } from '@/lib/team-event-request';
 import { NextRequest, NextResponse } from 'next/server';
 import { randomBytes, createHash } from 'node:crypto';
@@ -59,20 +60,40 @@ function assertValidEventInput(data: Record<string, unknown>) {
   }
 }
 
+type AvailabilityRecords = {
+  events: FirebaseFirestore.QueryDocumentSnapshot[];
+  bookings: FirebaseFirestore.QueryDocumentSnapshot[];
+};
+
+async function readAvailability(teamId: string, dates: string[]): Promise<AvailabilityRecords> {
+  const collection = adminDb.collection('scheduleBookings');
+  const requests = [];
+  for (let offset = 0; offset < dates.length; offset += 30) {
+    requests.push(collection.where('date', 'in', dates.slice(offset, offset + 30)).get());
+  }
+  const [events, bookings] = await Promise.all([
+    adminDb.collection('teams').doc(teamId).collection('events').get(),
+    Promise.all(requests),
+  ]);
+  return { events: events.docs, bookings: bookings.flatMap(snapshot => snapshot.docs) };
+}
+
 async function assertEventAvailability(
   teamId: string,
   eventId: string,
-  data: Record<string, unknown>
+  data: Record<string, unknown>,
+  conflicts?: ActivityConflict[],
+  records?: AvailabilityRecords,
 ) {
   const interval = normalizeTeamEventInterval(data);
   if (!interval) return null;
-  const [bookings, events] = await Promise.all([
-    adminDb.collection('scheduleBookings').where('date', 'in', teamEventConflictDates(interval)).get(),
-    adminDb.collection('teams').doc(teamId).collection('events').get(),
-  ]);
+  const { bookings, events } = records || await readAvailability(teamId, teamEventConflictDates(interval));
   const resourceId = typeof data.resourceId === 'string' ? data.resourceId.trim() : '';
   const location = typeof data.location === 'string' ? data.location.trim().toLocaleLowerCase() : '';
-  for (const booking of bookings.docs) {
+  const ownedBookings = new Set(events.filter(doc =>
+    teamEventIntervalsOverlap(interval, normalizeTeamEventInterval(doc.data()))
+  ).map(doc => eventBookingId(teamId, doc.id)));
+  for (const booking of bookings) {
     const bookingData = booking.data();
     if (booking.id === eventBookingId(teamId, eventId)) continue;
     const other = {
@@ -85,13 +106,24 @@ async function assertEventAvailability(
     const sameResource = resourceId && bookingData.resourceId === resourceId;
     const sameLocation = location && String(bookingData.location || '').trim().toLocaleLowerCase() === location;
     if (teamIds.includes(teamId) || sameResource || sameLocation) {
+      if (conflicts) {
+        if (!ownedBookings.has(booking.id)) conflicts.push({ date: interval.date, title: 'Team or facility reservation' });
+        continue;
+      }
       throw new EventMutationError('This event conflicts with an existing team or facility reservation.', 409);
     }
   }
-  for (const event of events.docs) {
+  for (const event of events) {
     if (event.id === eventId) continue;
     const other = normalizeTeamEventInterval(event.data());
     if (teamEventIntervalsOverlap(interval, other)) {
+      if (conflicts) {
+        const item = event.data();
+        const managed = item.isTournament || item.eventType === 'tournament' || item.leagueId || item.sourceGameId || item.sourceType === 'league' || item.sourceType === 'tournament' || item.registrationCode;
+        conflicts.push({ date: interval.date, title: String(item.title || 'Team activity'), time: String(item.startTime || ''),
+          ...(managed ? {} : { replaceId: event.id, revision: createHash('sha256').update(teamEventRequestFingerprint(item)).digest('hex') }) });
+        continue;
+      }
       throw new EventMutationError('This squad already has an event during the selected time.', 409);
     }
   }
@@ -141,7 +173,7 @@ export async function POST(req: NextRequest) {
     const requestedEventId = String(body.eventId || '');
     const needsGeneratedId = eventActionNeedsGeneratedId(action);
     const requestedCreateId = action === 'create' && requestedEventId ? requestedEventId : '';
-    const requiresEventId = !needsGeneratedId;
+    const requiresEventId = !needsGeneratedId && action !== 'list-drafts';
     if (!ID_PATTERN.test(teamId) || (requiresEventId && !ID_PATTERN.test(requestedEventId)) || (requestedCreateId && !ID_PATTERN.test(requestedCreateId))) {
       return NextResponse.json({ error: 'Invalid squad or event.' }, { status: 400 });
     }
@@ -154,6 +186,31 @@ export async function POST(req: NextRequest) {
     }
     const access = await teamAccess(teamId, auth.uid, auth.role);
     if (!access?.isMember) return NextResponse.json({ error: 'Squad membership required.' }, { status: 403 });
+    const drafts = adminDb.collection('coachActivityDrafts').doc(auth.uid).collection('teams').doc(teamId).collection('items');
+    if (action === 'list-drafts' || action === 'save-draft') {
+      if (!access.isStaff) return NextResponse.json({ error: 'Squad staff access required.' }, { status: 403 });
+      if (action === 'list-drafts') {
+        const snapshot = await drafts.get();
+        return NextResponse.json({ drafts: snapshot.docs.map(doc => ({ ...doc.data(), id: doc.id })) }, { headers: { 'Cache-Control': 'private, no-store' } });
+      }
+      const event = safeEventData(body.event);
+      if (typeof event.title !== 'string' || !event.title.trim() || event.title.length > 200) throw new EventMutationError('Enter a draft title.');
+      const version = randomBytes(16).toString('hex');
+      await withScheduleMutationLock(async () => {
+        const ref = drafts.doc(requestedEventId);
+        const previous = await ref.get();
+        if ((previous.data()?.version || null) !== (body.version || null)) throw new EventMutationError('This draft changed. Reopen it before saving.', 409);
+        await ref.set({ event, recurrence: body.recurrence || null, version, updatedAt: new Date().toISOString() });
+      });
+      return NextResponse.json({ version });
+    }
+    const options = (body.publishOptions || {}) as ActivityPublishOptions;
+    const draft = options.draft;
+    if (draft && (!ID_PATTERN.test(draft.id) || !ID_PATTERN.test(draft.version))) throw new EventMutationError('Invalid draft.');
+    const draftRef = draft ? drafts.doc(draft.id) : null;
+    async function checkDraft() {
+      if (draftRef && (await draftRef.get()).data()?.version !== draft?.version) throw new EventMutationError('This draft changed or has already been published. Reopen your drafts.', 409);
+    }
     const eventRef = needsGeneratedId
       ? requestedCreateId
         ? access.teamRef.collection('events').doc(requestedCreateId)
@@ -166,7 +223,7 @@ export async function POST(req: NextRequest) {
       ? adminDb.collection('teamEventMutationReceipts').doc(createHash('sha256').update(teamEventRequestFingerprint([teamId, auth.uid, requestId])).digest('hex'))
       : null;
     const requestHash = receiptRef
-      ? createHash('sha256').update(teamEventRequestFingerprint({ action, teamId, eventId: requestedCreateId, event: safeEventData(body.event), ...(action === 'create-series' ? { recurrence: body.recurrence } : {}) })).digest('hex')
+      ? createHash('sha256').update(teamEventRequestFingerprint({ action, teamId, eventId: requestedCreateId, event: safeEventData(body.event), ...(body.publishOptions ? { publishOptions: options } : {}), ...(action === 'create-series' ? { recurrence: body.recurrence } : {}) })).digest('hex')
       : null;
     async function recoverCreateReceipt() {
       if (!receiptRef) return null;
@@ -177,6 +234,7 @@ export async function POST(req: NextRequest) {
       return receipt;
     }
     function writeCreateReceipt(batch: FirebaseFirestore.WriteBatch, eventIds: string[]) {
+      if (draftRef) batch.delete(draftRef);
       if (receiptRef) batch.set(receiptRef, { teamId, userId: receiptUserId, action, requestHash, eventIds, createdAt: new Date().toISOString() });
     }
 
@@ -185,6 +243,7 @@ export async function POST(req: NextRequest) {
       const result = await withScheduleMutationLock(async () => {
         const receipt = await recoverCreateReceipt();
         if (receipt) return { eventIds: receipt.eventIds as string[], replayed: true };
+        await checkDraft();
         const submitted = safeEventData(body.event);
         if (!body.recurrence || typeof body.recurrence !== 'object') throw new EventMutationError('Choose a repeat schedule.');
         const recurrence = body.recurrence as TeamEventRecurrence;
@@ -200,6 +259,15 @@ export async function POST(req: NextRequest) {
         }
         const now = new Date().toISOString();
         const seriesId = randomBytes(16).toString('hex');
+        if (!Array.isArray(options.skipDates || []) || !Array.isArray(options.replace || [])) throw new EventMutationError('Invalid conflict choices.');
+        dates = dates.filter(date => !options.skipDates?.includes(date));
+        if (!dates.length) throw new EventMutationError('Keep at least one occurrence or save a draft.');
+        const baseInterval = normalizeTeamEventInterval(submitted);
+        const records = baseInterval ? await readAvailability(teamId, [...new Set(
+          dates.flatMap(date => teamEventConflictDates({ ...baseInterval, date }))
+        )]) : undefined;
+        const unresolved: ActivityConflict[] = [];
+        const replaceIds = new Set<string>();
         const occurrences = dates.map(date => ({ ref: access.teamRef.collection('events').doc(), date }));
         const prepared = [] as Array<{ ref: FirebaseFirestore.DocumentReference; event: Record<string, unknown>; interval: ReturnType<typeof normalizeTeamEventInterval> }>;
         for (const occurrence of occurrences) {
@@ -215,16 +283,27 @@ export async function POST(req: NextRequest) {
             recurrenceSeriesId: seriesId,
             recurrenceFrequency: recurrence.frequency,
             recurrenceIndex: prepared.length,
-            recurrenceCount: recurrence.count,
+            recurrenceCount: dates.length,
             createdAt: now,
             updatedAt: now,
           };
           assertValidEventInput(event);
-          const interval = await assertEventAvailability(teamId, occurrence.ref.id, event);
-          if (prepared.some(other => teamEventIntervalsOverlap(other.interval, interval))) throw new EventMutationError('Two occurrences overlap. Choose different dates or times.', 409);
+          const conflicts: ActivityConflict[] = [];
+          const interval = await assertEventAvailability(teamId, occurrence.ref.id, event, conflicts, records);
+          for (const conflict of conflicts) {
+            if (conflict.replaceId && options.replace?.some(choice => choice.id === conflict.replaceId && choice.revision === conflict.revision)) replaceIds.add(conflict.replaceId);
+            else unresolved.push(conflict);
+          }
+          if (prepared.some(other => teamEventIntervalsOverlap(other.interval, interval))) unresolved.push({ date: occurrence.date, title: 'Another occurrence in this series' });
           prepared.push({ ref: occurrence.ref, event, interval });
         }
+        if (unresolved.length) throw new ActivityConflictError(unresolved);
+        if (replaceIds.size > 150) throw new EventMutationError('Too many replacements. Publish a smaller series.');
         const batch = adminDb.batch();
+        for (const id of replaceIds) {
+          batch.delete(access.teamRef.collection('events').doc(id));
+          batch.delete(adminDb.collection('scheduleBookings').doc(eventBookingId(teamId, id)));
+        }
         for (const occurrence of prepared) {
           batch.set(occurrence.ref, occurrence.event);
           if (occurrence.interval) {
@@ -292,6 +371,7 @@ export async function POST(req: NextRequest) {
         if (action === 'create') {
           const receipt = await recoverCreateReceipt();
           if (receipt) return { status: 'replayed' as const, eventId: (receipt.eventIds as string[])[0] };
+          await checkDraft();
         }
         const existing = await eventRef.get();
         if (action !== 'create' && !existing.exists) return { status: 'missing' as const };
@@ -460,6 +540,7 @@ export async function POST(req: NextRequest) {
 
     return NextResponse.json({ error: 'Invalid event action.' }, { status: 400 });
   } catch (error) {
+    if (error instanceof ActivityConflictError) return NextResponse.json({ error: error.message, conflicts: error.conflicts }, { status: 409 });
     if (error instanceof RequestBodyError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }

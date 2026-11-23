@@ -2,7 +2,7 @@ import { parseISO, isValid, format } from 'date-fns';
 
 export type HomeEvent = {
   id: string; teamId: string; title: string; date: unknown; endDate?: unknown;
-  startTime?: string; endTime?: string; location?: string; eventType?: string;
+  startTime?: string; endTime?: string | null; location?: string; eventType?: string;
   status?: string; isCancelled?: boolean; cancelled?: boolean; isArchived?: boolean;
   isCompleted?: boolean; allDay?: boolean; isAllDay?: boolean; userRsvps?: Record<string, string>;
 };

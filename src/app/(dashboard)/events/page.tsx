@@ -1,6 +1,9 @@
 
 "use client";
 
+import { ConflictReview } from './ConflictReview';
+import { ActivityConflictError, type ActivityPublishOptions, type ActivityConflict } from '@/lib/activity-publish';
+import { useAuth } from '@/firebase';
 import { ActivityRepeat } from './ActivityRepeat';
 import { buildRecurringEventDates, type TeamEventRecurrence } from '@/lib/team-event-recurrence';
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
@@ -257,7 +260,14 @@ function ScheduleAppBanner({ onOpen }: { onOpen: () => void }) {
 
 
 
+type ActivityDraft = { id: string; version: string; event: TeamEvent; recurrence: TeamEventRecurrence | null };
+
 export default function EventsPage() {
+  const { activeTeam, user, isStaff } = useTeam();
+  return <TeamEventsPage key={JSON.stringify([activeTeam?.id, user?.id, isStaff])} />;
+}
+
+function TeamEventsPage() {
   const { activeTeam, activeTeamEvents, updateRSVP, isSuperAdmin, isStaff, addEvent, createEventSeries, updateEvent, updateEventSeries, deleteEvent, deleteEventSeries, members, createAlert } = useTeam();
   const [filterMode, setFilterMode] = useState<'live' | 'past'>('live');
   const [viewMode, setViewMode] = useState<'list' | 'calendar'>('list');
@@ -280,6 +290,32 @@ export default function EventsPage() {
   const [selectedPracticeTemplateId, setSelectedPracticeTemplateId] = useState<string>('');
   const [repeat, setRepeat] = useState<TeamEventRecurrence | null>(null);
 
+  const auth = useAuth();
+  const [endTime, setEndTime] = useState('');
+  const [drafts, setDrafts] = useState<ActivityDraft[]>([]);
+  const [draft, setDraft] = useState<ActivityPublishOptions['draft']>();
+  const [busy, setBusy] = useState(false);
+  const [priorChoices, setPriorChoices] = useState<ActivityPublishOptions>({});
+  const [conflicts, setConflicts] = useState<ActivityConflict[]>([]);
+  const [draftError, setDraftError] = useState('');
+  const draftRequest = useCallback(async (body: Record<string, unknown>) => {
+    const token = await auth.currentUser?.getIdToken();
+    if (!token) throw new Error('Sign in again to access drafts.');
+    const response = await fetch('/api/teams/events/action', { method: 'POST', headers: {
+      Authorization: 'Bearer ' + token, 'Content-Type': 'application/json',
+    }, body: JSON.stringify({ ...body, teamId: activeTeam?.id }) });
+    const result = await response.json();
+    if (!response.ok) throw new Error(result.error || 'Could not access drafts.');
+    return result;
+  }, [activeTeam?.id, auth]);
+  useEffect(() => {
+    if (!isStaff || !activeTeam?.id) return;
+    let current = true;
+    draftRequest({ action: 'list-drafts' }).then(result => {
+      if (current) setDrafts(result.drafts);
+    }).catch(error => { if (current) setDraftError(error.message); });
+    return () => { current = false; };
+  }, [activeTeam?.id, isStaff, draftRequest]);
   const db = useFirestore();
   const drillsQuery = useMemoFirebase(() => (activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'drills'), orderBy('title', 'asc')) : null, [activeTeam?.id, db]);
   const { data: teamDrills } = useCollection(drillsQuery);
@@ -359,15 +395,17 @@ export default function EventsPage() {
       .sort((a, b) => (calendarEventDate(b.date)?.getTime() || 0) - (calendarEventDate(a.date)?.getTime() || 0));
   }, [activeTeamEvents, filterMode]);
 
-  const handleCreateEvent = async () => { 
-    if (!newTitle.trim() || !newDate) {
+  const handleCreateEvent = async (mode: 'draft' | 'publish' = 'publish', choices?: ActivityPublishOptions) => {
+    if (busy) return;
+    if (!newTitle.trim() || (mode === 'publish' && !newDate)) {
       toast({
         title: 'Activity Incomplete',
-        description: 'Enter an activity title and start date.',
+        description: mode === 'draft' ? 'Enter a title for your draft.' : 'Enter an activity title and start date.',
         variant: 'destructive',
       });
       return;
     }
+    setBusy(true);
     try {
       const payload: any = { 
         title: newTitle.trim(), eventType,
@@ -375,7 +413,7 @@ export default function EventsPage() {
         // Date then ISO serialisation shifts late-day activities across UTC.
         date: newDate,
         endDate: newEndDate || newDate,
-        startTime: newTime, ...(newTime ? {} : { endTime: null }), location: newLocation, description: newDescription,
+        startTime: newTime, endTime: newTime && endTime ? endTime : null, location: newLocation, description: newDescription,
         opponent: eventType === 'game' ? opponent : '',
         assignments: assignments.map(a => ({
           ...a,
@@ -384,15 +422,29 @@ export default function EventsPage() {
         drillIds: eventType === 'practice' ? selectedDrillIds : [],
         practiceTemplateId: eventType === 'practice' && selectedPracticeTemplateId ? selectedPracticeTemplateId : ''
       }; 
+      if (mode === 'draft') {
+        const id = draft?.id || crypto.randomUUID();
+        const result = await draftRequest({ action: 'save-draft', eventId: id, version: draft?.version, event: payload, recurrence: repeat });
+        setDrafts(list => [{ id, version: result.version, event: payload, recurrence: repeat }, ...list.filter(item => item.id !== id)]);
+        setIsCreateOpen(false);
+        resetForm();
+        toast({ title: 'Private draft saved', description: 'Only you can see this activity.' });
+        return;
+      }
+      const publishOptions = (choices || draft) ? { ...choices, ...(draft ? { draft } : {}) } : undefined;
       if (!editingEvent && repeat) buildRecurringEventDates(newDate, repeat.frequency, repeat.count, repeat);
       const seriesPayload = editingSeries ? Object.fromEntries(Object.entries(payload).filter(([key]) => key !== 'date' && key !== 'endDate')) : payload;
       const success = editingEvent
         ? editingSeries ? await updateEventSeries(editingEvent.id, seriesPayload) : await updateEvent(editingEvent.id, payload)
         : repeat
-          ? await createEventSeries(payload, repeat)
-          : await addEvent(payload);
+          ? await createEventSeries(payload, repeat, publishOptions)
+          : await addEvent(payload, publishOptions);
       
       if (success) {
+        setConflicts([]);
+        if (draft) setDrafts(list => list.filter(item => item.id !== draft.id));
+        setIsCreateOpen(false);
+        resetForm();
         // Notify new assignees
         const currentAssignments = editingEvent?.assignments || [];
         for (const task of assignments) {
@@ -403,28 +455,34 @@ export default function EventsPage() {
                 "New Task Assigned",
                 `You have been assigned to: ${task.title} for ${newTitle || payload.title}`,
                 task.assigneeId as any
-              );
+              ).catch(() => toast({ title: 'Activity saved', description: 'An assignment notification could not be delivered.' }));
             }
           }
         }
         
-        setIsCreateOpen(false); 
-        resetForm(); 
       }
     } catch (e) {
+      if (e instanceof ActivityConflictError) {
+        setPriorChoices(choices || {});
+        setConflicts(e.conflicts);
+        return;
+      }
+      setConflicts([]);
       toast({
-        title: "Activity Not Scheduled",
+        title: mode === 'draft' ? 'Draft could not be saved' : "Activity Not Scheduled",
         description: eventMutationFailureMessage(e),
         variant: "destructive",
       });
-    }
+    } finally { setBusy(false); }
   };
 
   const resetForm = () => {
+    setDraft(undefined); setEndTime(''); setConflicts([]);
     setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); setNewLocation(''); setNewDescription(''); setEventType('game'); setOpponent(''); setEditingEvent(null); setEditingSeries(false); setAssignments([]); setSelectedDrillIds([]); setSelectedPracticeTemplateId(''); setRepeat(null);
   };
 
   const handleEdit = (event: TeamEvent) => { 
+    setDraft(undefined);
     setEditingSeries(false);
     setEditingEvent(event); 
     setNewTitle(event.title); 
@@ -434,6 +492,7 @@ export default function EventsPage() {
     setNewDate(startDate ? format(startDate, 'yyyy-MM-dd') : '');
     setNewEndDate(endDate ? format(endDate, 'yyyy-MM-dd') : '');
     setNewTime(event.startTime || '');
+    setEndTime(event.endTime || '');
     setNewLocation(event.location); 
     setNewDescription(event.description); 
     setAssignments(event.assignments || []);
@@ -462,6 +521,7 @@ export default function EventsPage() {
     setNewDate(startDate ? format(startDate, 'yyyy-MM-dd') : '');
     setNewEndDate(endDate ? format(endDate, 'yyyy-MM-dd') : '');
     setNewTime(event.startTime || '');
+    setEndTime(event.endTime || '');
     setNewLocation(event.location);
     setNewDescription(event.description);
     setAssignments(event.assignments || []);
@@ -549,7 +609,17 @@ export default function EventsPage() {
         </div>
       </div>
 
-      <Dialog open={isCreateOpen} onOpenChange={(o) => { if(!o) resetForm(); setIsCreateOpen(o); }}>
+      {isStaff && (drafts.length > 0 || draftError) && <section className="space-y-2 rounded-xl border bg-background p-4">
+        <h2 className="font-semibold">My drafts <span className="text-sm font-normal text-muted-foreground">· Only visible to you</span></h2>
+        {draftError && <p role="status">{draftError}</p>}
+        {drafts.map(item => <button key={item.id} className="flex w-full items-center gap-3 rounded-lg border p-3 text-left" onClick={() => {
+          handleEdit(item.event);
+          setEditingEvent(null);
+          setDraft({ id: item.id, version: item.version });
+          setRepeat(item.recurrence);
+        }}><Badge variant="secondary">Draft</Badge><span>{item.event.title}</span></button>)}
+      </section>}
+      <Dialog open={isCreateOpen} onOpenChange={(o) => { if (busy) return; if(!o) resetForm(); setIsCreateOpen(o); }}>
         <DialogContent data-testid="launch-activity-form" hideClose className="w-[calc(100vw-1rem)] max-w-6xl sm:max-w-6xl h-[calc(100dvh-1rem)] sm:h-auto max-h-[calc(100dvh-1rem)] p-0 rounded-3xl sm:rounded-[2.5rem] border-none shadow-2xl bg-white overflow-hidden flex flex-col">
           <DialogTitle className="sr-only">Schedule New Team Activity</DialogTitle>
           <DialogDescription className="sr-only">
@@ -563,7 +633,7 @@ export default function EventsPage() {
           <div data-testid="launch-activity-scroll-region" className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
           <div className="flex flex-col xl:flex-row">
             <div className="w-full min-w-0 xl:w-5/12 bg-muted/30 p-4 sm:p-6 xl:p-10 space-y-4 sm:space-y-6 xl:border-r">
-              <DialogHeader><DialogTitle className="text-2xl sm:text-3xl font-black uppercase tracking-tight pr-10">{editingEvent ? editingSeries ? "Update Series" : "Update" : "Launch"} Activity</DialogTitle></DialogHeader>
+              <DialogHeader><DialogTitle className="text-2xl sm:text-3xl font-black uppercase tracking-tight pr-10">{editingEvent ? editingSeries ? "Edit series" : "Edit activity" : draft ? "Edit draft" : "New activity"}</DialogTitle>{!editingEvent && <p className="text-sm text-muted-foreground">Save a private draft, or publish to the team calendar.</p>}</DialogHeader>
               <div className="space-y-4 sm:space-y-6">
                 <div className="space-y-1.5">
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Activity Type</Label>
@@ -637,9 +707,13 @@ export default function EventsPage() {
                 <div className="space-y-1.5">
                   <Label htmlFor="activity-start-time" className="text-[10px] font-black uppercase tracking-widest ml-1">Start time (optional)</Label>
                   <div className="flex items-center gap-2">
-                    <Input id="activity-start-time" type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="h-12 min-w-0 max-w-full appearance-none rounded-xl border-2 font-black px-4 [&::-webkit-date-and-time-value]:min-w-0 [&::-webkit-date-and-time-value]:text-left" />
-                    <Button type="button" variant={newTime ? 'outline' : 'secondary'} aria-pressed={!newTime} onClick={() => setNewTime('')}>TBD</Button>
+                    <Input id="activity-start-time" type="time" value={newTime} onChange={e => { setNewTime(e.target.value); if (!e.target.value) setEndTime(''); }} className="h-12 min-w-0 max-w-full appearance-none rounded-xl border-2 font-black px-4 [&::-webkit-date-and-time-value]:min-w-0 [&::-webkit-date-and-time-value]:text-left" />
+                    <Button type="button" variant={newTime ? 'outline' : 'secondary'} aria-pressed={!newTime} onClick={() => { setNewTime(''); setEndTime(''); }}>TBD</Button>
                   </div>
+                </div>
+                <div className="space-y-1.5">
+                  <Label htmlFor="activity-end-time">End time (optional)</Label>
+                  <Input type="time" id="activity-end-time" disabled={!newTime} value={endTime} onChange={e => setEndTime(e.target.value)} className="h-12 rounded-xl" />
                 </div>
                 {!editingEvent && <ActivityRepeat start={newDate} repeat={repeat} onChange={setRepeat} />}
               </div>
@@ -778,13 +852,18 @@ export default function EventsPage() {
             </div>
           </div>
           </div>
-          <div data-testid="launch-activity-actions" className="p-3 sm:p-6 bg-background border-t shrink-0 flex items-center justify-end gap-3 sm:gap-4 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
-            <Button variant="outline" className="flex-1 sm:flex-none rounded-xl h-12 font-black uppercase text-[10px] border-2" onClick={() => setIsCreateOpen(false)}>Cancel</Button>
-            <Button className="flex-1 sm:flex-none h-12 px-4 sm:px-10 rounded-xl font-black uppercase text-[10px] shadow-lg shadow-primary/20" onClick={handleCreateEvent}>Deploy Activity</Button>
+          <div data-testid="launch-activity-actions" className="p-3 sm:p-6 bg-background border-t shrink-0 flex items-center justify-end flex-wrap gap-2 sm:gap-3 pb-[max(0.75rem,env(safe-area-inset-bottom))]">
+            <Button variant="outline" className="flex-1 sm:flex-none rounded-xl h-12 font-black uppercase text-[10px] border-2" disabled={busy} onClick={() => setIsCreateOpen(false)}>Cancel</Button>
+            {!editingEvent && <Button variant="outline" title="Only you can see a saved draft" disabled={busy} onClick={() => handleCreateEvent('draft')} className="h-12 rounded-xl">Save draft</Button>}
+            <Button disabled={busy} className="flex-1 sm:flex-none h-12 px-4 sm:px-10 rounded-xl font-black uppercase text-[10px] shadow-lg shadow-primary/20" onClick={() => handleCreateEvent()}>{busy ? "Saving…" : editingEvent ? "Save changes" : "Publish"}</Button>
           </div>
         </DialogContent>
       </Dialog>
 
+      {conflicts.length > 0 && <ConflictReview key={JSON.stringify(conflicts)} conflicts={conflicts} busy={busy} onClose={() => setConflicts([])} onPublish={choices => handleCreateEvent('publish', {
+        skipDates: [...new Set([...(priorChoices.skipDates || []), ...(choices.skipDates || [])])],
+        replace: [...(priorChoices.replace || []), ...(choices.replace || [])],
+      })} />}
       {/* ── CALENDAR VIEW ──────────────────────────────── */}
       {viewMode === 'calendar' && (() => {
         const monthStart = startOfMonth(calendarDate);

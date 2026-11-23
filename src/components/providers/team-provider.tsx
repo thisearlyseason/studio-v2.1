@@ -1,4 +1,5 @@
 "use client";
+import { ActivityConflictError, type ActivityPublishOptions } from '@/lib/activity-publish';
 import type { TeamEventRecurrence, TeamEventRecurrenceFrequency } from '@/lib/team-event-recurrence';
 import { createTeamEventRequestRegistry } from '@/lib/team-event-request';
 
@@ -361,6 +362,7 @@ export type TeamEvent = {
   date: string;
   endDate?: string;
   startTime: string;
+  endTime?: string | null;
   location: string;
   description: string;
   eventType: string;
@@ -930,8 +932,8 @@ interface TeamContextType {
   createTeamDocument: (data: any) => Promise<void>;
   updateTeamDocument: (docId: string, data: any) => Promise<void>;
   deleteTeamDocument: (docId: string, expectedVersion?: number, expectedTextHash?: string) => Promise<void>;
-  addEvent: (data: any) => Promise<boolean>;
-  createEventSeries: (data: any, recurrence: TeamEventRecurrence) => Promise<boolean>;
+  addEvent: (data: any, publishOptions?: ActivityPublishOptions) => Promise<boolean>;
+  createEventSeries: (data: any, recurrence: TeamEventRecurrence, publishOptions?: ActivityPublishOptions) => Promise<boolean>;
   updateEvent: (id: string, data: any) => Promise<boolean>;
   updateEventSeries: (id: string, data: any) => Promise<boolean>;
   deleteEvent: (id: string) => Promise<void>;
@@ -2322,7 +2324,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     if (!response.ok) throw new Error(payload.error || 'Unable to archive this waiver.');
   }, [activeTeam?.id, firebaseAuth, isStaff]);
 
-  const addEvent = useCallback(async (data: any) => { 
+  const addEvent = useCallback(async (data: any, publishOptions?: ActivityPublishOptions) => {
     if (!isStaff) {
       toast({ title: "Scheduling Restricted", description: "Only staff members can coordinate team calendar events.", variant: "destructive" });
       return false;
@@ -2331,11 +2333,11 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       if (!firebaseAuth) throw new Error('Your session is unavailable. Refresh and try again.');
       const token = await getAuthToken(firebaseAuth);
       if (!token) throw new Error('Your session has expired. Sign in again.');
-      const request = eventRequestRegistry.current.acquire({ action: 'create', teamId: activeTeam.id, uid: firebaseAuth.currentUser?.uid, event: clean(data) });
+      const request = eventRequestRegistry.current.acquire({ action: 'create', teamId: activeTeam.id, uid: firebaseAuth.currentUser?.uid, event: clean(data), ...(publishOptions ? { publishOptions } : {}) });
       const response = await fetch('/api/teams/events/action', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ action: 'create', teamId: activeTeam.id, requestId: request.requestId, event: clean(data) }),
+        body: JSON.stringify({ action: 'create', teamId: activeTeam.id, requestId: request.requestId, event: clean(data), ...(publishOptions ? { publishOptions } : {}) }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Unable to create this event.');
@@ -2384,17 +2386,18 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return false;
   }, [db, activeTeam, isStaff, members, firebaseAuth]);
 
-  const createEventSeries = useCallback(async (data: any, recurrence: TeamEventRecurrence) => {
+  const createEventSeries = useCallback(async (data: any, recurrence: TeamEventRecurrence, publishOptions?: ActivityPublishOptions) => {
     if (!isStaff || !activeTeam?.id || !firebaseAuth) return false;
     const token = await getAuthToken(firebaseAuth);
     if (!token) throw new Error('Your session has expired. Sign in again.');
-    const request = eventRequestRegistry.current.acquire({ action: 'create-series', teamId: activeTeam.id, uid: firebaseAuth.currentUser?.uid, event: clean(data), recurrence });
+    const request = eventRequestRegistry.current.acquire({ action: 'create-series', teamId: activeTeam.id, uid: firebaseAuth.currentUser?.uid, event: clean(data), ...(publishOptions ? { publishOptions } : {}), recurrence });
     const response = await fetch('/api/teams/events/action', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-      body: JSON.stringify({ action: 'create-series', teamId: activeTeam.id, requestId: request.requestId, event: clean(data), recurrence }),
+      body: JSON.stringify({ action: 'create-series', teamId: activeTeam.id, requestId: request.requestId, event: clean(data), ...(publishOptions ? { publishOptions } : {}), recurrence }),
     });
     const payload = await response.json().catch(() => ({}));
+    if (response.status === 409 && Array.isArray(payload.conflicts)) throw new ActivityConflictError(payload.conflicts);
     if (!response.ok) throw new Error(payload.error || 'Unable to create this recurring event.');
     eventRequestRegistry.current.complete(request);
     return true;
