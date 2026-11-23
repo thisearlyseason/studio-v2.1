@@ -6,6 +6,7 @@ import {getTeamAuthority,isParentMember} from '@/lib/server-team-access';
 import {isTeamModuleEnabled,visibleTeamModules} from '@/lib/team-module-visibility';
 import {enforceUserRateLimit} from '@/lib/server-request-guards';
 import {LibraryInputError,LIBRARY_FILE_LIMIT,LIBRARY_STARTER_LIMIT,readLibraryBytes,sanitizeLibraryFilename,validateLibraryBytes} from '@/lib/library-policy';
+import {readJsonBodyWithLimit,RequestBodyError} from '@/lib/bounded-json';
 import {createHash} from 'node:crypto';
 
 const validId=(value:string|null):value is string=>!!value&&/^[A-Za-z0-9_-]{1,200}$/.test(value);
@@ -36,7 +37,7 @@ async function context(req:NextRequest,staff=false){
   return{auth,params,teamId,authority};
 }
 function failure(error:unknown){
-  if(error instanceof LibraryInputError)return NextResponse.json({error:error.message},{status:error.status,headers:privateHeaders});
+  if(error instanceof LibraryInputError || error instanceof RequestBodyError)return NextResponse.json({error:error.message},{status:error.status,headers:privateHeaders});
   console.error('[library]',error instanceof Error?error.message:'unknown error');
   return NextResponse.json({error:'Library operation failed.'},{status:500,headers:privateHeaders});
 }
@@ -99,9 +100,21 @@ export async function PATCH(req:NextRequest) {
     if (ctx instanceof NextResponse) return ctx;
     const {params, authority, teamId} = ctx;
     const fileId = params.get('fileId');
-    const displayName = params.get('displayName')?.trim();
     if (!validId(fileId)) throw new LibraryInputError('Invalid file.');
-    if (!displayName || displayName.length > 120) throw new LibraryInputError('Enter a document name of 1 to 120 characters.');
+    const input = req.body ? await readJsonBodyWithLimit<Record<string, unknown>>(req, 8192) : {displayName:params.get('displayName')};
+    if (!input || typeof input !== 'object' || Array.isArray(input)) throw new LibraryInputError('Invalid document details.');
+    const changes: {displayName?: string; description?: string} = {};
+    if ('displayName' in input) {
+      if (typeof input.displayName !== 'string' || !input.displayName.trim() || input.displayName.trim().length > 120)
+        throw new LibraryInputError('Enter a document name of 1 to 120 characters.');
+      changes.displayName = input.displayName.trim();
+    }
+    if ('description' in input) {
+      if (typeof input.description !== 'string' || input.description.length > 1000)
+        throw new LibraryInputError('Enter a description of up to 1,000 characters.');
+      changes.description = input.description.trim();
+    }
+    if (!Object.keys(changes).length) throw new LibraryInputError('Choose a name or description to update.');
     const ref = authority.teamRef.collection('files').doc(fileId);
     await adminDb.runTransaction(async transaction => {
       const snapshot = await transaction.get(ref);
@@ -109,9 +122,9 @@ export async function PATCH(req:NextRequest) {
       if (!file) throw new LibraryInputError('File unavailable.',404);
       if (file.storagePath !== objectPath(teamId,fileId) && !(typeof file.url === 'string' && /^data:(application\/pdf|image\/(png|jpeg|webp|gif));base64,/i.test(file.url)))
         throw new LibraryInputError('Only uploaded Library documents and images can be renamed.');
-      transaction.update(ref,{displayName});
+      transaction.update(ref,changes);
     });
-    return NextResponse.json({displayName},{headers:privateHeaders});
+    return NextResponse.json(changes,{headers:privateHeaders});
   } catch (error) { return failure(error); }
 }
 

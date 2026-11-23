@@ -67,6 +67,13 @@ test('Library rename changes only the display name and requires staff on the own
     assert.equal((await rename(owner,'  ')).status,400);
     assert.equal((await rename(owner,'Practice schedule')).status,200);
     assert.deepEqual(records.get(key),{...before,displayName:'Practice schedule'});
+    const update=(app,edits)=>app.route.PATCH(new Request('http://localhost/?teamId=a&fileId='+fileId,{method:'PATCH',headers:{'Content-Type':'application/json'},body:JSON.stringify(edits)}));
+    assert.equal((await update(member,{description:'Unauthorized'})).status,403);
+    assert.equal((await update(owner,{displayName:'Weekly practice',description:'Bring water.'})).status,200);
+    assert.deepEqual(records.get(key),{...before,displayName:'Weekly practice',description:'Bring water.'});
+    assert.equal((await update(owner,{description:'x'.repeat(1001)})).status,400);
+    assert.equal((await update(owner,{description:''})).status,200);
+    assert.deepEqual(records.get(key),{...before,displayName:'Weekly practice',description:''});
     const downloaded=await member.route.GET(new Request('http://localhost/?teamId=a&fileId='+fileId));
     assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()),bytes);
   } finally { owner.dispose(); member.dispose(); }
