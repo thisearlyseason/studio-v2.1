@@ -637,11 +637,7 @@ function CalendarSubscriptionDialog() {
       if (feedUrl) {
         setUrl(feedUrl);
         setFeedType(type);
-        navigator.clipboard.writeText(feedUrl);
-        toast({ 
-          title: "Secure URL Copied", 
-          description: "The tactical feed link is now on your clipboard. Add it to your device's calendar app." 
-        });
+        toast({ title: 'Calendar link ready', description: 'Choose your calendar app below, or copy the link.' });
       } else if (action === 'revoke') {
         setUrl(null);
         setFeedType(null);
@@ -649,8 +645,8 @@ function CalendarSubscriptionDialog() {
       }
     } catch (e) {
       toast({ 
-        title: "Deployment Failure", 
-        description: "Failed to generate secure calendar token.", 
+        title: "Calendar subscription failed",
+        description: e instanceof Error ? e.message : 'Please try again.',
         variant: "destructive" 
       });
     } finally {
@@ -772,13 +768,20 @@ function CalendarSubscriptionDialog() {
                 {/* Manual fallback */}
                 <div className="pt-2 border-t border-dashed">
                   <p className="text-[9px] font-black uppercase text-muted-foreground mb-2">Or copy URL manually</p>
-                  <div
-                    onClick={() => { navigator.clipboard.writeText(url); toast({ title: "Copied!" }); }}
+                  <button type="button" onClick={async () => {
+                      try {
+                        await navigator.clipboard.writeText(url);
+                        toast({ title: 'Link copied' });
+                      } catch {
+                        toast({ title: 'Select the link below and copy it manually.' });
+                      }
+                    }}
                     className="flex items-center gap-2 p-3 bg-muted/30 rounded-xl border cursor-pointer hover:bg-muted/50 transition-colors"
                   >
-                    <p className="text-[9px] font-mono break-all opacity-60 leading-relaxed flex-1">{url}</p>
+                    <span>Copy calendar link</span>
                     <Copy className="h-3 w-3 shrink-0 text-muted-foreground" />
-                  </div>
+                  </button>
+                  <input aria-label="Calendar subscription URL" readOnly value={url} onFocus={event => event.target.select()} className="mt-2 w-full rounded-lg border px-2 py-2 text-xs" />
                 </div>
 
                 <button
