@@ -306,7 +306,7 @@ function EventItem({ event, teams, onClick }: { event: TeamEvent, teams: any[], 
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2 mb-1">
             <Badge variant="outline" className="text-[7px] font-black uppercase px-1.5 h-4 border-none bg-muted/50">{event.eventType}</Badge>
-            <span className="text-xs font-black text-primary uppercase ml-auto">{event.startTime}</span>
+            <span className="ml-auto text-base font-bold tabular-nums text-foreground">{formatActivityTime(event.startTime)}</span>
             {event.isLeagueGame && (
               <Badge className={cn("text-[7px] font-black uppercase px-1.5 h-4 border-none", event.isHome ? "bg-primary text-white" : "bg-black text-white")}>
                 {event.isHome ? 'HOME' : 'AWAY'}
