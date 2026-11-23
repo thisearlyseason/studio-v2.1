@@ -3663,11 +3663,12 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
 
   const getCalendarFeedUrl = useCallback(async (type: 'user' | 'team' | 'multi', targetId?: string, teamIds?: string[], action: 'create' | 'rotate' | 'revoke' = 'create') => {
-    if (!firebaseUser) return null;
+    if (!firebaseUser) throw new Error('Sign in again to subscribe.');
     const finalTargetId = targetId || (type === 'team' ? activeTeam?.id : firebaseUser?.uid);
-    if (type !== 'multi' && !finalTargetId) return null;
+    if (type !== 'multi' && !finalTargetId) throw new Error('Select a squad before subscribing.');
     if (type === 'multi' && (!teamIds || teamIds.length === 0)) return null;
     const token = await getAuthToken(firebaseAuth);
+    if (!token) throw new Error('Sign in again to subscribe.');
     const response = await fetch('/api/calendar/feed', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', ...authHeader(token) },

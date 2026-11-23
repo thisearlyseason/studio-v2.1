@@ -95,3 +95,11 @@ test('public calendar response strips opaque subscription tokens and action URLs
   assert.match(flattened, /\[redacted-url\]/);
   assert.match(flattened, /\[redacted\]/);
 });
+
+test('parent roster lookup is indexed for both squad subscription and household discovery', async () => {
+  const { readFile } = await import('node:fs/promises');
+  const config = JSON.parse(await readFile(new URL('../firestore.indexes.json', import.meta.url), 'utf8'));
+  const field = config.fieldOverrides.find(entry => entry.collectionGroup === 'members' && entry.fieldPath === 'parentId');
+  assert.deepEqual(field.indexes.filter(index => index.order === 'ASCENDING').map(index => index.queryScope).sort(),
+    ['COLLECTION', 'COLLECTION_GROUP']);
+});
