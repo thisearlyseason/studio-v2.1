@@ -16,7 +16,14 @@ export const TEAM_MODULE_DEFINITIONS = Object.freeze([
 
 export type TeamModuleKey = (typeof TEAM_MODULE_DEFINITIONS)[number]['key'];
 export type LegacyTeamModuleKey = 'roster' | 'playbook' | 'tacticalChat' | 'volunteer' | 'library';
-export type TeamModuleFeatures = Partial<Record<TeamModuleKey | LegacyTeamModuleKey, boolean>>;
+export type ModuleAudience = 'player' | 'parent';
+type ModuleFlags = Partial<Record<TeamModuleKey | LegacyTeamModuleKey, boolean>>;
+export type TeamModuleFeatures = ModuleFlags & { byRole?: Partial<Record<ModuleAudience, ModuleFlags>> };
+
+export function visibleTeamModules(features: TeamModuleFeatures | undefined, isStaff: boolean, isParent: boolean): ModuleFlags | undefined {
+  if (isStaff || !features) return undefined;
+  return { ...features, ...features.byRole?.[isParent ? 'parent' : 'player'] };
+}
 
 export const LEGACY_TEAM_MODULE_DEFINITIONS = Object.freeze([
   { key: 'roster', name: 'Roster', routes: ['/roster'] },

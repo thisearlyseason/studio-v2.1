@@ -1,5 +1,5 @@
 "use client";
-import { isTeamModuleRouteDisabled } from '@/lib/team-module-visibility';
+import { visibleTeamModules, isTeamModuleRouteDisabled } from '@/lib/team-module-visibility';
 import { useTeam } from '@/components/providers/team-provider';
 import { Radio, CalendarDays, Users, Dumbbell, Medal, Trophy, HandHelping, PiggyBank, MessageCircle, FolderClosed, PenTool, MapPin, Package } from 'lucide-react';
 import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
@@ -28,6 +28,7 @@ export const adminTabs = [
 
 export function useTeamNavigation() {
   const { activeTeam, user, isParent, isPlayer, isStaff, isSuperAdmin, isSchoolMode, isPrimaryClubAuthority, hasFeature, isPro } = useTeam();
+  const moduleFlags = visibleTeamModules(activeTeam?.features, isStaff, isParent);
   const canManageFacilities = isSuperAdmin || !activeTeam || activeTeam.ownerUserId === user?.id;
   const canAccessCoachesCorner = hasCoachesCornerEntitlement(activeTeam, isSuperAdmin);
   const isAdminTabLocked = (tab: {href: string; pro: boolean}) => tab.href === '/coaches-corner' ? !canAccessCoachesCorner : tab.pro && !isPro;
@@ -57,7 +58,7 @@ export function useTeamNavigation() {
         isPrimaryClubAuthority,
       }, isSuperAdmin ? 'superadmin' : undefined).allowed) return false;
 
-      if (isTeamModuleRouteDisabled(tab.href, activeTeam?.features)) return false;
+      if (isTeamModuleRouteDisabled(tab.href, moduleFlags)) return false;
 
       // Feed is filtered by plan/feature
       if (tab.name === 'Feed') return hasFeature?.('live_feed_read') && !(isParent && activeTeam?.parentFeedEnabled === false);
@@ -83,9 +84,9 @@ export function useTeamNavigation() {
       return tab.name === 'Facilities' || tab.name === 'Equipment';
     }
     if (tab.name === 'Facilities' && !canManageFacilities) return false;
-    if (isTeamModuleRouteDisabled(tab.href, activeTeam?.features)) return false;
+    if (isTeamModuleRouteDisabled(tab.href, moduleFlags)) return false;
     return true;
   });
 
-  return { filteredCoordTabs, filteredAdminTabs, isAdminTabLocked };
+  return { moduleFlags, filteredCoordTabs, filteredAdminTabs, isAdminTabLocked };
 }
