@@ -463,9 +463,9 @@ function TournamentDeploymentWizard({ isOpen, onOpenChange, onComplete, onArchiv
   const { data: documents } = useCollection<TeamDocument>(docsQuery);
 
   const leaguesQuery = useMemoFirebase(() => {
-    if (!db || !user?.id) return null;
-    return query(collection(db, 'leagues'), where('creatorId', '==', user.id));
-  }, [db, user?.id]);
+    if (!db || !user?.id || !activeTeam?.id) return null;
+    return query(collection(db, 'leagues'), where('creatorId', '==', user.id), where('tenantId', '==', activeTeam.id));
+  }, [db, user?.id, activeTeam?.id]);
   const { data: leagues } = useCollection<League>(leaguesQuery);
 
   const initDailyWindows = () => {

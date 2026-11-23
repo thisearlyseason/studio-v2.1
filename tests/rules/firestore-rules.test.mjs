@@ -40,6 +40,30 @@ test('Tournament lifecycle, schedule, referee, and scoring fields are server-onl
   await assertFails(setDoc(doc(owner, 'teams/team-a/events/lifecycle-cup/private/scoring'), { scorekeeperCodeHash: 'forged' }));
 });
 
+test('a shared owner can select either team while a member can only read their own team records', async () => {
+  const collections = ['events', 'games', 'equipment'];
+  await testEnv.withSecurityRulesDisabled(async context => {
+    const db = context.firestore();
+    await setDoc(doc(db, 'teams/second-squad'), { ownerUserId: 'owner' });
+    for (const teamId of ['team-a', 'second-squad']) {
+      for (const name of collections) {
+        await setDoc(doc(db, 'teams', teamId, name, 'same-id'), { teamId });
+      }
+    }
+  });
+  const owner = authenticatedDb('owner');
+  const member = authenticatedDb('member');
+  for (const name of collections) {
+    for (const teamId of ['team-a', 'second-squad']) {
+      const snapshot = await assertSucceeds(getDocs(collection(owner, 'teams', teamId, name)));
+      assert.equal(snapshot.docs.find(record => record.id === 'same-id')?.data().teamId, teamId);
+    }
+    await assertSucceeds(getDoc(doc(member, 'teams/team-a', name, 'same-id')));
+    await assertFails(getDoc(doc(member, 'teams/second-squad', name, 'same-id')));
+    await assertFails(getDocs(collection(member, 'teams/second-squad', name)));
+  }
+});
+
 test('League member roots, raw spectator projections, score records, and game generation floor are server-only', async () => {
   const member = authenticatedDb('member');
   const owner = authenticatedDb('owner');

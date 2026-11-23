@@ -813,10 +813,10 @@ function MasterSquadWall({ consolidatedTeams }: { consolidatedTeams: { team: Tea
 // --- Family Page ---
 export default function FamilyPage() {
   const { 
-    myChildren, 
+    myChildren: linkedChildren,
+    teams: switcherTeams,
     registerChild, 
     joinTeamWithCode, 
-    teams, 
     householdEvents, 
     householdGames,
     householdBalance, 
@@ -833,17 +833,12 @@ export default function FamilyPage() {
   const [isAddOpen, setIsAddOpen] = useState(false);
   const [isProcessing, setIsProcessing] = useState(false);
   const [newChild, setNewChild] = useState({ firstName: '', lastName: '', dob: '', teamCode: '', email: '' });
-  const [childTeamMetadata, setChildTeamMetadata] = useState<Team[]>([]);
-  const familyTeams = useMemo(() => {
-    const merged = new Map((teams || []).map(team => [team.id, team]));
-    for (const team of childTeamMetadata) {
-      merged.set(team.id, { ...(merged.get(team.id) || {}), ...team } as Team);
-    }
-    return [...merged.values()];
-  }, [teams, childTeamMetadata]);
-  const childTeamKey = useMemo(() => [...new Set(
-    (myChildren || []).flatMap(child => child.joinedTeamIds || []),
-  )].sort().join('|'), [myChildren]);
+  const familyTeams = useMemo(() => activeTeam ? [activeTeam] : [], [activeTeam]);
+  const myChildren = useMemo(() => linkedChildren.flatMap(child => {
+    if (!child.joinedTeamIds?.length) return [child];
+    if (!activeTeam || !child.joinedTeamIds.includes(activeTeam.id)) return [];
+    return [{ ...child, joinedTeamIds: [activeTeam.id] }];
+  }), [linkedChildren, activeTeam]);
   const pendingReturnPath = useMemo(() => {
     const value = searchParams.get('returnTo') || '';
     return value.startsWith('/teams/join?') ? value : '';
@@ -853,39 +848,10 @@ export default function FamilyPage() {
     if (searchParams.get('addChild') === '1') setIsAddOpen(true);
   }, [searchParams]);
 
-  useEffect(() => {
-    if (!auth || !isParent || !user?.id) {
-      setChildTeamMetadata([]);
-      return;
-    }
-    const controller = new AbortController();
-    void (async () => {
-      try {
-        const token = await getAuthToken(auth);
-        const response = await fetch('/api/family/teams', {
-          headers: authHeader(token),
-          signal: controller.signal,
-        });
-        const payload = await response.json().catch(() => ({}));
-        if (!response.ok) throw new Error(payload.error || 'Unable to load family squads.');
-        if (!controller.signal.aborted) {
-          setChildTeamMetadata(Array.isArray(payload.teams) ? payload.teams : []);
-        }
-      } catch (error) {
-        if (!controller.signal.aborted) console.error('Family squad metadata failed to load.', error);
-      }
-    })();
-    return () => controller.abort();
-  }, [auth, isParent, user?.id, childTeamKey]);
-
-  // Single collectionGroup query is safe — the write side now always stamps
-  // userId: firebaseUser.uid on every signature doc (both direct and parent-guardian),
-  // so one listener is enough. Two concurrent collectionGroup listeners on the same
-  // collection trigger a Firestore SDK internal assertion (ca9/b815).
   const sigsQuery = useMemoFirebase(() => {
-    if (!db || !user?.id) return null;
-    return query(collectionGroup(db, 'signatures'), where('userId', '==', user.id));
-  }, [db, user?.id]);
+    if (!db || !user?.id || !activeTeam?.id) return null;
+    return query(collectionGroup(db, 'signatures'), where('userId', '==', user.id), where('teamId', '==', activeTeam.id));
+  }, [db, user?.id, activeTeam?.id]);
   const { data: signatures } = useCollection<any>(sigsQuery);
 
   const [pendingWaivers, setPendingWaivers] = useState<Array<{docId: string; title: string; content: string; version: number; textHash?: string; required: boolean; teamId: string; teamName: string; childId: string; childName: string}>>([]);
@@ -1118,17 +1084,14 @@ export default function FamilyPage() {
        id: g.id || `game_${g.date}_${g.time || g.startTime}`
     }));
 
-    const householdTeamIds = Array.from(new Set([
-      ...(myChildren || []).flatMap(c => c.joinedTeamIds || []),
-      ...familyTeams.map(t => t.id)
-    ]));
+    const householdTeamIds = new Set(linkedChildren.flatMap(child => child.joinedTeamIds || []));
 
     const expandedTournamentMatches: any[] = [];
     rawEvents.forEach(e => {
        if (e.isTournament && e.tournamentGames && e.tournamentGames.length > 0) {
          e.tournamentGames.forEach((game: any, idx: number) => {
            if (!game.date) return;
-           const isHouseholdGame = householdTeamIds.includes(game.team1Id) || householdTeamIds.includes(game.team2Id);
+           const isHouseholdGame = householdTeamIds.has(game.team1Id) || householdTeamIds.has(game.team2Id);
            if (!isHouseholdGame) return;
 
            const isTBD = (game.team1 || '').toLowerCase().includes('tbd') || (game.team2 || '').toLowerCase().includes('tbd');
@@ -1168,7 +1131,7 @@ export default function FamilyPage() {
 
     const uniqueEventsMap = new Map<string, any>();
     filteredEvents.forEach(e => {
-       if (!uniqueEventsMap.has(e.id)) uniqueEventsMap.set(e.id, e);
+       uniqueEventsMap.set(`${e.teamId}:${e.id}`, e);
     });
 
     return Array.from(uniqueEventsMap.values())
@@ -1177,7 +1140,7 @@ export default function FamilyPage() {
           const dB = toDateObj(b.date || b.startTime);
          return (dA?.getTime() || 0) - (dB?.getTime() || 0);
       });
-  }, [householdEvents, householdGames, myChildren, familyTeams]);
+  }, [householdEvents, householdGames, linkedChildren, familyTeams]);
 
   const childItineraries = useMemo(() => {
     const rawEvents = householdEvents || [];
@@ -1195,7 +1158,7 @@ export default function FamilyPage() {
        } catch { return null; }
     };
 
-    return (myChildren || []).map(child => {
+    return (linkedChildren || []).map(child => {
       // Only look at this child's own teams — never the other sibling's teams
       const childTeamIds = new Set(child.joinedTeamIds || []);
       if (childTeamIds.size === 0) return { child, events: [] };
@@ -1204,8 +1167,9 @@ export default function FamilyPage() {
       const childEvents: any[] = [];
 
       const addEvent = (e: any) => {
-        if (!seen.has(e.id)) {
-          seen.add(e.id);
+        const key = `${e.teamId}:${e.id}`;
+        if (!seen.has(key)) {
+          seen.add(key);
           childEvents.push(e);
         }
       };
@@ -1253,7 +1217,7 @@ export default function FamilyPage() {
       // 2. League games from householdGames
       rawGames.forEach(g => {
         const participants = g.matchTeamIds || [];
-        if (!participants.some((tid: string) => childTeamIds.has(tid))) return;
+        if (!childTeamIds.has(g.teamId) && !participants.some((tid: string) => childTeamIds.has(tid))) return;
         const d = toDateObj(g.date);
         if (!d || !isValid(d)) return;
         if (!isSameDay(d, today) && !isAfter(d, today)) return;
@@ -1269,7 +1233,7 @@ export default function FamilyPage() {
 
       return { child, events: childEvents.slice(0, 4) };
     });
-  }, [myChildren, householdEvents, householdGames]);
+  }, [linkedChildren, householdEvents, householdGames]);
 
   if (!isParent) {
     return <AccessRestricted type="role" title="Family Access Required" description="This page is available to parents and guardians." />;
@@ -1561,7 +1525,7 @@ export default function FamilyPage() {
               <h2 className="text-xl font-black uppercase tracking-tight text-foreground">Family Schedule</h2>
             </div>
             <Button variant="ghost" className="text-[10px] font-black uppercase tracking-widest hover:bg-primary/5 hover:text-primary rounded-full px-6" onClick={() => router.push('/calendar')}>
-              View Full Schedule <ChevronRight className="ml-1 h-3.5 w-3.5" />
+              View Team Calendar <ChevronRight className="ml-1 h-3.5 w-3.5" />
             </Button>
           </div>
 
@@ -1580,9 +1544,9 @@ export default function FamilyPage() {
 
                 <div className="grid grid-cols-1 gap-3">
                   {events.length > 0 ? events.map((event) => {
-                    const team = familyTeams.find(t => t.id === event.teamId);
+                    const team = switcherTeams.find(t => t.id === event.teamId);
                     return (
-                      <Card data-testid={`family-event-${event.id}`} data-team-id={event.teamId} data-child-id={child.id} key={event.id} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg transition-all group overflow-hidden bg-white hover:-translate-y-0.5 duration-300">
+                      <Card data-testid={`family-event-${event.id}`} data-team-id={event.teamId} data-child-id={child.id} key={`${event.teamId}:${event.id}`} className="rounded-2xl border-none shadow-sm ring-1 ring-black/5 hover:shadow-lg transition-all group overflow-hidden bg-white hover:-translate-y-0.5 duration-300">
                         <CardContent className="p-0">
                           <div className="flex items-stretch h-20">
                             <div className="w-16 bg-muted/20 flex flex-col items-center justify-center border-r shrink-0 group-hover:bg-primary/5 transition-colors">

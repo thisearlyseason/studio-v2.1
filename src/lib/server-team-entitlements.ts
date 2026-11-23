@@ -1,3 +1,4 @@
+import { isBillableSquadSeat } from '@/lib/team-seat-policy';
 import { adminDb } from '@/lib/firebase-admin';
 import { hasCurrentPaidSubscription } from '@/lib/native-billing/entitlements';
 
@@ -264,4 +265,16 @@ export async function getTeamFinanceAccess(
 
 export function isPaidPlanType(planType: unknown): boolean {
   return typeof planType === 'string' && PAID_PLAN_TYPES.has(planType);
+}
+
+export function availableTeamPlan(
+  owner: FirebaseFirestore.DocumentData,
+  ownedTeams: FirebaseFirestore.QueryDocumentSnapshot[],
+  targetId: string,
+): { planId: string } | { error: 'NO_PAID_PLAN' | 'NO_SEATS' } {
+  if (!isPaidPlanType(owner.plan_type) || !hasCurrentPaidSubscription(owner)) return { error: 'NO_PAID_PLAN' };
+  const capacity = Number(owner.team_limit ?? owner.proTeamLimit ?? 1);
+  const used = ownedTeams.filter(team => team.id !== targetId && team.data().isPro === true && isBillableSquadSeat(team.data())).length;
+  if (!Number.isSafeInteger(capacity) || capacity <= used) return { error: 'NO_SEATS' };
+  return { planId: owner.plan_type };
 }

@@ -198,6 +198,7 @@ export async function GET(req: NextRequest) {
     const hubTeamId = req.nextUrl.searchParams.get('hubTeamId');
     const capacity = await adminDb.runTransaction(async transaction => {
       const organization = await resolveOrganization(transaction, auth, hubTeamId);
+      if (organization.ownerId !== auth.uid) throw new Error('FORBIDDEN');
       const ownedTeams = await transaction.get(
         adminDb.collection('teams').where('ownerUserId', '==', organization.ownerId)
       );

@@ -462,47 +462,9 @@ export default function EventsPage() {
 
   const isAdmin = isStaff || isSuperAdmin;
 
-  // ── Auto-sync: keep localStorage fresh whenever events load ──────────────
-  useEffect(() => {
-    if (!activeTeamEvents || activeTeamEvents.length === 0) return;
-    const now = new Date();
-    const max = new Date(); max.setDate(max.getDate() + 90);
-    const upcoming = activeTeamEvents
-      .filter(e => {
-        const d = calendarEventDate(e.date);
-        return d !== null && calendarEventIsUpcoming(e, now) && d <= max;
-      })
-      .map(e => ({
-        id: e.id,
-        title: e.title,
-        date: e.date,
-        startTime: e.startTime,
-        location: e.location,
-        eventType: e.eventType || 'other',
-      }));
-    try { localStorage.setItem('squad_schedule_events', JSON.stringify(upcoming)); } catch {}
-  }, [activeTeamEvents]);
-
   const handleOpenScheduleApp = useCallback(() => {
-    const now = new Date();
-    const max = new Date(); max.setDate(max.getDate() + 90);
-    const upcoming = (activeTeamEvents || [])
-      .filter(e => {
-        const d = calendarEventDate(e.date);
-        return d !== null && calendarEventIsUpcoming(e, now) && d <= max;
-      })
-      .map(e => ({
-        id: e.id,
-        title: e.title,
-        date: e.date,
-        startTime: e.startTime,
-        location: e.location,
-        eventType: e.eventType || 'other',
-      }));
-    // Write directly to localStorage — avoids URL length limits
-    try { localStorage.setItem('squad_schedule_events', JSON.stringify(upcoming)); } catch {}
     window.open('/schedule-app', '_blank');
-  }, [activeTeamEvents]);
+  }, []);
 
   const nextTournament = useMemo(() => {
     return (activeTeamEvents || [])

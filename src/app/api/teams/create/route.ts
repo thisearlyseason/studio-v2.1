@@ -1,3 +1,4 @@
+import { availableTeamPlan } from '@/lib/server-team-entitlements';
 import { randomBytes } from 'crypto';
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyFirebaseToken, assertNonAnonymous } from '@/lib/api-auth';
@@ -8,7 +9,7 @@ import { buildWaiverVersionIdentity } from '@/lib/waiver-security';
 import { AccountOwnershipError, readOwnershipAccounts } from '@/lib/server-account-ownership';
 
 // Starter teams do not consume paid squad seats. Keep the existing maximum
-// account resource bound; paid capacity is enforced when allocating Pro access.
+// account resource bound alongside the transactional Pro seat check.
 const MAX_OWNED_TEAMS = 100;
 
 const ALLOWED_TYPES = new Set([
@@ -103,7 +104,7 @@ export async function POST(request: NextRequest) {
     const now = new Date().toISOString();
     const code = inviteCode();
 
-    await adminDb.runTransaction(async transaction => {
+    const isPro = await adminDb.runTransaction(async transaction => {
       const [accounts, ownedTeams] = await Promise.all([
         readOwnershipAccounts(adminDb, transaction, requestedOwnerId, auth.uid),
         transaction.get(ownedTeamsQuery),
@@ -116,6 +117,12 @@ export async function POST(request: NextRequest) {
       }
       if (ownedTeams.size >= MAX_OWNED_TEAMS) throw new Error('TEAM_LIMIT_REACHED');
 
+      const allocation = input.requestPro === true
+        ? availableTeamPlan(accounts.owner.data() || {}, ownedTeams.docs, teamId)
+        : null;
+      if (input.requirePro === true && allocation && 'error' in allocation) throw new Error(allocation.error);
+      const planId = allocation && 'planId' in allocation ? allocation.planId : 'free';
+      const isPro = planId !== 'free';
       const baseTeam = {
         id: teamId,
         teamName: name,
@@ -127,8 +134,8 @@ export async function POST(request: NextRequest) {
         ...(description ? { description } : {}),
         createdBy: auth.uid,
         ownerUserId: requestedOwnerId,
-        planId: 'free',
-        isPro: false,
+        planId,
+        isPro,
         createdAt: now,
         ...(schoolId ? { schoolId } : {}),
       };
@@ -141,8 +148,8 @@ export async function POST(request: NextRequest) {
         code,
         joinedAt: now,
         type,
-        isPro: false,
-        planId: 'free',
+        isPro,
+        planId,
         ...(schoolId ? { schoolId } : {}),
         ownerUserId: requestedOwnerId,
       });
@@ -194,15 +201,20 @@ export async function POST(request: NextRequest) {
           ...(schoolId ? { schoolId } : {}),
         });
       }
+      return isPro;
     });
 
-    return NextResponse.json({ teamId, code }, { status: 201 });
+    return NextResponse.json({ teamId, code, isPro }, { status: 201 });
   } catch (error) {
     if (error instanceof AccountOwnershipError) return NextResponse.json({ error: error.message }, { status: error.status });
     if (error instanceof RequestBodyError) {
       return NextResponse.json({ error: error.message }, { status: error.status });
     }
     const code = error instanceof Error ? error.message : 'TEAM_CREATE_FAILED';
+    if (code === 'NO_PAID_PLAN' || code === 'NO_SEATS') {
+      const error = code === 'NO_SEATS' ? 'All Pro slots are assigned. Release a slot or add capacity in Billing.' : 'An active paid subscription is required to create a Pro team.';
+      return NextResponse.json({ error }, { status: 409 });
+    }
     if (code === 'TEAM_LIMIT_REACHED') {
       return NextResponse.json(
         { error: `Your account has reached the maximum of ${MAX_OWNED_TEAMS} teams.` },

@@ -66,15 +66,18 @@ export default function ScheduleApp() {
   const textRef = useRef<HTMLInputElement>(null);
   const isIOS = typeof navigator !== 'undefined' && /iphone|ipad|ipod/i.test(navigator.userAgent);
 
+  const syncRequest = useRef(0);
   const doSync = useCallback(async () => {
+    const request = ++syncRequest.current;
     setSyncing(true);
     setSyncError(null);
     try {
       const result: SyncResult = await syncFromFirestore();
+      if (request !== syncRequest.current) return;
       setEvents(result.events);
       setSyncSource(result.source);
-      if (result.teamName) setTeamName(result.teamName);
-      if (result.teamId) setSyncTeamId(result.teamId);
+      setTeamName(result.teamName || '');
+      setSyncTeamId(result.teamId || '');
       if (!result.userId) {
         setStorageUserId('');
         setTodos([]);
@@ -82,7 +85,7 @@ export default function ScheduleApp() {
       if (result.error) setSyncError(result.error);
       setLastSync(new Date().toLocaleTimeString());
     } finally {
-      setSyncing(false);
+      if (request === syncRequest.current) setSyncing(false);
     }
   }, []);
 
@@ -96,7 +99,19 @@ export default function ScheduleApp() {
     window.addEventListener('beforeinstallprompt', h);
     window.addEventListener('appinstalled', () => setInstalled(true));
     if (window.matchMedia('(display-mode: standalone)').matches) setInstalled(true);
+    const refreshScope = () => {
+      setEvents([]);
+      setSelectedEvent(null);
+      setSyncTeamId('');
+      setTeamName('');
+      void doSync();
+    };
+    const onTeamChange = (event: StorageEvent) => {
+      if (!event.key || event.key === 'sf_session_team_id') refreshScope();
+    };
+    window.addEventListener('storage', onTeamChange);
     const unsubscribeAuth = watchScheduleUser(user => {
+      refreshScope();
       setTodosHydrated(false);
       if (!user) {
         setStorageUserId('');
@@ -107,8 +122,9 @@ export default function ScheduleApp() {
       }
       setTodosHydrated(true);
     });
-    doSync();
     return () => {
+      ++syncRequest.current;
+      window.removeEventListener('storage', onTeamChange);
       unsubscribeAuth();
       window.removeEventListener('beforeinstallprompt', h);
     };

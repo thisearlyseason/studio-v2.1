@@ -68,6 +68,12 @@ const BASE_REGISTRATION_ANSWER_LABELS: Record<string, string> = {
 };
 
 export default function TournamentRegistrationAdminPage() {
+  const { teamId } = useParams();
+  const { activeTeam } = useTeam();
+  return activeTeam?.id === teamId ? <TournamentRegistrationContent /> : <p>Select the tournament’s team to manage registration.</p>;
+}
+
+function TournamentRegistrationContent() {
   const { teamId, eventId } = useParams();
   const router = useRouter();
   const { isAuthResolved } = useUser();

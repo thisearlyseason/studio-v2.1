@@ -711,3 +711,21 @@ test('clone is replay-safe, checks collision inside the transaction, and preserv
     app.dispose();
   }
 });
+
+test('an allocated team Pro seat lets its owner and active coach create a team-scoped league', async () => {
+  for (const uid of ['owner-a', 'coach-a', 'owner-b', 'member-a']) {
+    const { db, records } = communicationDb({
+      ...teamSeed,
+      'users/owner-a': { role: 'coach', plan_type: 'team', subscription_status: 'active' },
+      'users/coach-a': { role: 'coach' },
+      'teams/team-a': { ownerUserId: 'owner-a', name: 'DVSS', isPro: true, planId: 'team' },
+      'teams/team-a/members/coach-a': { userId: 'coach-a', position: 'Coach', status: 'active' },
+    });
+    const result = await call(db, { uid }, {
+      action: 'create', requestId: 'create-pro-team-league-0001', teamId: 'team-a', name: 'DVSS League', sport: 'Soccer',
+    });
+    const allowed = uid === 'owner-a' || uid === 'coach-a';
+    assert.equal(result.response.status, allowed ? 201 : 403, JSON.stringify(result.body));
+    if (allowed) assert.equal(records.get('leagues/' + result.body.leagueId).tenantId, 'team-a');
+  }
+});
