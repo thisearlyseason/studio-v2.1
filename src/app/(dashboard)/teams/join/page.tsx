@@ -448,6 +448,17 @@ export default function JoinTeamPage() {
               {`Confirm joining “${invitePreview?.teamName || 'this squad'}” as a player.`}
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {isParent && (hasChildren ? (
+            <label className="grid gap-2 text-sm font-semibold">
+              Player joining the team
+              <select className="rounded-md border p-2" value={selectedId} onChange={event => setSelectedId(event.target.value)}>
+                <option value="">Select a player</option>
+                {myChildren.map(child => <option key={child.id} value={child.id}>{child.firstName} {child.lastName}</option>)}
+              </select>
+            </label>
+          ) : (
+            <Button variant="outline" onClick={() => router.push(addChildHref())}>Add a child to join this team</Button>
+          ))}
           <AlertDialogFooter>
             <AlertDialogCancel disabled={isJoining}>Cancel</AlertDialogCancel>
             <AlertDialogAction onClick={handleJoinTeam} disabled={isJoining || !effectivePlayerId}>

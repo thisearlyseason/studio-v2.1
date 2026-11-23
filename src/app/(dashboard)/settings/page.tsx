@@ -98,6 +98,11 @@ import {
 } from '@/lib/team-module-visibility';
 
 const TEAM_MODULE_ICONS = {
+  competition: LayoutDashboard,
+  leagues: Users,
+  tournaments: LayoutDashboard,
+  scorekeeping: BookOpen,
+  coachTools: Dumbbell,
   attendance: Users,
   equipment: Dumbbell,
   facilities: LayoutDashboard,
@@ -113,7 +118,7 @@ const TEAM_MODULE_ICONS = {
 
 export default function SettingsPage() {
   const { 
-    user, updateUser, members, activeTeam, updateMember, 
+    user, updateUser, members, activeTeam, teams, setActiveTeam, updateMember,
     manageSubscription, isPro, resetSquadData, checkCodeUniqueness, 
     updateTeamCode, isStaff, isPlayer, isPrimaryClubAuthority, db
   } = useTeam();
@@ -246,7 +251,8 @@ export default function SettingsPage() {
     setIsUpdatingAvatar(true);
     try {
       const uploaded=await uploadScopedMedia(`users/${user.id}/avatar.jpg`,file,await getAuthToken(auth));
-      await updateUser({ avatar: uploaded.url });
+      const avatar = `${uploaded.url}&v=${Date.now()}`;
+      await updateUser({ avatar, avatarUrl: avatar });
       toast({ title: 'Avatar Updated', description: 'Profile photo saved.' });
     } catch (error: any) {
       console.error('[Avatar] Upload failed:', error);
@@ -777,7 +783,16 @@ export default function SettingsPage() {
 
       {canManageTeamModules && activeTeam && (
         <div className="space-y-4 pt-10 border-t">
-          <h3 className="text-xs font-black uppercase tracking-[0.3em] text-muted-foreground px-2">Module Visibility</h3>
+          <h3 className="text-xs font-black uppercase tracking-[0.3em] text-muted-foreground px-2">Module Visibility for {activeTeam.name}</h3>
+          {teams.length > 1 && (
+            <Select value={activeTeam.id} onValueChange={id => {
+              const team = teams.find(candidate => candidate.id === id);
+              if (team) setActiveTeam(team);
+            }}>
+              <SelectTrigger aria-label="Team for module visibility"><SelectValue /></SelectTrigger>
+              <SelectContent>{teams.map(team => <SelectItem key={team.id} value={team.id}>{team.name}</SelectItem>)}</SelectContent>
+            </Select>
+          )}
           <p className="text-[10px] text-muted-foreground px-2 mb-4 font-bold uppercase tracking-widest leading-relaxed">
             Toggle which squad modules are visible in the sidebar. Disabled modules are completely hidden and inaccessible to all users in this squad.
           </p>

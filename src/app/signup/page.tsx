@@ -154,6 +154,7 @@ export default function SignupPage() {
   const [regTarget, setRegTarget] = useState<RegTarget>(null);
   const [planChoice, setPlanChoice] = useState<PlanChoice>(null);
   const [billingCycle, setBillingCycle] = useState<BillingCycle>('monthly');
+  const [linkedInvite, setLinkedInvite] = useState('');
   const [joinCode, setJoinCode] = useState('');
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
@@ -173,17 +174,21 @@ export default function SignupPage() {
   const router = useRouter();
 
   React.useEffect(() => {
-    const storedReturnPath = sessionStorage.getItem('squad_return_path');
+    const storedReturnPath = new URLSearchParams(window.location.search).get('returnTo') || sessionStorage.getItem('squad_return_path');
     const returnPath = storedReturnPath
       ? safeReturnPath(storedReturnPath, APP_DISTRIBUTION)
       : null;
-    if (!returnPath?.startsWith('/teams/join?')) return;
+    if (!returnPath || !(returnPath.startsWith('/teams/join?') || returnPath.startsWith('/register/squad/'))) return;
     const queryIndex = returnPath.indexOf('?');
     const linkedCode = new URLSearchParams(returnPath.slice(queryIndex + 1))
       .get('code')
       ?.trim()
       .toUpperCase();
-    if (linkedCode) setJoinCode(linkedCode);
+    if (linkedCode) {
+      sessionStorage.setItem('squad_return_path', returnPath);
+      setLinkedInvite(returnPath);
+      setJoinCode(linkedCode);
+    }
   }, []);
 
   React.useEffect(() => { setIsHydrated(true); }, []);
@@ -206,7 +211,7 @@ export default function SignupPage() {
     if (!regTarget) return;
     const next = signupNextState(regTarget, APP_DISTRIBUTION);
     setPlanChoice(next.planChoice);
-    setStep(next.step);
+    setStep(linkedInvite && next.step === 'join_team' ? 'account' : next.step);
   };
 
   const handlePlanContinue = () => {
@@ -281,7 +286,7 @@ export default function SignupPage() {
         joinCode: normalizedJoinCode,
         planChoice,
       }, APP_DISTRIBUTION);
-      sessionStorage.setItem('squad_post_verify_path', postVerificationPath);
+      sessionStorage.setItem('squad_post_verify_path', linkedInvite || postVerificationPath);
       await sendBrandedVerificationEmail(user);
 
       const profileBatch = writeBatch(db);
@@ -296,7 +301,7 @@ export default function SignupPage() {
         upcomingEventNotificationsEnabled: false,
         createdAt: new Date().toISOString(),
         avatarUrl: `https://picsum.photos/seed/${user.uid}/150/150`,
-        ...(regTarget === 'self' && normalizedJoinCode ? { pendingTeamJoinCode: normalizedJoinCode } : {}),
+        ...(!linkedInvite && regTarget === 'self' && normalizedJoinCode ? { pendingTeamJoinCode: normalizedJoinCode } : {}),
       });
 
       // Adult player: create matching player record
@@ -344,7 +349,7 @@ export default function SignupPage() {
     account: 'Account',
   };
 
-  const activeSteps: SignupStep[] = signupSteps(regTarget, APP_DISTRIBUTION);
+  const activeSteps: SignupStep[] = signupSteps(regTarget, APP_DISTRIBUTION).filter(step => !linkedInvite || step !== 'join_team');
 
   return (
     <div className="min-h-screen bg-black flex flex-col items-center justify-start lg:justify-center p-4 sm:p-6 relative overflow-y-auto overflow-x-hidden">
@@ -855,7 +860,8 @@ export default function SignupPage() {
                   type="button"
                   disabled={isLoading}
                   onClick={() => {
-                    setStep(signupBackStep(regTarget, APP_DISTRIBUTION));
+                    const previous = signupBackStep(regTarget, APP_DISTRIBUTION);
+                    setStep(linkedInvite && previous === 'join_team' ? 'target' : previous);
                   }}
                   className="text-[10px] font-black uppercase tracking-widest text-muted-foreground hover:text-primary transition-colors"
                 >

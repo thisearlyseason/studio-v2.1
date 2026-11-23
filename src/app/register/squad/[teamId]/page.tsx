@@ -49,6 +49,7 @@ function RapidJoinForm() {
   const [waiverAgreed, setWaiverAgreed] = useState(false);
   const [signature, setSignature] = useState('');
   const [step, setStep] = useState(1);
+  const [confirmedSession, setConfirmedSession] = useState('');
   const [formData, setFormData] = useState({
     name: user?.name || '',
     email: user?.email || '',
@@ -215,6 +216,22 @@ function RapidJoinForm() {
           <Button className="mt-10 w-full h-16 rounded-2xl font-black uppercase shadow-xl" onClick={() => router.push('/')}>Open Dashboard</Button>
         </Card>
       </div>
+    );
+  }
+
+  if (joinData && confirmedSession !== joinData.sessionToken) {
+    return (
+      <main className="min-h-screen grid place-items-center p-6">
+        <Card className="w-full max-w-md">
+          <CardHeader><CardTitle>Join {team.name}?</CardTitle>
+            <CardDescription>Continue to player registration for this team.</CardDescription>
+          </CardHeader>
+          <CardFooter className="gap-3">
+            <Button variant="outline" onClick={() => router.replace('/dashboard')}>Cancel</Button>
+            <Button onClick={() => setConfirmedSession(joinData.sessionToken)}>Continue</Button>
+          </CardFooter>
+        </Card>
+      </main>
     );
   }
 
