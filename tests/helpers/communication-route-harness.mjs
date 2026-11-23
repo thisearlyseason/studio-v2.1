@@ -19,6 +19,7 @@ export async function loadCommunicationRoute(relativePath, db, auth) {
     '@/lib/server-request-guards': `export class RequestBodyError extends Error {} export async function enforceUserRateLimit() { return null; } export async function readJsonBodyWithLimit(req) { return req.json(); }`,
   };
   const result = await build({ entryPoints: [fileURLToPath(new URL(relativePath, import.meta.url))], bundle:true, format:'esm', platform:'node', write:false, logLevel:'silent', plugins:[{ name:'communication-boundaries', setup(bundler) {
+    bundler.onResolve({filter:/^sharp$/}, () => ({path:import.meta.resolve('sharp'),external:true}));
     bundler.onResolve({filter:/.*/}, args => Object.hasOwn(stubs,args.path) ? {path:args.path,namespace:'boundary'} : null);
     bundler.onLoad({filter:/.*/,namespace:'boundary'},args=>({contents:stubs[args.path],loader:'js'}));
   }}] });
