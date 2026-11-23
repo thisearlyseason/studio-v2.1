@@ -248,6 +248,7 @@ export type Team = {
   description?: string;
   teamLogoUrl?: string;
   heroImageUrl?: string;
+  homeCoverHeadlinePosition?: import('@/lib/cover-headline-position').HeadlinePosition;
   homeCoverHeadline?: string;
   homeCover?: { id: string; urls: { width: number; url: string }[]; focalX: number; focalY: number };
   isPro?: boolean;

@@ -471,3 +471,15 @@ body:has(> [data-mobile-chat-screen]) [data-workspace-shell] {
 
 .team-cover-frame { width: 100%; aspect-ratio: 2 / 1; }
 @media (max-width: 640px) { .team-cover-frame { aspect-ratio: 4 / 3; } }
+
+.team-cover-frame { container-type: inline-size; }
+.team-cover-caption { position: absolute; inset: 0; display: flex; align-items: flex-end; padding: 4%; color: white; pointer-events: none; text-shadow: 0 1px 5px #000b; }
+.team-cover-caption[data-position^="top"] { align-items: flex-start; }
+.team-cover-caption[data-position^="middle"] { align-items: center; }
+.team-cover-caption[data-position$="center"] { justify-content: center; text-align: center; }
+.team-cover-caption[data-position$="right"] { justify-content: flex-end; text-align: right; }
+.team-cover-caption > div { max-width: 100%; overflow-wrap: anywhere; }
+.team-cover-caption img { display: inline-block; width: 9cqw; height: 9cqw; object-fit: contain; vertical-align: middle; margin-inline-end: 1.5cqw; }
+.team-cover-caption span { display: inline-block; font-size: clamp(9px, 1.5cqw, 12px); font-weight: 800; text-transform: uppercase; border: 1px solid #fff8; border-radius: 2em; padding: .2em .8em; }
+.team-cover-title { font-size: clamp(20px, 6cqw, 64px); font-weight: 900; line-height: 1.02; letter-spacing: -.04em; margin: .15em 0; }
+.team-cover-name { font-size: clamp(14px, 3cqw, 28px); line-height: 1.15; font-weight: 750; }
