@@ -89,6 +89,7 @@ interface EventDetailDialogProps {
   updateRSVP: (eventId: string, status: string, teamId?: string, userId?: string) => Promise<void>;
   isAdmin: boolean;
   onEdit: (event: TeamEvent) => void;
+  onDuplicate?: (event: TeamEvent) => void;
   onEditSeries?: (event: TeamEvent) => void;
   onDelete: (eventId: string) => void;
   onDeleteSeries?: (eventId: string) => Promise<void>;
@@ -103,6 +104,7 @@ export function EventDetailDialog({
   updateRSVP, 
   isAdmin, 
   onEdit, 
+  onDuplicate,
   onEditSeries,
   onDelete, 
   onDeleteSeries,
@@ -332,6 +334,11 @@ export function EventDetailDialog({
                       </TooltipContent>
                     </Tooltip>
                   </div>
+                  {onDuplicate && (
+                    <DialogClose asChild>
+                      <Button variant="secondary" onClick={() => onDuplicate(event)}>Duplicate event</Button>
+                    </DialogClose>
+                  )}
                   {event.recurrenceSeriesId && onEditSeries && (
                     <Button variant="outline" className="w-full h-11 rounded-2xl border-white/20 bg-transparent text-white hover:bg-white/10 font-black uppercase text-[9px]" onClick={() => onEditSeries(event)}>
                       Edit Entire Weekly Series

@@ -1,5 +1,5 @@
 "use client";
-import { canHostTeamLeague } from '@/lib/dashboard-route-policy';
+import { canHostBasicLeague } from '@/lib/dashboard-route-policy';
 
 import { PageEntityScope, PublicPageEntry } from '@/components/squad-pages/entity-context';
 import {gameResultSummary} from '@/lib/game-result-summary';
@@ -224,8 +224,8 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
   }, [league?.teams]);
 
   const handleAddSquad = async () => {
-    if (!newSquad.teamName.trim() || !newSquad.coachName.trim() || !newSquad.coachEmail.trim()) {
-      toast({ title: "Fields Required", description: "Team name, coach name, and coach email are all required.", variant: "destructive" });
+    if (!newSquad.teamName.trim()) {
+      toast({ title: "Fields Required", description: "Enter a team name.", variant: "destructive" });
       return;
     }
     setIsProcessing(true);
@@ -491,7 +491,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[9px] font-black uppercase text-white/60 ml-1">Coach Name</Label>
+                    <Label className="text-[9px] font-black uppercase text-white/60 ml-1">Coach name (optional)</Label>
                     <Input 
                       placeholder="e.g. John Doe" 
                       value={newSquad.coachName} 
@@ -500,7 +500,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                     />
                   </div>
                   <div className="space-y-2">
-                    <Label className="text-[9px] font-black uppercase text-white/60 ml-1">Coach Email</Label>
+                    <Label className="text-[9px] font-black uppercase text-white/60 ml-1">Coach email (optional)</Label>
                     <Input 
                       placeholder="e.g. coach@domain.com" 
                       type="email"
@@ -1442,7 +1442,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   const leagueLabel = isSchoolMode ? 'Program' : 'League';
   const leaguesLabel = isSchoolMode ? 'Programs' : 'Leagues';
   const hasLeagueCreationAccess = activeTeam
-    ? isStaff && canHostTeamLeague(activeTeam.planId, activeTeam.isPro)
+    ? isStaff && canHostBasicLeague(activeTeam.planId, activeTeam.isPro)
     : isPrimaryClubAuthority || userProfile?.role === 'league_creator';
   const canManageLeagues = isStaff || userProfile?.role === 'league_creator';
   const lifecyclePolicy = leagueLifecycleClientPolicy({

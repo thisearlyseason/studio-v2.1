@@ -418,8 +418,8 @@ function TournamentRegistrationContent() {
   ].filter(Boolean);
   const handleManualAdd = async () => {
     setManualError('');
-    if (!manualForm.teamName.trim() || !manualForm.coachName.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(manualForm.email) || !teamId || !eventId) {
-      setManualError('Enter the team name, contact name and a valid email address.'); return;
+    if (!manualForm.teamName.trim() || (manualForm.email.trim() && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(manualForm.email.trim())) || !teamId || !eventId) {
+      setManualError('Enter a team name. If you include an email, use a valid address.'); return;
     }
     if (manualFields.some(field => field.required && !['header', 'information_box'].includes(field.type) && !manualAnswers[field.id]?.length)) {
       setManualError('Complete every required registration question.'); return;
@@ -967,8 +967,8 @@ function TournamentRegistrationContent() {
             </DialogHeader>
             <div className="space-y-5">
               <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Name</Label><Input placeholder="e.g. Metro Tigers" value={manualForm.teamName} onChange={e => setManualForm({...manualForm, teamName: e.target.value})} className="h-12 rounded-xl border-2 font-bold" /></div>
-              <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Authorized Contact</Label><Input placeholder="Full Name" value={manualForm.coachName} onChange={e => setManualForm({...manualForm, coachName: e.target.value})} className="h-12 rounded-xl border-2 font-bold" /></div>
-              <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contact Email</Label><Input type="email" placeholder="coach@org.com" value={manualForm.email} onChange={e => setManualForm({...manualForm, email: e.target.value})} className="h-12 rounded-xl border-2 font-bold" /></div>
+              <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contact name (optional)</Label><Input placeholder="Full Name" value={manualForm.coachName} onChange={e => setManualForm({...manualForm, coachName: e.target.value})} className="h-12 rounded-xl border-2 font-bold" /></div>
+              <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contact email (optional)</Label><Input type="email" placeholder="coach@org.com" value={manualForm.email} onChange={e => setManualForm({...manualForm, email: e.target.value})} className="h-12 rounded-xl border-2 font-bold" /></div>
             </div>
             <div className="space-y-5">
               {manualFields.map(field => {

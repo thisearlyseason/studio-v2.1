@@ -729,3 +729,16 @@ test('an allocated team Pro seat lets its owner and active coach create a team-s
     if (allowed) assert.equal(records.get('leagues/' + result.body.leagueId).tenantId, 'team-a');
   }
 });
+
+test('a Starter team owner can create one league and the account quota blocks a second', async () => {
+  const { db } = communicationDb({
+    'users/owner-a': { role: 'coach', plan_type: 'free' },
+    'teams/team-a': { ownerUserId: 'owner-a', planId: 'free', isPro: false },
+  });
+  for (const [name, status] of [['First', 201], ['Second', 409]]) {
+    const result = await call(db, { uid: 'owner-a' }, {
+      action: 'create', requestId: 'starter-league-' + name, teamId: 'team-a', name, sport: 'Soccer',
+    });
+    assert.equal(result.response.status, status, JSON.stringify(result.body));
+  }
+});

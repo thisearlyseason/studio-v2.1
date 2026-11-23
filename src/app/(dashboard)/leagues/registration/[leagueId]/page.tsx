@@ -265,8 +265,8 @@ export default function LeagueRegistrationAdminPage() {
 
   const handleManualAdd = async () => {
     if (manualFormType === 'team') {
-      if (!manualForm.teamName || !manualForm.coachName || !manualForm.email || !leagueId) {
-        toast({ title: "Details Required", description: "Team name, coach name, and email are required.", variant: "destructive" });
+      if (!manualForm.teamName.trim() || !leagueId) {
+        toast({ title: "Details Required", description: "Enter a team name.", variant: "destructive" });
         return;
       }
       setIsManualProcessing(true);
@@ -1229,8 +1229,8 @@ export default function LeagueRegistrationAdminPage() {
               {manualFormType === 'team' ? (
                 <>
                   <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Team Name</Label><Input placeholder="e.g. Metro Tigers" value={manualForm.teamName} onChange={e => setManualForm({...manualForm, teamName: e.target.value})} className="h-12 rounded-xl border-2 font-bold" /></div>
-                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Coach Name</Label><Input placeholder="Full Name" value={manualForm.coachName} onChange={e => setManualForm({...manualForm, coachName: e.target.value})} className="h-12 rounded-xl border-2 font-bold" /></div>
-                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contact Email</Label><Input type="email" placeholder="coach@org.com" value={manualForm.email} onChange={e => setManualForm({...manualForm, email: e.target.value})} className="h-12 rounded-xl border-2 font-bold" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Coach name (optional)</Label><Input placeholder="Full Name" value={manualForm.coachName} onChange={e => setManualForm({...manualForm, coachName: e.target.value})} className="h-12 rounded-xl border-2 font-bold" /></div>
+                  <div className="space-y-2"><Label className="text-[10px] font-black uppercase tracking-widest ml-1">Contact email (optional)</Label><Input type="email" placeholder="coach@org.com" value={manualForm.email} onChange={e => setManualForm({...manualForm, email: e.target.value})} className="h-12 rounded-xl border-2 font-bold" /></div>
                   <div className="space-y-2">
                     <div className="flex justify-between items-center px-1">
                       <Label className="text-[10px] font-black uppercase tracking-widest">Override Invite Code</Label>

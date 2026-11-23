@@ -123,3 +123,7 @@ export function canHostTeamLeague(planId: unknown, isPro: unknown): boolean {
   return ['league', 'elite_league', 'school'].includes(plan) ||
     (isPro === true && ['team', 'elite', 'elite_teams', 'squad_pro'].includes(plan));
 }
+
+export function canHostBasicLeague(planId: unknown, isPro: unknown): boolean {
+  return ['free', 'starter', 'starter_squad'].includes(String(planId || '').trim().toLowerCase()) || canHostTeamLeague(planId, isPro);
+}
