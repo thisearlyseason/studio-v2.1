@@ -382,11 +382,9 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
       <DialogContent hideClose className="sm:max-w-4xl p-0 sm:rounded-[2.5rem] rounded-t-4xl border-none shadow-2xl bg-white text-foreground flex flex-col max-h-[92dvh] sm:max-h-[85vh] overflow-hidden">
         <DialogTitle className="sr-only">Event Details: {event.title}</DialogTitle>
         <div className="absolute right-3 top-3 z-50">
-          <DialogClose asChild>
-            <Button aria-label="Close event details" variant="ghost" size="icon" className="h-10 w-10 rounded-full bg-black/70 text-white hover:bg-black hover:text-white">
-              <X className="h-5 w-5" />
-            </Button>
-          </DialogClose>
+          <DialogClose aria-label="Close event details" className="activity-dialog-close">
+              <X aria-hidden="true" size={20} strokeWidth={3} />
+            </DialogClose>
         </div>
         <div className="flex flex-col lg:flex-row flex-1 overflow-y-auto lg:overflow-hidden">
           {/* LEFT PANEL: ELITE STATUS & RSVP */}

@@ -625,11 +625,9 @@ function TeamEventsPage() {
           <DialogDescription className="sr-only">
             Create or update a team activity, including its date, time, location, and logistics assignments.
           </DialogDescription>
-          <DialogClose asChild>
-            <Button aria-label="Close activity form" variant="ghost" size="icon" className="absolute top-4 right-4 z-50 h-9 w-9 rounded-full bg-black/5 hover:bg-black/10 text-black/40 hover:text-black transition-all">
-              <X className="h-4 w-4" />
-            </Button>
-          </DialogClose>
+          <DialogClose aria-label="Close activity form" className="activity-dialog-close absolute top-4 right-4 z-50">
+              <X aria-hidden="true" size={20} strokeWidth={3} />
+            </DialogClose>
           <div data-testid="launch-activity-scroll-region" className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
           <div className="flex flex-col xl:flex-row">
             <div className="w-full min-w-0 xl:w-5/12 bg-muted/30 p-4 sm:p-6 xl:p-10 space-y-4 sm:space-y-6 xl:border-r">
