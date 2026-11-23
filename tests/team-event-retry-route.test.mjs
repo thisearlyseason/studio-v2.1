@@ -83,3 +83,23 @@ test('recurring event retry returns exactly the original occurrence IDs',async()
     assert.equal(events(state).length,3);assert.equal(state.notifications.length,0);
   });
 });
+
+test('multi-day TBD events create no timed booking until a coach adds a start time', async () => {
+  const state = communicationDb(seed);
+  await using(state, async call => {
+    const event = { title: 'Training camp', date: '2026-12-29', endDate: '2027-01-03', startTime: '' };
+    const response = await call({ ...request, event });
+    assert.equal(response.status, 200);
+    const { eventId } = await response.json();
+    const booking = 'scheduleBookings/team_event_team-a_' + eventId;
+    const path = 'teams/team-a/events/' + eventId;
+    assert.equal(state.records.get(path).endDate, event.endDate);
+    assert.equal(state.records.has(booking), false);
+    for (const startTime of ['09:30', '']) {
+      const updated = await call({ action: 'update', teamId: 'team-a', eventId, event: { ...event, startTime, endTime: null } });
+      assert.equal(updated.status, 200);
+      assert.equal(state.records.has(booking), Boolean(startTime));
+      assert.equal(state.records.get(path).endDate, event.endDate);
+    }
+  });
+});

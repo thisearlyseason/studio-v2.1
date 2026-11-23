@@ -55,7 +55,7 @@ test('failed event creation never dispatches a tactical alert', async () => {
   const response = await call(db, {
     action: 'create',
     teamId: 'team-a',
-    event: { title: 'Invalid', date: '2026-09-08', startTime: '' },
+    event: { title: 'Invalid', date: '2026-09-08', startTime: '25:00' },
   });
 
   assert.equal(response.status, 400);

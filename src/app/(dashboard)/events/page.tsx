@@ -358,10 +358,10 @@ export default function EventsPage() {
   }, [activeTeamEvents, filterMode]);
 
   const handleCreateEvent = async () => { 
-    if (!newTitle.trim() || !newDate || !newTime) {
+    if (!newTitle.trim() || !newDate) {
       toast({
         title: 'Activity Incomplete',
-        description: 'Enter a title, date, and start time before deployment.',
+        description: 'Enter an activity title and start date.',
         variant: 'destructive',
       });
       return;
@@ -373,7 +373,7 @@ export default function EventsPage() {
         // Date then ISO serialisation shifts late-day activities across UTC.
         date: newDate,
         endDate: newEndDate || newDate,
-        startTime: newTime, location: newLocation, description: newDescription,
+        startTime: newTime, ...(newTime ? {} : { endTime: null }), location: newLocation, description: newDescription,
         opponent: eventType === 'game' ? opponent : '',
         assignments: assignments.map(a => ({
           ...a,
@@ -430,8 +430,8 @@ export default function EventsPage() {
     const startDate = calendarEventDate(event.date);
     const endDate = calendarEventDate(event.endDate);
     setNewDate(startDate ? format(startDate, 'yyyy-MM-dd') : '');
-    if (endDate) setNewEndDate(format(endDate, 'yyyy-MM-dd'));
-    setNewTime(event.startTime); 
+    setNewEndDate(endDate ? format(endDate, 'yyyy-MM-dd') : '');
+    setNewTime(event.startTime || '');
     setNewLocation(event.location); 
     setNewDescription(event.description); 
     setAssignments(event.assignments || []);
@@ -458,8 +458,8 @@ export default function EventsPage() {
     const startDate = calendarEventDate(event.date);
     const endDate = calendarEventDate(event.endDate);
     setNewDate(startDate ? format(startDate, 'yyyy-MM-dd') : '');
-    if (endDate) setNewEndDate(format(endDate, 'yyyy-MM-dd'));
-    setNewTime(event.startTime);
+    setNewEndDate(endDate ? format(endDate, 'yyyy-MM-dd') : '');
+    setNewTime(event.startTime || '');
     setNewLocation(event.location);
     setNewDescription(event.description);
     setAssignments(event.assignments || []);
@@ -633,7 +633,11 @@ export default function EventsPage() {
                   </div>
                 </div>
                 <div className="space-y-1.5">
-                  <Label htmlFor="activity-start-time" className="text-[10px] font-black uppercase tracking-widest ml-1">Start Time *</Label><Input id="activity-start-time" type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="h-12 min-w-0 max-w-full appearance-none rounded-xl border-2 font-black px-4 [&::-webkit-date-and-time-value]:min-w-0 [&::-webkit-date-and-time-value]:text-left" />
+                  <Label htmlFor="activity-start-time" className="text-[10px] font-black uppercase tracking-widest ml-1">Start time (optional)</Label>
+                  <div className="flex items-center gap-2">
+                    <Input id="activity-start-time" type="time" value={newTime} onChange={e => setNewTime(e.target.value)} className="h-12 min-w-0 max-w-full appearance-none rounded-xl border-2 font-black px-4 [&::-webkit-date-and-time-value]:min-w-0 [&::-webkit-date-and-time-value]:text-left" />
+                    <Button type="button" variant={newTime ? 'outline' : 'secondary'} aria-pressed={!newTime} onClick={() => setNewTime('')}>TBD</Button>
+                  </div>
                 </div>
                 {!editingEvent && (
                   <div className="space-y-1.5">
