@@ -30,15 +30,19 @@ export default function VerifyEmailPage() {
     completingRef.current = true;
     try {
       await establishBrowserSession(verifiedUser);
-      const enrollment = await completePendingSignupEnrollment(verifiedUser);
+      const returnPath = sessionStorage.getItem('squad_post_verify_path') || sessionStorage.getItem('squad_return_path');
+      const enrollment = sessionStorage.getItem('squad_return_path')?.startsWith('/teams/join?')
+        ? { pendingEnrollment: false }
+        : await completePendingSignupEnrollment(verifiedUser);
       const next = enrollment.pendingEnrollment
         ? '/dashboard'
-        : sessionStorage.getItem('squad_post_verify_path') || '/dashboard';
+        : returnPath || '/dashboard';
       if (sessionStorage.getItem('squad_post_verify_path')) {
         analytics.setIdentity(verifiedUser.uid, { email: verifiedUser.email ?? undefined, name: verifiedUser.displayName ?? undefined }, { signup_date: verifiedUser.metadata.creationTime });
         analytics.trackEvent('signup_completed');
       }
       sessionStorage.removeItem('squad_post_verify_path');
+      sessionStorage.removeItem('squad_return_path');
       window.location.replace(safeReturnPath(next));
     } catch (error) {
       completingRef.current = false;

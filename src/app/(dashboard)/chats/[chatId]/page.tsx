@@ -1,6 +1,7 @@
 
 "use client";
 
+import { chatActivityDate, isChatVisibleForTeam } from '@/lib/chat-channel-identity';
 import { ContentSafety, BlockedUsers, useBlockedAuthors } from '@/components/content-safety';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
 import { format } from 'date-fns';
@@ -108,16 +109,21 @@ function ChatRoomInner() {
     return doc(db, 'teams', effectiveTeamId, 'groupChats', chatId as string);
   }, [effectiveTeamId, db, chatId]);
 
-  const { data: currentChat, isLoading: isChatLoading, error: chatError } = useDoc(chatDocRef);
+  const { data: chat, isLoading: isChatLoading, error: chatError } = useDoc(chatDocRef);
+
+  const currentChat = chat && effectiveTeamId && (!activeTeam || isChatVisibleForTeam(
+    effectiveTeamId, activeTeam.id, chat.contextType, chat.memberAuthorities?.[user?.id || '']?.teamId,
+  )) ? chat : null;
 
   const messagesQuery = useMemoFirebase(() => {
     if (!effectiveTeamId || !db || !chatId) return null;
+    if (!currentChat) return null;
     return query(
       collection(db, 'teams', effectiveTeamId, 'groupChats', chatId as string, 'messages'),
       orderBy('createdAt', 'asc'),
       limitToLast(100)
     );
-  }, [effectiveTeamId, db, chatId]);
+  }, [effectiveTeamId, db, chatId, currentChat]);
 
   const { data: rawMessages, isLoading: isMessagesLoading, error: messagesError } = useCollection<Message>(messagesQuery);
   const messages = useMemo(
@@ -126,7 +132,7 @@ function ChatRoomInner() {
   );
 
   useEffect(() => {
-    if (!effectiveTeamId || !chatId || !user?.id || isMessagesLoading) return;
+    if (!currentChat || !effectiveTeamId || !chatId || !user?.id || isMessagesLoading) return;
     getAuthToken(auth).then(token => {
       if (!token) return;
       return fetch('/api/teams/chat', {
@@ -136,7 +142,7 @@ function ChatRoomInner() {
     }).then(response => {
       if (response?.ok) return clearDeviceNotifications({ chatId: String(chatId), teamId: effectiveTeamId });
     }).catch(() => undefined);
-  }, [effectiveTeamId, chatId, user?.id, auth, isMessagesLoading, messages.length]);
+  }, [effectiveTeamId, chatId, user?.id, auth, isMessagesLoading, messages.length, currentChat?.id]);
 
   useEffect(() => {
     if (!effectiveTeamId || !chatId || !auth) return;
@@ -272,6 +278,7 @@ function ChatRoomInner() {
     );
   }
 
+  const activityDate = chatActivityDate(currentChat.lastMessageAt, currentChat.createdAt);
   const currentMemberIds: string[] = currentChat?.memberIds || [];
   const staffMetadata: Record<string, { name: string; position: string; avatar: string; squadName?: string }> = currentChat?.staffMetadata || {};
   const staffKeywords = ['coach', 'director', 'coordinator', 'staff', 'manager', 'trainer'];
@@ -318,11 +325,8 @@ function ChatRoomInner() {
             <Hash className="h-5 w-5 stroke-[3px]" />
           </div>
           <div className="flex-1 min-w-0">
-            <h2 className="font-black truncate text-lg tracking-tight uppercase leading-none">{currentChat?.name}</h2>
-            <div className="flex items-center gap-2 mt-1">
-              <div className="h-1.5 w-1.5 rounded-full bg-green-500 animate-pulse" />
-              <p className="text-[10px] font-black text-muted-foreground uppercase tracking-widest">Active Coordination</p>
-            </div>
+            <h2 className="break-words font-black text-lg tracking-tight leading-tight">{currentChat.name || 'Team Chat'}</h2>
+            {activityDate && <time dateTime={activityDate.toISOString()} className="mt-1 block text-xs text-muted-foreground">{activityDate.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</time>}
           </div>
           <div className="flex items-center gap-1">
             <Tooltip>

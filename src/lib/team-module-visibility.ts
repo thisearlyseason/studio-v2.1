@@ -1,5 +1,10 @@
 export const TEAM_MODULE_DEFINITIONS = Object.freeze([
   { key: 'attendance', name: 'Attendance', route: '/events' },
+  { key: 'competition', name: 'Competition Hub', route: '/competition' },
+  { key: 'leagues', name: 'Leagues', route: '/leagues' },
+  { key: 'tournaments', name: 'Tournaments', route: '/manage-tournaments' },
+  { key: 'scorekeeping', name: 'Scorekeeping', route: '/games' },
+  { key: 'coachTools', name: 'Coach Tools', route: '/coaches-corner' },
   { key: 'equipment', name: 'Equipment', route: '/equipment' },
   { key: 'facilities', name: 'Facilities', route: '/facilities' },
   { key: 'feed', name: 'Feed', route: '/feed' },
@@ -47,6 +52,7 @@ export function isTeamModuleRouteDisabled(
   pathname: string,
   features: TeamModuleFeatures | undefined,
 ) {
+  if (pathname === '/calendar' || pathname.startsWith('/calendar/')) return features?.attendance === false;
   const definition = TEAM_MODULE_DEFINITIONS.find(
     item => pathname === item.route || pathname.startsWith(`${item.route}/`),
   );

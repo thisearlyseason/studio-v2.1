@@ -27,7 +27,7 @@ import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
 import { collection, query, orderBy, where, getDocs } from 'firebase/firestore';
 import { Badge } from '@/components/ui/badge';
 import { cn } from '@/lib/utils';
-import { format } from 'date-fns';
+import { chatActivityDate } from '@/lib/chat-channel-identity';
 import { useAuth } from '@/firebase';
 import { authHeader, getAuthToken } from '@/lib/client-auth';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
@@ -54,6 +54,11 @@ type ChatContext = {
 };
 
 export default function ChatsPage() {
+  const { activeTeam, user } = useTeam();
+  return <TeamChats key={JSON.stringify([activeTeam?.id, user?.id])} />;
+}
+
+function TeamChats() {
   const { isBlocked, isLoading: blocksLoading } = useBlockedAuthors();
   const { activeTeam, setActiveTeam, members, createChat, deleteChat, hideChatForUser, isStaff, isParent, isPlayer, isSuperAdmin, user, teams, isPrimaryClubAuthority, isSchoolMode, isEliteAccount } = useTeam();
   const db = useFirestore();
@@ -511,7 +516,9 @@ export default function ChatsPage() {
         </aside>
 
         <div className="lg:col-span-3 space-y-4">
-          {teamChats.length > 0 ? teamChats.map((chat) => (
+          {teamChats.length > 0 ? teamChats.map((chat) => {
+            const date = chatActivityDate(chat.lastMessageAt, chat.createdAt);
+            return (
               <Card key={chatChannelKey(chat, activeTeam.id)} className="hover:border-primary transition-all duration-300 group rounded-3xl border-none shadow-sm hover:shadow-xl ring-1 ring-black/5 hover:ring-primary/20 overflow-hidden bg-white">
                 <CardContent className="p-3 sm:p-5 flex items-center gap-2 sm:gap-4">
                   <Link className="flex min-w-0 flex-1 items-center gap-3 sm:gap-5" href={`/chats/${chat.id}?teamId=${encodeURIComponent(chat.teamId || activeTeam.id)}`}>
@@ -519,13 +526,9 @@ export default function ChatsPage() {
                     <Hash className="h-8 w-8 stroke-[3px]" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between mb-1">
-                      <h3 className="font-black text-xl tracking-tight truncate group-hover:text-primary transition-colors">{chat.name}</h3>
-                      <span className="text-[10px] font-black text-muted-foreground uppercase tracking-widest bg-muted/50 px-2 py-1 rounded-lg">
-                        {chat.lastMessageAt ? format(new Date(chat.lastMessageAt), 'MMMM d, yyyy h:mm a') : 'ACTIVE'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between gap-4">
+                    <h3 className="break-words font-black text-lg leading-tight tracking-tight group-hover:text-primary sm:text-xl">{chat.name || 'Team Chat'}</h3>
+                    {date && <time dateTime={date.toISOString()} className="mt-1 block text-xs text-muted-foreground">{date.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' })}</time>}
+                    <div className="flex items-center justify-between gap-4 mt-2">
                       <p className="text-sm text-muted-foreground font-medium truncate pr-6 leading-none">
                         {blocksLoading || !chat.lastMessageAuthorId || isBlocked(chat.lastMessageAuthorId) ? 'Open conversation' : chat.lastMessage || 'Channel established. Ready for coordination.'}
                       </p>
@@ -550,7 +553,7 @@ export default function ChatsPage() {
                   </Button>
                 </CardContent>
               </Card>
-          )) : (
+          ); }) : (
             <div className="text-center py-24 bg-muted/10 border-2 border-dashed rounded-[3rem] space-y-6">
               <div className="bg-white w-20 h-20 rounded-4xl flex items-center justify-center mx-auto shadow-xl relative">
                 <MessageSquare className="h-10 w-10 text-primary opacity-20" />

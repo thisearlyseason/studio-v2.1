@@ -44,6 +44,7 @@ export default function LoginPage() {
   const emailLoginPending = React.useRef(false);
   const [isGoogleLoading, setIsGoogleLoading] = useState(false);
   const [isDemoLoading, setIsDemoLoading] = useState(false);
+  const [signupHref, setSignupHref] = useState('/signup');
   const [forgotMode, setForgotMode] = useState(false);
   const [forgotEmail, setForgotEmail] = useState('');
   const [forgotSent, setForgotSent] = useState(false);
@@ -66,7 +67,9 @@ export default function LoginPage() {
     setIsHydrated(true);
     const returnTo = new URLSearchParams(window.location.search).get('returnTo');
     if (returnTo) {
-      sessionStorage.setItem('squad_return_path', safeReturnPath(returnTo, APP_DISTRIBUTION));
+      const path = safeReturnPath(returnTo, APP_DISTRIBUTION);
+      sessionStorage.setItem('squad_return_path', path);
+      setSignupHref(`/signup?returnTo=${encodeURIComponent(path)}`);
     }
   }, []);
 
@@ -107,12 +110,6 @@ export default function LoginPage() {
           return;
         }
         const storedReturnPath = sessionStorage.getItem('squad_return_path');
-        if (storedReturnPath) {
-          const returnPath = safeReturnPath(storedReturnPath, APP_DISTRIBUTION);
-          sessionStorage.removeItem('squad_return_path');
-          enterAuthenticatedPage(returnPath);
-          return;
-        }
         try {
           const userDoc = await withTimeout(
             getDoc(doc(db, 'users', user.uid)),
@@ -120,6 +117,12 @@ export default function LoginPage() {
             'Profile lookup timed out',
           );
           if (userDoc.exists()) {
+            if (storedReturnPath) {
+              const returnPath = safeReturnPath(storedReturnPath, APP_DISTRIBUTION);
+              sessionStorage.removeItem('squad_return_path');
+              enterAuthenticatedPage(returnPath);
+              return;
+            }
             const data = userDoc.data();
             if (user.email && data.email !== user.email) {
               await updateDoc(userDoc.ref, { email: user.email });
@@ -475,7 +478,7 @@ export default function LoginPage() {
               </Button>
               <div className="text-center space-y-2">
                 <p className="text-[10px] font-bold text-muted-foreground uppercase tracking-widest">
-                  {BETA_MODE ? 'Private beta — use email & password above' : <>Need an account? <Link href="/signup" className="text-primary hover:underline font-black">Create One</Link></>}
+                  {BETA_MODE ? 'Private beta — use email & password above' : <>Need an account? <Link href={signupHref} className="text-primary hover:underline font-black">Create One</Link></>}
                 </p>
               </div>
             </CardFooter>

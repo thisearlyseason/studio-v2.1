@@ -46,6 +46,6 @@ test('signup persists only adult-athlete codes and verification consumes the pen
     readFile(new URL('../src/app/verify-email/page.tsx', import.meta.url), 'utf8'),
   ]);
 
-  assert.match(signup, /\.\.\.\(regTarget === 'self' && normalizedJoinCode \? \{ pendingTeamJoinCode: normalizedJoinCode \} : \{\}\)/);
+  assert.match(signup, /\.\.\.\(!linkedInvite && regTarget === 'self' && normalizedJoinCode \? \{ pendingTeamJoinCode: normalizedJoinCode \} : \{\}\)/);
   assert.match(verification, /completePendingSignupEnrollment/);
 });
