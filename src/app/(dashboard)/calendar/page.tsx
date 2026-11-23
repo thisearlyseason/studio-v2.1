@@ -1,6 +1,7 @@
 
 "use client";
 
+import { formatActivityTime } from '@/lib/format-activity-time';
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { eventDate, expandTournamentMatches } from '@/lib/team-home-events';
@@ -1308,15 +1309,16 @@ export default function MasterCalendarPage() {
                       <div className="flex flex-wrap gap-1">
                       {dayEvents.map(event => {
                           const type = event.isTournament ? 'tournament' : event.eventType || 'other';
+                          const startLabel = formatActivityTime(event.startTime);
                           const Icon = EVENT_TYPE_ICONS[type as EventType] || CalendarDays;
                           return (
                           <Tooltip key={event.id}>
                             <TooltipTrigger asChild>
                               <button
                                 type="button"
-                                aria-label={`View ${event.title}`}
+                                aria-label={`View ${event.title}, ${startLabel}`}
                                 className={cn(
-                                  "flex h-9 w-full min-w-0 items-center justify-start gap-0.5 rounded-lg px-0.5 shadow-sm hover:brightness-90 focus-visible:ring-2 focus-visible:ring-ring md:gap-1 md:px-2",
+                                  "@container flex min-h-9 w-full min-w-0 flex-wrap items-center justify-start gap-x-0.5 py-1 rounded-lg px-0.5 shadow-sm hover:brightness-90 focus-visible:ring-2 focus-visible:ring-ring md:gap-x-1 md:px-2",
                                   EVENT_TYPE_COLORS[type as EventType] || EVENT_TYPE_COLORS.other
                                 )}
                                 onClick={(e) => {
@@ -1326,11 +1328,12 @@ export default function MasterCalendarPage() {
                                 }}
                               >
                                 <Icon aria-hidden="true" className="h-4 w-4 shrink-0 md:h-5 md:w-5" />
-                                <span className="min-w-0 line-clamp-2 break-all text-left text-[11px] font-bold leading-tight md:block md:truncate md:text-xs">{event.title}</span>
+                                <span className="min-w-0 flex-1 line-clamp-2 break-all text-left text-[11px] font-bold leading-tight md:block md:truncate md:text-xs">{event.title}</span>
+                                <span className="w-full whitespace-nowrap text-left text-[10px] font-semibold leading-tight tabular-nums @[7rem]:w-auto">{startLabel}</span>
                               </button>
                             </TooltipTrigger>
                             <TooltipContent side="bottom" className="text-[10px] font-black">
-                              <span className="opacity-60">{event.startTime}</span>{event.startTime ? ' · ' : ''}{event.title}
+                              <span className="opacity-60">{startLabel}</span> · {event.title}
                               <div className="text-[9px] opacity-50 mt-0.5">Click to view details</div>
                             </TooltipContent>
                           </Tooltip>

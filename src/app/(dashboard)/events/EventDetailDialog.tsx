@@ -1,5 +1,6 @@
 "use client";
 
+import { formatActivityTime } from '@/lib/format-activity-time';
 import React, { useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import { 
@@ -94,10 +95,7 @@ interface EventDetailDialogProps {
   defaultTab?: 'attendance' | 'matches' | 'plan' | 'assignments' | 'intel';
 }
 
-function formatActivityTime(value: string): string {
-  try { return format(new Date('2000-01-01T' + value), 'h:mm a'); }
-  catch { return value; }
-}
+
 
 export function EventDetailDialog({ 
   event, 
