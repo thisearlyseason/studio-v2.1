@@ -1036,7 +1036,7 @@ interface TeamContextType {
    * in teams/{teamId}/coachWaiverSignatures/{waiverDocId} and archives it. */
   signGlobalWaiverAsCoach: (waiver: Pick<TeamDocument, 'id' | 'title' | 'version' | 'textHash'>) => Promise<boolean>;
   removeMember: (memberId: string, reason?: string) => Promise<void>;
-  reinstateMember: (memberId: string) => Promise<void>;
+  reinstateMember: (memberId: string, teamId?: string) => Promise<void>;
   upgradeChildToLogin: (childId: string) => Promise<void>;
   registerChild: (first: string, last: string, dob: string, email?: string) => Promise<string | null>;
   updateChild: (childId: string, updates: Partial<PlayerProfile>) => Promise<void>;
@@ -2047,13 +2047,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
   }, [activeTeam?.id, firebaseAuth]);
 
-  const reinstateMember = useCallback(async (memberId: string) => {
-    if (!activeTeam?.id || !firebaseAuth) return;
+  const reinstateMember = useCallback(async (memberId: string, teamId = activeTeam?.id) => {
+    if (!teamId || !firebaseAuth) return;
     try {
       const token = await getAuthToken(firebaseAuth);
       const response = await fetch('/api/teams/members/lifecycle', {
         method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ teamId: activeTeam.id, memberId, action: 'reinstate' }),
+        body: JSON.stringify({ teamId, memberId, action: 'reinstate' }),
       });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || 'Failed to reinstate member.');
@@ -3371,6 +3371,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       method: 'POST', headers: { 'Content-Type': 'application/json', ...authHeader(token) },
       body: JSON.stringify({
         requestId: data.requestId || crypto.randomUUID(),
+        hubTeamId: data.hubTeamId,
         teamIds,
         title: data.title,
         content: data.content,

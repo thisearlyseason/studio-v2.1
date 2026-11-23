@@ -3,6 +3,7 @@
 
 import { formatActivityTime } from '@/lib/format-activity-time';
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react';
+import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { eventDate, expandTournamentMatches } from '@/lib/team-home-events';
 import { 
@@ -14,6 +15,7 @@ import {
   eachDayOfInterval, 
   isSameMonth, 
   isSameDay, 
+  addDays,
   addMonths, 
   subMonths,
   isToday,
@@ -882,16 +884,30 @@ function LeagueScheduleButton({ events }: { events: TeamEvent[] }) {
 }
 
 export default function MasterCalendarPage() {
-  const { teams, activeTeamEvents, isParent, activeTeam, db, updateRSVP, myChildren } = useTeam();
+  const { activeTeam, user } = useTeam();
+  return <TeamCalendar key={JSON.stringify([user?.id, activeTeam?.id])} />;
+}
+
+function TeamCalendar() {
+  const { teams, activeTeamEvents, isParent, isStaff, activeTeam, db, updateRSVP, myChildren } = useTeam();
   
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<Date | null>(new Date());
-  const [viewMode, setViewMode] = useState<'month' | 'week' | 'day' | 'list'>('month');
+  const homeEventParams = useSearchParams();
+  const requestedView = homeEventParams.get('view');
+  const initialView = requestedView === 'agenda' ? 'list' : requestedView === 'week' || requestedView === 'day' ? requestedView : 'month';
+  const [viewMode, setViewMode] = useState<'month' | 'week' | 'day' | 'list'>(initialView);
+  useEffect(() => { setViewMode(initialView); }, [initialView]);
+  const anchor = selectedDay || currentDate;
+  const shiftPeriod = (direction: number) => {
+    const next = viewMode === 'day' || viewMode === 'week' ? addDays(anchor, direction * (viewMode === 'week' ? 7 : 1)) : addMonths(currentDate, direction);
+    setCurrentDate(next);
+    setSelectedDay(next);
+  };
   const [selectedEventTypes, setSelectedEventTypes] = useState<EventType[]>(['game', 'practice', 'tournament', 'meeting', 'other']);
   const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
   const [selectedChildIds, setSelectedChildIds] = useState<string[]>([]);
   const [searchTerm, setSearchTerm] = useState('');
-  const homeEventParams = useSearchParams();
   const [detailTeamId, setDetailTeamId] = useState<string | null>(null);
   useEffect(() => {
     const eventId = homeEventParams.get('event');
@@ -911,7 +927,7 @@ export default function MasterCalendarPage() {
   const { data: recordedGames } = useCollection<any>(recordedGamesQuery);
 
   useEffect(() => {
-    if (typeof window !== 'undefined' && window.innerWidth < 768) {
+    if (!requestedView && typeof window !== 'undefined' && window.innerWidth < 768) {
       setViewMode('list');
     }
   }, []);
@@ -1126,10 +1142,10 @@ export default function MasterCalendarPage() {
   }, [selectedDay, eventsByDay]);
 
   const focusedEvents = useMemo(() => {
-    if (viewMode === 'list' || viewMode === 'month') return filteredEvents;
+    if (viewMode === 'month') return filteredEvents;
     const anchor = selectedDay || currentDate;
-    const start = viewMode === 'day' ? startOfDay(anchor) : startOfWeek(anchor);
-    const end = viewMode === 'day' ? endOfDay(anchor) : endOfWeek(anchor);
+    const start = viewMode === 'list' ? startOfMonth(currentDate) : viewMode === 'day' ? startOfDay(anchor) : startOfWeek(anchor);
+    const end = viewMode === 'list' ? endOfMonth(currentDate) : viewMode === 'day' ? endOfDay(anchor) : endOfWeek(anchor);
     return filteredEvents.filter(event => {
       const eventStartDate = calendarEventDate(event.date);
       const eventEndDate = calendarEventDate(event.endDate || event.date);
@@ -1194,11 +1210,12 @@ export default function MasterCalendarPage() {
 
         <div className="flex flex-wrap items-center gap-2">
           <div className="bg-muted/50 p-1 rounded-xl border-2 flex items-center shadow-inner">
-            <Button aria-label="Month" variant={viewMode === 'month' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('month')} className="h-9 px-3 rounded-lg font-black text-[10px] uppercase"><LayoutGrid className="h-3.5 w-3.5 sm:mr-2" /><span className="hidden sm:inline">Month</span></Button>
-            <Button aria-label="Week" variant={viewMode === 'week' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('week')} className="h-9 px-3 rounded-lg font-black text-[10px] uppercase"><CalendarDays className="h-3.5 w-3.5 sm:mr-2" /><span className="hidden sm:inline">Week</span></Button>
-            <Button aria-label="Day" variant={viewMode === 'day' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('day')} className="h-9 px-3 rounded-lg font-black text-[10px] uppercase"><CalendarIcon className="h-3.5 w-3.5 sm:mr-2" /><span className="hidden sm:inline">Day</span></Button>
-            <Button aria-label="Agenda" variant={viewMode === 'list' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('list')} className="h-9 px-3 rounded-lg font-black text-[10px] uppercase"><List className="h-3.5 w-3.5 sm:mr-2" /><span className="hidden sm:inline">Agenda</span></Button>
+            <Button aria-label="Month" variant={viewMode === 'month' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('month')} className="h-9 px-2 sm:px-3 gap-1 rounded-lg font-black text-[10px] uppercase"><LayoutGrid className="h-3.5 w-3.5 sm:mr-2" /><span>Month</span></Button>
+            <Button aria-label="Week" variant={viewMode === 'week' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('week')} className="h-9 px-2 sm:px-3 gap-1 rounded-lg font-black text-[10px] uppercase"><CalendarDays className="h-3.5 w-3.5 sm:mr-2" /><span>Week</span></Button>
+            <Button aria-label="Day" variant={viewMode === 'day' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('day')} className="h-9 px-2 sm:px-3 gap-1 rounded-lg font-black text-[10px] uppercase"><CalendarIcon className="h-3.5 w-3.5 sm:mr-2" /><span>Day</span></Button>
+            <Button aria-label="Agenda" variant={viewMode === 'list' ? 'default' : 'ghost'} size="sm" onClick={() => setViewMode('list')} className="h-9 px-2 sm:px-3 gap-1 rounded-lg font-black text-[10px] uppercase"><List className="h-3.5 w-3.5 sm:mr-2" /><span>Agenda</span></Button>
           </div>
+          {isStaff && <Button asChild variant="outline" size="sm"><Link href="/events">Manage activities</Link></Button>}
           {/* League Schedule Button */}
           {allEvents.some(e => e.isLeagueGame || e.isTournament) && (
             <LeagueScheduleButton events={allEvents} />
@@ -1257,28 +1274,28 @@ export default function MasterCalendarPage() {
         <div className="bg-black text-white p-6 flex items-center justify-between">
           <div className="flex items-center gap-4">
             <div className="bg-primary p-2 rounded-xl text-white shadow-lg"><CalendarIcon className="h-5 w-5" /></div>
-            <h2 className="text-2xl font-black uppercase tracking-tight">{format(currentDate, 'MMMM yyyy')}</h2>
+            <h2 className="text-2xl font-black uppercase tracking-tight">{viewMode === 'day' ? format(anchor, 'MMM d, yyyy') : viewMode === 'week' ? format(startOfWeek(anchor), 'MMM d') + ' – ' + format(endOfWeek(anchor), 'MMM d, yyyy') : format(currentDate, 'MMMM yyyy')}</h2>
           </div>
           <div className="flex items-center gap-2">
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={() => setCurrentDate(subMonths(currentDate, 1))} className="text-white hover:bg-white/10 rounded-full">
+                <Button variant="ghost" size="icon" onClick={() => shiftPeriod(-1)} className="text-white hover:bg-white/10 rounded-full">
                   <ChevronLeft className="h-6 w-6" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                Acknowledge Previous Month
+                Previous {viewMode === 'list' ? 'month' : viewMode}
               </TooltipContent>
             </Tooltip>
             <Button variant="ghost" size="sm" onClick={() => { setCurrentDate(new Date()); setSelectedDay(new Date()); }} className="text-white hover:bg-white/10 font-black uppercase text-[10px] tracking-widest px-4 rounded-full">Today</Button>
             <Tooltip>
               <TooltipTrigger asChild>
-                <Button variant="ghost" size="icon" onClick={() => setCurrentDate(addMonths(currentDate, 1))} className="text-white hover:bg-white/10 rounded-full">
+                <Button variant="ghost" size="icon" onClick={() => shiftPeriod(1)} className="text-white hover:bg-white/10 rounded-full">
                   <ChevronRight className="h-6 w-6" />
                 </Button>
               </TooltipTrigger>
               <TooltipContent>
-                Advance to Next Month
+                Next {viewMode === 'list' ? 'month' : viewMode}
               </TooltipContent>
             </Tooltip>
           </div>
@@ -1301,7 +1318,7 @@ export default function MasterCalendarPage() {
                   const isSelected = selectedDay && isSameDay(day, selectedDay);
 
                   return (
-                    <div key={i} className={cn("px-px py-2 md:p-2 border-r border-b min-h-[120px] transition-all cursor-pointer relative", !isCurrentMonth ? "bg-muted/5 opacity-30" : "bg-white", isTodayDate && "bg-primary/2", isSelected && "bg-primary/5 ring-2 ring-inset ring-primary/20")} onClick={() => setSelectedDay(day)}>
+                    <div key={i} className={cn("px-px py-2 md:p-2 border-r border-b min-h-[120px] transition-all cursor-pointer relative", !isCurrentMonth ? "bg-muted/5 opacity-30" : "bg-white", isTodayDate && "bg-primary/2", isSelected && "bg-primary/5 ring-2 ring-inset ring-primary/20")} onClick={() => { setSelectedDay(day); setCurrentDate(day); }}>
                       <div className="flex justify-between items-center mb-2">
                         <span className={cn("h-7 w-7 flex items-center justify-center rounded-full text-xs font-black transition-all", isTodayDate ? "bg-primary text-white" : (isSelected ? "bg-black text-white" : "text-muted-foreground"))}>{format(day, 'd')}</span>
                       </div>
@@ -1382,11 +1399,11 @@ export default function MasterCalendarPage() {
                     <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground opacity-50">No scheduled events match these filters</p>
                   </div>
                 ) : Object.entries(eventsByDay)
-                  .filter(([dayKey]) => viewMode === 'list' || focusedEvents.some(event => {
-                    const start = event.date;
-                    const end = event.endDate || event.date;
-                    return dayKey >= start && dayKey <= end;
-                  }))
+                  .filter(([dayKey]) => {
+                    if (viewMode === 'list') return dayKey >= format(monthStart,'yyyy-MM-dd') && dayKey <= format(monthEnd,'yyyy-MM-dd');
+                    if (viewMode === 'day') return dayKey === format(anchor,'yyyy-MM-dd');
+                    return dayKey >= format(startOfWeek(anchor),'yyyy-MM-dd') && dayKey <= format(endOfWeek(anchor),'yyyy-MM-dd');
+                  })
                   .sort(([a], [b]) => a.localeCompare(b)).map(([dayKey, dayEvents]) => {
                     const label = calendarDateLabel(dayKey);
                     if (!label) return null;

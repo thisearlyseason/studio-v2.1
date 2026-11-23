@@ -36,3 +36,21 @@ test('hub channel creation accepts linked staff and rejects sibling club and sch
     }
   } finally {handle.dispose();}
 });
+
+test('hub waivers reject sibling squads during deployment and later edits', async () => {
+  const {db,records} = communicationDb(Object.fromEntries(teams.map(team => ['teams/'+team.id,team])));
+  db.getAll = (...refs) => Promise.all(refs.map(ref => ref.get()));
+  const handle = await loadCommunicationRoute('../../src/app/api/organizations/waivers/route.ts',db,{uid:'owner'});
+  const body = {hubTeamId:'hub0',teamIds:['squad0'],requestId:'hubcheck',title:'Consent',content:'Season terms'};
+  try {
+    const wrong = await handle.route.POST(communicationRequest({...body,teamIds:['squad0','squad1']}));
+    assert.equal(wrong.status,403);
+    assert.equal(records.has('teams/squad1/documents/waiver_hubcheck_2'),false);
+    const response = await handle.route.POST(communicationRequest(body));
+    assert.equal(response.status,201);
+    const {documentId,version,textHash} = await response.json();
+    const change = {documentId,expectedVersion:version,expectedTextHash:textHash,isActive:false};
+    assert.equal((await handle.route.PATCH(communicationRequest({...change,hubTeamId:'hub1'}))).status,403);
+    assert.equal((await handle.route.PATCH(communicationRequest({...change,hubTeamId:'hub0'}))).status,200);
+  } finally {handle.dispose();}
+});

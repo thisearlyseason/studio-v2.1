@@ -1,3 +1,4 @@
+import { squadBelongsToHub } from '@/lib/hub-eligibility';
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { verifyFirebaseToken } from '@/lib/api-auth';
@@ -44,6 +45,15 @@ async function resolveDeployment(ownerId: string, documentId: string) {
   const copies = copiesSnapshot.docs.filter(snapshot => selectedIds.has(snapshot.id));
   if (!masterSnapshot.exists && copies.length === 0) return null;
   return { deploymentId, masterRef, masterSnapshot, copies };
+}
+
+async function verifyHubTargets(transaction: FirebaseFirestore.Transaction, hubId: unknown,
+  ownerId: string, teams: FirebaseFirestore.DocumentSnapshot[]) {
+  if (hubId === undefined) return;
+  if (typeof hubId !== 'string' || !ID.test(hubId)) throw new Error('INVALID');
+  const hub = await transaction.get(adminDb.collection('teams').doc(hubId));
+  if (!hub.exists || hub.data()?.ownerUserId !== ownerId ||
+      teams.some(team => !squadBelongsToHub({...team.data(), id:team.id}, {...hub.data(), id:hub.id}))) throw new Error('FORBIDDEN');
 }
 
 async function assertOwnerTargets(auth: { uid: string; role?: string }, teamIds: string[]) {
@@ -94,6 +104,7 @@ export async function POST(request: NextRequest) {
     await adminDb.runTransaction(async transaction => {
       const snapshots = await Promise.all([...refs, masterRef, ...copyRefs].map(ref => transaction.get(ref)));
       const teamSnapshots = snapshots.slice(0, refs.length);
+      await verifyHubTargets(transaction, body.hubTeamId, ownerId, teamSnapshots);
       const master = snapshots[refs.length];
       const copies = snapshots.slice(refs.length + 1);
       if (teamSnapshots.some(team => !team.exists || team.data()?.ownerUserId !== ownerId || team.data()?.isActive === false || team.data()?.isArchived === true)) throw new Error('FORBIDDEN');
@@ -164,6 +175,7 @@ async function mutateGlobalWaiver(
     const masterArchive = snapshots[teamRefs.length + copyRefs.length];
     const teamArchives = snapshots.slice(teamRefs.length + copyRefs.length + 1);
     if (teams.some(team => !team.exists || team.data()?.ownerUserId !== auth.uid || team.data()?.isActive === false || team.data()?.isArchived === true)) throw new Error('FORBIDDEN');
+    await verifyHubTargets(transaction, body.hubTeamId, auth.uid, teams);
     copyRefs.forEach((copyRef, index) => {
       if (!copies[index].exists) return;
       const copy = copies[index].data() || {};

@@ -604,8 +604,13 @@ function TeamEventsPage() {
               onClick={() => setViewMode('calendar')}
               className="h-8 rounded-lg font-black text-[10px] uppercase px-3"
             >
-              <LayoutGrid className="h-3.5 w-3.5 mr-1.5" />Calendar
+              <LayoutGrid className="h-3.5 w-3.5 mr-1.5" />Month
             </Button>
+            {(['week', 'day', 'agenda'] as const).map(view => (
+              <Button key={view} asChild size="sm" variant="ghost" className="h-8 rounded-lg font-black text-[10px] uppercase px-2 sm:px-3">
+                <Link href={'/calendar?view=' + view}>{view}</Link>
+              </Button>
+            ))}
           </div>
           {isStaff && ( <Button size="sm" className="rounded-full h-11 px-6 font-black uppercase text-xs shadow-lg" onClick={() => { resetForm(); setIsCreateOpen(true); }}>+ New Activity</Button> )}
         </div>
