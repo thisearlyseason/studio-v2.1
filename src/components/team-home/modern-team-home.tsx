@@ -64,7 +64,7 @@ export function ModernTeamHome() {
         <div className="modern-hero-content">
           {activeTeam.teamLogoUrl && <img src={activeTeam.teamLogoUrl} alt="" className="modern-team-logo" onError={e => { e.currentTarget.style.display = 'none'; }}/>}
           <span className="modern-eyebrow">Team home</span>
-          <h1>Built for<br/>game day.</h1>
+          <h1 className={activeTeam.homeCoverHeadline ? 'modern-custom-headline' : undefined}>{activeTeam.homeCoverHeadline || <>Built for<br/>game day.</>}</h1>
           <p className="modern-hero-team-name">{activeTeam.name}</p>
           {(isStaff || isSuperAdmin) && <CoverEditor key={activeTeam.id} dashboard />}
         </div>

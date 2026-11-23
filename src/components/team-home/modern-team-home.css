@@ -272,3 +272,5 @@ html[data-squad-layout="modern"] [role="dialog"] { border-radius: 18px; }
   .modern-cover-actions { position: absolute; right: 0; top: 0; }
   .modern-cover-actions .modern-edit-cover { position: static; }
 }
+
+.modern-hero h1.modern-custom-headline { overflow-wrap: anywhere; font-size: clamp(24px, 4vw, 48px); letter-spacing: -.04em; }
