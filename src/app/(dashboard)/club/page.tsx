@@ -1,5 +1,6 @@
 "use client";
 
+import { ClubCover } from './ClubCover';
 import OrganizerGuide from '@/components/guidance/OrganizerGuide';
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import Link from 'next/link';
@@ -879,12 +880,15 @@ function AuthorizedClubManagementPage() {
     }
   };
 
+  const ownedTeams = teams.filter(team => team.ownerUserId === user?.id);
+  const coverTeamId = isSchoolMode ? undefined : (ownedTeams.find(team => ['club','club_hub'].includes(team.type || '')) ?? ownedTeams[0])?.id;
+
   return (
     <div className="space-y-5 md:space-y-8 pb-24 animate-in fade-in duration-700 w-full" style={{maxWidth:'100%', overflowX:'hidden'}}>
 
       {/* ── HERO CARD ── */}
       <OrganizerGuide kind="organization" />
-      <Card className="bg-black text-white p-5 md:p-10 lg:p-14 rounded-4xl md:rounded-[3rem] shadow-2xl relative overflow-hidden group border-none hero-gradient">
+      <ClubCover key={user?.id + ":" + coverTeamId} teamId={coverTeamId} className="bg-black text-white p-5 md:p-10 lg:p-14 rounded-4xl md:rounded-[3rem] shadow-2xl relative overflow-hidden group border-none hero-gradient">
         <div className="absolute top-0 right-0 p-4 md:p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-1000">
           <Building className="h-28 w-28 md:h-56 md:w-56" />
         </div>
@@ -907,7 +911,7 @@ function AuthorizedClubManagementPage() {
             </Button>
           </div>
         </div>
-      </Card>
+      </ClubCover>
 
       {privateSquads.length < organizationSquadCandidates.length && (
         <p className="rounded-xl border p-3 text-sm text-muted-foreground">
