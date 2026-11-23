@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { verifyFirebaseToken, assertNonAnonymous } from '@/lib/api-auth';
 import { adminDb } from '@/lib/firebase-admin';
+import { isHubPlan, isHubTeamType } from '@/lib/hub-eligibility';
 import { getTeamAuthority } from '@/lib/server-team-access';
 import { optimizeTeamCover } from '@/lib/team-cover-processing';
 import { readLibraryBytes, LibraryInputError } from '@/lib/library-policy';
@@ -16,8 +17,8 @@ async function cover(request: NextRequest) {
   const team = await getTeamAuthority(teamId, auth.uid, auth.role);
   const profile = adminDb.collection('users').doc(auth.uid);
   const explicitHub = team && ['club','club_hub'].includes(team.teamData.type);
-  if (!team?.isOwner || (!explicitHub &&
-      !['elite','league'].includes((await profile.get()).data()?.plan_type))) {
+  if (!team?.isOwner || (!isHubTeamType(team.teamData.type) && !team.isSuperAdmin &&
+      !isHubPlan((await profile.get()).data()?.plan_type))) {
     return NextResponse.json({error:'Only the Club Hub owner can manage this photo.'},{status:403});
   }
   const ref = profile.collection('hubBranding').doc(explicitHub ? 'club_'+teamId : 'club');

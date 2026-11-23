@@ -95,14 +95,15 @@ import {
   type GlobalWaiverDeployment,
 } from '@/lib/global-waiver-policy';
 
+import { isHubPlan, isHubTeamType } from '@/lib/hub-eligibility';
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
 
 export default function ClubManagementPage() {
   const { isPrimaryClubAuthority, isSchoolMode, teams, user } = useTeam();
 
   const ownsHub = teams.some(team => team.ownerUserId === user?.id &&
-    (['school', 'school_hub', 'club', 'club_hub'].includes(team.type || '') ||
-      ['school', 'elite', 'league'].includes(user?.plan_type || '')));
+    (isHubTeamType(team.type) ||
+      isHubPlan(user?.plan_type)));
   if (!isPrimaryClubAuthority || !ownsHub) {
     return <AccessRestricted type="role" title={isSchoolMode ? "School Hub Locked" : "Club Hub Locked"} description={isSchoolMode ? "This command center is reserved for School Hub Administrators." : "This command center is reserved for Institutional Stakeholders and Club Hub Administrators."} />;
   }
@@ -265,7 +266,7 @@ function AuthorizedClubManagementPage() {
   useEffect(() => {
     if (!firebaseAuth || !organizationOwnerId) return;
     const hasSchoolHub = schoolHub?.type === 'school' || schoolHub?.type === 'school_hub';
-    const ownsOrganizationPlan = ['school', 'elite', 'league'].includes(user?.plan_type || '') && isEntitledSubscriptionStatus(user?.subscription_status);
+    const ownsOrganizationPlan = isHubPlan(user?.plan_type) && isEntitledSubscriptionStatus(user?.subscription_status);
     if (!hasSchoolHub && !ownsOrganizationPlan && !isSuperAdmin) return;
     let cancelled = false;
     const loadCapacity = async () => {
@@ -881,7 +882,7 @@ function AuthorizedClubManagementPage() {
   };
 
   const ownedTeams = teams.filter(team => team.ownerUserId === user?.id);
-  const coverTeamId = isSchoolMode ? undefined : (ownedTeams.find(team => ['club','club_hub'].includes(team.type || '')) ?? ownedTeams[0])?.id;
+  const coverTeamId = isSchoolMode ? undefined : (ownedTeams.find(team => ['club','club_hub'].includes(team.type || '')) ?? ownedTeams.find(team => isHubTeamType(team.type)) ?? ownedTeams[0])?.id;
 
   return (
     <div className="space-y-5 md:space-y-8 pb-24 animate-in fade-in duration-700 w-full" style={{maxWidth:'100%', overflowX:'hidden'}}>

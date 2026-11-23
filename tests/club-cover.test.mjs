@@ -25,3 +25,26 @@ test('club owner can replace and restore the hub cover without altering squad co
     assert.deepEqual(records.get('teams/club-a'),team);
   } finally {owner.dispose();other.dispose();}
 });
+
+test('cover access matches hub eligibility and always requires ownership', async () => {
+  const {db} = communicationDb({
+    'teams/squad': { ownerUserId: 'owner', type: 'team' },
+    'teams/legacy': { ownerUserId: 'owner', type: 'school_hub' },
+    'users/school': { plan_type: 'school' },
+    'teams/school-squad': { ownerUserId: 'school', type: 'team' },
+  });
+  for (const [uid, role, team, status] of [
+    ['owner', 'superadmin', 'squad', 204],
+    ['owner', '', 'legacy', 204],
+    ['school', '', 'school-squad', 204],
+    ['owner', '', 'squad', 403],
+    ['school', '', 'squad', 403],
+    ['other', 'superadmin', 'squad', 403],
+  ]) {
+    const handle = await loadCommunicationRoute('../../src/app/api/club/cover/route.ts', db, {uid, role});
+    try {
+      const response = await handle.route.GET(new Request('https://example.test/api/club/cover?teamId=' + team));
+      assert.equal(response.status, status);
+    } finally { handle.dispose(); }
+  }
+});
