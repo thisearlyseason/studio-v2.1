@@ -77,3 +77,17 @@ test('video starts its new resumable session at zero with bounded production chu
   const owner=await loadMediaRoute('../../src/app/api/media/route.ts',db,{uid:'owner'});
   try{assert.equal((await owner.route.POST(request('players/p/videos/session.mp4',{method:'POST',type:'video/mp4',bytes:materializeFixtureMediaBytes({payloadGenerator:'tiny-mp4-v1'})}))).status,201);assert.equal(options.length,1);assert.equal(options[0].resumable,true);assert.equal(options[0].offset,0);assert.equal(options[0].chunkSize,8*1024*1024);assert.equal(options[0].preconditionOpts.ifGenerationMatch,0);}finally{owner.dispose();}
 });
+
+test('saving the team logo links the verified upload only to the owned team', async () => {
+  const { db, records } = mediaDb({ ...initial, 'teams/b': { ownerUserId: 'other' } });
+  const owner = await loadMediaRoute('../../src/app/api/media/route.ts', db, { uid: 'owner' });
+  const bytes = await sharp({ create: { width: 16, height: 16, channels: 4, background: '#fff' } }).png().toBuffer();
+  try {
+    const upload = id => owner.route.POST(request('teams/' + id + '/branding/logo', { method: 'POST', bytes }));
+    assert.equal((await upload('b')).status, 403);
+    const saved = await upload('a');
+    assert.equal(saved.status, 201);
+    assert.equal(records.get('teams/a').teamLogoUrl, (await saved.json()).url);
+    assert.equal(records.get('teams/b').teamLogoUrl, undefined);
+  } finally { owner.dispose(); }
+});

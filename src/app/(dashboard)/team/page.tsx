@@ -1,5 +1,7 @@
 
 "use client";
+import { prepareTeamLogo } from '@/lib/prepare-team-logo';
+import { TeamCover } from '@/components/team-home/team-cover';
 import { CoverEditor } from '@/components/team-home/cover-editor';
 
 import OrganizerGuide from '@/components/guidance/OrganizerGuide';
@@ -234,17 +236,20 @@ export default function TeamProfilePage() {
       e.target.value = '';
       return;
     }
-    if (e.target.files && e.target.files[0] && activeTeam?.id) {
-      setIsUpdatingLogo(true);
-      try {
-        const uploaded=await uploadScopedMedia(`teams/${activeTeam.id}/branding/logo`,e.target.files[0],await getAuthToken(firebaseAuth));
-        if(db){await updateDoc(doc(db,'teams',activeTeam.id),{teamLogoUrl:uploaded.url});setLogoRevision(revision=>revision+1);propagateLogoToLeagues(activeTeam.id,uploaded.url);}
-        toast({ title: 'Squad Branding Updated', description: 'Identity assets synchronized across the matrix.' });
-        setIsUpdatingLogo(false);
-      } catch (err) {
-        setIsUpdatingLogo(false);
-        toast({ title: "Branding Failed", description: "Identity synchronization interrupted.", variant: "destructive" });
-      }
+    const file = e.currentTarget.files?.[0];
+    e.currentTarget.value = '';
+    if (!file) return;
+    setIsUpdatingLogo(true);
+    try {
+      const logo = await prepareTeamLogo(file);
+      const uploaded = await uploadScopedMedia(`teams/${activeTeam.id}/branding/logo`, logo, await getAuthToken(firebaseAuth));
+      setLogoRevision(revision => revision + 1);
+      void propagateLogoToLeagues(activeTeam.id, uploaded.url);
+      toast({ title: 'Team logo saved' });
+    } catch (error) {
+      toast({ title: 'Logo could not be saved', description: error instanceof Error ? error.message : 'Try again.', variant: 'destructive' });
+    } finally {
+      setIsUpdatingLogo(false);
     }
   };
 
@@ -477,12 +482,15 @@ export default function TeamProfilePage() {
 
       <section className="relative">
         <div className="h-40 sm:h-56 w-full hero-gradient rounded-[2.5rem] shadow-2xl overflow-hidden relative">
-          {activeTeam.heroImageUrl ? (
+          {activeTeam.homeCover ? (
+            <TeamCover key={activeTeam.homeCover.id} team={activeTeam} />
+          ) : activeTeam.heroImageUrl ? (
             <img src={activeTeam.heroImageUrl} alt="Team Cover" className="w-full h-full object-cover opacity-30" />
           ) : (
             <div className="absolute inset-0 bg-primary/20" />
           )}
           <div className="absolute inset-0 bg-black/20" />
+          {isAdmin && <a href="#team-cover-editor" className="absolute right-4 top-4 rounded-full bg-white px-4 py-2 text-sm font-bold text-black">Change cover</a>}
         </div>
         
         <div className="container px-6 -mt-20 flex flex-col sm:flex-row items-center sm:items-end gap-6 pb-2">
@@ -604,10 +612,9 @@ export default function TeamProfilePage() {
               </div>
             </CardHeader>
             <CardContent className="p-8 space-y-8">
-               <CoverEditor key={activeTeam.id} />
+               <div id="team-cover-editor" className="scroll-mt-20"><CoverEditor key={activeTeam.id} /></div>
                <div className="flex flex-col md:flex-row gap-8 items-center">
                   <div className="relative group shrink-0">
-                    <input type="file" ref={logoInputRef} className="hidden" accept="image/*" onChange={handleLogoChange} />
                     <div 
                       onClick={() => logoInputRef.current?.click()}
                       className={cn(
@@ -658,7 +665,7 @@ export default function TeamProfilePage() {
                        onClick={() => logoInputRef.current?.click()}
                        disabled={isUpdatingLogo}
                      >
-                       {activeTeam.teamLogoUrl ? "Update Identity Asset" : "Initialize Branding"}
+                       {activeTeam.teamLogoUrl ? "Change team logo" : "Add team logo"}
                      </Button>
                      {activeTeam.teamLogoUrl && (
                        <Button
