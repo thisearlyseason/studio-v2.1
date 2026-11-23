@@ -261,3 +261,6 @@ html[data-squad-layout="modern"] [role="dialog"] { border-radius: 18px; }
 }
 
 .modern-hero h1.modern-custom-headline { overflow-wrap: anywhere; font-size: clamp(24px, 4vw, 48px); letter-spacing: -.04em; }
+
+.dashboard-cover-toolbar .modern-cover-actions { position: static; display: flex; justify-content: flex-end; gap: 8px; margin-top: 6px; }
+.dashboard-cover-toolbar .modern-edit-cover { position: static; margin: 0; border-color: #cbd5e1; background: white; padding: 7px 14px; color: #061b3b; }
