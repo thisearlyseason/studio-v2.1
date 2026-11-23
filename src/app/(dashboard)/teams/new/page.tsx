@@ -59,17 +59,16 @@ function NewTeamForm() {
       let targetType = type;
       let targetSchoolId = undefined;
 
-      // Logic: If creating a sub-squad, inherit the school ID. New teams still
-      // start free and can be upgraded after they exist.
+      // Keep the school association when creating a sub-squad.
       if (isSchoolAdmin && activeTeam?.type === 'school') {
         targetType = 'school_squad';
         targetSchoolId = activeTeam.id;
       }
       
-      const teamId = await createNewTeam(teamName, targetType, organizerPosition, description, selectedPlan, customWaiverTitle, customWaiverContent, targetSchoolId);
+      const { teamId, isPro } = await createNewTeam(teamName, targetType, organizerPosition, description, selectedPlan, customWaiverTitle, customWaiverContent, targetSchoolId);
       if (!teamId) throw new Error('Unable to create the squad. Please try again.');
       setActiveTeam({ id: teamId } as any);
-      if (!isStoreDistribution && selectedPlan === 'team' && proQuotaStatus.remaining <= 0) {
+      if (!isStoreDistribution && selectedPlan === 'team' && !isPro) {
         router.push('/dashboard/billing');
       } else {
         router.push('/feed');

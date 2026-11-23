@@ -2,6 +2,7 @@
 import { createTeamEventRequestRegistry } from '@/lib/team-event-request';
 
 import React, { createContext, useContext, useState, ReactNode, useEffect, useMemo, useCallback, useRef } from 'react';
+import { useScopedSnapshotState } from '@/firebase/firestore/use-scoped-snapshot-state';
 import { useFirestore, useMemoFirebase, useUser, useCollection, useDoc, useStorage, useAuth } from '@/firebase';
 import { clearBrowserSession, DEMO_EXIT_PENDING_KEY, getAuthToken, authHeader } from '@/lib/client-auth';
 import { leagueResolutionCommand, sendLeagueScoringCommand } from '@/lib/public-league-scoring';
@@ -851,6 +852,7 @@ interface TeamContextType {
   firebaseUser: any;
   user: UserProfile | null;
   activeTeam: Team | null;
+  isAccountTeamHub: boolean;
   setActiveTeam: (team: Team) => void;
   teams: Team[];
   isTeamsLoading: boolean;
@@ -915,7 +917,7 @@ interface TeamContextType {
   updateStaffEvaluation: (memberId: string, notes: string) => Promise<void>;
   getStaffEvaluation: (memberId: string) => Promise<string>;
 
-  createNewTeam: (name: string, type: string, pos: string, description?: string, planId?: string, customWaiverTitle?: string, customWaiverContent?: string, schoolId?: string, coachName?: string, coachEmail?: string, overrideOwnerId?: string) => Promise<string>;
+  createNewTeam: (name: string, type: string, pos: string, description?: string, planId?: string, customWaiverTitle?: string, customWaiverContent?: string, schoolId?: string, coachName?: string, coachEmail?: string, overrideOwnerId?: string) => Promise<{ teamId: string; isPro: boolean }>;
   joinTeamWithCode: (code: string, playerId: string, position: string) => Promise<boolean>;
   updateUser: (updates: Partial<UserProfile>) => Promise<void>;
   updateTeam: (id: string, data: Partial<Team>) => Promise<void>;
@@ -1130,7 +1132,6 @@ export function TeamProvider({ children }: { children: ReactNode }) {
 
   const [isPaywallOpen, setIsPaywallOpen] = useState(false);
   const [isSeedingDemo, setIsSeedingDemo] = useState(false);
-  const [totalStorageUsed, setTotalStorageUsed] = useState(0);
 
 
   // Restore active team from persistence.
@@ -1336,7 +1337,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     // server-owned, so fail closed once canonical team access is denied.
     if (isActiveTeamDocLoading || !activeTeamDoc) return null;
     if (activeTeamDoc.id !== activeTeamMembership.id) return null;
-    const combined = { ...activeTeamMembership, ...activeTeamDoc };
+    const name = activeTeamDoc.name || activeTeamDoc.teamName || activeTeamMembership.name;
+    const combined = { ...activeTeamMembership, ...activeTeamDoc, name, teamName: name };
     // Use the same shared fallback — NEVER 'SF' + slice which was inconsistent
     const storedCode = (combined.code || combined.teamCode || combined.inviteCode || '').toString().trim().toUpperCase();
     const finalCode = storedCode || generateTeamCode(combined.id || activeTeamMembership.id);
@@ -1406,7 +1408,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   // Firestore rules cannot safely row-filter an alert collection query. The
   // authenticated route resolves team authority, target, and audience before
   // returning history; the client still applies the same policy defensively.
-  const [allAlerts, setAllAlerts] = useState<TeamAlert[]>([]);
+  const { data: scopedAlerts, setData: setAllAlerts } = useScopedSnapshotState<TeamAlert[]>(activeTeam?.id);
   const [alertHistoryError, setAlertHistoryError] = useState<string | null>(null);
   const alertHistoryRequest = useRef(0);
   const loadAlertHistory = useCallback(async (signal?: AbortSignal) => {
@@ -1423,7 +1425,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       setAllAlerts(result.alerts);
       setAlertHistoryError(result.error);
     }
-  }, [activeTeam?.id, firebaseAuth, firebaseUser?.uid, isAuthResolved, isSeedingDemo]);
+  }, [activeTeam?.id, firebaseAuth, firebaseUser?.uid, isAuthResolved, isSeedingDemo, setAllAlerts]);
 
   useEffect(() => {
     const controller = new AbortController();
@@ -1443,7 +1445,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       window.clearInterval(interval);
       stopForegroundRefresh();
     };
-  }, [loadAlertHistory]);
+  }, [loadAlertHistory, setAllAlerts]);
   const homeDataStatus = useMemo(() => ({ eventsLoading: homeEventsLoading, eventsError: Boolean(homeEventsError), alertsLoading: false, alertsError: Boolean(alertHistoryError) }), [homeEventsLoading, homeEventsError, alertHistoryError]);
   
   const seenAlertIds = useMemo(() => userProfile?.seenAlertIds || [], [userProfile?.seenAlertIds]);
@@ -1592,14 +1594,31 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       profileRole: userProfile?.role,
       member: getMember(firebaseUser?.uid),
     });
-    return allAlerts.filter(alert => isAlertRelevantToRecipient(alert, recipient));
-  }, [allAlerts, firebaseUser?.uid, isStaff, userProfile?.role, getMember]);
+    return (scopedAlerts || []).filter(alert => isAlertRelevantToRecipient(alert, recipient));
+  }, [scopedAlerts, firebaseUser?.uid, isStaff, userProfile?.role, getMember]);
   const unreadAlertsCount = useMemo(
     () => alerts.filter(alert => !seenAlertIds.includes(alert.id)).length,
     [alerts, seenAlertIds],
   );
 
-  const teams = teamsRaw;
+  type TeamSummary = { name?: string; teamName?: string; isPro: boolean; planId: string };
+  const { data: teamSummaries, setData: setSummaries } = useScopedSnapshotState<Record<string, TeamSummary>>(teamsRaw);
+  useEffect(() => {
+    if (!db) return;
+    const summaries: Record<string, TeamSummary> = {};
+    const subscriptions = teamsRaw.map(team => {
+      const publish = (data?: Record<string, any>) => {
+        if (data) {
+          const name = data.name || data.teamName;
+          summaries[team.id] = { ...(name ? { name, teamName: name } : {}), isPro: data.isPro === true, planId: data.planId || 'free' };
+        } else delete summaries[team.id];
+        setSummaries({ ...summaries });
+      };
+      return onSnapshot(doc(db, 'teams', team.id), snapshot => publish(snapshot.data()), () => publish());
+    });
+    return () => subscriptions.forEach(unsubscribe => unsubscribe());
+  }, [db, teamsRaw, setSummaries]);
+  const teams = useMemo(() => teamsRaw.map(team => ({ ...team, ...teamSummaries?.[team.id] })), [teamsRaw, teamSummaries]);
 
   // Plan level check helpers
   const isEliteAccount = useMemo(() => {
@@ -1648,17 +1667,16 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [teams, userProfile, isSuperAdmin, activeTeam, firebaseUser]);
 
   // --- HOUSEHOLD & GLOBAL QUERIES (Moved here to avoid initialization order errors) ---
-  const [householdEvents, setHouseholdEvents] = useState<TeamEvent[]>([]);
-  const [householdGames, setHouseholdGames] = useState<any[]>([]);
+  const allTeamIds = useMemo(() => {
+    if (pathname !== '/family' || !firebaseUser?.uid || !isParent) return [];
+    const children = (myChildren || []).flatMap(child => child.joinedTeamIds || []);
+    return Array.from(new Set(children)).filter(Boolean);
+  }, [pathname, firebaseUser?.uid, isParent, myChildren]);
+  const { data: householdEvents, setData: setHouseholdEvents } = useScopedSnapshotState<TeamEvent[]>(allTeamIds);
+  const { data: householdGames, setData: setHouseholdGames } = useScopedSnapshotState<any[]>(allTeamIds);
 
   useEffect(() => {
-    if (!db || !firebaseUser?.uid || (!isParent && !isPlayer)) return;
-
-    const myOwnTeamIds = activeTeamMemberships(teamsData || []).map(t => t.teamId).filter(Boolean);
-    const childrenTeamIds = (myChildren || []).flatMap(c => c.joinedTeamIds || []);
-    
-    const allTeamIds = Array.from(new Set([...myOwnTeamIds, ...childrenTeamIds])).filter(Boolean);
-    
+    if (!db || !firebaseUser?.uid) return;
     if (allTeamIds.length === 0) {
       setHouseholdEvents([]);
       setHouseholdGames([]);
@@ -1691,6 +1709,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
        }, (err) => {
           if (!firebaseAuth?.currentUser) return;
           if (firebaseAuth.currentUser.isAnonymous && localStorage.getItem(DEMO_EXIT_PENDING_KEY) === 'true') return;
+          eventMaps.delete(tid);
+          flattenAndSet();
           console.error("Event Sync Error:", err);
        });
 
@@ -1705,6 +1725,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
        }, (err) => {
           if (!firebaseAuth?.currentUser) return;
           if (firebaseAuth.currentUser.isAnonymous && localStorage.getItem(DEMO_EXIT_PENDING_KEY) === 'true') return;
+          gameMaps.delete(tid);
+          flattenAndSet();
           console.error("Game Sync Error:", err);
        });
 
@@ -1714,15 +1736,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return () => {
        unsubscribers.forEach(fn => fn());
     };
-  }, [db, firebaseAuth, firebaseUser?.uid, isParent, isPlayer, teamsData, myChildren]);
+  }, [db, firebaseAuth, firebaseUser?.uid, allTeamIds, setHouseholdEvents, setHouseholdGames]);
 
-  const householdMembersQuery = useMemoFirebase(() => (db && firebaseUser?.uid && isAuthResolved && isParent) ? query(collectionGroup(db, 'members'), where('parentId', '==', firebaseUser.uid)) : null, [db, firebaseUser?.uid, isAuthResolved, isParent]);
-  const { data: householdMembersData } = useCollection<Member>(householdMembersQuery);
   const householdPaymentsQuery = useMemoFirebase(
     () => (db && firebaseUser?.uid && isAuthResolved && isParent)
-      ? query(collection(db, 'users', firebaseUser.uid, 'payments'))
+      ? activeTeam?.id ? query(collection(db, 'users', firebaseUser.uid, 'payments'), where('teamId', '==', activeTeam.id)) : null
       : null,
-    [db, firebaseUser?.uid, isAuthResolved, isParent]
+    [db, firebaseUser?.uid, isAuthResolved, isParent, pathname, activeTeam?.id]
   );
   const { data: householdPaymentsData } = useCollection<HouseholdPayment>(householdPaymentsQuery);
   const householdBalance = useMemo(
@@ -1761,7 +1781,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       return { current: 0, limit: 0, exceeded: false, remaining: 0 };
     }
 
-    const ownedProTeams = teamsRaw.filter(
+    const ownedProTeams = teams.filter(
       t => t.ownerUserId === userProfile.id && t.isPro && isBillableSquadSeat(t)
     );
 
@@ -1791,7 +1811,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
 
     return { current: ownedProTeams.length, limit, exceeded: ownedProTeams.length > limit && (limit > 0), remaining: Math.max(0, limit - ownedProTeams.length) };
-  }, [teamsRaw, userProfile, isSuperAdmin]);
+  }, [teams, userProfile, isSuperAdmin]);
 
   const getTeamByCode = useCallback(async (code: string, leagueId?: string) => {
     if (!db || !code) return null;
@@ -1861,6 +1881,9 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return isEliteAccount && isPrimaryClubAuthority && !isSchoolMode;
   }, [isEliteAccount, isPrimaryClubAuthority, isSchoolMode]);
 
+  const { data: storageBytes, setData: setTotalStorageUsed } = useScopedSnapshotState<number>(isStaff ? activeTeam?.id : null);
+  const totalStorageUsed = storageBytes || 0;
+
   // Storage calculation for the active team
   useEffect(() => {
     if (!db || !activeTeam?.id || !isStaff) {
@@ -1877,7 +1900,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       });
       setTotalStorageUsed(total);
     });
-  }, [db, activeTeam?.id, isStaff]);
+  }, [db, activeTeam?.id, isStaff, setTotalStorageUsed]);
 
   const createTeamDocument = useCallback(async (docData: Partial<TeamDocument>) => {
     if (!firebaseAuth || !activeTeam?.id) return;
@@ -2031,7 +2054,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [activeTeam?.id, firebaseAuth]);
 
   const createNewTeam = useCallback(async (name: string, type: any, pos: string, description?: string, planId?: string, customWaiverTitle?: string, customWaiverContent?: string, schoolId?: string, coachName?: string, coachEmail?: string, overrideOwnerId?: string) => { 
-    if (!firebaseUser || !firebaseAuth || !db || !userProfile) return '';
+    if (!firebaseUser || !firebaseAuth || !db || !userProfile) throw new Error('Sign in before creating a team.');
     const token = await getAuthToken(firebaseAuth);
     const response = await fetch('/api/teams/create', {
       method: 'POST',
@@ -2048,32 +2071,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
         coachName,
         coachEmail,
         overrideOwnerId,
+        requestPro: planId === 'team',
+        requirePro: planId === 'team' && proQuotaStatus.remaining > 0,
       }),
     });
     const result = await response.json();
     if (!response.ok) throw new Error(result.error || 'Unable to create the team.');
     const tid = result.teamId as string;
-
-    // Paid subscriptions may automatically allocate one available seat to a
-    // newly created squad. The API derives eligibility and capacity server-side.
-    const paidPlanTypes = new Set(['team', 'elite', 'league', 'school', 'squad_pro', 'squad_pro_demo']);
-    if (planId !== 'free' && paidPlanTypes.has((userProfile as any).plan_type) && proQuotaStatus.remaining > 0 && firebaseAuth) {
-      try {
-        const token = await getAuthToken(firebaseAuth);
-        const allocationResponse = await fetch('/api/teams/allocate-pro', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-          body: JSON.stringify({ teamId: tid }),
-        });
-        if (!allocationResponse.ok) {
-          const result = await allocationResponse.json();
-          console.warn('[Team creation] Pro seat was not allocated:', result.error);
-        }
-      } catch (err) {
-        console.warn('[Team creation] Pro seat allocation failed:', err);
-      }
-    }
-
 
     // Starter creation must not rewrite memberships on unrelated teams.
     // Paid and legacy callers retain their existing identity synchronization.
@@ -2099,7 +2103,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     }
 
     toast({ title: "Team Created Successfully!", description: `Your new ${type.replace('_', ' ')} "${name}" is ready.` });
-    return tid; 
+    return { teamId: tid, isPro: result.isPro === true };
   }, [firebaseUser, firebaseAuth, db, userProfile, proQuotaStatus, activeTeam]);
 
   const joinTeamWithCode = useCallback(async (code: string, playerId: string, position: string) => { 
@@ -2125,7 +2129,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       toast({ title: "Strategic Restriction", description: "Only coaches and team staff can manage the squad directory.", variant: "destructive" });
       return;
     }
-    if (activeTeam?.id) await updateDoc(doc(db, 'teams', activeTeam.id, 'members', mid), clean(u)); 
+    if (activeTeam?.id) await updateDoc(doc(db, 'teams', activeTeam.id, 'members', mid), clean(u));
   }, [db, activeTeam, isStaff]);
 
   const updateTeamDetails = useCallback(async (u: any) => { 
@@ -2133,7 +2137,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       toast({ title: "Authorization Denied", description: "Only admins can modify team identity settings.", variant: "destructive" });
       return;
     }
-    if (activeTeam?.id) await updateDoc(doc(db, 'teams', activeTeam.id), clean(u)); 
+    if (activeTeam?.id) await updateDoc(doc(db, 'teams', activeTeam.id), clean({ ...u, ...(u.name ? { teamName: u.name } : {}) }));
   }, [db, activeTeam, isStaff]);
 
   const updateTeamHero = useCallback(async (url: string) => { 
@@ -3666,7 +3670,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
   }, [activeTeam?.id, firebaseAuth, firebaseUser]);
 
   const contextValue = useMemo(() => ({
-    db, user: userProfile, userProfile, activeTeam, setActiveTeam, teams: teamsRaw, isTeamsLoading, members, isMembersLoading,
+    isAccountTeamHub: !!userProfile && !isTeamsLoading && !!teamsData && !activeTeamMembership,
+    db, user: userProfile, userProfile, activeTeam, setActiveTeam, teams, isTeamsLoading, members, isMembersLoading,
     currentMember: getMember(firebaseUser?.uid),
     isStaff, isPro, isStarter, isParent, 
     isPlayer,
@@ -3720,8 +3725,8 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       await updateMember(memberId, { [field]: value });
     },
   }), [
-    db, userProfile, activeTeam, setActiveTeam, teamsRaw, isTeamsLoading, members, isMembersLoading, firebaseUser, storage,
-    isStaff, isPro, isStarter, householdEvents, householdGames, activeTeamEvents, homeDataStatus, games, myChildren, plans, isPlansLoading, isPaywallOpen,
+    teamsData, activeTeamMembership, db, userProfile, activeTeam, setActiveTeam, teams, isTeamsLoading, members, isMembersLoading, firebaseUser, storage,
+    isStaff, isPro, isStarter, householdEvents, householdGames, activeTeamEvents, homeDataStatus, games, householdBalance, myChildren, plans, isPlansLoading, isPaywallOpen,
     isSeedingDemo, setIsSeedingDemo, getCalendarFeedUrl,
     seenAlertIds, alerts, alertHistoryError, loadAlertHistory, unreadAlertsCount, isSuperAdmin, isClubManager, isPrimaryClubAuthority, isEliteAccount, hasFeature, proQuotaStatus,
     totalStorageUsed,

@@ -3,7 +3,7 @@
 import React, { useState, useMemo } from 'react';
 import { useTeam } from '@/components/providers/team-provider';
 import { useFirestore, useCollection, useMemoFirebase } from '@/firebase';
-import { collection, query, orderBy } from 'firebase/firestore';
+import { collection, query, where } from 'firebase/firestore';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -84,19 +84,19 @@ function downloadInvoice(payment: Payment) {
 }
 
 export default function PaymentsPage() {
-  const { user, isParent } = useTeam();
+  const { user, isParent, activeTeam } = useTeam();
   const db = useFirestore();
   const router = useRouter();
   const [filterStatus, setFilterStatus] = useState<'all' | 'paid' | 'pending' | 'overdue'>('all');
 
   const paymentsQuery = useMemoFirebase(() => {
-    if (!isParent || !db || !user?.id) return null;
-    return query(collection(db, 'users', user.id, 'payments'), orderBy('date', 'desc'));
-  }, [db, user?.id, isParent]);
+    if (!isParent || !db || !user?.id || !activeTeam?.id) return null;
+    return query(collection(db, 'users', user.id, 'payments'), where('teamId', '==', activeTeam.id));
+  }, [db, user?.id, isParent, activeTeam?.id]);
 
   const { data: rawPayments, isLoading } = useCollection<Payment>(paymentsQuery);
 
-  const payments = useMemo(() => rawPayments || [], [rawPayments]);
+  const payments = useMemo(() => [...(rawPayments || [])].sort((a, b) => String(b.date).localeCompare(String(a.date))), [rawPayments]);
 
   const stats = useMemo(() => {
     return calculateHouseholdPayments(payments) as {

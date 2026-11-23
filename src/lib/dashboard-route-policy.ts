@@ -116,3 +116,10 @@ export function authorizeDashboardRoute(
 
   return { allowed: true };
 }
+
+/** Team-hosted leagues can also use an allocated Pro squad seat. */
+export function canHostTeamLeague(planId: unknown, isPro: unknown): boolean {
+  const plan = String(planId || '').trim().toLowerCase();
+  return ['league', 'elite_league', 'school'].includes(plan) ||
+    (isPro === true && ['team', 'elite', 'elite_teams', 'squad_pro'].includes(plan));
+}

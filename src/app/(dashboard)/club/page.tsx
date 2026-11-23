@@ -97,9 +97,12 @@ import {
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
 
 export default function ClubManagementPage() {
-  const { isPrimaryClubAuthority, isSchoolMode } = useTeam();
+  const { isPrimaryClubAuthority, isSchoolMode, teams, user } = useTeam();
 
-  if (!isPrimaryClubAuthority) {
+  const ownsHub = teams.some(team => team.ownerUserId === user?.id &&
+    (['school', 'school_hub', 'club', 'club_hub'].includes(team.type || '') ||
+      ['school', 'elite', 'league'].includes(user?.plan_type || '')));
+  if (!isPrimaryClubAuthority || !ownsHub) {
     return <AccessRestricted type="role" title={isSchoolMode ? "School Hub Locked" : "Club Hub Locked"} description={isSchoolMode ? "This command center is reserved for School Hub Administrators." : "This command center is reserved for Institutional Stakeholders and Club Hub Administrators."} />;
   }
 
@@ -202,16 +205,16 @@ function AuthorizedClubManagementPage() {
   }, [resolvedTeams, organizationTeams]);
 
   const schoolHub = useMemo(() => {
-    const explicit = resolvedTeams.find(t => t.type === 'school' || t.type === 'school_hub');
+    const explicit = resolvedTeams.find(t => t.ownerUserId === user?.id && (t.type === 'school' || t.type === 'school_hub'));
     if (explicit) return explicit;
     
     // If no explicit hub but user is on school plan, treat their primary owned team as the hub
     if (isSchoolMode) {
-      return resolvedTeams.find(t => t.ownerUserId === user?.id && t.isPro) || resolvedTeams[0] || null;
+      return resolvedTeams.find(t => t.ownerUserId === user?.id && t.isPro) || null;
     }
     // For elite multi-team organizers, treat their primary owned Pro team as the hub
     if (isEliteAccount && isPrimaryClubAuthority) {
-      return resolvedTeams.find(t => t.ownerUserId === user?.id && t.isPro) || resolvedTeams[0] || null;
+      return resolvedTeams.find(t => t.ownerUserId === user?.id && t.isPro) || null;
     }
     return null;
   }, [resolvedTeams, isSchoolMode, isEliteAccount, isPrimaryClubAuthority, user?.id]);
@@ -221,12 +224,12 @@ function AuthorizedClubManagementPage() {
     return Array.from(new Map(
       resolvedOrganizationTeams
         .filter(t =>
-          isBillableSquadSeat(t) &&
+          t.ownerUserId === user?.id && isBillableSquadSeat(t) &&
           (!isSchoolMode || !schoolHub?.id || t.schoolId === schoolHub.id)
         )
         .map(t => [t.id, t])
     ).values());
-  }, [resolvedOrganizationTeams, isSchoolMode, schoolHub?.id]);
+  }, [resolvedOrganizationTeams, isSchoolMode, schoolHub?.id, user?.id]);
 
   // Use the organizer's membership projections for seat allocation so the Hub
   // agrees with the squad switcher. The resolved team documents still provide
@@ -236,11 +239,12 @@ function AuthorizedClubManagementPage() {
     for (const team of organizationTeams.filter(team => team.isPro === true)) allocated.add(team.id);
     return allocated;
   }, [teams, organizationTeams]);
-  const clubTeams = useMemo(() => organizationSquadCandidates.filter(team => {
+  const allocatedTeams = useMemo(() => organizationSquadCandidates.filter(team => {
     if (!allocatedMembershipIds.has(team.id)) return false;
     if (isSchoolMode && schoolHub?.id) return team.schoolId === schoolHub.id;
     return true;
   }), [organizationSquadCandidates, allocatedMembershipIds, isSchoolMode, schoolHub?.id]);
+  const clubTeams = organizationSquadCandidates;
   const schoolSquads = clubTeams;
   const organizationTeamIds = useMemo(() => organizationSquadCandidates.map(t => t.id), [organizationSquadCandidates]);
   const privateSquads = useMemo(() => privateOrganizationSquads(
@@ -248,13 +252,13 @@ function AuthorizedClubManagementPage() {
   ), [organizationSquadCandidates, resolvedTeams, user?.id, isSuperAdmin]);
   const privateSquadIds = useMemo(() => privateSquads.map(team => team.id), [privateSquads]);
   const availableStarterSquads = useMemo(
-    () => organizationSquadCandidates.filter(team => !clubTeams.some(active => active.id === team.id)),
-    [organizationSquadCandidates, clubTeams]
+    () => organizationSquadCandidates.filter(team => !allocatedTeams.some(active => active.id === team.id)),
+    [organizationSquadCandidates, allocatedTeams]
   );
   const clubTeamIds = useMemo(() => clubTeams.map(t => t.id), [clubTeams]);
   const privateClubTeamIds = useMemo(() => clubTeamIds.filter(id => privateSquadIds.includes(id)), [clubTeamIds, privateSquadIds]);
   const organizationSeatLimit = organizationCapacity?.limit ?? proQuotaStatus.limit;
-  const allocatedSquadCount = clubTeams.length;
+  const allocatedSquadCount = allocatedTeams.length;
   const remainingSquadSeats = Math.max(0, organizationSeatLimit - allocatedSquadCount);
 
   useEffect(() => {
@@ -601,49 +605,20 @@ function AuthorizedClubManagementPage() {
     setIsFiscalLoading(true);
     try {
       const entries: any[] = [];
-      const seenLeagueIds = new Set<string>();
-
-      const creatorSnap = await getDocs(query(collection(db, 'leagues'), where('creatorId', '==', user?.id)));
-      creatorSnap.docs.forEach(d => seenLeagueIds.add(d.id));
-
-      try {
-        const ownerSnap = await getDocs(query(collection(db, 'leagues'), where('ownerUserId', '==', user?.id)));
-        ownerSnap.docs.forEach(d => seenLeagueIds.add(d.id));
-      } catch { /* field may not exist on older documents */ }
-
-      const chunkSize = 10;
-      for (let i = 0; i < privateClubTeamIds.length; i += chunkSize) {
-        const chunk = privateClubTeamIds.slice(i, i + chunkSize);
-        try {
-          const memberSnap = await getDocs(query(collection(db, 'leagues'), where('memberTeamIds', 'array-contains-any', chunk)));
-          memberSnap.docs.forEach(d => seenLeagueIds.add(d.id));
-        } catch { /* ignore */ }
-      }
-
-      for (const leagueId of seenLeagueIds) {
-        const leagueDoc = creatorSnap.docs.find(d => d.id === leagueId);
-        let leagueName = leagueDoc?.data()?.name || 'League';
-        let leagueFee = 0;
-        if (!leagueDoc) {
-          try {
-            const ld = await getDoc(doc(db, 'leagues', leagueId));
-            if (ld.exists()) {
-              leagueName = ld.data()?.name || 'League';
-              leagueFee = parseFloat(ld.data()?.registrationCost || ld.data()?.registration_cost || '0') || 0;
-            }
-          } catch { /* skip */ }
-        } else {
-          leagueFee = parseFloat(leagueDoc.data()?.registrationCost || leagueDoc.data()?.registration_cost || '0') || 0;
+      for (const hostId of privateClubTeamIds) {
+        const hosted = await getDocs(query(collection(db, 'leagues'), where('tenantId', '==', hostId)));
+        for (const league of hosted.docs) {
+          const leagueId = league.id;
+          const leagueName = league.data().name || 'League';
+          const leagueFee = parseFloat(league.data().registrationCost || '0') || 0;
+          const entriesSnap = await getDocs(collection(db, 'leagues', leagueId, 'registrationEntries'));
+          entriesSnap.forEach(e => {
+            const data = e.data();
+            const entryFee = parseFloat(data?.registrationCost ?? data?.registration_cost ?? leagueFee) || leagueFee;
+            entries.push({ id: e.id, leagueId, leagueName, registrationCost: entryFee, ...data });
+          });
         }
-
-        const entriesSnap = await getDocs(collection(db, 'leagues', leagueId, 'registrationEntries'));
-        entriesSnap.forEach(e => {
-          const data = e.data();
-          const entryFee = parseFloat(data?.registrationCost ?? data?.registration_cost ?? leagueFee) || leagueFee;
-          entries.push({ id: e.id, leagueId, leagueName, registrationCost: entryFee, ...data });
-        });
       }
-
       setEnrollmentEntries(entries);
 
       const campaigns: any[] = [];
@@ -1041,7 +1016,7 @@ function AuthorizedClubManagementPage() {
                    setIsCreating(true);
                    try {
                      const targetSchoolId = schoolHub?.id;
-                     const teamId = await createNewTeam(
+                     const { teamId } = await createNewTeam(
                        newSquadForm.name, 
                        'school_squad', 
                        'Coach', 

@@ -621,18 +621,15 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
 }
 
 function CalendarSubscriptionDialog() {
-  const { getCalendarFeedUrl, teams } = useTeam();
+  const { getCalendarFeedUrl } = useTeam();
   const { toast } = useToast();
   const [url, setUrl] = useState<string | null>(null);
-  const [feedType, setFeedType] = useState<'user' | 'team' | 'multi' | null>(null);
+  const [feedType, setFeedType] = useState<'team' | null>(null);
   const [loading, setLoading] = useState(false);
-  const [multiSelectMode, setMultiSelectMode] = useState(false);
-  const [selectedTeamIds, setSelectedTeamIds] = useState<string[]>([]);
-
-  const handleGenerate = async (type: 'user' | 'team' | 'multi', action: 'create' | 'rotate' | 'revoke' = 'create') => {
+  const handleGenerate = async (type: 'team', action: 'create' | 'rotate' | 'revoke' = 'create') => {
     setLoading(true);
     try {
-      const feedUrl = await getCalendarFeedUrl(type, undefined, type === 'multi' ? selectedTeamIds : undefined, action);
+      const feedUrl = await getCalendarFeedUrl(type, undefined, undefined, action);
       if (feedUrl) {
         setUrl(feedUrl);
         setFeedType(type);
@@ -657,12 +654,8 @@ function CalendarSubscriptionDialog() {
     }
   };
 
-  const toggleTeamSelection = (id: string) => {
-    setSelectedTeamIds(prev => prev.includes(id) ? prev.filter(tid => tid !== id) : [...prev, id]);
-  };
-
   return (
-    <Dialog onOpenChange={(open) => { if(!open) { setUrl(null); setFeedType(null); setMultiSelectMode(false); setSelectedTeamIds([]); } }}>
+    <Dialog onOpenChange={(open) => { if(!open) { setUrl(null); setFeedType(null); } }}>
       <DialogTrigger asChild>
         <Button variant="outline" className="rounded-xl h-11 border-2 font-black uppercase text-[10px] tracking-widest gap-2 text-foreground">
           <CalendarDays className="h-4 w-4" /> Subscribe
@@ -685,7 +678,6 @@ function CalendarSubscriptionDialog() {
             </p>
           </DialogHeader>
 
-        {!multiSelectMode ? (
           <div className="space-y-6 relative z-10">
             {!url ? (
               <>
@@ -706,30 +698,7 @@ function CalendarSubscriptionDialog() {
                       </div>
                       <ChevronRight className="h-4 w-4 opacity-40 group-hover:opacity-100 transition-opacity" />
                     </button>
-                    <button
-                      onClick={() => setMultiSelectMode(true)}
-                      className="group h-16 rounded-2xl border-2 border-black/10 font-black uppercase text-[10px] tracking-widest hover:bg-muted/30 active:scale-[0.98] transition-all flex items-center justify-between px-6"
-                    >
-                      <div className="flex items-center gap-3">
-                        <Users className="h-5 w-5 text-muted-foreground" />
-                        <div className="text-left">
-                          <p className="text-xs font-black text-foreground">Family Feed</p>
-                          <p className="text-[8px] font-medium text-muted-foreground normal-case">Merge multiple squads into one feed</p>
-                        </div>
-                      </div>
-                      <ChevronRight className="h-4 w-4 opacity-40 group-hover:opacity-100 transition-opacity" />
-                    </button>
-                    <button
-                      onClick={() => handleGenerate('user')}
-                      disabled={loading}
-                      className="group h-14 rounded-2xl border-2 border-dashed border-black/10 font-black uppercase text-[10px] tracking-widest hover:bg-muted/10 active:scale-[0.98] transition-all flex items-center justify-between px-6 disabled:opacity-30"
-                    >
-                      <div className="flex items-center gap-3">
-                        <Zap className="h-4 w-4 text-amber-500" />
-                        <span className="text-xs font-black text-foreground/60">All My Squads Master Feed</span>
-                      </div>
-                      <ChevronRight className="h-4 w-4 opacity-20 group-hover:opacity-60 transition-opacity" />
-                    </button>
+
                   </div>
                 </div>
               </>
@@ -827,49 +796,6 @@ function CalendarSubscriptionDialog() {
               </div>
             )}
           </div>
-
-        ) : (
-          <div className="space-y-6 relative z-10">
-            <div className="space-y-3">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">Select Squads to Merge</p>
-              <ScrollArea className="h-64 rounded-3xl border-2 p-4 bg-muted/5">
-                <div className="space-y-2">
-                  {teams.map(t => (
-                    <div 
-                      key={t.id} 
-                      onClick={() => toggleTeamSelection(t.id)}
-                      className={cn(
-                        "flex items-center justify-between p-4 rounded-2xl cursor-pointer transition-all border-2",
-                        selectedTeamIds.includes(t.id) ? "bg-primary/5 border-primary shadow-sm" : "border-transparent hover:bg-muted"
-                      )}
-                    >
-                      <div className="flex items-center gap-4">
-                         <div className={cn("h-5 w-5 rounded-full border-2 flex items-center justify-center", selectedTeamIds.includes(t.id) ? "bg-primary border-primary" : "border-muted-foreground/30")}>
-                           {selectedTeamIds.includes(t.id) && <CheckCircle2 className="h-3 w-3 text-white" />}
-                         </div>
-                         <span className="text-xs font-black uppercase tracking-tight text-foreground">{t.name}</span>
-                      </div>
-                      <Badge variant="outline" className="text-[8px] font-black uppercase border-none bg-muted/50 text-muted-foreground">{t.sport || 'Squad'}</Badge>
-                    </div>
-                  ))}
-                </div>
-              </ScrollArea>
-            </div>
-
-            <div className="grid grid-cols-1 gap-3">
-              <Button 
-                onClick={() => handleGenerate('multi')} 
-                disabled={selectedTeamIds.length === 0 || loading}
-                className="h-14 rounded-2xl bg-black text-white font-black uppercase text-[10px] tracking-widest shadow-xl shadow-black/10 active:scale-[0.98] transition-all"
-              >
-                {loading ? <Loader2 className="h-4 w-4 animate-spin mr-2" /> : `Generate Unified Feed (${selectedTeamIds.length})`}
-              </Button>
-              <Button variant="ghost" onClick={() => setMultiSelectMode(false)} className="h-10 rounded-2xl font-black uppercase text-[9px] tracking-widest opacity-40 hover:opacity-100 hover:bg-transparent text-foreground">
-                Return to Single Feed
-              </Button>
-            </div>
-          </div>
-        )}
         </div>
       </DialogContent>
     </Dialog>
@@ -953,7 +879,7 @@ function LeagueScheduleButton({ events }: { events: TeamEvent[] }) {
 }
 
 export default function MasterCalendarPage() {
-  const { teams, householdEvents, householdGames, activeTeamEvents, isParent, activeTeam, db, updateRSVP, myChildren } = useTeam();
+  const { teams, activeTeamEvents, isParent, activeTeam, db, updateRSVP, myChildren } = useTeam();
   
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<Date | null>(new Date());
@@ -987,26 +913,12 @@ export default function MasterCalendarPage() {
     }
   }, []);
 
-  // TACTICAL SYNC: Merge household events with the high-reliability active team stream
   const allEvents = useMemo(() => {
     const map = new Map<string, TeamEvent>();
     
     // Add standard events
-    [...(householdEvents || []), ...(activeTeamEvents || [])].forEach(e => {
+    (activeTeamEvents || []).forEach(e => {
       map.set(`${e.teamId}:${e.id}`, e);
-    });
-
-    // Synthesis: Include household matches (games)
-    (householdGames || []).forEach(g => {
-      if (!map.has(`${g.teamId}:${g.id}`)) {
-        map.set(`${g.teamId}:${g.id}`, {
-          ...g,
-          eventType: 'game',
-          title: g.title || `Match: ${g.team1} vs ${g.team2}`,
-          startTime: g.startTime || g.time,
-          id: g.id || `game_${g.date}_${g.time || g.startTime}`
-        } as TeamEvent);
-      }
     });
 
     // Scorekeeping stores finalized/manual results in the team's games ledger.
@@ -1017,7 +929,7 @@ export default function MasterCalendarPage() {
       if (!game.date || map.has(recordedId)) return;
       map.set(recordedId, {
         id: recordedId,
-        teamId: game.teamId || activeTeam?.id,
+        teamId: activeTeam?.id,
         title: `Final: ${activeTeam?.teamName || 'Us'} ${game.myScore ?? 0}–${game.opponentScore ?? 0} ${game.opponent || 'Opponent'}`,
         date: game.date,
         startTime: game.startTime || '',
@@ -1033,12 +945,12 @@ export default function MasterCalendarPage() {
       } as TeamEvent);
     });
 
-    expandTournamentMatches([...(householdEvents || []), ...(activeTeamEvents || [])], activeTeam).forEach(match => {
+    expandTournamentMatches((activeTeamEvents || []), activeTeam).forEach(match => {
       if (!map.has(`${match.teamId}:${match.id}`)) map.set(`${match.teamId}:${match.id}`, match as TeamEvent);
     });
 
     return Array.from(map.values());
-  }, [householdEvents, activeTeamEvents, householdGames, recordedGames, teams, activeTeam]);
+  }, [activeTeamEvents, recordedGames, activeTeam]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return;
@@ -1081,10 +993,8 @@ export default function MasterCalendarPage() {
   }, [allEvents, activeDetailedEventId, detailTeamId]);
 
   const discoveryTeamIds = useMemo(() => {
-    const fromTeams = (teams || []).map(t => t.id);
-    const fromEvents = allEvents.map(e => e.teamId).filter((teamId): teamId is string => typeof teamId === 'string' && teamId.length > 0);
-    return Array.from(new Set([...fromTeams, ...fromEvents]));
-  }, [teams, allEvents]);
+    return activeTeam?.id ? [activeTeam.id] : [];
+  }, [activeTeam?.id]);
 
   // A family schedule is scoped through the already-authorized household
   // roster. Selecting an athlete narrows to that athlete's linked squads; it
@@ -1092,12 +1002,12 @@ export default function MasterCalendarPage() {
   const householdChildren = useMemo(() => (myChildren || []).flatMap(child => {
     const id = typeof child?.id === 'string' ? child.id : '';
     const teamIds = Array.isArray(child?.joinedTeamIds)
-      ? child.joinedTeamIds.filter((teamId): teamId is string => typeof teamId === 'string' && teamId.length > 0)
+      ? child.joinedTeamIds.filter((teamId): teamId is string => teamId === activeTeam?.id)
       : [];
     if (!id || teamIds.length === 0) return [];
     const name = [child.firstName, child.lastName].filter(Boolean).join(' ').trim() || 'Athlete';
     return [{ id, name, teamIds }];
-  }), [myChildren]);
+  }), [myChildren, activeTeam?.id]);
 
   const childTeamIds = useMemo(() => new Set(
     householdChildren
@@ -1107,14 +1017,7 @@ export default function MasterCalendarPage() {
 
   useEffect(() => {
     if (discoveryTeamIds.length > 0 && selectedTeamIds.length === 0) {
-      // A guardian's calendar is a household surface: child selection is
-      // intentionally intersected with this scope, so initializing it to the
-      // active squad would make an otherwise selected linked child invisible.
-      if (!isParent && activeTeam?.id && discoveryTeamIds.includes(activeTeam.id)) {
-        setSelectedTeamIds([activeTeam.id]);
-      } else {
-        setSelectedTeamIds(discoveryTeamIds);
-      }
+      setSelectedTeamIds(discoveryTeamIds);
     }
   }, [discoveryTeamIds, selectedTeamIds.length, activeTeam?.id, isParent]);
 
@@ -1132,47 +1035,9 @@ export default function MasterCalendarPage() {
     });
   }, [allEvents, selectedTeamIds, selectedEventTypes, selectedChildIds, childTeamIds, searchTerm]);
 
-  // ── Auto-sync: keep localStorage fresh whenever events load ──────────────
-  useEffect(() => {
-    if (!allEvents || allEvents.length === 0) return;
-    const now = new Date();
-    const max = new Date(); max.setDate(max.getDate() + 90);
-    const upcoming = allEvents
-      .filter(e => {
-        const d = new Date(e.date + 'T00:00:00');
-        return d >= new Date(now.toDateString()) && d <= max;
-      })
-      .map(e => ({
-        id: e.id,
-        title: e.title,
-        date: e.date,
-        startTime: e.startTime,
-        location: e.location,
-        eventType: e.eventType || 'other',
-      }));
-    try { localStorage.setItem('squad_schedule_events', JSON.stringify(upcoming)); } catch {}
-  }, [allEvents]);
-
   const handleOpenScheduleApp = useCallback(() => {
-    const now = new Date();
-    const max = new Date(); max.setDate(max.getDate() + 90);
-    const upcoming = allEvents
-      .filter(e => {
-        const d = new Date(e.date + 'T00:00:00');
-        return d >= new Date(now.toDateString()) && d <= max;
-      })
-      .map(e => ({
-        id: e.id,
-        title: e.title,
-        date: e.date,
-        startTime: e.startTime,
-        location: e.location,
-        eventType: e.eventType || 'other',
-      }));
-    // Write directly to localStorage — avoids URL length limits
-    try { localStorage.setItem('squad_schedule_events', JSON.stringify(upcoming)); } catch {}
     window.open('/schedule-app', '_blank');
-  }, [allEvents]);
+  }, []);
 
   const monthStart = startOfMonth(currentDate);
   const monthEnd = endOfMonth(monthStart);

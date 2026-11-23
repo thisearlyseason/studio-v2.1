@@ -1,11 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
 import { verifyFirebaseToken } from '@/lib/api-auth';
-import {
-  isEntitledSubscriptionStatus,
-  isPaidPlanType,
-} from '@/lib/server-team-entitlements';
-import { isBillableSquadSeat } from '@/lib/team-seat-policy';
+import { availableTeamPlan } from '@/lib/server-team-entitlements';
 
 const PAID_PLAN_TYPES = new Set(['team', 'elite', 'league', 'school', 'squad_pro', 'squad_pro_demo']);
 
@@ -42,24 +38,9 @@ export async function POST(req: NextRequest) {
           transaction.get(userRef),
           transaction.get(ownedTeamsQuery),
         ]);
-        const user = userSnap.data();
-        const accountPlan = user?.plan_type;
-        if (
-          !isPaidPlanType(accountPlan) ||
-          !isEntitledSubscriptionStatus(user?.subscription_status)
-        ) {
-          throw new Error('NO_PAID_PLAN');
-        }
-
-        const teamLimit = Number(user?.team_limit ?? 1);
-        const allocatedCount = ownedTeams.docs.filter(
-          doc =>
-            doc.id !== teamId &&
-            doc.data().isPro === true &&
-            isBillableSquadSeat(doc.data())
-        ).length;
-        if (allocatedCount >= teamLimit) throw new Error('NO_SEATS');
-        resolvedPlanId = accountPlan;
+        const allocation = availableTeamPlan(userSnap.data() || {}, ownedTeams.docs, teamId);
+        if ('error' in allocation) throw new Error(allocation.error);
+        resolvedPlanId = allocation.planId;
       }
 
       transaction.update(teamRef, {

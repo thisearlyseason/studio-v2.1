@@ -1447,7 +1447,7 @@ function ManualPlayerDialog({ league, isOpen, onOpenChange }: { league: League, 
 
 export function LeaguesPageContent({ embedded = false }: { embedded?: boolean }) {
   const { 
-    activeTeam, user: userProfile, createLeague, isStaff, isSuperAdmin, isPro, purchasePro,
+    activeTeam, isAccountTeamHub, user: userProfile, createLeague, isStaff, isSuperAdmin, isPro, purchasePro,
     teams, removeTeamFromLeague, updateLeagueTeamDetails,
     isPrimaryClubAuthority, updateLeaguePin, isSchoolMode, updateLeague,
     updateLeagueSchedule
@@ -1632,14 +1632,15 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   } | null>(null);
 
   const ownedLeaguesQuery = useMemoFirebase(() => {
-    if (!isAuthResolved || !db || !authUser?.uid) return null;
-    
+    if (!isAuthResolved || !db || !authUser?.uid || !isAccountTeamHub) return null;
+
     return query(
       collection(db, 'leagues'),
       where('creatorId', '==', authUser.uid),
+      where('tenantId', '==', `profile:${authUser.uid}`),
       limit(isSuperAdmin ? 100 : canManageLeagues ? 50 : 20)
     );
-  }, [isAuthResolved, db, authUser?.uid, canManageLeagues, isSuperAdmin]);
+  }, [isAuthResolved, db, authUser?.uid, isAccountTeamHub, canManageLeagues, isSuperAdmin]);
 
   const [memberLeagues, setMemberLeagues] = useState<League[]>([]);
   const [memberLeaguesLoading, setMemberLeaguesLoading] = useState(false);
@@ -1665,7 +1666,7 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   }, [isAuthResolved, firebaseAuth, authUser?.uid, activeTeam?.id, isSuperAdmin]);
 
   const tenantLeaguesQuery = useMemoFirebase(() => {
-    if (!isAuthResolved || !db || !activeTeam?.id || !canManageLeagues || isSuperAdmin) return null;
+    if (!isAuthResolved || !db || !activeTeam?.id || (!canManageLeagues && !isSuperAdmin)) return null;
     return query(
       collection(db, 'leagues'),
       where('tenantId', '==', activeTeam.id),
@@ -1690,11 +1691,11 @@ export function LeaguesPageContent({ embedded = false }: { embedded?: boolean })
   useEffect(() => { if (!isPro) setActiveTab(tab => ['players', 'portals', 'compliance'].includes(tab) ? 'teams' : tab); }, [isPro]);
   const isLeaguesLoading = ownedLeaguesLoading || memberLeaguesLoading || tenantLeaguesLoading;
 
-  const canManageLeagueRecord = useCallback((league?: League) => Boolean(league && (
-    isSuperAdmin || (canManageLeagues && (
-      league.creatorId === authUser?.uid || (!!activeTeam?.id && league.tenantId === activeTeam.id)
-    ))
-  )), [isSuperAdmin, canManageLeagues, authUser?.uid, activeTeam?.id]);
+  const canManageLeagueRecord = useCallback((league?: League) => {
+    if (!league || (!canManageLeagues && !isSuperAdmin)) return false;
+    if (activeTeam?.id) return league.tenantId === activeTeam.id;
+    return isAccountTeamHub && (isSuperAdmin || league.creatorId === authUser?.uid);
+  }, [isSuperAdmin, canManageLeagues, authUser?.uid, activeTeam?.id, isAccountTeamHub]);
 
   useEffect(() => {
     if (!isAuthResolved || !isLeaguesLoading) {

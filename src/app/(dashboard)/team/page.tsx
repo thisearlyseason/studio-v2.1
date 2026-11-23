@@ -227,6 +227,7 @@ export default function TeamProfilePage() {
 
   const isAdmin = isStaff || isSuperAdmin;
   const activePlan = plans.find(p => p.id === activeTeam.planId);
+  const teamPlanLabel = activePlan?.name || (activeTeam.planId === 'squad_organization' ? 'Squad Organization' : activeTeam.isPro ? 'Pro' : 'Starter');
 
   const handleLogoChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     if (activeTeam.ownerUserId!==user?.id && !isSuperAdmin) {
@@ -305,8 +306,12 @@ export default function TeamProfilePage() {
 
   const handleUpdatePlan = async () => {
     if (!selectedPlanId || !activeTeam) return;
-    await updateTeamPlan(activeTeam.id, selectedPlanId);
-    setIsPlanOpen(false);
+    try {
+      await updateTeamPlan(activeTeam.id, selectedPlanId);
+      setIsPlanOpen(false);
+    } catch (error) {
+      toast({ title: 'Team plan update failed', description: error instanceof Error ? error.message : 'Please try again.', variant: 'destructive' });
+    }
   };
 
   return (
@@ -334,7 +339,7 @@ export default function TeamProfilePage() {
         <div className="flex items-center gap-3">
           <div className="text-right hidden md:block">
             <p className="text-[10px] font-black uppercase text-muted-foreground">Status</p>
-            <p className="text-sm font-black text-primary">{activePlan?.name || (activeTeam.planId === 'squad_organization' ? 'Squad Organization' : 'Starter')}</p>
+            <p className="text-sm font-black text-primary">{teamPlanLabel}</p>
           </div>
           <Badge className="bg-primary/10 text-primary border-none font-black text-[9px] h-6 px-3 uppercase">{activeTeam.role}</Badge>
         </div>
@@ -676,7 +681,7 @@ export default function TeamProfilePage() {
           <Card className="rounded-[2.5rem] border-none shadow-xl ring-1 ring-black/5 overflow-hidden">
             <CardHeader className="bg-primary/5 border-b border-primary/5">
               <CardTitle className="text-xl font-black uppercase tracking-tight">Official Squad Details</CardTitle>
-              <CardDescription className="text-xs font-bold uppercase tracking-widest text-primary/60">Tier: {plans.find(p => p.id === activeTeam.planId)?.name || (activeTeam.planId === 'squad_organization' ? 'Squad Organization' : 'Starter')}</CardDescription>
+              <CardDescription className="text-xs font-bold uppercase tracking-widest text-primary/60">Tier: {teamPlanLabel}</CardDescription>
             </CardHeader>
             <CardContent className="pt-8 space-y-8">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-8">

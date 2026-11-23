@@ -280,11 +280,11 @@ async function buildContexts(teamId: string, uid: string, tokenRole?: string) {
   if (!authority.isStaff) return { authority, contexts };
 
   const leagueIds = new Set<string>(Object.keys(authority.teamData.leagueIds || {}));
-  const [createdLeagues, enrolledLeagues] = await Promise.all([
-    adminDb.collection('leagues').where('creatorId', '==', uid).limit(100).get(),
+  const [hostedLeagues, enrolledLeagues] = await Promise.all([
+    adminDb.collection('leagues').where('tenantId', '==', teamId).limit(100).get(),
     adminDb.collection('leagues').where('memberTeamIds', 'array-contains', teamId).limit(100).get(),
   ]);
-  [...createdLeagues.docs, ...enrolledLeagues.docs].forEach(doc => leagueIds.add(doc.id));
+  [...hostedLeagues.docs, ...enrolledLeagues.docs].forEach(doc => leagueIds.add(doc.id));
   for (const leagueId of leagueIds) {
     if (!ID_PATTERN.test(leagueId)) continue;
     const league = await adminDb.collection('leagues').doc(leagueId).get();
@@ -294,7 +294,7 @@ async function buildContexts(teamId: string, uid: string, tokenRole?: string) {
       ...(Array.isArray(data.memberTeamIds) ? data.memberTeamIds : []),
       ...Object.keys(data.teams || {}),
     ]);
-    if (data.creatorId !== uid && !enrolledIds.has(teamId)) continue;
+    if (data.tenantId !== teamId && !enrolledIds.has(teamId)) continue;
     const recipients = (
       await Promise.all(
         Array.from(enrolledIds)
@@ -502,7 +502,7 @@ export async function POST(req: NextRequest) {
         const league = await transaction.get(adminDb.collection('leagues').doc(leagueId));
         const data = league.data() || {};
         const enrolled = new Set([...(Array.isArray(data.memberTeamIds) ? data.memberTeamIds : []), ...Object.keys(data.teams || {})]);
-        if (!league.exists || (data.creatorId !== auth.uid && !enrolled.has(teamId)) || selected.some(recipient => !enrolled.has(recipient.teamId))) throw new Error('FORBIDDEN');
+        if (!league.exists || (data.tenantId !== teamId && !enrolled.has(teamId)) || selected.some(recipient => !enrolled.has(recipient.teamId))) throw new Error('FORBIDDEN');
       } else if (context.type === 'tournament') {
         const eventId = contextId.slice('tournament:'.length);
         const event = await transaction.get(result.authority.teamRef.collection('events').doc(eventId));
