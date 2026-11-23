@@ -228,8 +228,8 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
   }, [league?.teams]);
 
   const handleAddSquad = async () => {
-    if (!newSquad.teamName.trim() || (isPro && (!newSquad.coachName.trim() || !newSquad.coachEmail.trim()))) {
-      toast({ title: "Fields Required", description: isPro ? "Team name, coach name, and coach email are all required." : "Enter a team name.", variant: "destructive" });
+    if (!newSquad.teamName.trim()) {
+      toast({ title: "Fields Required", description: "Enter a team name.", variant: "destructive" });
       return;
     }
     setIsProcessing(true);
@@ -509,7 +509,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                     />
                   </div>
                   <div className="space-y-2" hidden={!isPro}>
-                    <Label className="text-[9px] font-black uppercase text-white/60 ml-1">Coach Name</Label>
+                    <Label className="text-[9px] font-black uppercase text-white/60 ml-1">Coach name (optional)</Label>
                     <Input 
                       placeholder="e.g. John Doe" 
                       value={newSquad.coachName} 
@@ -518,7 +518,7 @@ function SeasonSchedulerDialog({ league, isOpen, onOpenChange }: { league: Leagu
                     />
                   </div>
                   <div className="space-y-2" hidden={!isPro}>
-                    <Label className="text-[9px] font-black uppercase text-white/60 ml-1">Coach Email</Label>
+                    <Label className="text-[9px] font-black uppercase text-white/60 ml-1">Coach email (optional)</Label>
                     <Input 
                       placeholder="e.g. coach@domain.com" 
                       type="email"

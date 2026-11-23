@@ -247,3 +247,33 @@ test('new-format draft registration atomically updates entrants and bracket topo
  try{const body={kind:'tournament',action:'register',teamId:'t',eventId:'e',protocolId:'team_config',requestId:'versioned-registration-001',formVersion:1,formHash:config.config_hash,answers:{teamName:'Gamma',name:'Coach',email:'coach@example.test'}};const response=await app.route.POST(request(body));assert.equal(response.status,200,JSON.stringify(await response.json()));const event=records.get('teams/t/events/e');assert.equal(event.competition.topology.teams.length,3);assert.equal(event.competition.status,'draft');assert.equal(event.competition.schedule.length,0);assert.equal(event.tournamentTeamsData.length,3);assert.equal((await app.route.POST(request(body))).status,200);assert.equal(records.get('teams/t/events/e').competition.topology.teams.length,3);}finally{app.dispose();}
  const portal=await loadCommunicationRoute('../../src/app/api/public/portals/route.ts',db,{});try{const req=new Request('http://localhost/api/public/portals?kind=tournament-registration&teamId=t&eventId=e');req.nextUrl=new URL(req.url);const response=await portal.route.GET(req);assert.equal(response.status,200);const dto=await response.json();assert.deepEqual(dto.data.event.tournamentGames,[]);assert.equal(dto.data.event.competition,undefined);}finally{portal.dispose();}
 });
+
+test('organizers can manually enter two distinct teams without coach contact details', async () => {
+  for (const kind of ['league', 'tournament']) {
+    const raw = teamConfig();
+    const league = { creatorId: 'owner', is_active: true, registrationEntryCount: 0 };
+    const root = kind === 'league' ? 'leagues/l' : 'teams/a/events/e';
+    const config = kind === 'league' ? effectiveLeagueRegistrationConfig(raw, league) : raw;
+    const { db } = communicationDb({
+      'users/owner': { plan_type: 'league', subscription_status: 'active' },
+      'teams/a': { ownerUserId: 'owner', planId: 'team', isPro: true },
+      [root]: kind === 'league' ? league : { isTournament: true, registrationOpen: true, tournamentGames: [], tournamentTeamsData: [] },
+      [root + '/registration/team_config']: raw,
+    });
+    const app = await loadCommunicationRoute('../../src/app/api/public/portals/action/route.ts', db, { uid: 'owner' });
+    try {
+      const ids = new Set();
+      for (const teamName of ['Falcons', 'Tigers']) {
+        const response = await app.route.POST(request({
+          kind, action: 'register', ...(kind === 'league' ? { leagueId: 'l' } : { teamId: 'a', eventId: 'e' }),
+          protocolId: 'team_config', requestId: 'manual-team-' + teamName, formVersion: config.form_version,
+          formHash: config.config_hash, answers: { manual_enrollment: true, teamName, name: '', email: '' },
+        }));
+        const result = await response.json();
+        assert.equal(response.status, 200, JSON.stringify(result));
+        ids.add(result.entryId);
+      }
+      assert.equal(ids.size, 2);
+    } finally { app.dispose(); }
+  }
+});

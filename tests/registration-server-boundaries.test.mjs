@@ -11,7 +11,7 @@ test('public league and tournament submissions bind idempotency schema entitleme
   assert.match(source,/transaction\.get\(configRef\)/);
   assert.match(source,/transaction\.get\(parentRef\)/);
   assert.match(source,/registrationPaymentSnapshot\(config\)/);
-  assert.match(source,/protocolId}:\$\{registrantEmail}/);
+  assert.match(source,/protocolId}:\$\{registrationIdentity}/);
   assert.match(source,/Linked squad authority changed/);
   assert.match(source,/registrationArchiveMatches\(existingArchive\.data\(\),expectedArchive\)/);
   assert.match(source,/formVersion:stored\.form_version,configHash:stored\.config_hash,payloadHash:stored\.payload_hash/);

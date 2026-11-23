@@ -400,7 +400,7 @@ export async function POST(req: NextRequest) {
 
       if (kind === 'tournament') {
         const registrationType = String(config.type || (protocolId === 'team_config' ? 'team' : 'player')).toLowerCase();
-        const requiredCore = registrationType === 'team' ? ['teamName', 'name', 'email'] : ['fullName', 'email', 'dateOfBirth'];
+        const requiredCore = registrationType === 'team' ? (manualActorUid ? ['teamName'] : ['teamName', 'name', 'email']) : ['fullName', 'email', 'dateOfBirth'];
         if (requiredCore.some(key => typeof answers[key] !== 'string' || !answers[key].trim())) {
           return NextResponse.json({ error: `Please complete the required ${registrationType === 'team' ? 'team and contact' : 'participant'} details.` }, { status: 400 });
         }
@@ -421,7 +421,7 @@ export async function POST(req: NextRequest) {
       if (kind === 'league') {
         const registrationType = config.type || (protocolId === 'team_config' ? 'team' : protocolId === 'waiver_config' ? 'waiver' : 'player');
         const requiredCore = registrationType === 'team'
-          ? (manualActorUid ? ['teamName', 'name', 'email'] : ['teamName', 'name', 'email', 'phone'])
+          ? (manualActorUid ? ['teamName'] : ['teamName', 'name', 'email', 'phone'])
           : registrationType === 'waiver'
             ? ['fullName', 'email', 'phone']
             : (manualActorUid ? ['name', 'email'] : ['fullName', 'email', 'phone', 'dateOfBirth']);
@@ -446,6 +446,10 @@ export async function POST(req: NextRequest) {
       }
       const missingRequired = schema.some((field: any) => {
         if (field.required !== true || ['header', 'information_box'].includes(field.type)) return false;
+        if (manualActorUid && isTeamRegistration && (
+          ['f_core_co', 'f_core_em', 'f_coach_name', 'f_email'].includes(field.id) ||
+          /^(?:(?:authorized contact|head coach|coach|primary contact|contact|representative)(?: name)?|(?:(?:contact|coach) )?email(?: address)?)$/i.test(String(field.label || '').trim())
+        )) return false;
         const value = answers[String(field.id || '')];
         if (field.type === 'checkbox') return Array.isArray(value) ? value.length === 0 : value !== true;
         return value == null || value === '' || (Array.isArray(value) && value.length === 0);
@@ -453,7 +457,7 @@ export async function POST(req: NextRequest) {
       if (missingRequired) {
         return NextResponse.json({ error: 'Please complete every required registration field.' }, { status: 400 });
       }
-      if(typeof answers.email==='string'&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(answers.email))return NextResponse.json({error:'Enter a valid email address.'},{status:400});
+      if(typeof answers.email==='string'&&answers.email!==''&&!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(answers.email))return NextResponse.json({error:'Enter a valid email address.'},{status:400});
       if(typeof answers.phone==='string'&&answers.phone.replace(/\D/g,'').length<7)return NextResponse.json({error:'Enter a valid phone number.'},{status:400});
       const waiverParts = [
         config.require_default_waiver ? (config.default_waiver_text || (kind === 'tournament' ? TOURNAMENT_DEFAULT_WAIVER : LEAGUE_DEFAULT_WAIVER)) : '',
@@ -466,7 +470,8 @@ export async function POST(req: NextRequest) {
       const createdAt = new Date().toISOString();
       const registrantEmail=String(answers.email||'').trim().toLowerCase();
       if (registrantEmail) answers.email = registrantEmail;
-      const entryId = createHash('sha256').update(`${kind}:${entryParentRef.path}:${protocolId}:${registrantEmail}`).digest('hex');
+      const registrationIdentity = registrantEmail || `manual-team:${String(answers.teamName).trim().toLowerCase()}`;
+      const entryId = createHash('sha256').update(`${kind}:${entryParentRef.path}:${protocolId}:${registrationIdentity}`).digest('hex');
       const entry = entryParentRef.collection('registrationEntries').doc(entryId);
       const payloadHash = registrationPayloadHash({ answers, signature, submittedVersion, submittedHash });
       const entryData = {

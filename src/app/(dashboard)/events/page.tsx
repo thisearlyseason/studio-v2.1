@@ -441,6 +441,15 @@ export default function EventsPage() {
     setIsCreateOpen(true); 
   };
 
+  const handleDuplicate = (event: TeamEvent) => {
+    handleEdit(event);
+    setEditingEvent(null);
+    setNewDate('');
+    setNewEndDate('');
+    setAssignments((event.assignments || []).map(task => ({ id: crypto.randomUUID(), title: task.title, assigneeId: null })));
+    setRecurrenceCount('1');
+  };
+
   const handleEditSeries = (event: TeamEvent) => {
     setEditingSeries(true);
     setEditingEvent(event);
@@ -503,7 +512,7 @@ export default function EventsPage() {
                <p className="text-[10px] font-black uppercase tracking-widest text-primary mb-1">Squad Readiness</p>
                <p className="text-3xl font-black leading-none uppercase">Verified</p>
              </div>
-             <EventDetailDialog event={nextTournament} updateRSVP={updateRSVP} isAdmin={isAdmin} onEdit={handleEdit} onEditSeries={handleEditSeries} onDelete={deleteEvent} onDeleteSeries={deleteEventSeries} members={members}>
+             <EventDetailDialog event={nextTournament} updateRSVP={updateRSVP} isAdmin={isAdmin} onEdit={handleEdit} onDuplicate={handleDuplicate} onEditSeries={handleEditSeries} onDelete={deleteEvent} onDeleteSeries={deleteEventSeries} members={members}>
                <Button className="w-full h-12 sm:h-14 rounded-2xl bg-white text-black hover:bg-white/90 font-black uppercase text-xs tracking-widest shadow-xl px-8 sm:px-10">
                  Open Intel <ArrowUpRight className="ml-2 h-4 w-4" />
                </Button>
@@ -628,17 +637,24 @@ export default function EventsPage() {
                 </div>
                 {!editingEvent && (
                   <div className="space-y-1.5">
-                    <Label htmlFor="weekly-recurrence-count" className="text-[10px] font-black uppercase tracking-widest ml-1">Repeat Weekly</Label>
-                    <Select value={recurrenceCount} onValueChange={setRecurrenceCount}>
-                      <SelectTrigger id="weekly-recurrence-count" className="h-12 rounded-xl border-2 bg-white"><SelectValue /></SelectTrigger>
-                      <SelectContent className="rounded-xl">
-                        <SelectItem value="1" className="font-bold">One activity</SelectItem>
-                        <SelectItem value="2" className="font-bold">Two weekly activities</SelectItem>
-                        <SelectItem value="4" className="font-bold">Four weekly activities</SelectItem>
-                        <SelectItem value="8" className="font-bold">Eight weekly activities</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    {Number(recurrenceCount) > 1 && <p className="text-[9px] font-bold text-muted-foreground uppercase">Creates {recurrenceCount} weekly activities. Each occurrence remains editable.</p>}
+                    <label className="flex items-center gap-2 font-bold">
+                      <input type="checkbox" checked={recurrenceCount !== '1'} onChange={e => setRecurrenceCount(e.target.checked ? '2' : '1')} />
+                      Repeat this event
+                    </label>
+                    {recurrenceCount !== '1' && (
+                      <>
+                        <Label htmlFor="weekly-recurrence-count">Weekly for</Label>
+                        <Select value={recurrenceCount} onValueChange={setRecurrenceCount}>
+                          <SelectTrigger id="weekly-recurrence-count"><SelectValue /></SelectTrigger>
+                          <SelectContent>
+                            {Array.from({ length: 51 }, (_, index) => index + 2).map(count => (
+                              <SelectItem key={count} value={String(count)}>{count} weeks</SelectItem>
+                            ))}
+                          </SelectContent>
+                        </Select>
+                        <p className="text-sm text-muted-foreground">{recurrenceCount} events total, including the first. Each can be edited separately.</p>
+                      </>
+                    )}
                   </div>
                 )}
               </div>
@@ -906,7 +922,7 @@ export default function EventsPage() {
                 ) : (
                   <div className="grid gap-3">
                     {selectedDayEvents.map(event => (
-                      <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} isAdmin={isAdmin} onEdit={handleEdit} onEditSeries={handleEditSeries} onDelete={deleteEvent} onDeleteSeries={deleteEventSeries} members={members}>
+                      <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} isAdmin={isAdmin} onEdit={handleEdit} onDuplicate={handleDuplicate} onEditSeries={handleEditSeries} onDelete={deleteEvent} onDeleteSeries={deleteEventSeries} members={members}>
                         <Card className="hover:border-primary/30 transition-all duration-300 cursor-pointer group rounded-3xl border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white">
                           <div className="flex items-stretch h-24">
                             <div className={cn('w-20 flex flex-col items-center justify-center border-r-2 shrink-0 px-2 text-center', EVENT_TYPE_COLORS[event.eventType || 'other'])}>
@@ -946,7 +962,7 @@ export default function EventsPage() {
           <div className="flex items-center justify-between px-2"><h2 className="text-xs font-black uppercase tracking-[0.2em] text-muted-foreground">Itinerary</h2><div className="flex bg-muted/50 p-1 rounded-xl border shadow-inner"><Button variant={filterMode === 'live' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('live')} className="h-8 rounded-lg font-black text-[10px] uppercase">Live</Button><Button variant={filterMode === 'past' ? 'default' : 'ghost'} size="sm" onClick={() => setFilterMode('past')} className="h-8 rounded-lg font-black text-[10px] uppercase">History</Button></div></div>
           <div className="grid gap-4">
             {filteredEvents.map((event) => (
-              <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} isAdmin={isAdmin} onEdit={handleEdit} onEditSeries={handleEditSeries} onDelete={deleteEvent} onDeleteSeries={deleteEventSeries} members={members}>
+              <EventDetailDialog key={event.id} event={event} updateRSVP={updateRSVP} isAdmin={isAdmin} onEdit={handleEdit} onDuplicate={handleDuplicate} onEditSeries={handleEditSeries} onDelete={deleteEvent} onDeleteSeries={deleteEventSeries} members={members}>
                 <Card className="hover:border-primary/30 transition-all duration-500 cursor-pointer group rounded-3xl border-none shadow-md ring-1 ring-black/5 overflow-hidden bg-white">
                   <div className="flex items-stretch min-h-[96px] sm:h-32">
                     <div className={cn("w-16 sm:w-24 lg:w-32 flex flex-col items-center justify-center border-r-2 shrink-0 px-1 sm:px-2 text-center", EVENT_TYPE_COLORS[event.eventType || 'other'])}>
