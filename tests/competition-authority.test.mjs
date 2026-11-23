@@ -43,7 +43,7 @@ const authoritySeed = {
 
 test('Starter owners can manage a basic league and tournament staff authorization stays team-scoped', async () => {
   const { db } = communicationDb({ ...authoritySeed, 'teams/team-a': { ownerUserId: 'owner-a', planId: 'starter_squad' } });
-  assert.equal((await resolveCompetitionAuthority({ db, actorUid: 'owner-a', teamId: 'team-a' })).role, 'owner');
+  assert.equal((await resolveCompetitionAuthority({ db, actorUid: 'owner-a', teamId: 'team-a', domain: 'basicLeague' })).role, 'owner');
   for (const actorUid of ['owner-a', 'coach-a', 'staff-a']) {
     assert.equal((await resolveCompetitionAuthority({ db, actorUid, teamId: 'team-a', domain: 'tournament' })).tenantId, 'team-a');
   }
@@ -101,9 +101,9 @@ test('competition authority fails closed for ordinary, removed, cross-tenant, an
 
 test('a recognized free team can host a basic league only with team authority', async () => {
   const { db } = communicationDb({ 'teams/free-plan': { ownerUserId: 'free-owner', planId: 'free' } });
-  assert.equal((await resolveCompetitionAuthority({ db, actorUid: 'free-owner', teamId: 'free-plan' })).tenantId, 'free-plan');
+  assert.equal((await resolveCompetitionAuthority({ db, actorUid: 'free-owner', teamId: 'free-plan', domain: 'basicLeague' })).tenantId, 'free-plan');
   await assert.rejects(
-    () => resolveCompetitionAuthority({ db, actorUid: 'other-owner', teamId: 'free-plan' }),
+    () => resolveCompetitionAuthority({ db, actorUid: 'other-owner', teamId: 'free-plan', domain: 'basicLeague' }),
     /Forbidden/,
   );
 });

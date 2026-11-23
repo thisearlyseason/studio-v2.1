@@ -1,7 +1,7 @@
 import type { DocumentData, DocumentReference, Firestore, Transaction } from 'firebase-admin/firestore';
 import { isAccountAccessBlocked } from '@/lib/account-access-policy';
 import { adminDb } from '@/lib/firebase-admin';
-import { authorizeDashboardRoute, canHostBasicLeague } from '@/lib/dashboard-route-policy';
+import { authorizeDashboardRoute, canHostBasicLeague, canHostTeamLeague } from '@/lib/dashboard-route-policy';
 import { hasStaffRole } from '@/lib/staff-position';
 
 export type CompetitionAuthority = {
@@ -13,7 +13,7 @@ export type CompetitionAuthority = {
 };
 
 export type CompetitionAuthorityInput = {
-  domain?: 'league' | 'tournament';
+  domain?: 'league' | 'basicLeague' | 'tournament';
   actorUid: string;
   actorRole?: string;
   teamId?: string;
@@ -44,7 +44,7 @@ function planIdOf(team: DocumentData, domain: CompetitionAuthorityInput['domain'
   const normalized = planId?.trim().toLowerCase() || '';
   const allowed = domain === 'tournament'
     ? authorizeDashboardRoute('/manage-tournaments', { role: 'coach', planId: normalized }).allowed
-    : canHostBasicLeague(normalized, team.isPro);
+    : domain === 'basicLeague' ? canHostBasicLeague(normalized, team.isPro) : canHostTeamLeague(normalized, team.isPro);
   if (!normalized || !allowed) forbidden();
   return normalized;
 }

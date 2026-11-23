@@ -376,6 +376,7 @@ async function preflight(auth: DecodedToken, input: LeagueLifecycleRequest): Pro
     const authorities = await Promise.all(leagueIds.map(async id => {
       const retained = input.action === 'delete' ? await deleteAuthorityScope(transaction, auth, id!) : null;
       const authority = await resolveCompetitionAuthority({
+        domain: 'basicLeague',
         db: adminDb,
         transaction,
         actorUid: auth.uid,
@@ -397,6 +398,7 @@ async function assertCurrentAuthority(
   scope: { teamId?: string; leagueId?: string },
 ): Promise<void> {
   await assertCompetitionMutationAuthority({
+    domain: 'basicLeague',
     db: adminDb,
     transaction,
     actorUid: auth.uid,
@@ -404,6 +406,7 @@ async function assertCurrentAuthority(
     ...scope,
   });
   const current = await resolveCompetitionAuthority({
+    domain: 'basicLeague',
     db: adminDb,
     transaction,
     actorUid: auth.uid,
@@ -429,6 +432,7 @@ async function existingTenantLeagues(transaction: Transaction, tenantId: string,
     .map(async doc => {
       try {
         const resolved = await resolveCompetitionAuthority({
+          domain: 'basicLeague',
           db: adminDb,
           transaction,
           actorUid: auth.uid,

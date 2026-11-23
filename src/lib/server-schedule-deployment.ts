@@ -723,13 +723,13 @@ async function runLeagueScheduleOperation<T>(
 ): Promise<T> {
   if (!ID_PATTERN.test(input.leagueId)) throw new ScheduleDeploymentError('INVALID_LEAGUE', 'Invalid League.');
   if (input.actor.signInProvider === 'anonymous') throw new ScheduleDeploymentError('FORBIDDEN', 'Anonymous schedule mutations are forbidden.', 403);
-  const authority = await adminDb.runTransaction(transaction => resolveCompetitionAuthority({ transaction, leagueId: input.leagueId, actorUid: input.actor.uid, actorRole: input.actor.role }));
+  const authority = await adminDb.runTransaction(transaction => resolveCompetitionAuthority({ domain: 'basicLeague', transaction, leagueId: input.leagueId, actorUid: input.actor.uid, actorRole: input.actor.role }));
   const identity = canonicalCompetitionRequest({ requestId: input.requestId, tenantId: authority.tenantId, kind: `league.schedule.${kind}`, payload });
   return withScheduleMutationLock(holder => runCompetitionOperation({
     actorUid: input.actor.uid, identity,
     authorizeTransaction: async transaction => {
       await assertScheduleMutationLock(transaction, holder);
-      const current = await resolveCompetitionAuthority({ transaction, leagueId: input.leagueId, actorUid: input.actor.uid, actorRole: input.actor.role });
+      const current = await resolveCompetitionAuthority({ domain: 'basicLeague', transaction, leagueId: input.leagueId, actorUid: input.actor.uid, actorRole: input.actor.role });
       if (current.tenantId !== authority.tenantId) throw new ScheduleDeploymentError('LEAGUE_TENANT_CONFLICT', 'The League tenant changed.', 409);
     },
   }, async ({ transaction }) => {
