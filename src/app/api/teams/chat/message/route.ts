@@ -1,3 +1,5 @@
+import { squadBelongsToHub } from '@/lib/hub-eligibility';
+import { hasStaffRole } from '@/lib/staff-position';
 import { blockRef, allowedNotificationRecipients } from '@/lib/server-moderation';
 import { isDirectConversation } from '@/lib/moderation-policy';
 import { NextRequest, NextResponse } from 'next/server';
@@ -99,6 +101,24 @@ export async function POST(req: NextRequest) {
         team.data()?.features?.tacticalChat === false ||
         (!isPrivileged && (!hasActiveMembership || !chatMembers.includes(auth.uid)))
       ) throw new Error('FORBIDDEN');
+
+      if (chatData.contextType === 'hub') {
+        const hub = {...team.data(), id:teamId};
+        const owner = team.data()?.ownerUserId;
+        const staffIds = chatMembers.filter(id => id !== owner);
+        await Promise.all(staffIds.map(async id => {
+          if (typeof id !== 'string') throw new Error('FORBIDDEN');
+          const source = chatData.memberAuthorities?.[id];
+          if (!source?.teamId || !source.memberId) throw new Error('FORBIDDEN');
+          const ref = adminDb.collection('teams').doc(source.teamId);
+          const [squad, member] = await Promise.all([transaction.get(ref),
+            transaction.get(ref.collection('members').doc(source.memberId))]);
+          if (!squad.exists || (squad.id !== teamId && !squadBelongsToHub({...squad.data(), id:squad.id}, hub)) ||
+              !isActiveMember(member) || member.data()?.userId !== id || !hasStaffRole(member.data())) {
+            throw new Error('FORBIDDEN');
+          }
+        }));
+      }
 
       if (isDirectConversation(chatMembers, auth.uid)) {
         const other = chatMembers.find(id => id !== auth.uid) as string;

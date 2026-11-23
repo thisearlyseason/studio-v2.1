@@ -65,7 +65,7 @@ test('institution hub stats resolve authoritative squads and stay team-scoped', 
   assert.match(hub, /organizationTeams\.filter\(team => team\.isPro === true\)/);
   assert.doesNotMatch(hub, /if \(!firebaseAuth \|\| !organizationOwnerId \|\| isHubDataLoading\) return/);
   assert.match(hub, /const allocatedTeams = useMemo\(\(\) => organizationSquadCandidates\.filter/);
-  assert.match(hub, /isBillableSquadSeat\(t\)/);
+  assert.match(hub, /isBillableSquadSeat\(team\) && squadBelongsToHub\(team, schoolHub\)/);
   assert.doesNotMatch(hub, /t\.ownerUserId === organizationOwnerId/);
   assert.match(hub, /const allocatedSquadCount = allocatedTeams\.length/);
   assert.match(hub, /Math\.max\(0, organizationSeatLimit - allocatedSquadCount\)/);

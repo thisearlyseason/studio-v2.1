@@ -240,6 +240,7 @@ export type GlobalDrill = Drill & {
 };
 
 export type Team = {
+  organizationHubId?: string;
   hubDisplayName?: string;
   id: string;
   name: string;
@@ -1612,7 +1613,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     [alerts, seenAlertIds],
   );
 
-  type TeamSummary = { name?: string; teamName?: string; isPro: boolean; planId: string };
+  type TeamSummary = Partial<Pick<Team, "type" | "ownerUserId" | "organizationHubId" | "clubId" | "schoolId" | "hubDisplayName">> & { name?: string; teamName?: string; isPro: boolean; planId: string };
   const { data: teamSummaries, setData: setSummaries } = useScopedSnapshotState<Record<string, TeamSummary>>(teamsRaw);
   useEffect(() => {
     if (!db) return;
@@ -1621,7 +1622,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       const publish = (data?: Record<string, any>) => {
         if (data) {
           const name = data.name || data.teamName;
-          summaries[team.id] = { ...(name ? { name, teamName: name } : {}), isPro: data.isPro === true, planId: data.planId || 'free' };
+          summaries[team.id] = { type: data.type ?? team.type, ownerUserId: data.ownerUserId, organizationHubId: data.organizationHubId, schoolId: data.schoolId, clubId: data.clubId, hubDisplayName: data.hubDisplayName, ...(name ? { name, teamName: name } : {}), isPro: data.isPro === true, planId: data.planId || 'free' };
         } else delete summaries[team.id];
         setSummaries({ ...summaries });
       };
