@@ -481,7 +481,7 @@ export default function TeamProfilePage() {
       )}
 
       <section className="relative">
-        <div className="h-40 sm:h-56 w-full hero-gradient rounded-[2.5rem] shadow-2xl overflow-hidden relative">
+        <div className="team-cover-frame hero-gradient rounded-[2.5rem] shadow-2xl overflow-hidden relative">
           {activeTeam.homeCover ? (
             <TeamCover key={activeTeam.homeCover.id} team={activeTeam} />
           ) : activeTeam.heroImageUrl ? (

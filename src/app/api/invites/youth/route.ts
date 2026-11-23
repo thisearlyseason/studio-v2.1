@@ -558,7 +558,7 @@ export async function PUT(req: NextRequest) {
         parentId: freshInvite.parentId,
         createdAt: joinedAt,
         avatarUrl: `https://picsum.photos/seed/${userRecord.uid}/150/150`,
-        notificationsEnabled: true,
+        notificationInvitationPending: true, notificationsEnabled: true,
         upcomingEventNotificationsEnabled: true,
       });
       transaction.update(playerRef, {

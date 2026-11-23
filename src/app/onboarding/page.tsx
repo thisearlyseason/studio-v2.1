@@ -63,7 +63,7 @@ export default function OnboardingPage() {
         fullName,
         email: String(user.email || '').trim().toLowerCase(),
         role,
-        notificationsEnabled: false,
+        notificationInvitationPending: true, notificationsEnabled: false,
         upcomingEventNotificationsEnabled: false,
         createdAt: new Date().toISOString(),
         avatarUrl: user.photoURL || `https://picsum.photos/seed/${user.uid}/150/150`,

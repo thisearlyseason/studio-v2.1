@@ -59,7 +59,7 @@ export function ModernTeamHome() {
   }
   return <div className="modern-team-home">
     <div className="modern-home-top modern-enter">
-      <section className="modern-hero">
+      <section className="modern-hero team-cover-frame">
         <TeamCover key={activeTeam.homeCover?.id || 'default'} team={activeTeam}/>
         <div className="modern-hero-content">
           {activeTeam.teamLogoUrl && <img src={activeTeam.teamLogoUrl} alt="" className="modern-team-logo" onError={e => { e.currentTarget.style.display = 'none'; }}/>}
