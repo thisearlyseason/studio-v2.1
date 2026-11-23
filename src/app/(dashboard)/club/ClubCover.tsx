@@ -6,14 +6,14 @@ import { prepareTeamCover } from '@/lib/prepare-team-logo';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 
-export function ClubCover({teamId, children, className}: {teamId?:string; children:ReactNode; className:string}) {
+export function ClubCover({teamId, school, children, className}: {school:boolean; teamId?:string; children:ReactNode; className:string}) {
   const auth = useAuth();
   const [blob,setBlob] = useState<Blob|null>(null);
   const [photo,setPhoto] = useState('');
   const [busy,setBusy] = useState(false);
   const [message,setMessage] = useState('');
   const input = useRef<HTMLInputElement>(null);
-  const url = teamId ? '/api/club/cover?'+new URLSearchParams({teamId}) : '';
+  const url = teamId ? '/api/club/cover?'+new URLSearchParams({teamId, kind:school ? 'school' : 'club'}) : '';
   useEffect(() => {
     if (!url) return;
     const controller = new AbortController();
@@ -25,7 +25,7 @@ export function ClubCover({teamId, children, className}: {teamId?:string; childr
       if (!res.ok) throw Error();
       const data = res.status === 204 ? null : await res.blob();
       if (!controller.signal.aborted) setBlob(data);
-    })().catch(() => { if (!controller.signal.aborted) setMessage('Could not load the club photo.'); })
+    })().catch(() => { if (!controller.signal.aborted) setMessage('Could not load the hub photo.'); })
       .finally(() => { if (!controller.signal.aborted) setBusy(false); });
     return () => controller.abort();
   },[url,auth]);
@@ -44,7 +44,7 @@ export function ClubCover({teamId, children, className}: {teamId?:string; childr
       const res = await fetch(url,{method:file ? 'POST' : 'DELETE',headers:authHeader(token),body});
       if (!res.ok) throw Error((await res.json()).error || 'Could not save your photo.');
       setBlob(file ? await res.blob() : null);
-      setMessage(file ? 'Club cover saved.' : 'Default club cover restored.');
+      setMessage(file ? 'Cover photo saved.' : 'Default cover restored.');
     } catch (err) { setMessage(err instanceof Error ? err.message : 'Could not save your photo.'); }
     finally { setBusy(false); }
   }

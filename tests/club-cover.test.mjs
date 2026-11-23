@@ -48,3 +48,36 @@ test('cover access matches hub eligibility and always requires ownership', async
     } finally { handle.dispose(); }
   }
 });
+
+test('switching hubs and linked squads selects their owned branding record',async()=>{
+  const {resolveBrandingHub} = await import('../src/lib/hub-eligibility.ts');
+  const teams = [
+    {id:'a',type:'club'}, {id:'b',type:'club_hub'}, {id:'s',type:'school_hub'},
+    {id:'player',clubId:'b'}, {id:'student',schoolId:'s'}, {id:'unlinked'},
+  ].map(team=>({...team,ownerUserId:'owner'}));
+  for(const [active,expected] of [['b','b'],['a','a'],['player','b'],['student','s'],['s','s'],['unlinked',undefined]]) {
+    assert.equal(resolveBrandingHub(teams,active,'owner',false)?.id,expected);
+  }
+  assert.equal(resolveBrandingHub(teams,'student','other',true),undefined);
+});
+
+test('replacing and removing a school cover leaves sibling school and club photos intact',async()=>{
+  const data=Object.fromEntries(['club','school','school_hub'].map(type=>['teams/'+type,{type,ownerUserId:'owner'}]));
+  const {db}=communicationDb(data);
+  const handle=await loadCommunicationRoute('../../src/app/api/club/cover/route.ts',db,{uid:'owner'});
+  const address=type=>'https://example.test/api/club/cover?teamId='+type;
+  const photos=new Map();
+  try {
+    for(const [type,color] of [['club','blue'],['school','red'],['school_hub','green']]) {
+      const body=await sharp({create:{width:400,height:220,channels:3,background:color}}).png().toBuffer();
+      const saved=await handle.route.POST(new Request(address(type),{method:'POST',body}));
+      assert.equal(saved.status,200);
+      photos.set(type,Buffer.from(await saved.arrayBuffer()));
+    }
+    assert.equal((await handle.route.DELETE(new Request(address('school'),{method:'DELETE'}))).status,204);
+    for(const type of ['school_hub','club']) {
+      const response=await handle.route.GET(new Request(address(type)));
+      assert.deepEqual(Buffer.from(await response.arrayBuffer()),photos.get(type));
+    }
+  } finally { handle.dispose(); }
+});

@@ -75,7 +75,7 @@ import {
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
@@ -95,11 +95,11 @@ import {
   type GlobalWaiverDeployment,
 } from '@/lib/global-waiver-policy';
 
-import { isHubPlan, isHubTeamType } from '@/lib/hub-eligibility';
+import { isHubPlan, isHubTeamType, resolveBrandingHub } from '@/lib/hub-eligibility';
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
 
 export default function ClubManagementPage() {
-  const { isPrimaryClubAuthority, isSchoolMode, teams, user } = useTeam();
+  const { isPrimaryClubAuthority, isSchoolMode, teams, user, activeTeam } = useTeam();
 
   const ownsHub = teams.some(team => team.ownerUserId === user?.id &&
     (isHubTeamType(team.type) ||
@@ -108,11 +108,17 @@ export default function ClubManagementPage() {
     return <AccessRestricted type="role" title={isSchoolMode ? "School Hub Locked" : "Club Hub Locked"} description={isSchoolMode ? "This command center is reserved for School Hub Administrators." : "This command center is reserved for Institutional Stakeholders and Club Hub Administrators."} />;
   }
 
-  return <AuthorizedClubManagementPage />;
+  return <React.Suspense fallback={null}><HubFromNavigation activeId={activeTeam?.id} uid={user?.id} /></React.Suspense>;
 }
 
-function AuthorizedClubManagementPage() {
-  const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, deployClubProtocol, hasFeature, isSchoolMode, isSchoolAdmin, activeTeam, members, db, createChat, updateChat, reinstateMember, isEliteAccount, isSuperAdmin, proQuotaStatus } = useTeam();
+function HubFromNavigation({activeId, uid}: {activeId?: string; uid?: string}) {
+  const params = useSearchParams();
+  const sourceId = activeId || params?.get('from') || undefined;
+  return <AuthorizedClubManagementPage key={uid + ":" + sourceId} sourceId={sourceId} />;
+}
+
+function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
+  const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, deployClubProtocol, hasFeature, isSchoolMode: accountSchoolMode, isSchoolAdmin, activeTeam, members, db, createChat, updateChat, reinstateMember, isEliteAccount, isSuperAdmin, proQuotaStatus } = useTeam();
   const [selectedCoach, setSelectedCoach] = useState<Member | null>(null);
 
   const router = useRouter();
@@ -126,7 +132,7 @@ function AuthorizedClubManagementPage() {
   const [editingDocId, setEditingDocId] = useState<string | null>(null);
   const [editingWaiverGuard, setEditingWaiverGuard] = useState<{ version: number; textHash: string } | null>(null);
   const [protocolRequestId, setProtocolRequestId] = useState(() => crypto.randomUUID());
-  const [clubForm, setClubForm] = useState({ name: user?.schoolName || user?.clubName || '', description: user?.clubDescription || '', schoolName: user?.schoolName || user?.clubName || '', institutionTitle: user?.institutionTitle || (isSchoolMode ? 'Athletic Director' : '') });
+
   const [protocolForm, setProtocolForm] = useState({ title: '', content: '', type: 'waiver' as any, waiverAudience: 'participant' as 'participant' | 'team' });
   const [newSquadForm, setNewSquadForm] = useState({ name: '', coachName: '', coachEmail: '' });
   const [teamToDelete, setTeamToDelete] = useState<Team | null>(null);
@@ -161,6 +167,18 @@ function AuthorizedClubManagementPage() {
   const [resolvedTeams, setResolvedTeams] = useState<Team[]>([]);
   const [organizationTeams, setOrganizationTeams] = useState<Team[]>([]);
   const [isHubDataLoading, setIsHubDataLoading] = useState(true);
+
+  const brandingHub = resolveBrandingHub(resolvedTeams, sourceId, user?.id, accountSchoolMode);
+  const explicitHub = isHubTeamType(brandingHub?.type);
+  const isSchoolMode = explicitHub ? ['school', 'school_hub'].includes(brandingHub?.type || '') : accountSchoolMode;
+  const profileName = isSchoolMode ? user?.schoolName : user?.clubName;
+  const sameKindHubs = resolvedTeams.filter(team => team.ownerUserId === user?.id &&
+    (isSchoolMode ? ['school', 'school_hub'] : ['club', 'club_hub']).includes(team.type || ''));
+  const hubName = brandingHub?.hubDisplayName || (sameKindHubs.length <= 1 && profileName) ||
+    (explicitHub && brandingHub?.name) || (isSchoolMode ? 'School Hub' : 'Club Hub');
+  const formValues = {name: hubName, schoolName: hubName, description: user?.clubDescription || '',
+    institutionTitle: user?.institutionTitle || (isSchoolMode ? 'Athletic Director' : '')};
+  const [clubForm, setClubForm] = useState(formValues);
 
   useEffect(() => {
     let cancelled = false;
@@ -406,7 +424,7 @@ function AuthorizedClubManagementPage() {
       }
 
       const memberIdsArray = Array.from(memberUserIds);
-      const channelName = `${user?.schoolName || user?.clubName || (isSchoolMode ? 'School Hub' : (isEliteAccount ? 'Apex Academy' : 'Club Hub'))} — Broadcast Channel`;
+      const channelName = `${hubName} — Broadcast Channel`;
       const chatId = await createChat(channelName, memberIdsArray, undefined, targetHub.id);
       if (chatId) {
         await updateChat(chatId, {
@@ -711,14 +729,22 @@ function AuthorizedClubManagementPage() {
   if (!hasSchoolHubAccess) return <AccessRestricted type="role" title="Institutional Hub Locked" description="Reserved for institutional staff and account owners." />;
 
   const handleUpdateClub = async () => {
-    const updates: any = { clubName: clubForm.name, clubDescription: clubForm.description };
-    if (isSchoolMode && isPrimaryClubAuthority) {
-      if (clubForm.schoolName) updates.schoolName = clubForm.schoolName;
-      if (clubForm.institutionTitle) updates.institutionTitle = clubForm.institutionTitle;
+    if (!brandingHub || !db) return;
+    const name = (isSchoolMode ? clubForm.schoolName : clubForm.name).trim();
+    if (!name) return;
+    try {
+      if (explicitHub) {
+        await updateDoc(doc(db, 'teams', brandingHub.id), { hubDisplayName: name });
+        setResolvedTeams(previous => previous.map(team => team.id === brandingHub.id ? {...team, hubDisplayName: name} : team));
+      }
+      await updateUser({ clubDescription: clubForm.description,
+        ...(!explicitHub || sameKindHubs.length === 1 ? (isSchoolMode ? {schoolName: name} : {clubName: name}) : {}),
+        ...(isSchoolMode ? {institutionTitle: clubForm.institutionTitle} : {}) });
+      setIsEditOpen(false);
+      toast({ title: isSchoolMode ? "School Identity Updated" : "Club Synchronized" });
+    } catch {
+      toast({title: 'Could not save all hub details. Please try again.', variant: 'destructive'});
     }
-    await updateUser(updates);
-    setIsEditOpen(false);
-    toast({ title: isSchoolMode ? "School Identity Updated" : "Club Synchronized" });
   };
 
   const handleDeployProtocol = async () => {
@@ -881,15 +907,14 @@ function AuthorizedClubManagementPage() {
     }
   };
 
-  const ownedTeams = teams.filter(team => team.ownerUserId === user?.id);
-  const coverTeamId = isSchoolMode ? undefined : (ownedTeams.find(team => ['club','club_hub'].includes(team.type || '')) ?? ownedTeams.find(team => isHubTeamType(team.type)) ?? ownedTeams[0])?.id;
+  const coverTeamId = brandingHub?.id;
 
   return (
     <div className="space-y-5 md:space-y-8 pb-24 animate-in fade-in duration-700 w-full" style={{maxWidth:'100%', overflowX:'hidden'}}>
 
       {/* ── HERO CARD ── */}
       <OrganizerGuide kind="organization" />
-      <ClubCover key={user?.id + ":" + coverTeamId} teamId={coverTeamId} className="bg-black text-white p-5 md:p-10 lg:p-14 rounded-4xl md:rounded-[3rem] shadow-2xl relative overflow-hidden group border-none hero-gradient">
+      <ClubCover key={user?.id + ":" + coverTeamId} teamId={coverTeamId} school={isSchoolMode} className="bg-black text-white p-5 md:p-10 lg:p-14 rounded-4xl md:rounded-[3rem] shadow-2xl relative overflow-hidden group border-none hero-gradient">
         <div className="absolute top-0 right-0 p-4 md:p-10 opacity-10 -rotate-12 pointer-events-none group-hover:scale-110 transition-transform duration-1000">
           <Building className="h-28 w-28 md:h-56 md:w-56" />
         </div>
@@ -897,14 +922,14 @@ function AuthorizedClubManagementPage() {
           <div className="space-y-2">
             <Badge className="bg-primary text-white border-none font-black uppercase tracking-[0.2em] text-[9px] md:text-[10px] h-6 md:h-7 px-3 md:px-4 shadow-lg">Organization Overview</Badge>
             <h1 className="text-2xl sm:text-3xl md:text-4xl lg:text-6xl font-black tracking-tighter uppercase leading-[0.9] text-white wrap-break-word">
-              {user?.schoolName || user?.clubName || (isSchoolMode ? 'School Hub' : 'Club Hub')}
+              {hubName}
             </h1>
             <p className="text-white/60 font-bold uppercase tracking-[0.15em] text-[9px] md:text-[10px]">
               {user?.institutionTitle || (isSchoolMode ? 'Athletic Director' : 'Club Authority')} &bull; {user?.name}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
-            <Button variant="outline" className="h-10 md:h-12 px-4 md:px-6 rounded-2xl border-white/20 bg-white/10 text-white hover:bg-white hover:text-black transition-all font-black uppercase text-[10px] md:text-xs" onClick={() => setIsEditOpen(true)}>
+            <Button variant="outline" className="h-10 md:h-12 px-4 md:px-6 rounded-2xl border-white/20 bg-white/10 text-white hover:bg-white hover:text-black transition-all font-black uppercase text-[10px] md:text-xs" disabled={!brandingHub} onClick={() => { setClubForm(formValues); setIsEditOpen(true); }}>
               <Edit3 className="h-3.5 w-3.5 md:h-4 md:w-4 mr-1.5" /> {isSchoolMode ? 'Edit School' : 'Edit Club'}
             </Button>
             <Button className="h-10 md:h-12 px-4 md:px-6 rounded-2xl font-black uppercase text-[10px] md:text-sm shadow-xl shadow-primary/40 bg-white text-black hover:bg-primary hover:text-white transition-all border-none" onClick={() => setIsSubSquadModalOpen(true)}>
@@ -914,6 +939,17 @@ function AuthorizedClubManagementPage() {
         </div>
       </ClubCover>
 
+      {!isHubDataLoading && !brandingHub && <label className="grid gap-2 text-sm font-semibold">
+        Choose a hub to edit its name or cover photo
+        <select className="rounded-xl border bg-background p-3" value="" onChange={event => {
+          const chosen = resolvedTeams.find(team => team.id === event.target.value && team.ownerUserId === user?.id);
+          if (chosen) { setActiveTeam(chosen); router.replace('/club?from=' + encodeURIComponent(chosen.id)); }
+        }}>
+          <option value="">Select your club or school</option>
+          {resolvedTeams.filter(team => team.ownerUserId === user?.id && isHubTeamType(team.type)).map(team =>
+            <option key={team.id} value={team.id}>{team.hubDisplayName || team.name}</option>)}
+        </select>
+      </label>}
       {privateSquads.length < organizationSquadCandidates.length && (
         <p className="rounded-xl border p-3 text-sm text-muted-foreground">
           Private roster, safety, waiver and finance records below cover only squads where you have staff access.
@@ -1342,7 +1378,7 @@ function AuthorizedClubManagementPage() {
                       <p className="text-[8px] font-black text-primary uppercase tracking-widest">{coach.position || 'Coach'}</p>
                       <p className="text-[8px] font-bold text-muted-foreground uppercase tracking-widest truncate">
                         {coach.userId === user?.id
-                          ? (user?.schoolName || user?.clubName || teams[0]?.name || '')
+                          ? (hubName)
                           : (teams.find(t => t.id === coach.teamId)?.name || '')}
                       </p>
                     </div>
