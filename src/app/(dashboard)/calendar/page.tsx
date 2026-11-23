@@ -374,12 +374,11 @@ function EventDetailDialog({ event, isOpen, onOpenChange }: { event: TeamEvent |
 
   return (
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
-      <DialogContent className="sm:max-w-4xl p-0 sm:rounded-[2.5rem] rounded-t-4xl border-none shadow-2xl bg-white text-foreground flex flex-col max-h-[92dvh] sm:max-h-[85vh] overflow-hidden">
+      <DialogContent hideClose className="sm:max-w-4xl p-0 sm:rounded-[2.5rem] rounded-t-4xl border-none shadow-2xl bg-white text-foreground flex flex-col max-h-[92dvh] sm:max-h-[85vh] overflow-hidden">
         <DialogTitle className="sr-only">Event Details: {event.title}</DialogTitle>
-        {/* Sticky close button header */}
-        <div className="sticky top-0 z-50 flex justify-end p-3 shrink-0">
+        <div className="absolute right-3 top-3 z-50">
           <DialogClose asChild>
-            <Button variant="ghost" size="icon" className="h-10 w-10 rounded-full bg-black/5 hover:bg-black/10 text-black/40 hover:text-black transition-all">
+            <Button aria-label="Close event details" variant="ghost" size="icon" className="h-10 w-10 rounded-full bg-black/70 text-white hover:bg-black hover:text-white">
               <X className="h-5 w-5" />
             </Button>
           </DialogClose>

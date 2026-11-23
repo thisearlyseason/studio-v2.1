@@ -297,7 +297,7 @@ export default function SignupPage() {
         role,
         ...(regTarget === 'school_ad' || regTarget === 'nonprofit_manager'
           ? { organizationType: regTarget === 'school_ad' ? 'school' : 'nonprofit' } : {}),
-        notificationsEnabled: false,
+        notificationInvitationPending: true, notificationsEnabled: false,
         upcomingEventNotificationsEnabled: false,
         createdAt: new Date().toISOString(),
         avatarUrl: `https://picsum.photos/seed/${user.uid}/150/150`,

@@ -11,7 +11,7 @@
 .modern-header-nav a { display: grid; align-items: center; padding: 18px 0; position: relative; }
 .modern-header-nav a[aria-current=page]::after { content: ''; position: absolute; left: 0; right: 0; bottom: 8px; height: 3px; background: #cc1020; }
 .modern-home-top { display: grid; grid-template-columns: minmax(0,1.9fr) minmax(300px,.92fr); align-items: stretch; gap: 18px; }
-.modern-hero { position: relative; display: flex; align-items: flex-end; overflow: hidden; min-height: 430px; border-radius: 16px; padding: 32px 38px; color: white; isolation: isolate; }
+.modern-hero { position: relative; display: flex; align-items: flex-end; overflow: hidden; align-self: start; border-radius: 16px; padding: 32px 38px; color: white; isolation: isolate; }
 .modern-hero::after { content: ''; position: absolute; inset: 0; border: 1px solid #ffffff26; border-radius: inherit; pointer-events: none; }
 .modern-hero-content { position: relative; z-index: 1; width: 100%; }
 .modern-hero h1 { font-size: clamp(44px,5.5vw,72px); font-weight: 900; line-height: .98; letter-spacing: -3.2px; margin: 14px 0 10px; }
@@ -95,7 +95,7 @@
 @media (max-width: 1100px) {
   .modern-home-main { padding: 20px 24px 40px; }
   .modern-home-top { grid-template-columns: minmax(0,1.3fr) minmax(280px,1fr); }
-  .modern-hero { min-height: 410px; padding: 28px; }
+  .modern-hero { padding: 28px; }
   .modern-tool-card { padding: 16px; gap: 12px; }
   .modern-tool-card > svg:first-child { width: 31px; height: 31px; }
   .modern-header-brand > span { max-width: 230px; }
@@ -123,7 +123,7 @@
   .modern-home-header > div:last-child { gap: 2px; }
   .modern-home-header > div:last-child > button { width: 34px; height: 34px; }
   .modern-home-top { grid-template-columns: minmax(0,1fr); gap: 12px; }
-  .modern-hero { min-height: 268px; padding: 23px; border-radius: 13px; }
+  .modern-hero { padding: clamp(12px, 4vw, 23px); border-radius: 13px; }
   .modern-hero h1 { font-size: 47px; letter-spacing: -2px; margin: 12px 0 8px; }
   .modern-hero-team-name { font-size: 20px; }
   .modern-team-logo { width: 54px; height: 54px; margin-bottom: 10px; }

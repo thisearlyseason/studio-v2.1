@@ -58,14 +58,14 @@ export function ModernTeamHome() {
   }
   return <div className="modern-team-home">
     <div className="modern-home-top modern-enter">
-      <section className="modern-hero">
+      <section className="modern-hero team-cover-frame">
         <TeamCover key={activeTeam.homeCover?.id || 'default'} team={activeTeam}/>
         <div className="modern-hero-content">
           {activeTeam.teamLogoUrl && <img src={activeTeam.teamLogoUrl} alt="" className="modern-team-logo" onError={e => { e.currentTarget.style.display = 'none'; }}/>}
           <span className="modern-eyebrow">Team home</span>
           <h1>Built for<br/>game day.</h1>
           <p className="modern-hero-team-name">{activeTeam.name}</p>
-          {isStaff && <Link className="modern-edit-cover" href="/team#branding">Edit cover ↗</Link>}
+          {isStaff && <Link className="modern-edit-cover" href="/team#team-cover-editor">Edit cover ↗</Link>}
         </div>
       </section>
       <div className="modern-top-aside">

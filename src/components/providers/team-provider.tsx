@@ -88,6 +88,8 @@ export type UserProfile = {
   division?: string; // High-level organizational tier
   isBetaTester?: boolean;
   betaDemoSeeded?: boolean;
+  notificationInvitationPending?: boolean;
+  notificationGuideSeen?: boolean;
   notificationsEnabled?: boolean; // Push notification preference — persisted to Firestore
   upcomingEventNotificationsEnabled?: boolean;
   homeScreenLayout?: 'classic' | 'modern';

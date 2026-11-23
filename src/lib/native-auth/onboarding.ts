@@ -16,7 +16,7 @@ export function profileWrites(identity: UserRecord, input: NativeOnboarding, now
   };
   const user: Record<string, unknown> = {
     id: identity.uid, fullName: value.fullName, email: identity.email.trim().toLowerCase(), role: value.role,
-    notificationsEnabled: false, upcomingEventNotificationsEnabled: false, createdAt: new Date(now).toISOString(),
+    notificationInvitationPending: true, notificationsEnabled: false, upcomingEventNotificationsEnabled: false, createdAt: new Date(now).toISOString(),
     nativeSignupConsent: { adultConfirmed: true, termsAccepted: true, recordedAt: new Date(now).toISOString(), version: 1 },
   };
   if (identity.photoURL && identity.photoURL.length <= 2048) {

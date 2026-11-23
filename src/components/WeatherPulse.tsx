@@ -1,5 +1,6 @@
 "use client";
 
+import { weatherUnits, weatherReadings } from '@/lib/weather-units';
 import React, { useState, useEffect } from 'react';
 import { MapPin, Sun, Wind, Cloud, Thermometer, CloudRain, Snowflake, WifiOff } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
@@ -18,10 +19,11 @@ export function WeatherPulse({ location, isDemo }: { location?: string; isDemo?:
       return;
     }
 
+    const units = weatherUnits(undefined, navigator.language);
     // Known un-geocodable generic demo venue names
     const genericVenues = ['Simulated Venue', 'Field 7', 'Court A', 'Court B', 'Main Arena', 'Home Stadium', 'City Arena'];
     if (isDemo && genericVenues.some(v => location.toLowerCase().includes(v.toLowerCase()))) {
-      setWeather({ temp: '74°F', wind: '7 MPH', precip: '0%', desc: 'Partly Cloudy' });
+      setWeather({ ...weatherReadings(23.3, 11.3, 0, units), desc: 'Partly Cloudy' });
       setStatus('demo');
       return;
     }
@@ -38,9 +40,8 @@ export function WeatherPulse({ location, isDemo }: { location?: string; isDemo?:
         if (!data?.current_condition?.[0]) throw new Error('no data');
         const current = data.current_condition[0];
         setWeather({
-          temp: `${current.temp_F}°F`,
-          wind: `${current.windspeedMiles} MPH`,
-          precip: `${current.precipMM > 0 ? (current.precipMM / 25.4).toFixed(1) : '0.0'}"`,
+          ...weatherReadings(Number(current.temp_C), Number(current.windspeedKmph), Number(current.precipMM),
+            weatherUnits(data.nearest_area?.[0]?.country?.[0]?.value, navigator.language)),
           desc: current.weatherDesc[0].value,
         });
         setStatus('live');
@@ -48,8 +49,8 @@ export function WeatherPulse({ location, isDemo }: { location?: string; isDemo?:
       .catch((err) => {
         if (err.name === 'AbortError') return;
         // Fallback: still show something rather than nothing
-        setWeather({ temp: '72°F', wind: '6 MPH', precip: '0%', desc: 'Data Unavailable' });
-        setStatus(isDemo ? 'demo' : 'simulated');
+        setWeather({ temp: '—', wind: '—', precip: '—', desc: 'Data unavailable' });
+        setStatus('unavailable');
       });
 
     return () => controller.abort();
@@ -72,7 +73,7 @@ export function WeatherPulse({ location, isDemo }: { location?: string; isDemo?:
     loading:     { label: 'LOADING...',    className: 'animate-pulse bg-muted text-muted-foreground' },
     demo:        { label: 'DEMO LOCATION', className: 'bg-primary/10 text-primary' },
     simulated:   { label: 'SIMULATED',     className: 'bg-muted text-muted-foreground' },
-    unavailable: { label: 'NO LOCATION',   className: 'bg-muted text-muted-foreground' },
+    unavailable: { label: 'UNAVAILABLE',   className: 'bg-muted text-muted-foreground' },
   };
 
   const badge = badgeConfig[status];
@@ -114,7 +115,7 @@ export function WeatherPulse({ location, isDemo }: { location?: string; isDemo?:
           : status === 'demo'
           ? `Illustrative forecast — real weather loads for actual venue addresses`
           : status === 'unavailable'
-          ? 'Add a venue address to this event to see real-time conditions'
+          ? 'Weather is unavailable for this location'
           : `Weather data for ${location}`}
       </p>
     </div>

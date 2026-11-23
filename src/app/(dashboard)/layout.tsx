@@ -1,4 +1,5 @@
 "use client";
+import { FirstLoginNotifications } from '@/components/layout/FirstLoginNotifications';
 import { HomeLayoutSelector } from '@/components/team-home/layout-selector';
 import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
 import { schoolInstitutionLandingAllowed } from '@/lib/dashboard-institution-context';
@@ -636,6 +637,7 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
           />
         )}
         <AlertOverlay />
+        {mounted && user?.uid === userProfile?.id && !user?.isAnonymous && <FirstLoginNotifications key={user?.uid} />}
         <StripePaywall />
         <QuotaResolutionOverlay />
         {/* BetaNotificationBanner is now rendered inside Shell to prevent layout overlap */}
