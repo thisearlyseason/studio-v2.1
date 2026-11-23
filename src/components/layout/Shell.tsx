@@ -511,7 +511,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
 
   const showInstallBtn = !isStoreDistribution && !isStandalone && !installDismissed;
 
-  const { filteredCoordTabs, filteredAdminTabs, isAdminTabLocked } = useTeamNavigation();
+  const { moduleFlags, filteredCoordTabs, filteredAdminTabs, isAdminTabLocked } = useTeamNavigation();
   const primaryCoordTabs = filteredCoordTabs.filter((tab, index) => index < 5 || ['/leagues', '/manage-tournaments'].includes(tab.href));
   const additionalCoordTabs = filteredCoordTabs.filter(tab => !primaryCoordTabs.includes(tab));
   // The institution hub is a route-level context. A previously selected squad can
@@ -553,23 +553,23 @@ function ShellContent({ children }: { children: React.ReactNode }) {
           ? [
               { name: user?.homeScreenLayout === 'modern' ? 'Home' : 'Family', href: user?.homeScreenLayout === 'modern' ? '/dashboard' : '/family', icon: user?.homeScreenLayout === 'modern' ? Home : Baby },
               { name: 'Schedule', href: '/calendar', icon: CalendarDays },
-              ...(activeTeam?.features?.tacticalChat !== false ? [{ name: 'Chat', href: '/chats', icon: MessageCircle }] : []),
+              { name: 'Chat', href: '/chats', icon: MessageCircle },
               { name: 'Waivers', href: '/files', icon: ShieldCheck },
             ]
           : isPlayer
             ? [
                 { name: 'Home', href: '/dashboard', icon: Home },
                 { name: 'Schedule', href: '/calendar', icon: CalendarDays },
-                ...(activeTeam?.features?.tacticalChat !== false ? [{ name: 'Chat', href: '/chats', icon: MessageCircle }] : []),
+                { name: 'Chat', href: '/chats', icon: MessageCircle },
                 { name: 'Profile', href: '/roster', icon: User },
               ]
             : [
                 { name: 'Home', href: '/dashboard', icon: Home },
                 { name: 'Schedule', href: '/events', icon: CalendarDays },
                 { name: 'Roster', href: '/roster', icon: Users },
-                ...(activeTeam?.features?.tacticalChat !== false ? [{ name: 'Chat', href: '/chats', icon: MessageCircle }] : []),
+                { name: 'Chat', href: '/chats', icon: MessageCircle },
               ]
-  ).filter(item => !isTeamModuleRouteDisabled(item.href, activeTeam?.features)).filter(item => authorizeDashboardRoute(item.href, {
+  ).filter(item => !isTeamModuleRouteDisabled(item.href, moduleFlags)).filter(item => authorizeDashboardRoute(item.href, {
     role: user?.role,
     plan_type: user?.plan_type,
     isPrimaryClubAuthority,

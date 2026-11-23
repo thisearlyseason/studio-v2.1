@@ -4,6 +4,7 @@ import test from 'node:test';
 import {
   TEAM_MODULE_DEFINITIONS,
   isTeamModuleRouteDisabled,
+  visibleTeamModules,
   teamModuleFeaturePatch,
 } from '../src/lib/team-module-visibility.ts';
 
@@ -44,4 +45,17 @@ test('canonical settings writes migrate overlapping legacy aliases atomically', 
   const volunteers = TEAM_MODULE_DEFINITIONS.find(item => item.key === 'volunteers');
   assert.deepEqual(teamModuleFeaturePatch(files, false), { files: false, library: false });
   assert.deepEqual(teamModuleFeaturePatch(volunteers, true), { volunteers: true, volunteer: true });
+});
+
+test('audience overrides are team-specific and staff retain their authorized tools', () => {
+  const team = { roster: false, byRole: { player: { roster: true }, parent: { files: false } } };
+  const player = visibleTeamModules(team, false, false);
+  const parent = visibleTeamModules(team, false, true);
+  const coach = visibleTeamModules(team, true, true);
+  assert.equal(isTeamModuleRouteDisabled('/roster', player), false);
+  assert.equal(isTeamModuleRouteDisabled('/roster', parent), true);
+  assert.equal(isTeamModuleRouteDisabled('/files', parent), true);
+  assert.equal(isTeamModuleRouteDisabled('/files', player), false);
+  assert.equal(isTeamModuleRouteDisabled('/roster', coach), false);
+  assert.equal(isTeamModuleRouteDisabled('/files', visibleTeamModules({}, false, true)), false);
 });
