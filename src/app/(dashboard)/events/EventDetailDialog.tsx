@@ -330,9 +330,9 @@ export function EventDetailDialog({
                     </Button>
                   )}
                   {event.recurrenceSeriesId && onDeleteSeries && (
-                    <Button variant="outline" className="w-full h-11 rounded-2xl border-white/20 bg-transparent text-white hover:bg-white/10 font-black uppercase text-[9px]" onClick={() => setDeleteSeriesConfirmationOpen(true)}>
-                      Delete Entire Series
-                    </Button>
+                    <button type="button" className="activity-series-delete w-full" onClick={() => setDeleteSeriesConfirmationOpen(true)}>
+                      <Trash2 aria-hidden="true" size={16} /> Delete Entire Series
+                    </button>
                   )}
                 </div>
               )}
@@ -725,16 +725,16 @@ export function EventDetailDialog({
           </AlertDialogContent>
         </AlertDialog>
         <AlertDialog open={deleteSeriesConfirmationOpen} onOpenChange={setDeleteSeriesConfirmationOpen}>
-          <AlertDialogContent>
+          <AlertDialogContent className="activity-series-confirm">
             <AlertDialogHeader>
-              <AlertDialogTitle>Delete Series?</AlertDialogTitle>
+              <AlertDialogTitle className="text-xl font-black">Delete entire series?</AlertDialogTitle>
               <AlertDialogDescription>
                 Every occurrence in <strong>{event.title}</strong>&rsquo;s series will be permanently removed. This action cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>
-              <AlertDialogCancel>Cancel</AlertDialogCancel>
-              <AlertDialogAction className="bg-destructive text-destructive-foreground hover:bg-destructive/90" onClick={() => { void onDeleteSeries?.(event.id); }}>
+              <AlertDialogCancel className="activity-series-cancel">Cancel</AlertDialogCancel>
+              <AlertDialogAction className="activity-series-delete" onClick={() => { void onDeleteSeries?.(event.id); }}>
                 Delete Series
               </AlertDialogAction>
             </AlertDialogFooter>
