@@ -4,6 +4,7 @@
 import { ConflictReview } from './ConflictReview';
 import { ActivityConflictError, type ActivityPublishOptions, type ActivityConflict } from '@/lib/activity-publish';
 import { useAuth } from '@/firebase';
+import { formatActivityTime } from '@/lib/format-activity-time';
 import { ActivityRepeat } from './ActivityRepeat';
 import { buildRecurringEventDates, type TeamEventRecurrence } from '@/lib/team-event-recurrence';
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
@@ -13,6 +14,7 @@ import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { 
+  Flag,
   Trophy,
   Zap,
   Activity,
@@ -637,7 +639,7 @@ function TeamEventsPage() {
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Activity Type</Label>
                   <Select value={eventType} onValueChange={(v: EventType) => setEventType(v)}>
                     <SelectTrigger className="h-12 rounded-xl border-2 bg-white"><SelectValue /></SelectTrigger>
-                    <SelectContent className="rounded-xl"><SelectItem value="game" className="font-bold">Match Day</SelectItem><SelectItem value="practice" className="font-bold">Training</SelectItem><SelectItem value="meeting" className="font-bold">Tactical Meeting</SelectItem><SelectItem value="other" className="font-bold">Event</SelectItem></SelectContent>
+                    <SelectContent className="rounded-xl"><SelectItem value="game" className="font-bold">Match Day</SelectItem><SelectItem value="practice" className="font-bold">Training</SelectItem><SelectItem value="meeting" className="font-bold">Meeting</SelectItem><SelectItem value="other" className="font-bold">Event</SelectItem></SelectContent>
                   </Select>
                 </div> 
                 <div className="space-y-1.5">
@@ -892,13 +894,12 @@ function TeamEventsPage() {
         const selectedKey = selectedCalendarDay ? format(selectedCalendarDay, 'yyyy-MM-dd') : null;
         const selectedDayEvents = selectedKey ? (allDayEvents[selectedKey] || []) : [];
 
-        // Dot color per event type
-        const dotColor: Record<string, string> = {
-          game: 'bg-primary',
-          practice: 'bg-emerald-500',
-          tournament: 'bg-black',
-          meeting: 'bg-amber-400',
-          other: 'bg-slate-400',
+        const markers: Record<string, { icon: typeof Flag; color: string }> = {
+          game: { icon: Flag, color: 'bg-red-100 text-red-900' },
+          practice: { icon: Dumbbell, color: 'bg-emerald-100 text-emerald-900' },
+          tournament: { icon: Trophy, color: 'bg-violet-100 text-violet-900' },
+          meeting: { icon: Users, color: 'bg-amber-100 text-amber-950' },
+          other: { icon: CalendarDays, color: 'bg-slate-100 text-slate-900' },
         };
 
         return (
@@ -934,14 +935,15 @@ function TeamEventsPage() {
                 const inMonth = day.getMonth() === calendarDate.getMonth();
                 const today = isToday(day);
                 const isSelected = selectedCalendarDay ? isSameDay(day, selectedCalendarDay) : false;
-                // Unique event types for dot indicators
-                const eventTypes = Array.from(new Set(dayEvents.map(e => e.eventType || 'other'))) as string[];
                 return (
-                  <div
+                  <button
+                    type="button"
+                    aria-pressed={isSelected}
+                    aria-label={`${format(day, 'EEEE, MMMM d')}, ${dayEvents.length} events`}
                     key={key}
                     onClick={() => setSelectedCalendarDay(day)}
                     className={cn(
-                      'min-h-[52px] sm:min-h-[80px] p-1 sm:p-2 rounded-xl sm:rounded-2xl border transition-all cursor-pointer select-none',
+                      'min-w-0 min-h-[52px] sm:min-h-[80px] px-px py-1 sm:p-2 flex flex-col items-stretch text-left rounded-xl sm:rounded-2xl border transition-all cursor-pointer select-none',
                       inMonth ? 'bg-white border-muted/50 hover:border-primary/30' : 'bg-muted/10 border-transparent hover:bg-muted/20',
                       isSelected && 'ring-2 ring-primary ring-offset-1 border-primary/30',
                       today && !isSelected && 'ring-2 ring-primary/30 ring-offset-1'
@@ -953,15 +955,20 @@ function TeamEventsPage() {
                     )}>
                       {format(day, 'd')}
                     </span>
-                    {/* Event type dots */}
-                    {eventTypes.length > 0 && (
-                      <div className="flex justify-center flex-wrap gap-0.5 mt-1">
-                        {eventTypes.slice(0, 4).map(type => (
-                          <span key={type} className={cn('h-1.5 w-1.5 rounded-full', dotColor[type] || 'bg-slate-400')} />
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                    {dayEvents.slice(0, 2).map(event => {
+                      const type = event.isTournament ? 'tournament' : event.eventType || 'other';
+                      const { icon: Icon, color } = markers[type] ?? markers.other;
+                      const time = formatActivityTime(event.startTime);
+                      return <span key={event.id} title={`${event.title} · ${time}`} className={cn('mb-1 flex flex-col items-start gap-0.5 rounded-md px-0.5 py-1 sm:px-1.5', color)}>
+                        <span className="flex w-full flex-wrap items-center gap-x-1">
+                          <Icon aria-hidden="true" className="size-4 shrink-0" />
+                          <span className="min-w-[3ch] flex-1 line-clamp-2 break-all text-[11px] font-bold leading-tight sm:text-xs">{event.title}</span>
+                        </span>
+                        <span className="text-[10px] font-medium leading-tight tabular-nums">{time}</span>
+                      </span>;
+                    })}
+                    {dayEvents.length > 2 && <span className="text-center text-[10px] font-bold">+{dayEvents.length - 2} more</span>}
+                  </button>
                 );
               })}
             </div>
@@ -994,7 +1001,7 @@ function TeamEventsPage() {
                             <div className="flex-1 p-4 flex flex-col justify-center min-w-0">
                               <div className="flex gap-2 mb-1">
                                 <Badge className="text-[7px] uppercase font-black">{event.eventType || 'Activity'}</Badge>
-                                <Badge variant="outline" className="text-[7px] uppercase font-black text-primary border-primary/20">{event.startTime ? (() => { try { return format(new Date(`2000-01-01T${event.startTime}`), 'h:mm a'); } catch { return event.startTime; } })() : 'TBD'}</Badge>
+                                <Badge variant="outline" className="text-base font-bold leading-tight tabular-nums text-foreground">{formatActivityTime(event.startTime)}</Badge>
                               </div>
                               <h3 className="text-base font-black tracking-tight leading-none truncate group-hover:text-primary transition-colors uppercase">{event.title}</h3>
                               {event.location && (
@@ -1036,7 +1043,7 @@ function TeamEventsPage() {
                         <div>
                           <div className="flex gap-2 mb-1.5">
                             <Badge className="text-[7px] uppercase font-black">{(event.eventType || 'Activity')}</Badge>
-                            <Badge variant="outline" className="text-[7px] uppercase font-black text-primary border-primary/20">{event.startTime ? (() => { try { return format(new Date(`2000-01-01T${event.startTime}`), 'h:mm a'); } catch { return event.startTime; } })() : 'TBD'}</Badge>
+                            <Badge variant="outline" className="text-base font-bold leading-tight tabular-nums text-foreground">{formatActivityTime(event.startTime)}</Badge>
                             {event.isLeagueGame && (
                               <Badge className={cn("text-[7px] uppercase font-black border-none", event.isHome ? "bg-primary text-white" : "bg-black text-white")}>
                                 {event.isHome ? 'HOME' : 'AWAY'}
