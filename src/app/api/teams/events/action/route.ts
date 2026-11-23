@@ -12,7 +12,7 @@ import {
 import { hasStaffRole } from '@/lib/staff-position';
 import { ScheduleDeploymentError, withScheduleMutationLock } from '@/lib/server-schedule-deployment';
 import { buildTeamEventBooking } from '@/lib/server-team-event-booking';
-import { buildRecurringEventDates, shiftCalendarDate } from '@/lib/team-event-recurrence';
+import { buildRecurringEventDates, calendarDayOffset, shiftCalendarDate, type TeamEventRecurrence } from '@/lib/team-event-recurrence';
 import { normalizeTeamEventInterval, teamEventConflictDates, teamEventIntervalsOverlap } from '@/lib/team-event-interval';
 import { validateTeamEventInput } from '@/lib/team-event-input';
 import { eventActionNeedsGeneratedId } from '@/lib/team-event-action';
@@ -24,16 +24,6 @@ const ID_PATTERN = /^[A-Za-z0-9_-]{1,200}$/;
 const REGISTRATION_CODE_PATTERN = /^[A-Z0-9_-]{4,32}$/;
 const RSVP_STATUSES = new Set(['going', 'maybe', 'declined', 'no', 'no_response']);
 
-function recurrenceInput(value: unknown): { frequency: 'weekly'; count: number } {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new EventMutationError('A weekly recurrence configuration is required.');
-  }
-  const input = value as Record<string, unknown>;
-  if (input.frequency !== 'weekly' || !Number.isInteger(input.count)) {
-    throw new EventMutationError('A valid weekly recurrence configuration is required.');
-  }
-  return { frequency: 'weekly', count: input.count as number };
-}
 
 class EventMutationError extends Error {
   constructor(message: string, readonly status = 400) {
@@ -196,14 +186,15 @@ export async function POST(req: NextRequest) {
         const receipt = await recoverCreateReceipt();
         if (receipt) return { eventIds: receipt.eventIds as string[], replayed: true };
         const submitted = safeEventData(body.event);
-        const recurrence = recurrenceInput(body.recurrence);
+        if (!body.recurrence || typeof body.recurrence !== 'object') throw new EventMutationError('Choose a repeat schedule.');
+        const recurrence = body.recurrence as TeamEventRecurrence;
         const recurrenceStartDate = cleanDate(submitted.date);
         // Validate the submitted interval before deriving later occurrences.  Each
         // occurrence then carries the same calendar-day span as the source event.
         assertValidEventInput({ ...submitted, date: recurrenceStartDate });
         let dates: string[];
         try {
-          dates = buildRecurringEventDates(recurrenceStartDate, recurrence.frequency, recurrence.count);
+          dates = buildRecurringEventDates(recurrenceStartDate, recurrence.frequency, recurrence.count, recurrence);
         } catch (error) {
           throw new EventMutationError(error instanceof Error ? error.message : 'Invalid recurrence configuration.');
         }
@@ -219,7 +210,7 @@ export async function POST(req: NextRequest) {
             ownerUserId: access.teamData.ownerUserId || auth.uid,
             date: occurrence.date,
             ...(typeof submitted.endDate === 'string'
-              ? { endDate: shiftCalendarDate(submitted.endDate, prepared.length * 7) }
+              ? { endDate: shiftCalendarDate(submitted.endDate, calendarDayOffset(recurrenceStartDate, occurrence.date)) }
               : {}),
             recurrenceSeriesId: seriesId,
             recurrenceFrequency: recurrence.frequency,
@@ -230,6 +221,7 @@ export async function POST(req: NextRequest) {
           };
           assertValidEventInput(event);
           const interval = await assertEventAvailability(teamId, occurrence.ref.id, event);
+          if (prepared.some(other => teamEventIntervalsOverlap(other.interval, interval))) throw new EventMutationError('Two occurrences overlap. Choose different dates or times.', 409);
           prepared.push({ ref: occurrence.ref, event, interval });
         }
         const batch = adminDb.batch();

@@ -103,3 +103,17 @@ test('multi-day TBD events create no timed booking until a coach adds a start ti
     }
   });
 });
+
+test('selected dates preserve a multi-day TBD activity span on every occurrence', async () => {
+  const state = communicationDb(seed);
+  await using(state, async call => {
+    const response = await call({
+      ...request, action: 'create-series',
+      event: { title: 'Training camp', date: '2026-03-01', endDate: '2026-03-03', startTime: '' },
+      recurrence: { frequency: 'dates', count: 3, dates: ['2026-05-01', '2026-03-11'] },
+    });
+    assert.equal(response.status, 200);
+    assert.deepEqual(events(state).map(([, value]) => [value.date, value.endDate]).sort(),
+      [['2026-03-01','2026-03-03'], ['2026-03-11','2026-03-13'], ['2026-05-01','2026-05-03']]);
+  });
+});
