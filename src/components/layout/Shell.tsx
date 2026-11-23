@@ -643,7 +643,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
   };
 
   return (
-    <SidebarProvider mobileBreakpoint={1280} style={{ "--sidebar-width": "18rem" } as React.CSSProperties} className={cn("relative h-full min-h-0", isModernLayout && "modern-app")}>
+    <SidebarProvider data-workspace-shell mobileBreakpoint={1280} style={{ "--sidebar-width": "18rem" } as React.CSSProperties} className={cn("relative h-full min-h-0", isModernLayout && "modern-app")}>
       <SidebarRouteClose />
       <div className="modern-shell-frame flex flex-col h-full w-full bg-background selection:bg-primary/20">
         <div className="flex min-h-0 flex-1 overflow-hidden">
