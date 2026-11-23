@@ -79,8 +79,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { cn } from '@/lib/utils';
 import { toast } from '@/hooks/use-toast';
 import { Progress } from '@/components/ui/progress';
-import { useFirestore, useCollection, useMemoFirebase, useAuth } from '@/firebase';
-import { collectionGroup, query, where, collection, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore';
+import { useAuth } from '@/firebase';
+import { onSnapshot, query, where, collection, getDocs, doc, getDoc, updateDoc } from 'firebase/firestore';
 import { authHeader, getAuthToken } from '@/lib/client-auth';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { IncidentDetailDialog } from '@/app/(dashboard)/coaches-corner/incident-detail-dialog';
@@ -428,19 +428,29 @@ function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
 
 
 
-  const docsQuery = useMemoFirebase(() => (db && user?.id) ? query(collectionGroup(db, 'documents'), where('ownerUserId', '==', user.id)) : null, [db, user?.id]);
-  const { data: allDocsRaw } = useCollection<TeamDocument>(docsQuery);
-
-  // Also fetch from the global club-documents path (where deployClubProtocol always writes)
-  const globalDocsQuery = useMemoFirebase(() => (db && user?.id) ? collection(db, 'users', user.id, 'clubDocuments') : null, [db, user?.id]);
-  const { data: globalDocsRaw } = useCollection<TeamDocument>(globalDocsQuery as any);
-
-  const clubDocs = useMemo(() => {
-    const all = [...(allDocsRaw || []), ...(globalDocsRaw || [])];
-    // Deduplicate by id — global docs may overlap with team-level copies
-    const seen = new Set<string>();
-    return all.filter(d => { if (seen.has(d.id)) return false; seen.add(d.id); return true; });
-  }, [allDocsRaw, globalDocsRaw]);
+  const [waiverCopies, setWaiverCopies] = useState<{scope: string; docs: TeamDocument[]} | null>(null);
+  const waiverScope = JSON.stringify([...privateClubTeamIds].sort());
+  useEffect(() => {
+    if (!db) return;
+    const targets: string[] = JSON.parse(waiverScope);
+    const allowed = new Set(targets);
+    const copies = new Map<string, TeamDocument[]>();
+    let active = true;
+    const publish = () => {
+      if (active) setWaiverCopies({scope: waiverScope, docs: [...copies.values()].flat()});
+    };
+    const unsubscribes = targets.map(teamId => onSnapshot(query(collection(db, 'teams', teamId, 'documents'),
+      where('isClubMaster', '==', true)), snapshot => {
+      copies.set(teamId, snapshot.docs.flatMap(doc => {
+        const data = doc.data();
+        if (Array.isArray(data.targetTeamIds) && data.targetTeamIds.some(id => !allowed.has(id))) return [];
+        return [{...data, id: doc.id, teamId} as TeamDocument];
+      }));
+      publish();
+    }, () => { copies.delete(teamId); publish(); }));
+    return () => { active = false; unsubscribes.forEach(unsubscribe => unsubscribe()); };
+  }, [db, waiverScope]);
+  const clubDocs = useMemo(() => waiverCopies?.scope === waiverScope ? waiverCopies.docs : [], [waiverCopies, waiverScope]);
 
   const globalWaiverDeployments = useMemo(
     () => groupGlobalWaiverDeployments(clubDocs),
@@ -596,7 +606,7 @@ function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
           entriesSnap.forEach(e => {
             const data = e.data();
             const entryFee = parseFloat(data?.registrationCost ?? data?.registration_cost ?? leagueFee) || leagueFee;
-            entries.push({ id: e.id, leagueId, leagueName, registrationCost: entryFee, ...data });
+            entries.push({ ...data, id: e.id, leagueId, leagueName, registrationCost: entryFee });
           });
         }
       }
@@ -610,13 +620,13 @@ function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
           const fundData = fundDoc.data();
           const donationSnap = await getDocs(collection(db, 'teams', tid, 'fundraising', fundDoc.id, 'donations'));
           const donations: any[] = [];
-          donationSnap.forEach(d => donations.push({ id: d.id, ...d.data() }));
+          donationSnap.forEach(d => donations.push({ ...d.data(), id: d.id }));
 
           if (donations.length === 0 && (fundData.raisedAmount || 0) > 0) {
             donations.push({ id: '_inline', amount: fundData.raisedAmount, status: 'verified', donorName: 'Campaign Total', note: 'Inline fundraiser total' });
           }
 
-          campaigns.push({ id: fundDoc.id, teamId: tid, teamName: teamSnap?.name || 'Unknown Squad', donations, ...fundData });
+          campaigns.push({ ...fundData, id: fundDoc.id, teamId: tid, teamName: teamSnap?.name || 'Unknown Squad', donations });
         }
       }
       setFundraiserData(campaigns);
@@ -646,7 +656,7 @@ function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
   const handleTogglePayment = async (leagueId: string, entryId: string, paid: boolean) => {
     if (!db) return;
     await updateDoc(doc(db, 'leagues', leagueId, 'registrationEntries', entryId), { payment_received: !paid });
-    setEnrollmentEntries(prev => prev.map(e => e.id === entryId ? { ...e, payment_received: !paid } : e));
+    setEnrollmentEntries(prev => prev.map(e => e.leagueId === leagueId && e.id === entryId ? { ...e, payment_received: !paid } : e));
     toast({ title: paid ? 'Marked as Unpaid' : 'Marked as Paid' });
   };
 
@@ -721,7 +731,7 @@ function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
           method: 'PATCH',
           headers: { 'Content-Type': 'application/json', ...authHeader(token) },
           body: JSON.stringify({
-            documentId: editingDocId,
+            documentId: editingDocId, hubTeamId: schoolHub?.id,
             expectedVersion: editingWaiverGuard.version,
             expectedTextHash: editingWaiverGuard.textHash,
             title: protocolForm.title,
@@ -732,7 +742,7 @@ function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
         const payload = await response.json().catch(() => ({}));
         if (!response.ok) throw new Error(payload.error || 'Unable to update this waiver.');
       } else {
-        await deployClubProtocol({ ...protocolForm, requestId: protocolRequestId, assignedTo: ['all'], isActive: true }, clubTeamIds);
+        await deployClubProtocol({ ...protocolForm, hubTeamId: schoolHub?.id, requestId: protocolRequestId, assignedTo: ['all'], isActive: true }, clubTeamIds);
       }
       setIsDeployProtocolOpen(false); setEditingDocId(null); setEditingWaiverGuard(null); setProtocolRequestId(crypto.randomUUID()); setProtocolForm({ title: '', content: '', type: 'waiver', waiverAudience: 'participant' });
       toast({ title: editingDocId ? "Protocol Updated" : "Mandate Deployed", description: `Protocol synchronized across ${clubTeamIds.length} squads.` });
@@ -752,7 +762,7 @@ function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
       const response = await fetch('/api/organizations/waivers', {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ documentId: waiverDoc.id, isActive: waiverDoc.isActive === false, expectedVersion: waiverDoc.version, expectedTextHash: waiverDoc.textHash }),
+        body: JSON.stringify({ documentId: waiverDoc.sourceGlobalDocumentId || waiverDoc.id, hubTeamId: schoolHub?.id, isActive: waiverDoc.isActive === false, expectedVersion: waiverDoc.version, expectedTextHash: waiverDoc.textHash }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Unable to update this waiver.');
@@ -770,7 +780,7 @@ function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
       const response = await fetch('/api/organizations/waivers', {
         method: 'DELETE',
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
-        body: JSON.stringify({ documentId: waiverDoc.id, expectedVersion: waiverDoc.version, expectedTextHash: waiverDoc.textHash }),
+        body: JSON.stringify({ documentId: waiverDoc.sourceGlobalDocumentId || waiverDoc.id, hubTeamId: schoolHub?.id, expectedVersion: waiverDoc.version, expectedTextHash: waiverDoc.textHash }),
       });
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || 'Unable to delete this waiver.');
@@ -1311,7 +1321,7 @@ function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
                       <Button 
                         variant="outline" 
                         className="rounded-xl h-8 px-3 font-black uppercase text-[9px] text-primary border-primary/20 hover:bg-primary hover:text-white transition-all shrink-0"
-                        onClick={() => { void reinstateMember(member.id).catch(() => {}); }}
+                        onClick={() => { void reinstateMember(member.id, member.teamId).catch(() => {}); }}
                       >
                         Reinstate
                       </Button>
@@ -1531,13 +1541,13 @@ function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
                     <Button 
                       className="flex-1 font-black uppercase text-[10px] h-11 rounded-2xl bg-primary hover:bg-primary/90"
                       onClick={async () => {
-                        if (!selectedCoach.userId || !activeTeam) return;
+                        if (!selectedCoach.userId || !privateClubTeamIds.includes(selectedCoach.teamId)) return;
                         try {
-                          const chatId = await createChat(`${selectedCoach.name}`, [selectedCoach.userId]);
+                          const chatId = await createChat(selectedCoach.name, [selectedCoach.userId], undefined, selectedCoach.teamId);
                           if (chatId) {
                             toast({ title: "Chat Created", description: `Starting conversation with ${selectedCoach.name}` });
                             setSelectedCoach(null);
-                            router.push('/chats');
+                            router.push('/chats/' + encodeURIComponent(chatId) + '?teamId=' + encodeURIComponent(selectedCoach.teamId));
                           }
                         } catch (e) {
                           toast({ title: "Error", description: "Could not start chat", variant: "destructive" });
@@ -1607,7 +1617,7 @@ function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
                         <p className="text-[7px] font-bold uppercase tracking-widest text-muted-foreground mt-0.5">{completion?.audience === 'team' ? 'One staff per squad' : 'All participants'}</p>
                       </div>
                       <div className="flex items-center gap-1">
-                        <Button variant="outline" size="sm" className="h-7 px-2.5 rounded-xl font-black text-[8px] uppercase border-2" onClick={(event) => { event.stopPropagation(); if (!waiverDoc.version || !waiverDoc.textHash) { toast({ title: 'Refresh Required', description: 'This waiver does not have a verified version.', variant: 'destructive' }); return; } setEditingDocId(waiverDoc.id); setEditingWaiverGuard({ version: waiverDoc.version, textHash: waiverDoc.textHash }); setProtocolForm({ title: waiverDoc.title, content: waiverDoc.content || '', type: waiverDoc.type || 'waiver', waiverAudience: waiverDoc.waiverAudience === 'team' ? 'team' : 'participant' }); setIsDeployProtocolOpen(true); }}>Edit</Button>
+                        <Button variant="outline" size="sm" className="h-7 px-2.5 rounded-xl font-black text-[8px] uppercase border-2" onClick={(event) => { event.stopPropagation(); if (!waiverDoc.version || !waiverDoc.textHash) { toast({ title: 'Refresh Required', description: 'This waiver does not have a verified version.', variant: 'destructive' }); return; } setEditingDocId(waiverDoc.sourceGlobalDocumentId || waiverDoc.id); setEditingWaiverGuard({ version: waiverDoc.version, textHash: waiverDoc.textHash }); setProtocolForm({ title: waiverDoc.title, content: waiverDoc.content || '', type: waiverDoc.type || 'waiver', waiverAudience: waiverDoc.waiverAudience === 'team' ? 'team' : 'participant' }); setIsDeployProtocolOpen(true); }}>Edit</Button>
                         <Button variant="outline" size="sm" className={cn("h-7 px-2.5 rounded-xl font-black text-[8px] uppercase border-2", waiverDoc.isActive === false ? "border-emerald-200 text-emerald-600 hover:bg-emerald-50" : "border-amber-200 text-amber-600 hover:bg-amber-50")} onClick={(event) => { event.stopPropagation(); void handleToggleWaiver(waiverDoc); }}>{waiverDoc.isActive === false ? 'Enable' : 'Disable'}</Button>
                         <Button aria-label={`Delete ${waiverDoc.title}`} variant="ghost" size="sm" className="h-7 w-7 rounded-xl text-red-500 hover:bg-red-50" onClick={(event) => { event.stopPropagation(); void handleDeleteWaiver(waiverDoc); }}>×</Button>
                       </div>
