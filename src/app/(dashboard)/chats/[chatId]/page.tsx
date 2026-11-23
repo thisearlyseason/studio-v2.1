@@ -116,15 +116,18 @@ function ChatRoomInner() {
     effectiveTeamId, activeTeam.id, chat.contextType, chat.memberAuthorities?.[user?.id || '']?.teamId,
   )) ? chat : null;
 
+  // Read receipts update the channel document. Only access or channel identity
+  // should replace the message listener.
+  const canReadMessages = Boolean(currentChat && !currentChat.isDeleted);
   const messagesQuery = useMemoFirebase(() => {
     if (!effectiveTeamId || !db || !chatId) return null;
-    if (!currentChat) return null;
+    if (!canReadMessages) return null;
     return query(
       collection(db, 'teams', effectiveTeamId, 'groupChats', chatId as string, 'messages'),
       orderBy('createdAt', 'asc'),
       limitToLast(100)
     );
-  }, [effectiveTeamId, db, chatId, currentChat]);
+  }, [effectiveTeamId, db, chatId, canReadMessages]);
 
   const { data: rawMessages, isLoading: isMessagesLoading, error: messagesError } = useCollection<Message>(messagesQuery);
   const messages = useMemo(
@@ -132,8 +135,11 @@ function ChatRoomInner() {
     [rawMessages, blocks],
   );
 
+  const newestMessageId = rawMessages?.at(-1)?.id;
+  const newestVisibleMessageId = messages.at(-1)?.id;
+
   useEffect(() => {
-    if (!currentChat || !effectiveTeamId || !chatId || !user?.id || isMessagesLoading) return;
+    if (!canReadMessages || !effectiveTeamId || !chatId || !user?.id || isMessagesLoading || messagesError) return;
     getAuthToken(auth).then(token => {
       if (!token) return;
       return fetch('/api/teams/chat', {
@@ -143,7 +149,7 @@ function ChatRoomInner() {
     }).then(response => {
       if (response?.ok) return clearDeviceNotifications({ chatId: String(chatId), teamId: effectiveTeamId });
     }).catch(() => undefined);
-  }, [effectiveTeamId, chatId, user?.id, auth, isMessagesLoading, messages.length, currentChat?.id]);
+  }, [effectiveTeamId, chatId, user?.id, auth, isMessagesLoading, messagesError, newestMessageId, canReadMessages]);
 
   useEffect(() => {
     if (!effectiveTeamId || !chatId || !auth) return;
@@ -166,11 +172,12 @@ function ChatRoomInner() {
   // Scroll to bottom whenever new messages arrive
   useEffect(() => {
     // Use requestAnimationFrame to ensure DOM has painted before scrolling
-    requestAnimationFrame(() => {
+    const frame = requestAnimationFrame(() => {
       const viewport = messagesEndRef.current?.closest('[data-radix-scroll-area-viewport]');
       viewport?.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
     });
-  }, [messages.length]);
+    return () => cancelAnimationFrame(frame);
+  }, [newestVisibleMessageId]);
 
   useEffect(() => {
     if (currentChat && !hasInitializedName.current) {
@@ -396,7 +403,7 @@ function ChatRoomInner() {
               const showAuthor = idx === 0 || messages[idx-1].authorId !== msg.authorId;
               
               return (
-                <div key={msg.id} className={cn("flex flex-col animate-in fade-in slide-in-from-bottom-2 duration-300", isMe ? 'items-end' : 'items-start', showAuthor && "pt-4")}>
+                <div key={msg.id} className={cn("flex flex-col", isMe ? 'items-end' : 'items-start', showAuthor && "pt-4")}>
                   {showAuthor && (
                     <div className="flex items-center gap-2 mb-2 px-1">
                       {!isMe && <Avatar className="h-6 w-6 rounded-lg border shadow-sm"><AvatarFallback className="text-[8px] font-black">{msg.author[0]}</AvatarFallback></Avatar>}
