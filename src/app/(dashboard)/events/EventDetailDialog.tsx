@@ -341,12 +341,12 @@ export function EventDetailDialog({
                   )}
                   {event.recurrenceSeriesId && onEditSeries && (
                     <Button variant="outline" className="w-full h-11 rounded-2xl border-white/20 bg-transparent text-white hover:bg-white/10 font-black uppercase text-[9px]" onClick={() => onEditSeries(event)}>
-                      Edit Entire Weekly Series
+                      Edit Entire Series
                     </Button>
                   )}
                   {event.recurrenceSeriesId && onDeleteSeries && (
                     <Button variant="outline" className="w-full h-11 rounded-2xl border-white/20 bg-transparent text-white hover:bg-white/10 font-black uppercase text-[9px]" onClick={() => setDeleteSeriesConfirmationOpen(true)}>
-                      Delete Entire Weekly Series
+                      Delete Entire Series
                     </Button>
                   )}
                 </div>
@@ -742,9 +742,9 @@ export function EventDetailDialog({
         <AlertDialog open={deleteSeriesConfirmationOpen} onOpenChange={setDeleteSeriesConfirmationOpen}>
           <AlertDialogContent>
             <AlertDialogHeader>
-              <AlertDialogTitle>Delete Weekly Series?</AlertDialogTitle>
+              <AlertDialogTitle>Delete Series?</AlertDialogTitle>
               <AlertDialogDescription>
-                Every occurrence in <strong>{event.title}</strong>&rsquo;s weekly series will be permanently removed. This action cannot be undone.
+                Every occurrence in <strong>{event.title}</strong>&rsquo;s series will be permanently removed. This action cannot be undone.
               </AlertDialogDescription>
             </AlertDialogHeader>
             <AlertDialogFooter>

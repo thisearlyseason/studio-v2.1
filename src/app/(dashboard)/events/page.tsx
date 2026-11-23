@@ -1,6 +1,8 @@
 
 "use client";
 
+import { ActivityRepeat } from './ActivityRepeat';
+import { buildRecurringEventDates, type TeamEventRecurrence } from '@/lib/team-event-recurrence';
 import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -276,7 +278,7 @@ export default function EventsPage() {
   const [assignments, setAssignments] = useState<{ id: string; title: string, assigneeId: string | null, assigneeName?: string | null }[]>([]);
   const [selectedDrillIds, setSelectedDrillIds] = useState<string[]>([]);
   const [selectedPracticeTemplateId, setSelectedPracticeTemplateId] = useState<string>('');
-  const [recurrenceCount, setRecurrenceCount] = useState('1');
+  const [repeat, setRepeat] = useState<TeamEventRecurrence | null>(null);
 
   const db = useFirestore();
   const drillsQuery = useMemoFirebase(() => (activeTeam?.id && db) ? query(collection(db, 'teams', activeTeam.id, 'drills'), orderBy('title', 'asc')) : null, [activeTeam?.id, db]);
@@ -382,12 +384,12 @@ export default function EventsPage() {
         drillIds: eventType === 'practice' ? selectedDrillIds : [],
         practiceTemplateId: eventType === 'practice' && selectedPracticeTemplateId ? selectedPracticeTemplateId : ''
       }; 
-      const seriesCount = Number(recurrenceCount);
+      if (!editingEvent && repeat) buildRecurringEventDates(newDate, repeat.frequency, repeat.count, repeat);
       const seriesPayload = editingSeries ? Object.fromEntries(Object.entries(payload).filter(([key]) => key !== 'date' && key !== 'endDate')) : payload;
       const success = editingEvent
         ? editingSeries ? await updateEventSeries(editingEvent.id, seriesPayload) : await updateEvent(editingEvent.id, payload)
-        : seriesCount > 1
-          ? await createEventSeries(payload, { frequency: 'weekly', count: seriesCount })
+        : repeat
+          ? await createEventSeries(payload, repeat)
           : await addEvent(payload);
       
       if (success) {
@@ -419,7 +421,7 @@ export default function EventsPage() {
   };
 
   const resetForm = () => {
-    setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); setNewLocation(''); setNewDescription(''); setEventType('game'); setOpponent(''); setEditingEvent(null); setEditingSeries(false); setAssignments([]); setSelectedDrillIds([]); setSelectedPracticeTemplateId(''); setRecurrenceCount('1');
+    setNewTitle(''); setNewDate(''); setNewEndDate(''); setNewTime(''); setNewLocation(''); setNewDescription(''); setEventType('game'); setOpponent(''); setEditingEvent(null); setEditingSeries(false); setAssignments([]); setSelectedDrillIds([]); setSelectedPracticeTemplateId(''); setRepeat(null);
   };
 
   const handleEdit = (event: TeamEvent) => { 
@@ -447,7 +449,7 @@ export default function EventsPage() {
     setNewDate('');
     setNewEndDate('');
     setAssignments((event.assignments || []).map(task => ({ id: crypto.randomUUID(), title: task.title, assigneeId: null })));
-    setRecurrenceCount('1');
+    setRepeat(null);
   };
 
   const handleEditSeries = (event: TeamEvent) => {
@@ -561,7 +563,7 @@ export default function EventsPage() {
           <div data-testid="launch-activity-scroll-region" className="min-h-0 flex-1 overflow-y-auto custom-scrollbar">
           <div className="flex flex-col xl:flex-row">
             <div className="w-full min-w-0 xl:w-5/12 bg-muted/30 p-4 sm:p-6 xl:p-10 space-y-4 sm:space-y-6 xl:border-r">
-              <DialogHeader><DialogTitle className="text-2xl sm:text-3xl font-black uppercase tracking-tight pr-10">{editingEvent ? editingSeries ? "Update Weekly Series" : "Update" : "Launch"} Activity</DialogTitle></DialogHeader>
+              <DialogHeader><DialogTitle className="text-2xl sm:text-3xl font-black uppercase tracking-tight pr-10">{editingEvent ? editingSeries ? "Update Series" : "Update" : "Launch"} Activity</DialogTitle></DialogHeader>
               <div className="space-y-4 sm:space-y-6">
                 <div className="space-y-1.5">
                   <Label className="text-[10px] font-black uppercase tracking-widest ml-1">Activity Type</Label>
@@ -639,28 +641,7 @@ export default function EventsPage() {
                     <Button type="button" variant={newTime ? 'outline' : 'secondary'} aria-pressed={!newTime} onClick={() => setNewTime('')}>TBD</Button>
                   </div>
                 </div>
-                {!editingEvent && (
-                  <div className="space-y-1.5">
-                    <label className="flex items-center gap-2 font-bold">
-                      <input type="checkbox" checked={recurrenceCount !== '1'} onChange={e => setRecurrenceCount(e.target.checked ? '2' : '1')} />
-                      Repeat this event
-                    </label>
-                    {recurrenceCount !== '1' && (
-                      <>
-                        <Label htmlFor="weekly-recurrence-count">Weekly for</Label>
-                        <Select value={recurrenceCount} onValueChange={setRecurrenceCount}>
-                          <SelectTrigger id="weekly-recurrence-count"><SelectValue /></SelectTrigger>
-                          <SelectContent>
-                            {Array.from({ length: 51 }, (_, index) => index + 2).map(count => (
-                              <SelectItem key={count} value={String(count)}>{count} weeks</SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                        <p className="text-sm text-muted-foreground">{recurrenceCount} events total, including the first. Each can be edited separately.</p>
-                      </>
-                    )}
-                  </div>
-                )}
+                {!editingEvent && <ActivityRepeat start={newDate} repeat={repeat} onChange={setRepeat} />}
               </div>
             </div>
             <div className="min-w-0 flex-1 p-4 sm:p-6 xl:p-10 space-y-5 sm:space-y-6 bg-white">

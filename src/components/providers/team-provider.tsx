@@ -1,5 +1,6 @@
 "use client";
 
+import type { TeamEventRecurrence, TeamEventRecurrenceFrequency } from '@/lib/team-event-recurrence';
 import { analytics } from '@heycatch/sdk';
 import { createTeamEventRequestRegistry } from '@/lib/team-event-request';
 
@@ -378,7 +379,7 @@ export type TeamEvent = {
   tournamentGames?: any[];
   userRsvps?: Record<string, string>;
   recurrenceSeriesId?: string;
-  recurrenceFrequency?: 'weekly';
+  recurrenceFrequency?: TeamEventRecurrenceFrequency;
   recurrenceIndex?: number;
   recurrenceCount?: number;
   teamWaiverText?: string;
@@ -932,7 +933,7 @@ interface TeamContextType {
   updateTeamDocument: (docId: string, data: any) => Promise<void>;
   deleteTeamDocument: (docId: string, expectedVersion?: number, expectedTextHash?: string) => Promise<void>;
   addEvent: (data: any) => Promise<boolean>;
-  createEventSeries: (data: any, recurrence: { frequency: 'weekly'; count: number }) => Promise<boolean>;
+  createEventSeries: (data: any, recurrence: TeamEventRecurrence) => Promise<boolean>;
   updateEvent: (id: string, data: any) => Promise<boolean>;
   updateEventSeries: (id: string, data: any) => Promise<boolean>;
   deleteEvent: (id: string) => Promise<void>;
@@ -2388,7 +2389,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
     return false;
   }, [db, activeTeam, isStaff, members, firebaseAuth]);
 
-  const createEventSeries = useCallback(async (data: any, recurrence: { frequency: 'weekly'; count: number }) => {
+  const createEventSeries = useCallback(async (data: any, recurrence: TeamEventRecurrence) => {
     if (!isStaff || !activeTeam?.id || !firebaseAuth) return false;
     const token = await getAuthToken(firebaseAuth);
     if (!token) throw new Error('Your session has expired. Sign in again.');
