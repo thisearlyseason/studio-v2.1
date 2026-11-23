@@ -133,6 +133,7 @@ export default function FilesPage() {
   const auth=useAuth();
   const [mounted, setMounted] = useState(false);
   const [rename,setRename] = useState<{teamId:string;uid:string;file:TeamFile} | null>(null);
+  const [newDescription,setNewDescription] = useState('');
   const [newName,setNewName] = useState('');
   const [renaming,setRenaming] = useState(false);
   const [renameError,setRenameError] = useState('');
@@ -545,9 +546,9 @@ export default function FilesPage() {
                           <p className="text-[10px] font-medium text-muted-foreground line-clamp-2 leading-relaxed italic">"{file.description}"</p>
                         </CardContent>
                       )}
-                      {isStaff && user && isLibraryDownload && <button type="button" className="mx-4 mt-2 self-start text-sm font-semibold text-primary underline" aria-label={`Rename ${title}`} onClick={() => {
-                        setNewName(title); setRenameError(''); setRename({teamId:activeTeam.id,uid:user.id,file});
-                      }}>Rename</button>}
+                      {isStaff && user && isLibraryDownload && <button type="button" className="mx-4 mt-2 self-start text-sm font-semibold text-primary underline" aria-label={`Edit details for ${title}`} onClick={() => {
+                        setNewName(title); setNewDescription(file.description || ''); setRenameError(''); setRename({teamId:activeTeam.id,uid:user.id,file});
+                      }}>Edit details</button>}
                       <CardFooter className="p-4 pt-3 mt-auto flex gap-2">
                         {canOpen ? (
                           <Button
@@ -591,8 +592,8 @@ export default function FilesPage() {
 
       {rename && isStaff && rename.teamId === activeTeam.id && rename.uid === user?.id && <Dialog open onOpenChange={open => { if (!open && !renaming) setRename(null); }}>
         <DialogContent className="h-auto rounded-3xl p-6 sm:max-w-md">
-          <DialogHeader className="pr-8"><DialogTitle>Rename document</DialogTitle>
-            <DialogDescription>Choose the title people will see in the team Library.</DialogDescription>
+          <DialogHeader className="pr-8"><DialogTitle>Edit document details</DialogTitle>
+            <DialogDescription>Edit the name and description shown in the team Library.</DialogDescription>
           </DialogHeader>
           <form className="mt-4 space-y-4" onSubmit={async event => {
             event.preventDefault();
@@ -601,16 +602,23 @@ export default function FilesPage() {
             try {
               const token=await getAuthToken(auth);
               if (!token || auth.currentUser?.uid !== rename.uid) throw Error('Please sign in again.');
-              const response=await fetch('/api/teams/library?'+new URLSearchParams({teamId:rename.teamId,fileId:rename.file.id,displayName:newName.trim()}),{method:'PATCH',headers:authHeader(token)});
-              if (!response.ok) throw Error((await response.json()).error || 'Rename failed.');
-              setRename(null); toast({title:'Document renamed'});
-            } catch (error) { setRenameError(error instanceof Error ? error.message : 'Rename failed.'); }
+              const changes: {displayName?: string; description?: string} = {};
+              if (newName.trim() !== (rename.file.displayName || rename.file.name)) changes.displayName = newName.trim();
+              if (newDescription !== (rename.file.description || '')) changes.description = newDescription.trim();
+              if (!Object.keys(changes).length) { setRename(null); return; }
+              const response=await fetch('/api/teams/library?'+new URLSearchParams({teamId:rename.teamId,fileId:rename.file.id}),{
+                method:'PATCH',headers:{...authHeader(token),'Content-Type':'application/json'},body:JSON.stringify(changes),
+              });
+              if (!response.ok) throw Error((await response.json()).error || 'Could not save document details.');
+              setRename(null); toast({title:'Document details saved'});
+            } catch (error) { setRenameError(error instanceof Error ? error.message : 'Could not save document details.'); }
             finally { setRenaming(false); }
           }}>
             <div><Label htmlFor="rename-document">Document name</Label><Input autoFocus id="rename-document" maxLength={120} value={newName} disabled={renaming} onChange={event => setNewName(event.target.value)}/></div>
+            <div><Label htmlFor="edit-document-description">Description (optional)</Label><Textarea id="edit-document-description" maxLength={1000} value={newDescription} disabled={renaming} onChange={event => setNewDescription(event.target.value)}/></div>
             {renameError && <p role="alert" className="text-sm text-destructive">{renameError}</p>}
             <div className="flex justify-end gap-2"><Button type="button" variant="outline" disabled={renaming} onClick={() => setRename(null)}>Cancel</Button>
-              <Button type="submit" disabled={renaming || !newName.trim()}>{renaming ? 'Saving…' : 'Save name'}</Button></div>
+              <Button type="submit" disabled={renaming || !newName.trim()}>{renaming ? 'Saving…' : 'Save changes'}</Button></div>
           </form>
         </DialogContent>
       </Dialog>}
