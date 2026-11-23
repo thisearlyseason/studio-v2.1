@@ -10,6 +10,11 @@ import { firebaseConfig } from '@/firebase/config';
 export const runtime = 'nodejs';
 const SAFE_ID = /^[A-Za-z0-9_-]{1,200}$/;
 
+function readHeadline(value: unknown) {
+  if (typeof value !== 'string' || value.length > 48) throw new Error('Enter a cover headline of up to 48 characters.');
+  return value.trim();
+}
+
 async function mutate(request: NextRequest) {
   const auth = await verifyFirebaseToken(request);
   if (auth instanceof NextResponse) return auth;
@@ -27,6 +32,7 @@ async function mutate(request: NextRequest) {
     await Promise.all(paths.map(path => bucket.file(path).delete({ignoreNotFound: true}).catch(() => console.warn('[team-cover] Cleanup pending:', path))));
   }
   try {
+    let headline: string | undefined;
     let replacement: {id: string; urls: {width: number; url: string}[]; focalX: number; focalY: number} | null = null;
     let focal: {focalX: number; focalY: number} | undefined;
     if (request.method === 'POST') {
@@ -36,6 +42,7 @@ async function mutate(request: NextRequest) {
       const chunks: Uint8Array[] = []; let bytes = 0;
       while (true) { const chunk = await reader.read(); if (chunk.done) break; bytes += chunk.value.length; if (bytes > COVER_MAX_BYTES + 64_000) { await reader.cancel(); throw new Error('Choose an image up to 5 MB.'); } chunks.push(chunk.value); }
       const form = await new Response(Buffer.concat(chunks), {headers: {'Content-Type': request.headers.get('content-type') || ''}}).formData();
+      if (form.has('headline')) headline = readHeadline(form.get('headline'));
       const file = form.get('image');
       if (!(file instanceof File)) throw new Error('Choose an image.');
       focal = coverFocalPoint(form.get('focalX'), form.get('focalY'));
@@ -52,15 +59,21 @@ async function mutate(request: NextRequest) {
     } else if (request.method === 'PATCH') {
       if (Number(request.headers.get('content-length') || 0) > 1000) throw new Error('Invalid position.');
       const body = await request.text(); if (body.length > 1000) throw new Error('Invalid position.');
-      const payload = JSON.parse(body); focal = coverFocalPoint(payload.focalX, payload.focalY);
+      const payload = JSON.parse(body);
+      if ('headline' in payload) headline = readHeadline(payload.headline);
+      if ('focalX' in payload || 'focalY' in payload) focal = coverFocalPoint(payload.focalX, payload.focalY);
+      if (!focal && headline === undefined) throw new Error('No cover changes to save.');
     }
     const latestAuthority = await getTeamAuthority(teamId, auth.uid, auth.role);
     if (!latestAuthority?.isStaff) { await clean(createdPaths); return NextResponse.json({error: 'Team staff access required.'}, {status: 403}); }
     const previous = await authority.teamRef.firestore.runTransaction(async transaction => {
       const snapshot = await transaction.get(authority.teamRef);
       const old = snapshot.data()?.homeCover;
-      if (request.method === 'PATCH' && !old) throw new Error('Upload a cover before repositioning it.');
-      transaction.update(authority.teamRef, {homeCover: request.method === 'PATCH' ? {...old, ...focal} : replacement});
+      if (request.method === 'PATCH' && focal && !old) throw new Error('Upload a cover before repositioning it.');
+      transaction.update(authority.teamRef, {
+        ...(headline !== undefined && {homeCoverHeadline: headline}),
+        ...(request.method !== 'PATCH' ? {homeCover: replacement} : focal ? {homeCover: {...old, ...focal}} : {}),
+      });
       return old;
     });
     committed = true;

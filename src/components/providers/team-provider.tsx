@@ -250,6 +250,7 @@ export type Team = {
   description?: string;
   teamLogoUrl?: string;
   heroImageUrl?: string;
+  homeCoverHeadline?: string;
   homeCover?: { id: string; urls: { width: number; url: string }[]; focalX: number; focalY: number };
   isPro?: boolean;
   planId?: string;

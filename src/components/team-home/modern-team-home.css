@@ -259,3 +259,5 @@ html[data-squad-layout="modern"] [role="dialog"] { border-radius: 18px; }
 @media (max-width: 640px) {
   .modern-app .modern-header-nav > .modern-header-hub { display: none; }
 }
+
+.modern-hero h1.modern-custom-headline { overflow-wrap: anywhere; font-size: clamp(24px, 4vw, 48px); letter-spacing: -.04em; }
