@@ -499,3 +499,24 @@ body:has(> [data-mobile-chat-screen]) [data-workspace-shell] {
 .activity-dialog-close:hover { background: #e2e8f0; }
 .activity-dialog-close:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
 @media (forced-colors: active) { .activity-dialog-close svg { stroke: ButtonText; } }
+
+button.activity-series-delete {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: .5rem;
+  min-height: 44px;
+  padding: .5rem 1rem;
+  border: 1px solid #a30c1b;
+  border-radius: .75rem;
+  background: #bf0c1b;
+  color: #fff;
+  font-size: .875rem;
+  font-weight: 700;
+}
+button.activity-series-delete:hover { background: #980b19; }
+.activity-series-confirm { background: #fff; color: #061b3b; border-radius: 1.5rem; padding: 1.5rem; }
+.activity-series-confirm p { color: #475569; }
+.activity-series-confirm .activity-series-cancel { background: #fff; color: #061b3b; border: 1px solid #94a3b8; border-radius: .75rem; min-height: 44px; }
+.activity-series-confirm .activity-series-cancel:hover { background: #f1f5f9; }
+button.activity-series-delete:focus-visible, .activity-series-cancel:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
