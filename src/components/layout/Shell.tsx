@@ -569,7 +569,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
                 { name: 'Roster', href: '/roster', icon: Users },
                 ...(activeTeam?.features?.tacticalChat !== false ? [{ name: 'Chat', href: '/chats', icon: MessageCircle }] : []),
               ]
-  ).filter(item => !isTeamModuleRouteDisabled(item.href, activeTeam?.features) && authorizeDashboardRoute(item.href, {
+  ).filter(item => !isTeamModuleRouteDisabled(item.href, activeTeam?.features)).filter(item => authorizeDashboardRoute(item.href, {
     role: user?.role,
     plan_type: user?.plan_type,
     isPrimaryClubAuthority,
