@@ -132,6 +132,10 @@ export default function FilesPage() {
   const db = useFirestore();
   const auth=useAuth();
   const [mounted, setMounted] = useState(false);
+  const [rename,setRename] = useState<{teamId:string;uid:string;file:TeamFile} | null>(null);
+  const [newName,setNewName] = useState('');
+  const [renaming,setRenaming] = useState(false);
+  const [renameError,setRenameError] = useState('');
   const [fileToDelete, setFileToDelete] = useState<string | null>(null);
   const [searchTerm, setSearchTerm] = useState('');
   const [activeTab, setActiveTab] = useState('all');
@@ -541,6 +545,9 @@ export default function FilesPage() {
                           <p className="text-[10px] font-medium text-muted-foreground line-clamp-2 leading-relaxed italic">"{file.description}"</p>
                         </CardContent>
                       )}
+                      {isStaff && user && isLibraryDownload && <button type="button" className="mx-4 mt-2 self-start text-sm font-semibold text-primary underline" aria-label={`Rename ${title}`} onClick={() => {
+                        setNewName(title); setRenameError(''); setRename({teamId:activeTeam.id,uid:user.id,file});
+                      }}>Rename</button>}
                       <CardFooter className="p-4 pt-3 mt-auto flex gap-2">
                         {canOpen ? (
                           <Button
@@ -582,6 +589,31 @@ export default function FilesPage() {
         </Tabs>
       </section>
 
+      {rename && isStaff && rename.teamId === activeTeam.id && rename.uid === user?.id && <Dialog open onOpenChange={open => { if (!open && !renaming) setRename(null); }}>
+        <DialogContent className="h-auto rounded-3xl p-6 sm:max-w-md">
+          <DialogHeader className="pr-8"><DialogTitle>Rename document</DialogTitle>
+            <DialogDescription>Choose the title people will see in the team Library.</DialogDescription>
+          </DialogHeader>
+          <form className="mt-4 space-y-4" onSubmit={async event => {
+            event.preventDefault();
+            if (!newName.trim() || renaming) return;
+            setRenaming(true); setRenameError('');
+            try {
+              const token=await getAuthToken(auth);
+              if (!token || auth.currentUser?.uid !== rename.uid) throw Error('Please sign in again.');
+              const response=await fetch('/api/teams/library?'+new URLSearchParams({teamId:rename.teamId,fileId:rename.file.id,displayName:newName.trim()}),{method:'PATCH',headers:authHeader(token)});
+              if (!response.ok) throw Error((await response.json()).error || 'Rename failed.');
+              setRename(null); toast({title:'Document renamed'});
+            } catch (error) { setRenameError(error instanceof Error ? error.message : 'Rename failed.'); }
+            finally { setRenaming(false); }
+          }}>
+            <div><Label htmlFor="rename-document">Document name</Label><Input autoFocus id="rename-document" maxLength={120} value={newName} disabled={renaming} onChange={event => setNewName(event.target.value)}/></div>
+            {renameError && <p role="alert" className="text-sm text-destructive">{renameError}</p>}
+            <div className="flex justify-end gap-2"><Button type="button" variant="outline" disabled={renaming} onClick={() => setRename(null)}>Cancel</Button>
+              <Button type="submit" disabled={renaming || !newName.trim()}>{renaming ? 'Saving…' : 'Save name'}</Button></div>
+          </form>
+        </DialogContent>
+      </Dialog>}
       {preview && preview.teamId === activeTeam.id && preview.uid === user?.id && <LibraryPreview key={preview.file.id} file={preview.file} teamId={activeTeam.id} onClose={() => setPreview(null)} onDownload={() => downloadLibrary(preview.file)} />}
       <Dialog open={!!viewingWaiver} onOpenChange={(open) => !open && setViewingWaiver(null)}>
         <DialogContent className="w-[calc(100vw-2rem)] max-w-xl rounded-4xl p-0 overflow-hidden border-none shadow-2xl bg-white">

@@ -63,3 +63,23 @@ test('staff can upload with the member Library hidden; downloads follow role vis
     assert.equal((await parent.route.POST(request())).status,403);
   } finally {coach.dispose();player.dispose();parent.dispose();}
 });
+
+test('Library rename changes only the display name and requires staff on the owning team',async()=>{
+  const {db,records}=communicationDb(base);
+  const owner=await loadCommunicationRoute('../../src/app/api/teams/library/route.ts',db,{uid:'owner'});
+  const member=await loadCommunicationRoute('../../src/app/api/teams/library/route.ts',db,{uid:'member'});
+  try {
+    const created=await owner.route.POST(request());
+    assert.equal(created.status,201);
+    const {fileId}=await created.json();
+    const key='teams/a/files/'+fileId,before=structuredClone(records.get(key));
+    const rename=(app,name,teamId='a')=>app.route.PATCH(new Request('http://localhost/?'+new URLSearchParams({fileId,teamId,displayName:name}),{method:'PATCH'}));
+    assert.equal((await rename(member,'Other')).status,403);
+    assert.equal((await rename(owner,'Other','b')).status,403);
+    assert.equal((await rename(owner,'  ')).status,400);
+    assert.equal((await rename(owner,'Practice schedule')).status,200);
+    assert.deepEqual(records.get(key),{...before,displayName:'Practice schedule'});
+    const downloaded=await member.route.GET(new Request('http://localhost/?teamId=a&fileId='+fileId));
+    assert.deepEqual(Buffer.from(await downloaded.arrayBuffer()),bytes);
+  } finally { owner.dispose(); member.dispose(); }
+});
