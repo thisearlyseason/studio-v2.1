@@ -591,11 +591,12 @@ export default function FilesPage() {
       </section>
 
       {rename && isStaff && rename.teamId === activeTeam.id && rename.uid === user?.id && <Dialog open onOpenChange={open => { if (!open && !renaming) setRename(null); }}>
-        <DialogContent className="h-auto rounded-3xl p-6 sm:max-w-md">
-          <DialogHeader className="pr-8"><DialogTitle>Edit document details</DialogTitle>
-            <DialogDescription>Edit the name and description shown in the team Library.</DialogDescription>
+        <DialogContent hideClose className="left-1/2 top-1/2 h-auto max-h-[calc(100dvh-2rem)] w-[calc(100vw-2rem)] -translate-x-1/2 -translate-y-1/2 overflow-hidden rounded-3xl border-none bg-white p-0 text-slate-900 shadow-2xl sm:max-w-md">
+          <DialogClose aria-label="Close document details" disabled={renaming} className="activity-dialog-close absolute right-4 top-4 z-10"><X aria-hidden="true" size={20} strokeWidth={3}/></DialogClose>
+          <DialogHeader className="border-b px-5 py-6 pr-20 text-left sm:pl-7"><DialogTitle className="text-2xl font-black uppercase leading-tight tracking-tight">Edit document details</DialogTitle>
+            <DialogDescription className="text-sm text-slate-600">Edit the name and description shown in the team Library.</DialogDescription>
           </DialogHeader>
-          <form className="mt-4 space-y-4" onSubmit={async event => {
+          <form className="flex flex-col" onSubmit={async event => {
             event.preventDefault();
             if (!newName.trim() || renaming) return;
             setRenaming(true); setRenameError('');
@@ -614,11 +615,13 @@ export default function FilesPage() {
             } catch (error) { setRenameError(error instanceof Error ? error.message : 'Could not save document details.'); }
             finally { setRenaming(false); }
           }}>
-            <div><Label htmlFor="rename-document">Document name</Label><Input autoFocus id="rename-document" maxLength={120} value={newName} disabled={renaming} onChange={event => setNewName(event.target.value)}/></div>
-            <div><Label htmlFor="edit-document-description">Description (optional)</Label><Textarea id="edit-document-description" maxLength={1000} value={newDescription} disabled={renaming} onChange={event => setNewDescription(event.target.value)}/></div>
+            <div className="space-y-5 px-5 py-5 sm:px-7">
+            <div className="space-y-2"><Label className="text-xs font-bold" htmlFor="rename-document">Document name</Label><Input className="h-12 rounded-xl border-2 bg-white text-base" autoFocus id="rename-document" maxLength={120} value={newName} disabled={renaming} onChange={event => setNewName(event.target.value)}/></div>
+            <div className="space-y-2"><Label className="text-xs font-bold" htmlFor="edit-document-description">Description (optional)</Label><Textarea className="min-h-24 rounded-xl border-2 bg-white text-base" id="edit-document-description" maxLength={1000} value={newDescription} disabled={renaming} onChange={event => setNewDescription(event.target.value)}/></div>
             {renameError && <p role="alert" className="text-sm text-destructive">{renameError}</p>}
-            <div className="flex justify-end gap-2"><Button type="button" variant="outline" disabled={renaming} onClick={() => setRename(null)}>Cancel</Button>
-              <Button type="submit" disabled={renaming || !newName.trim()}>{renaming ? 'Saving…' : 'Save changes'}</Button></div>
+            </div>
+            <div className="flex justify-end gap-2 border-t bg-slate-50 px-5 py-4 sm:px-7"><Button className="h-11 rounded-xl border-slate-300 bg-white px-4 font-bold text-slate-900" type="button" variant="outline" disabled={renaming} onClick={() => setRename(null)}>Cancel</Button>
+              <Button className="h-11 rounded-xl bg-[#bf0c1b] px-5 font-bold text-white hover:bg-[#980b19]" type="submit" disabled={renaming || !newName.trim()}>{renaming ? 'Saving…' : 'Save changes'}</Button></div>
           </form>
         </DialogContent>
       </Dialog>}
