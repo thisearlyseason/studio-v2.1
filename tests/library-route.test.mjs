@@ -45,3 +45,21 @@ test('Free owners and members cannot upload, read or delete Library content, eve
  }
  assert.deepEqual([...records],before);assert.equal(objects.size,0);
 });
+
+test('staff can upload with the member Library hidden; downloads follow role visibility',async()=>{
+  const {db}=communicationDb({...base,'teams/a':{ownerUserId:'owner',isPro:true,features:{library:false,byRole:{parent:{files:true}}}},
+    'teams/a/members/coach':{userId:'coach',position:'Assistant Coach',status:'active'},
+    'teams/a/members/parent':{userId:'parent',position:'Guardian',status:'active'}});
+  const route=uid=>loadCommunicationRoute('../../src/app/api/teams/library/route.ts',db,{uid});
+  const coach=await route('coach'),player=await route('member'),parent=await route('parent');
+  try {
+    const uploaded=await coach.route.POST(request());
+    assert.equal(uploaded.status,201);
+    const {fileId}=await uploaded.json();
+    const url='http://localhost/api/teams/library?teamId=a&fileId='+fileId;
+    assert.equal((await coach.route.GET(new Request(url))).status,200);
+    assert.equal((await player.route.GET(new Request(url))).status,403);
+    assert.equal((await parent.route.GET(new Request(url))).status,200);
+    assert.equal((await parent.route.POST(request())).status,403);
+  } finally {coach.dispose();player.dispose();parent.dispose();}
+});
