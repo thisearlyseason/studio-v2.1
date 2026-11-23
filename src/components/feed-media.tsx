@@ -3,7 +3,7 @@ import {useEffect,useState} from 'react';
 import {useAuth} from '@/firebase';
 import {authHeader,getAuthToken} from '@/lib/client-auth';
 
-export function FeedMedia({teamId,postId}: {teamId:string;postId:string}) {
+export function FeedMedia({teamId,postId,onOpen}: {teamId:string;postId:string;onOpen:(url:string)=>void}) {
   const auth = useAuth();
   const uid = auth?.currentUser?.uid;
   const key = `${uid}:${teamId}:${postId}`;
@@ -23,5 +23,5 @@ export function FeedMedia({teamId,postId}: {teamId:string;postId:string}) {
     })().catch(()=>{});
     return ()=>{controller.abort();if(objectUrl)URL.revokeObjectURL(objectUrl);};
   },[auth,uid,teamId,postId,key]);
-  return image.key === key && image.url ? <img src={image.url} className="rounded-2xl w-full h-auto object-cover max-h-[400px] lg:max-h-[600px] border" alt="Feed media"/> : null;
+  return image.key === key && image.url ? <button type="button" aria-label="View full-screen photo" className="block w-full cursor-zoom-in" onClick={() => onOpen(image.url)}><img src={image.url} className="rounded-2xl w-full h-auto object-cover max-h-[400px] lg:max-h-[600px] border" alt="Feed media"/></button> : null;
 }

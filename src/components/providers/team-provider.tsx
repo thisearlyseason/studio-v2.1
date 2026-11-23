@@ -550,6 +550,7 @@ export type DonationEntry = {
 };
 
 export type TeamFile = {
+  displayName?: string;
   id: string;
   name: string;
   type: string;
@@ -983,7 +984,7 @@ interface TeamContextType {
   addPracticeTemplate: (data: any) => Promise<void>;
   updatePracticeTemplate: (templateId: string, data: any) => Promise<void>;
   deletePracticeTemplate: (templateId: string) => Promise<void>;
-  addFile: (name: string, type: string, sizeBytes: number, url: string, category: string, description?: string) => Promise<void>;
+  addFile: (name: string, type: string, sizeBytes: number, url: string, category: string, description?: string, displayName?: string) => Promise<void>;
   deleteFile: (id: string) => Promise<void>;
   addFacility: (data: any) => Promise<void>;
   updateFacility: (id: string, data: Partial<Facility>) => Promise<void>;
@@ -2920,13 +2921,13 @@ export function TeamProvider({ children }: { children: ReactNode }) {
       await deleteDoc(doc(db, 'teams', activeTeam.id, 'practice_templates', templateId));
     }
   }, [activeTeam, db, isStaff]);
-  const addFile = useCallback(async (n: string, t: string, sb: number, u: string, c: string, d?: string) => { 
+  const addFile = useCallback(async (n: string, t: string, sb: number, u: string, c: string, d?: string, displayName?: string) => {
     if (!activeTeam?.id || !db) return;
     if (!['Game Tape','Practice Session','Highlights'].includes(c) && u.startsWith('data:')) {
       if(!firebaseAuth)throw new Error('Authentication unavailable.');
       const token=await getAuthToken(firebaseAuth);if(!token)throw new Error('Please sign in again.');
       const payload=libraryDataUrlBlob(u);
-      const params=new URLSearchParams({teamId:activeTeam.id,name:n,category:c,description:d||''});
+      const params=new URLSearchParams({teamId:activeTeam.id,name:n,category:c,description:d||'',...(displayName ? {displayName} : {})});
       const response=await fetch('/api/teams/library?'+params,{method:'POST',headers:{...authHeader(token),'Content-Type':payload.type},body:payload});
       if(!response.ok)throw new Error((await response.json()).error||'File upload failed.');
       return;

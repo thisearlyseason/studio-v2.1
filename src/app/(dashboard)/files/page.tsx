@@ -25,6 +25,7 @@ import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from '@/components/ui/accordion';
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from '@/components/ui/tabs';
+import { LibraryPreview } from './LibraryPreview';
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
 import { NoActiveTeamState } from '@/components/layout/NoActiveTeamState';
 
@@ -143,6 +144,8 @@ export default function FilesPage() {
   const [isSavingLink, setIsSavingLink] = useState(false);
   const [isUploading,setIsUploading]=useState(false);
   const [isUploadOpen,setIsUploadOpen]=useState(false);
+  const [documentName,setDocumentName] = useState('');
+  const [preview,setPreview] = useState<{teamId:string;uid:string;file:TeamFile} | null>(null);
   const [viewingWaiver, setViewingWaiver] = useState<TeamDocument | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const { pendingDocs, signingMembers, visibleSignedFiles, realTimeSignedDocIds, visibleWaiverDocuments } = usePendingWaivers();
@@ -165,7 +168,7 @@ export default function FilesPage() {
     const search = searchTerm.toLowerCase();
     return resourceFiles.filter(f => {
       const cat = (f.category || '').toLowerCase();
-      const matchesSearch = f.name.toLowerCase().includes(search) || cat.includes(search);
+      const matchesSearch = f.name.toLowerCase().includes(search) || f.displayName?.toLowerCase().includes(search) || cat.includes(search);
       if (!matchesSearch) return false;
       if (activeTab === 'waivers') return cat.includes('waiver') || cat.includes('cert') || cat.includes('compliance');
       if (activeTab === 'photos') return cat.includes('photo') || cat.includes('image');
@@ -223,8 +226,8 @@ export default function FilesPage() {
       setIsUploading(true);
       const reader = new FileReader();
       reader.onload = async (ev) => {
-        try{await addFile(file.name, file.name.split('.').pop()?.toLowerCase() || 'file', file.size, ev.target?.result as string, uploadCategory, uploadDescription);
-          toast({ title: 'File Archived' });setUploadDescription('');setIsUploadOpen(false);
+        try{await addFile(file.name, file.name.split('.').pop()?.toLowerCase() || 'file', file.size, ev.target?.result as string, uploadCategory, uploadDescription, documentName.trim());
+          toast({ title: 'File Archived' });setUploadDescription('');setDocumentName('');setIsUploadOpen(false);
         }catch(error){toast({title:'Upload failed',description:error instanceof Error?error.message:'Unable to upload.',variant:'destructive'});}
         finally{setIsUploading(false);if(fileInputRef.current)fileInputRef.current.value='';}
       };
@@ -295,6 +298,10 @@ export default function FilesPage() {
                         <SelectItem value="Other" className="font-bold">Other</SelectItem>
                       </SelectContent>
                     </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="library-document-name">Document name</Label>
+                    <Input id="library-document-name" maxLength={120} placeholder="Defaults to the filename" value={documentName} onChange={e => setDocumentName(e.target.value)} />
                   </div>
                   <div className="space-y-2">
                     <Label className="text-[10px] font-black uppercase tracking-widest">Description (Optional)</Label>
@@ -512,14 +519,19 @@ export default function FilesPage() {
                   const isLink = (file.category || '').toLowerCase().includes('link') || (file.category || '').toLowerCase().includes('url');
                   const isLibraryDownload = !isLink && Boolean(file.storagePath || file.url?.startsWith('data:'));
                   const canOpen = isLibraryDownload || isLibraryLinkAllowed(file.url || '');
+                  const title = file.displayName || file.name;
+                  const openFile = () => {
+                    if (isLibraryDownload && user) setPreview({teamId:activeTeam.id,uid:user.id,file});
+                    else if (canOpen) window.open(file.url,'_blank','noopener,noreferrer');
+                  };
                   return (
                     <Card key={file.id} className="group border-none shadow-sm hover:shadow-xl transition-all duration-300 rounded-[1.75rem] overflow-hidden ring-1 ring-black/5 flex flex-col bg-white">
                       <div className="p-3 pb-0">
-                        <FileThumbnail file={file} />
+                        <button type="button" disabled={!canOpen} aria-label={'Open '+title} onClick={openFile} className="block w-full"><FileThumbnail file={file} /></button>
                       </div>
                       <CardHeader className="p-4 pb-1 pt-3">
                         <div className="flex items-start justify-between gap-2">
-                          <h3 className="font-black text-sm uppercase tracking-tight truncate group-hover:text-primary transition-colors flex-1 min-w-0">{file.name}</h3>
+                          <h3 className="min-w-0 flex-1 break-words text-lg font-bold leading-tight"><button type="button" disabled={!canOpen} className="text-left hover:underline" onClick={openFile}>{title}</button></h3>
                           <FileTypeBadge category={file.category} />
                         </div>
                         <p className="text-[9px] font-bold text-muted-foreground uppercase opacity-60 mt-0.5">{file.size ? (file.size.includes('KB') || file.size.includes('MB') ? `${file.size} · ` : `${Math.round(Number(file.size)/1024)}KB · `) : ''}{format(new Date(file.date), 'MMM d, yyyy')}</p>
@@ -533,15 +545,16 @@ export default function FilesPage() {
                         {canOpen ? (
                           <Button
                             className="flex-1 h-9 rounded-xl font-black text-[9px] uppercase tracking-widest shadow-sm transition-all active:scale-95"
-                            onClick={() => isLibraryDownload ? downloadLibrary(file) : window.open(file.url, '_blank','noopener,noreferrer')}
+                            onClick={openFile}
                           >
-                            {isLink ? <><ExternalLink className="h-3 w-3 mr-1" />Open Link</> : <><Download className="h-3 w-3 mr-1" />Download</>}
+                            {isLink ? <><ExternalLink className="h-3 w-3 mr-1" />Open Link</> : <><Eye className="h-3 w-3 mr-1" />Open</>}
                           </Button>
                         ) : (
                           <div className="flex-1 h-9 rounded-xl bg-muted px-3 flex items-center justify-center text-[9px] font-black uppercase tracking-widest text-muted-foreground">
                             Link unavailable in app
                           </div>
                         )}
+                        {isLibraryDownload && <Button variant="outline" size="icon" aria-label={`Download ${title}`} onClick={() => downloadLibrary(file)}><Download className="size-4"/></Button>}
                         {isStaff && (
                           <Tooltip>
                             <TooltipTrigger asChild>
@@ -569,6 +582,7 @@ export default function FilesPage() {
         </Tabs>
       </section>
 
+      {preview && preview.teamId === activeTeam.id && preview.uid === user?.id && <LibraryPreview key={preview.file.id} file={preview.file} teamId={activeTeam.id} onClose={() => setPreview(null)} onDownload={() => downloadLibrary(preview.file)} />}
       <Dialog open={!!viewingWaiver} onOpenChange={(open) => !open && setViewingWaiver(null)}>
         <DialogContent className="w-[calc(100vw-2rem)] max-w-xl rounded-4xl p-0 overflow-hidden border-none shadow-2xl bg-white">
           <div className="px-5 sm:px-7 pt-6 pb-4 border-b pr-14">
