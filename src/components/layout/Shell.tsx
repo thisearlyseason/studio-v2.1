@@ -3,6 +3,7 @@ import { isTeamModuleRouteDisabled } from '@/lib/team-module-visibility';
 import { coordinateTodoLogout } from '@/lib/schedule-todos/logout';
 import { PublicPageEntry, confirmPageContextSwitch as confirmUnsavedPageContextSwitch } from '@/components/squad-pages/entity-context';
 
+import { SidebarOrderEditor } from './SidebarOrderEditor';
 import { AlertsBellButton } from './AlertsBellButton';
 
 import '@/components/team-home/modern-team-home.css';
@@ -512,7 +513,9 @@ function ShellContent({ children }: { children: React.ReactNode }) {
   const showInstallBtn = !isStoreDistribution && !isStandalone && !installDismissed;
 
   const { moduleFlags, filteredCoordTabs, filteredAdminTabs, isAdminTabLocked } = useTeamNavigation();
-  const primaryCoordTabs = filteredCoordTabs.filter((tab, index) => index < 5 || ['/leagues', '/manage-tournaments'].includes(tab.href));
+  const [orderEditorTeam, setOrderEditorTeam] = useState<string | null>(null);
+  const customOrder = Boolean(isStaff && activeTeam && user?.sidebarOrder?.[activeTeam.id]?.length);
+  const primaryCoordTabs = filteredCoordTabs.filter((tab, index) => index < 5 || !customOrder && ['/leagues', '/manage-tournaments'].includes(tab.href));
   const additionalCoordTabs = filteredCoordTabs.filter(tab => !primaryCoordTabs.includes(tab));
   // The institution hub is a route-level context. A previously selected squad can
   // remain active for later navigation, but it must not appear selected on the hub.
@@ -828,6 +831,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
                 <SidebarMenu className="space-y-6">
                   <div className="space-y-1.5">
                     <p className="text-[9px] font-black uppercase tracking-[0.3em] text-primary px-2 mb-2!">Your Main Tools</p>
+                    {isStaff && activeTeam && <Button size="sm" variant="outline" onClick={() => setOrderEditorTeam(activeTeam.id)}>Reorder tools</Button>}
                     {primaryCoordTabs.map(tab => <SidebarItem key={tab.name} tab={tab} isActive={pathname === tab.href} isLocked={tab.pro && !isPro} />)}
                   </div>
                   {isStaff && (
@@ -943,6 +947,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
           </Sidebar>}
 
           <div className="flex min-w-0 flex-col flex-1 min-h-0">
+            {isStaff && activeTeam && orderEditorTeam === activeTeam.id && <SidebarOrderEditor key={activeTeam.id} teamId={activeTeam.id} tools={filteredCoordTabs} management={filteredAdminTabs} onClose={() => setOrderEditorTeam(null)} />}
             <header className={cn("sticky top-0 z-40 w-full bg-background/95 backdrop-blur-md border-b h-16 md:h-20 flex items-center px-4 md:px-10 justify-between text-foreground", isModernLayout && "modern-home-header")}>
               {isModernLayout ? <div className="modern-header-identity">
                 <Link href="/dashboard" className="modern-header-brand" aria-label={`${activeTeam?.name || 'The Squad'} dashboard`}>
@@ -956,6 +961,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
                 <nav aria-label="Main navigation" className="modern-header-nav"><Link href="/dashboard" aria-current={pathname === '/dashboard' ? 'page' : undefined}>Dashboard</Link>
                   <DropdownMenu><DropdownMenuTrigger asChild><Button variant="ghost" className="modern-tools-trigger" aria-label="Team tools"><Menu className="h-4 w-4"/><span className="modern-tools-label">Team tools</span></Button></DropdownMenuTrigger><DropdownMenuContent align="start" className="modern-tools-menu">
                     <DropdownMenuLabel>Team tools</DropdownMenuLabel>
+                    {isStaff && activeTeam && <DropdownMenuItem onSelect={() => setOrderEditorTeam(activeTeam.id)}>Reorder tools</DropdownMenuItem>}
                     {filteredCoordTabs.map(tab => <DropdownMenuItem key={tab.href} onSelect={() => { if (tab.pro && !isPro) purchasePro(); else router.push(tab.href); }}><tab.icon className="h-4 w-4"/>{tab.name}{tab.pro && !isPro && <Lock className="ml-auto h-3 w-3" aria-label="Upgrade required"/>}</DropdownMenuItem>)}
                     {isStaff && <><DropdownMenuSeparator/>{filteredAdminTabs.map(tab => <DropdownMenuItem key={tab.href} onSelect={() => { if (isAdminTabLocked(tab)) purchasePro(); else router.push(tab.href); }}><tab.icon className="h-4 w-4"/>{tab.name}{isAdminTabLocked(tab) && <Lock className="ml-auto h-3 w-3" aria-label="Upgrade required"/>}</DropdownMenuItem>)}<DropdownMenuItem onSelect={() => router.push('/team')}><Settings className="h-4 w-4"/>Team Settings</DropdownMenuItem></>}
                     {isParent && <DropdownMenuItem onSelect={() => router.push('/family')}><Baby className="h-4 w-4"/>Family Hub</DropdownMenuItem>}
@@ -1207,6 +1213,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
                           </div>
                         )}
 
+                        {isStaff && activeTeam && <Button variant="outline" onClick={() => { setIsMoreMenuOpen(false); setOrderEditorTeam(activeTeam.id); }}>Reorder tools</Button>}
                         {/* Regular multi-team switcher removed — lightning bolt top-left handles squad switching */}
 
 

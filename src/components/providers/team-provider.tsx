@@ -57,6 +57,7 @@ import { FirestorePermissionError } from '@/firebase/errors';
 export type UserRole = "parent" | "adult_player" | "youth_player" | "coach" | "admin" | "superadmin" | "league_creator";
 
 export type UserProfile = {
+  sidebarOrder?: Record<string, string[]>;
   id: string;
   name: string;
   email: string;
