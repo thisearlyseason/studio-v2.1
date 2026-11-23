@@ -483,3 +483,19 @@ body:has(> [data-mobile-chat-screen]) [data-workspace-shell] {
 .team-cover-caption span { display: inline-block; font-size: clamp(9px, 1.5cqw, 12px); font-weight: 800; text-transform: uppercase; border: 1px solid #fff8; border-radius: 2em; padding: .2em .8em; }
 .team-cover-title { font-size: clamp(20px, 6cqw, 64px); font-weight: 900; line-height: 1.02; letter-spacing: -.04em; margin: .15em 0; }
 .team-cover-name { font-size: clamp(14px, 3cqw, 28px); line-height: 1.15; font-weight: 750; }
+
+.activity-dialog-close {
+  display: inline-grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border: 1px solid #64748b;
+  border-radius: 50%;
+  background: #fff;
+  color: #111827;
+  box-shadow: 0 1px 4px #0003;
+}
+.activity-dialog-close svg { stroke: #111827; }
+.activity-dialog-close:hover { background: #e2e8f0; }
+.activity-dialog-close:focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+@media (forced-colors: active) { .activity-dialog-close svg { stroke: ButtonText; } }

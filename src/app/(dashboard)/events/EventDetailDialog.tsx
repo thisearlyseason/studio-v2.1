@@ -175,11 +175,9 @@ export function EventDetailDialog({
         <DialogDescription className="sr-only">
           Event details, attendance, logistics, registration responses, and staff actions for {event.title}.
         </DialogDescription>
-        <DialogClose asChild>
-          <Button aria-label="Close event details" variant="ghost" size="icon" className="absolute top-4 right-4 z-50 h-10 w-10 rounded-full bg-white/10 hover:bg-white/20 text-white border border-white/20 backdrop-blur-md transition-all">
-            <X className="h-5 w-5" />
-          </Button>
-        </DialogClose>
+        <DialogClose aria-label="Close event details" className="activity-dialog-close absolute top-4 right-4 z-50">
+              <X aria-hidden="true" size={20} strokeWidth={3} />
+            </DialogClose>
         <div className="flex flex-col lg:flex-row flex-1 overflow-y-auto w-full">
           {/* LEFT PANEL: ELITE STATUS & RSVP */}
           <div className="w-full lg:w-2/5 flex flex-col text-white bg-black px-5 py-6 sm:p-7 relative shrink-0">
