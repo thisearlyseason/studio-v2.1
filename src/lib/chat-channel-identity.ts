@@ -15,7 +15,7 @@ export function isChatVisibleForTeam(
   participantTeamId: unknown,
 ) {
   return ownerTeamId === selectedTeamId || (
-    (contextType === 'league' || contextType === 'tournament') && participantTeamId === selectedTeamId
+    (contextType === 'league' || contextType === 'tournament' || contextType === 'hub') && participantTeamId === selectedTeamId
   );
 }
 

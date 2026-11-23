@@ -1,3 +1,4 @@
+import { squadBelongsToHub, isHubPlan, isHubTeamType } from '@/lib/hub-eligibility';
 import { isChatVisibleForTeam } from '@/lib/chat-channel-identity';
 import { hasBlockBetween } from '@/lib/server-moderation';
 import { NextRequest, NextResponse } from 'next/server';
@@ -31,7 +32,7 @@ type Recipient = {
 type ChatContext = {
   id: string;
   name: string;
-  type: 'team' | 'league' | 'tournament';
+  type: 'team' | 'league' | 'tournament' | 'hub';
   recipients: Recipient[];
 };
 
@@ -465,9 +466,25 @@ export async function POST(req: NextRequest) {
     if (!tacticalChatEnabled(result.authority.teamData)) {
       return NextResponse.json({ error: 'Tactical chat is unavailable for this squad.' }, { status: 403 });
     }
-    const context = result.contexts.find(candidate => candidate.id === contextId);
+    let context = result.contexts.find(candidate => candidate.id === contextId);
+    const isHub = contextId === 'hub:' + teamId;
+    if (isHub) {
+      const hub = { ...result.authority.teamData, id: teamId };
+      if (!result.authority.isOwner || (!isHubTeamType(result.authority.teamData.type) &&
+          !result.authority.isSuperAdmin && !isHubPlan((await adminDb.collection('users').doc(auth.uid).get()).data()?.plan_type))) {
+        return NextResponse.json({error:'Hub ownership required.'},{status:403});
+      }
+      const owned = await adminDb.collection('teams').where('ownerUserId','==',auth.uid).get();
+      if (!isHubTeamType(result.authority.teamData.type) && owned.docs.some(doc => isHubTeamType(doc.data().type))) {
+        return NextResponse.json({error:'Select the organization hub.'},{status:403});
+      }
+      const scoped = owned.docs.filter(doc => squadBelongsToHub({...doc.data(), id:doc.id}, hub));
+      const recipients = await Promise.all([...new Set([teamId, ...scoped.map(doc => doc.id)])].map(id => teamRecipients(id, true)));
+      context = {id:contextId, type:'hub', name, recipients:uniqueRecipients(recipients.flat(),auth.uid)};
+    }
     const allowed = new Set(context?.recipients.map(recipient => recipient.userId) || []);
-    if (!context || memberIds.some(id => !allowed.has(id))) {
+    const requested = isHub ? memberIds.filter(id => id !== auth.uid) : memberIds;
+    if (!context || requested.some(id => !allowed.has(id))) {
       return NextResponse.json({ error: 'One or more recipients are outside your approved chat scope.' }, { status: 403 });
     }
 
@@ -475,7 +492,7 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'A selected recipient is unavailable because of a user block.' }, { status: 403 });
     }
 
-    const selected = memberIds.map(id => context.recipients.find(recipient => recipient.userId === id)!);
+    const selected = requested.map(id => context.recipients.find(recipient => recipient.userId === id)!);
     const chatRef = result.authority.teamRef.collection('groupChats').doc();
     await adminDb.runTransaction(async transaction => {
       const freshTeam = await transaction.get(result.authority.teamRef);
@@ -490,6 +507,15 @@ export async function POST(req: NextRequest) {
       if (!freshTeam.exists || !tacticalChatEnabled(freshTeam.data() || {}) || (!isPrivileged && !senderActive) ||
           recipientSnapshots.some((snapshot, index) => !snapshot.exists || snapshot.data()?.status === 'removed' ||
             snapshot.data()?.isDeleted === true || snapshot.data()?.userId !== selected[index].userId)) throw new Error('FORBIDDEN');
+      if (isHub) {
+        if (freshTeam.data()?.ownerUserId !== auth.uid) throw new Error('FORBIDDEN');
+        const hub = {...freshTeam.data(), id:teamId};
+        const sources = await Promise.all([...new Set(selected.map(recipient => recipient.teamId))].map(id =>
+          transaction.get(adminDb.collection('teams').doc(id))));
+        if (sources.some(source => !source.exists || (source.id !== teamId &&
+            !squadBelongsToHub({...source.data(), id:source.id},hub))) ||
+            recipientSnapshots.some(member => !isStaffMember(member.data()))) throw new Error('FORBIDDEN');
+      }
       if (context.type === 'team' && selected.some(recipient => recipient.teamId !== teamId)) throw new Error('FORBIDDEN');
       if (!isPrivileged && !isStaffMember(senderData)) {
         const senderIsParent = isParentMember(senderData);
@@ -522,6 +548,7 @@ export async function POST(req: NextRequest) {
         contextId,
         contextType: context.type,
         contextName: context.name,
+        ...(isHub ? {isHubChannel:true, hubTeamId:teamId} : {}),
         createdAt: new Date().toISOString(),
         isDeleted: false,
         teamId,

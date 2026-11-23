@@ -1,4 +1,5 @@
 "use client";
+import { hubLabel, isHubTeamType, resolveBrandingHub } from '@/lib/hub-eligibility';
 import { isTeamModuleRouteDisabled } from '@/lib/team-module-visibility';
 import { coordinateTodoLogout } from '@/lib/schedule-todos/logout';
 import { PublicPageEntry, confirmPageContextSwitch as confirmUnsavedPageContextSwitch } from '@/components/squad-pages/entity-context';
@@ -178,8 +179,8 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
   onClose?: () => void;
 }) {
   const confirmPageContextSwitch = usePageContextSwitch();
-  const primarySchoolTeam = isSchoolMode ? teams.find(t => t.type === 'school') : null;
-  const squadList = isSchoolMode ? teams.filter(t => t.type !== 'school') : teams;
+  const hubs = teams.filter(team => user?.id && team.ownerUserId === user.id && isHubTeamType(team.type));
+  const squadList = teams.filter(team => !isHubTeamType(team.type));
 
   const squadTier = (team: any, forceSubSquad = false): 'primary' | 'pro' | 'starter' => {
     // Sub-squads (created under a club/school hub) should NOT inherit the hub's 'primary' tier.
@@ -260,22 +261,17 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
   return (
     <DropdownMenuContent align="start" className="w-72 p-2 rounded-2xl shadow-2xl bg-white max-h-[80vh] overflow-y-auto">
 
+      {hubs.map(team => {
+        const school = ['school', 'school_hub'].includes(team.type);
+        const count = hubs.filter(other => ['school', 'school_hub'].includes(other.type) === school).length;
+        const name = hubLabel(team, school ? user?.schoolName : user?.clubName, count, school ? 'School Hub' : 'Club Hub');
+        return <InstitutionCard key={team.id} name={name} initial={name[0]} subtitle={school ? 'School Hub' : 'Club Hub'}
+          variant={school ? 'school' : 'elite'} isActive={activeTeam?.id === team.id}
+          onClick={() => { if (!confirmPageContextSwitch(team.id)) return; setActiveTeam(team); router.push('/club'); onClose?.(); }} />;
+      })}
       {/* SCHOOL MODE */}
       {isSchoolMode ? (
         <>
-          {primarySchoolTeam && (
-            <>
-              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground px-2 pt-1.5 pb-1">School</p>
-              <InstitutionCard
-                name={user?.schoolName || user?.clubName || primarySchoolTeam.name}
-                subtitle={user?.institutionTitle || 'Athletic Director'}
-                initial={(user?.schoolName || user?.clubName || primarySchoolTeam.name || 'S')[0]}
-                isActive={activeTeam?.type === 'school'}
-                onClick={() => { if (!confirmPageContextSwitch(primarySchoolTeam.id)) return; setActiveTeam(primarySchoolTeam); router.push('/club'); onClose?.(); }}
-                variant="school"
-              />
-            </>
-          )}
           <DropdownMenuSeparator className="my-1.5" />
           <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground px-2 pb-1">Squads ({squadList.length})</p>
           <div className="overflow-y-auto max-h-[160px] overscroll-contain space-y-0.5">
@@ -310,21 +306,23 @@ function SquadSwitcherMenu({ activeTeam, teams, setActiveTeam, router, user, isS
         <>
           {isEliteClubMode ? (
             <>
+              {!hubs.length && <>
               <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground px-2 pt-1.5 pb-1">Club</p>
               <InstitutionCard
-                name={user?.clubName || user?.schoolName || 'Elite Club'}
+                name={user?.clubName || 'Elite Club'}
                 subtitle={user?.institutionTitle || 'Club Organizer'}
-                initial={(user?.clubName || user?.schoolName || 'E')[0]}
+                initial={(user?.clubName || 'E')[0]}
                 isActive={!activeTeam}
                 onClick={() => { if (!confirmPageContextSwitch(null)) return; setActiveTeam(null); router.push(activeTeam ? '/club?from=' + encodeURIComponent(activeTeam.id) : '/club'); onClose?.(); }}
                 variant="elite"
               />
+              </>}
               <DropdownMenuSeparator className="my-1.5" />
-              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground px-2 pb-1">Sub-Squads ({teams.length})</p>
+              <p className="text-[9px] font-black uppercase tracking-[0.25em] text-muted-foreground px-2 pb-1">Sub-Squads ({squadList.length})</p>
               <div className="overflow-y-auto max-h-[220px] overscroll-contain space-y-0.5 pr-0.5">
-                {teams.length === 0
+                {squadList.length === 0
                   ? <p className="text-xs text-muted-foreground text-center py-3">No squads created yet.</p>
-                  : teams.map(team => (
+                  : squadList.map(team => (
                     <SquadRow
                       key={team.id}
                       team={team}
@@ -416,6 +414,11 @@ function ShellContent({ children }: { children: React.ReactNode }) {
     unreadAlertsCount, purchasePro, isSchoolMode, isSchoolAdmin, isEliteAccount, isEliteClubMode,
     deleteTeam, deleteAccount, isSuperAdmin
   } = useTeam();
+  const selectedHub = resolveBrandingHub(teams, activeTeam?.id, user?.id, !!isSchoolMode);
+  const schoolHubLabel = ['school','school_hub'].includes(selectedHub?.type || '') || (!isHubTeamType(selectedHub?.type) && isSchoolMode);
+  const hubCount = teams.filter(team => team.ownerUserId === user?.id && isHubTeamType(team.type) &&
+    ['school','school_hub'].includes(team.type || '') === !!schoolHubLabel).length;
+  const selectedHubName = hubLabel(selectedHub, schoolHubLabel ? user?.schoolName : user?.clubName, hubCount, schoolHubLabel ? 'School Hub' : 'Club Hub');
   const isModernLayout = user?.homeScreenLayout === 'modern';
   const isModernHome = isModernLayout && pathname === '/dashboard' && Boolean(activeTeam);
   useEffect(() => {
@@ -760,12 +763,12 @@ function ShellContent({ children }: { children: React.ReactNode }) {
                           {isSchoolMode && isPrimaryClubAuthority && activeTeam?.type === 'school' ? (
                             /* School institution mode — gradient shield */
                             <AvatarFallback className="hero-gradient text-white font-black text-xs">
-                              {(user?.schoolName || user?.clubName || 'S')[0]}
+                              {(selectedHubName)[0]}
                             </AvatarFallback>
                           ) : isEliteHubMode ? (
                             /* Elite Club hub mode — amber/primary gradient shield */
                             <AvatarFallback className="bg-linear-to-br from-amber-500 to-primary text-white font-black text-xs">
-                              {(user?.clubName || user?.schoolName || 'E')[0]}
+                              {(selectedHubName)[0]}
                             </AvatarFallback>
                           ) : isSchoolMode && isPrimaryClubAuthority ? (
                             /* School squad mode — show the squad's logo */
@@ -790,7 +793,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
                           {isSchoolMode && isPrimaryClubAuthority ? (
                             <>
                               <span className="font-black text-sm truncate uppercase tracking-tight text-foreground">
-                                {user?.schoolName || user?.clubName || 'School Hub'}
+                                {selectedHubName}
                               </span>
                               {!isSchoolInstitutionMode && activeTeam && (
                                 <span className="text-[9px] font-bold text-primary uppercase tracking-widest truncate">
@@ -801,7 +804,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
                           ) : isEliteClubMode ? (
                             <>
                               <span className="font-black text-sm truncate uppercase tracking-tight text-foreground">
-                                {user?.clubName || user?.schoolName || 'Elite Club'}
+                                {selectedHubName}
                               </span>
                               {!isEliteHubMode && activeTeam && (
                                 <span className="text-[9px] font-bold text-primary uppercase tracking-widest truncate">
@@ -1013,7 +1016,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
                           <span className="font-black text-sm uppercase tracking-tight truncate">{user?.name}</span>
                           {isPrimaryClubAuthority && (user?.schoolName || user?.clubName) ? (
                             <span className="text-[9px] text-primary font-black uppercase tracking-widest truncate">
-                              {user.institutionTitle || 'Athletic Director'} · {user.schoolName || user.clubName}
+                              {user.institutionTitle || 'Athletic Director'} · {selectedHubName}
                             </span>
                           ) : (
                             <span className="text-[9px] text-muted-foreground font-bold uppercase tracking-widest truncate">{user?.email}</span>
@@ -1193,7 +1196,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
                           <div className="space-y-2">
                             {/* Hub link — clears activeTeam so hub shows in institution mode */}
                             <button
-                              onClick={() => { if (!confirmPageContextSwitch(null)) return; setActiveTeam(null as any); router.push(activeTeam ? '/club?from=' + encodeURIComponent(activeTeam.id) : '/club'); setIsMoreMenuOpen(false); }}
+                              onClick={() => { if (!confirmPageContextSwitch(selectedHub?.id ?? null)) return; if (selectedHub) setActiveTeam(selectedHub); router.push('/club'); setIsMoreMenuOpen(false); }}
                               className={cn(
                                 "w-full flex items-center justify-between p-4 rounded-2xl border bg-primary text-white transition-all active:scale-[0.98]",
                                 pathname === '/club' ? "ring-2 ring-white ring-offset-2 ring-offset-primary" : ""

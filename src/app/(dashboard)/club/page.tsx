@@ -95,7 +95,8 @@ import {
   type GlobalWaiverDeployment,
 } from '@/lib/global-waiver-policy';
 
-import { isHubPlan, isHubTeamType, resolveBrandingHub } from '@/lib/hub-eligibility';
+import { hasStaffRole } from '@/lib/staff-position';
+import { isHubPlan, isHubTeamType, resolveBrandingHub, squadBelongsToHub, hubLabel } from '@/lib/hub-eligibility';
 import { AccessRestricted } from '@/components/layout/AccessRestricted';
 
 export default function ClubManagementPage() {
@@ -118,7 +119,7 @@ function HubFromNavigation({activeId, uid}: {activeId?: string; uid?: string}) {
 }
 
 function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
-  const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, deployClubProtocol, hasFeature, isSchoolMode: accountSchoolMode, isSchoolAdmin, activeTeam, members, db, createChat, updateChat, reinstateMember, isEliteAccount, isSuperAdmin, proQuotaStatus } = useTeam();
+  const { teams, user, isPrimaryClubAuthority, createNewTeam, setActiveTeam, updateUser, deployClubProtocol, hasFeature, isSchoolMode: accountSchoolMode, isSchoolAdmin, activeTeam, members, db, createChat, reinstateMember, isEliteAccount, isSuperAdmin, proQuotaStatus } = useTeam();
   const [selectedCoach, setSelectedCoach] = useState<Member | null>(null);
 
   const router = useRouter();
@@ -174,8 +175,7 @@ function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
   const profileName = isSchoolMode ? user?.schoolName : user?.clubName;
   const sameKindHubs = resolvedTeams.filter(team => team.ownerUserId === user?.id &&
     (isSchoolMode ? ['school', 'school_hub'] : ['club', 'club_hub']).includes(team.type || ''));
-  const hubName = brandingHub?.hubDisplayName || (sameKindHubs.length <= 1 && profileName) ||
-    (explicitHub && brandingHub?.name) || (isSchoolMode ? 'School Hub' : 'Club Hub');
+  const hubName = hubLabel(brandingHub, profileName, sameKindHubs.length, isSchoolMode ? 'School Hub' : 'Club Hub');
   const formValues = {name: hubName, schoolName: hubName, description: user?.clubDescription || '',
     institutionTitle: user?.institutionTitle || (isSchoolMode ? 'Athletic Director' : '')};
   const [clubForm, setClubForm] = useState(formValues);
@@ -224,32 +224,11 @@ function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
     return [...merged.values()];
   }, [resolvedTeams, organizationTeams]);
 
-  const schoolHub = useMemo(() => {
-    const explicit = resolvedTeams.find(t => t.ownerUserId === user?.id && (t.type === 'school' || t.type === 'school_hub'));
-    if (explicit) return explicit;
-    
-    // If no explicit hub but user is on school plan, treat their primary owned team as the hub
-    if (isSchoolMode) {
-      return resolvedTeams.find(t => t.ownerUserId === user?.id && t.isPro) || null;
-    }
-    // For elite multi-team organizers, treat their primary owned Pro team as the hub
-    if (isEliteAccount && isPrimaryClubAuthority) {
-      return resolvedTeams.find(t => t.ownerUserId === user?.id && t.isPro) || null;
-    }
-    return null;
-  }, [resolvedTeams, isSchoolMode, isEliteAccount, isPrimaryClubAuthority, user?.id]);
-
-  const organizationOwnerId = schoolHub?.ownerUserId || user?.id;
-  const organizationSquadCandidates = useMemo(() => {
-    return Array.from(new Map(
-      resolvedOrganizationTeams
-        .filter(t =>
-          t.ownerUserId === user?.id && isBillableSquadSeat(t) &&
-          (!isSchoolMode || !schoolHub?.id || t.schoolId === schoolHub.id)
-        )
-        .map(t => [t.id, t])
-    ).values());
-  }, [resolvedOrganizationTeams, isSchoolMode, schoolHub?.id, user?.id]);
+  const schoolHub = brandingHub;
+  const organizationOwnerId = schoolHub?.ownerUserId;
+  const organizationSquadCandidates = useMemo(() => resolvedOrganizationTeams.filter(team =>
+    isBillableSquadSeat(team) && squadBelongsToHub(team, schoolHub)
+  ), [resolvedOrganizationTeams, schoolHub]);
 
   // Use the organizer's membership projections for seat allocation so the Hub
   // agrees with the squad switcher. The resolved team documents still provide
@@ -261,7 +240,7 @@ function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
   }, [teams, organizationTeams]);
   const allocatedTeams = useMemo(() => organizationSquadCandidates.filter(team => {
     if (!allocatedMembershipIds.has(team.id)) return false;
-    if (isSchoolMode && schoolHub?.id) return team.schoolId === schoolHub.id;
+
     return true;
   }), [organizationSquadCandidates, allocatedMembershipIds, isSchoolMode, schoolHub?.id]);
   const clubTeams = organizationSquadCandidates;
@@ -279,11 +258,11 @@ function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
   const privateClubTeamIds = useMemo(() => clubTeamIds.filter(id => privateSquadIds.includes(id)), [clubTeamIds, privateSquadIds]);
   const organizationSeatLimit = organizationCapacity?.limit ?? proQuotaStatus.limit;
   const allocatedSquadCount = allocatedTeams.length;
-  const remainingSquadSeats = Math.max(0, organizationSeatLimit - allocatedSquadCount);
+  const remainingSquadSeats = organizationCapacity?.remaining ?? Math.max(0, organizationSeatLimit - allocatedSquadCount);
 
   useEffect(() => {
     if (!firebaseAuth || !organizationOwnerId) return;
-    const hasSchoolHub = schoolHub?.type === 'school' || schoolHub?.type === 'school_hub';
+    const hasSchoolHub = isHubTeamType(schoolHub?.type);
     const ownsOrganizationPlan = isHubPlan(user?.plan_type) && isEntitledSubscriptionStatus(user?.subscription_status);
     if (!hasSchoolHub && !ownsOrganizationPlan && !isSuperAdmin) return;
     let cancelled = false;
@@ -321,21 +300,30 @@ function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
   // rely on a collectionGroup+in composite index (which causes partial results).
   const [allRawMembers, setAllRawMembers] = useState<Member[]>([]);
 
-  const fetchAllSquadMembers = useCallback(async () => {
-    if (!db || privateSquads.length === 0) {
-      setAllRawMembers([]);
-      return;
-    }
-    try {
-      const results: Member[] = [];
-      for (const team of privateSquads) {
-        const snap = await getDocs(collection(db, 'teams', team.id, 'members'));
-        snap.forEach(d => results.push({ id: d.id, ...d.data() } as Member));
+  const [loadedRoster, setLoadedRoster] = useState<Team[] | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    async function loadMembers() {
+      if (!db || privateSquads.length === 0) {
+        setAllRawMembers([]);
+        setLoadedRoster(db ? privateSquads : null);
+        return;
       }
-      setAllRawMembers(results);
-    } catch (e) {
-      console.warn('Failed to fetch squad members:', e);
+      try {
+        const results: Member[] = [];
+        for (const team of privateSquads) {
+          const snap = await getDocs(collection(db, 'teams', team.id, 'members'));
+          snap.forEach(d => results.push({ ...d.data(), id: d.id, teamId: team.id } as Member));
+        }
+        if (cancelled) return;
+        setAllRawMembers(results);
+        setLoadedRoster(privateSquads);
+      } catch (e) {
+        console.warn('Failed to fetch squad members:', e);
+      }
     }
+    void loadMembers();
+    return () => { cancelled = true; };
   }, [db, privateSquads]);
 
   // Hub Broadcast Channel state
@@ -350,9 +338,11 @@ function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
     if (!db) return;
     // Determine candidate teams to search
     const candidateTeamId = schoolHub?.id;
-    const candidateTeams = isEliteAccount
-      ? clubTeams.map(t => t.id)
-      : candidateTeamId ? [candidateTeamId] : [];
+    const candidateTeams = candidateTeamId
+      ? [...new Set([candidateTeamId, ...clubTeams.map(team => team.id)])] : [];
+    let cancelled = false;
+    setHubChannel(null);
+    setHubChannelTeamId(null);
     if (candidateTeams.length === 0) return;
 
     const fetchHubChannel = async () => {
@@ -360,8 +350,17 @@ function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
       try {
         for (const tid of candidateTeams) {
           const snap = await getDocs(query(collection(db, 'teams', tid, 'groupChats'), where('isHubChannel', '==', true)));
-          if (!snap.empty) {
-            const d = snap.docs[0];
+          if (cancelled) return;
+          const d = snap.docs.find(channel => {
+            const data = channel.data();
+            const allowed = new Set([user?.id, ...allRawMembers.filter(member =>
+              privateSquadIds.includes(member.teamId) && member.status !== 'removed' &&
+              !(member as any).isDeleted && hasStaffRole(member)).map(member => member.userId),
+              ...(schoolHub?.schoolAdminIds || [])]);
+            return data.isDeleted !== true && (!data.hubTeamId || data.hubTeamId === candidateTeamId || data.hubTeamId === tid) &&
+              Array.isArray(data.memberIds) && data.memberIds.every((id: string) => allowed.has(id));
+          });
+          if (d) {
             setHubChannelTeamId(tid);
             setHubChannel({ id: d.id, name: d.data().name || 'Hub Channel', memberIds: d.data().memberIds || [] });
             return;
@@ -372,68 +371,32 @@ function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
       } catch (e) {
         console.warn('Failed to fetch hub channel:', e);
       } finally {
-        setHubChannelLoading(false);
+        if (!cancelled) setHubChannelLoading(false);
       }
     };
     fetchHubChannel();
-  }, [db, schoolHub?.id, isEliteAccount, clubTeams]);
+    return () => { cancelled = true; };
+  }, [db, schoolHub, clubTeams, allRawMembers, privateSquadIds, user?.id]);
 
   // The team that actually holds the hub channel (may differ from schoolHub for elite)
   const hubTeam = useMemo(() => {
-    if (hubChannelTeamId) return resolvedTeams.find(t => t.id === hubChannelTeamId) || schoolHub;
+    if (hubChannelTeamId && hubChannelTeamId !== schoolHub?.id) return clubTeams.find(t => t.id === hubChannelTeamId);
     return schoolHub;
-  }, [hubChannelTeamId, resolvedTeams, schoolHub]);
+  }, [hubChannelTeamId, clubTeams, schoolHub]);
 
   const handleCreateHubChannel = async () => {
     // For elite, use the first owned Pro team as hub. For school, use the institution.
-    const targetHub = hubTeam || schoolHub;
-    if (!targetHub || !db || !user) return;
+    const targetHub = schoolHub;
+    if (!targetHub || !db || !user || loadedRoster !== privateSquads) return;
     setIsCreatingHubChannel(true);
     try {
-      const staffKeywords = ['coach', 'director', 'coordinator', 'staff', 'manager', 'trainer'];
-      const memberUserIds = new Set<string>();
-      const staffMetadata: Record<string, { name: string; position: string; avatar: string }> = {};
-
-      if (user.id) {
-        memberUserIds.add(user.id);
-        staffMetadata[user.id] = {
-          name: user.name || (isEliteAccount ? 'League Organizer' : 'Athletic Director'),
-          position: isEliteAccount ? 'League Organizer' : 'Athletic Director',
-          avatar: user.avatar || '',
-        };
-      }
-      (targetHub.schoolAdminIds || []).forEach((id: string) => memberUserIds.add(id));
-
-      for (const m of allRawMembers) {
-        if (m.status === 'removed' || !m.userId) continue;
-        const pos = (m.position || '').toLowerCase();
-        const role = (m.role || '').toLowerCase();
-        const isStaff = staffKeywords.some(kw => pos.includes(kw)) || role === 'admin';
-        if (isStaff) {
-          memberUserIds.add(m.userId);
-          if (!staffMetadata[m.userId]) {
-            const squadName = clubTeams.find(t => t.id === m.teamId)?.name || clubTeams.find(t => t.id === m.teamId)?.teamName || '';
-            staffMetadata[m.userId] = {
-              name: m.name || m.userId,
-              position: m.position || role,
-              avatar: m.avatar || '',
-              ...(squadName ? { squadName } : {}),
-            };
-          }
-        }
-      }
-
-      const memberIdsArray = Array.from(memberUserIds);
-      const channelName = `${hubName} — Broadcast Channel`;
-      const chatId = await createChat(channelName, memberIdsArray, undefined, targetHub.id);
-      if (chatId) {
-        await updateChat(chatId, {
-          isHubChannel: true,
-          hubTeamId: targetHub.id,
-          staffMetadata,
-        }, targetHub.id);
-        setHubChannelTeamId(targetHub.id);
-      }
+      const staff = allRawMembers.filter(member => privateSquadIds.includes(member.teamId) &&
+        member.status !== 'removed' && !(member as any).isDeleted && member.userId && hasStaffRole(member));
+      const memberIdsArray = [...new Set([user.id, ...staff.map(member => member.userId!)])];
+      const channelName = hubName + ' — Broadcast Channel';
+      const chatId = await createChat(channelName, memberIdsArray, 'hub:' + targetHub.id, targetHub.id);
+      if (!chatId) throw new Error('The channel could not be created.');
+      setHubChannelTeamId(targetHub.id);
       setHubChannel({ id: chatId, name: channelName, memberIds: memberIdsArray });
       toast({ title: 'Hub Channel Created', description: `${memberIdsArray.length} staff members added to the broadcast channel.` });
     } catch (e: any) {
@@ -444,9 +407,7 @@ function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
     }
   };
 
-  useEffect(() => {
-    fetchAllSquadMembers();
-  }, [fetchAllSquadMembers]);
+
 
   // Aggregate all members from all school teams
   const clubMembers = useMemo(() => {
@@ -876,7 +837,7 @@ function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
         headers: { 'Content-Type': 'application/json', ...authHeader(token) },
         body: JSON.stringify({
           teamId: team.id,
-          ...(isSchoolMode && schoolHub?.type && ['school', 'school_hub'].includes(schoolHub.type)
+          ...(schoolHub && isHubTeamType(schoolHub.type)
             ? { hubTeamId: schoolHub.id }
             : {}),
         }),
@@ -1141,7 +1102,7 @@ function AuthorizedClubManagementPage({sourceId}: {sourceId?: string}) {
               <Button
                 size="sm"
                 onClick={handleCreateHubChannel}
-                disabled={isCreatingHubChannel}
+                disabled={isCreatingHubChannel || loadedRoster !== privateSquads}
                 className="rounded-xl font-black uppercase text-[9px] md:text-[10px] h-8 md:h-9 px-3 md:px-4 shadow-md shadow-primary/20 shrink-0"
               >
                 {isCreatingHubChannel ? (

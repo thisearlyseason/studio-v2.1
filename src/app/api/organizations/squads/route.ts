@@ -36,16 +36,16 @@ async function resolveOrganization(
     const hubSnapshot = await transaction.get(adminDb.collection('teams').doc(hubTeamId));
     if (!hubSnapshot.exists) throw new Error('HUB_NOT_FOUND');
     const hub = hubSnapshot.data() || {};
-    if (isBillableSquadSeat(hub) || !['school', 'school_hub'].includes(hub.type)) {
+    if (isBillableSquadSeat(hub) || !['school', 'school_hub', 'club', 'club_hub'].includes(hub.type)) {
       throw new Error('INVALID_HUB');
     }
     ownerId = hub.ownerUserId;
     hubId = hubSnapshot.id;
-    type = 'school';
+    type = ['school', 'school_hub'].includes(hub.type) ? 'school' : 'club';
     const authorized =
       auth.role === 'superadmin' ||
       hub.ownerUserId === auth.uid ||
-      includesUser(hub.schoolAdminIds, auth.uid);
+      (type === 'school' && includesUser(hub.schoolAdminIds, auth.uid));
     if (!authorized) throw new Error('FORBIDDEN');
   } else if (auth.role !== 'superadmin' && ownerId !== auth.uid) {
     throw new Error('FORBIDDEN');
@@ -122,8 +122,7 @@ async function mutateOrganizationSquad(req: NextRequest, allocated: boolean) {
       }
       if (
         organization.hubId &&
-        team.schoolId !== organization.hubId &&
-        team.organizationHubId !== organization.hubId
+        (team.organizationHubId || team.schoolId || team.clubId) !== organization.hubId
       ) {
         throw new Error('FORBIDDEN');
       }
@@ -132,9 +131,8 @@ async function mutateOrganizationSquad(req: NextRequest, allocated: boolean) {
         snapshot.id !== teamId &&
         snapshot.data().isPro === true &&
         isActiveOrganizationSquad(snapshot.data()) &&
-        (!organization.hubId ||
-          snapshot.data().schoolId === organization.hubId ||
-          snapshot.data().organizationHubId === organization.hubId)
+        (!organization.hubId || organization.type === 'club' ||
+          (snapshot.data().organizationHubId || snapshot.data().schoolId || snapshot.data().clubId) === organization.hubId)
       ).length;
       if (allocated && otherAllocated >= organization.teamLimit) throw new Error('NO_SEATS');
 
@@ -205,7 +203,7 @@ export async function GET(req: NextRequest) {
       const organizationTeams = ownedTeams.docs.filter(snapshot => {
         const team = snapshot.data();
         return isActiveOrganizationSquad(team) &&
-          (!organization.hubId || team.schoolId === organization.hubId || team.organizationHubId === organization.hubId);
+          (!organization.hubId || (team.organizationHubId || team.schoolId || team.clubId) === organization.hubId);
       });
       const allocatedSnapshots = organizationTeams.filter(snapshot =>
         snapshot.data().isPro === true
@@ -224,7 +222,9 @@ export async function GET(req: NextRequest) {
       return {
         allocated: squads.length,
         limit: organization.teamLimit,
-        remaining: Math.max(0, organization.teamLimit - squads.length),
+        remaining: Math.max(0, organization.teamLimit - (organization.type === 'club'
+          ? ownedTeams.docs.filter(doc => doc.data().isPro === true && isActiveOrganizationSquad(doc.data())).length
+          : squads.length)),
         squads,
         teams,
       };
