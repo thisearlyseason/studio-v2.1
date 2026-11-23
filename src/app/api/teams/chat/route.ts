@@ -1,3 +1,4 @@
+import { isChatVisibleForTeam } from '@/lib/chat-channel-identity';
 import { hasBlockBetween } from '@/lib/server-moderation';
 import { NextRequest, NextResponse } from 'next/server';
 import { adminDb } from '@/lib/firebase-admin';
@@ -114,6 +115,7 @@ async function listAuthorizedChatChannels(uid: string, currentTeamId: string, to
       if (!freshChat.exists || data.isDeleted === true || !Array.isArray(data.memberIds) ||
           !data.memberIds.includes(uid) || !team.exists || !tacticalChatEnabled(team.data() || {})) return null;
       if (typeof data.teamId === 'string' && data.teamId !== teamId) return null;
+      if (!isChatVisibleForTeam(teamId, currentTeamId, data.contextType, data.memberAuthorities?.[uid]?.teamId)) return null;
       const legacyUpdates: Record<string, unknown> = {};
       if (data.isDeleted === undefined) legacyUpdates.isDeleted = false;
       if (data.teamId === undefined) legacyUpdates.teamId = teamId;

@@ -323,7 +323,8 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
       const query = searchParams.toString();
       const returnPath = `${pathname}${query ? `?${query}` : ''}`;
       sessionStorage.setItem('squad_return_path', safeReturnPath(returnPath));
-      router.push('/login');
+      router.replace(`/login?returnTo=${encodeURIComponent(safeReturnPath(returnPath))}`);
+      return;
     }
 
     // Automatic Redirect to Institutional Hub on first login per session

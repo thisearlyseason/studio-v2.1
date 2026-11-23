@@ -66,7 +66,8 @@ export function NativeProviderLogin({ disabled, onVerified }: { disabled: boolea
       random: { secret: () => base64url(crypto.getRandomValues(new Uint8Array(32))), requestId: () => crypto.randomUUID(), hash: async raw => base64url(new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(raw)))) },
       onState: next => {
         if (next.phase === 'verified') {
-          if (next.returnPath) sessionStorage.setItem('squad_return_path', safeReturnPath(next.returnPath, 'store'));
+          const destination = route.pathname === '/teams/join' || route.pathname.startsWith('/register/squad/') ? returnPath : next.returnPath;
+          if (destination) sessionStorage.setItem('squad_return_path', safeReturnPath(destination, 'store'));
           verified.current();
         }
         if (['idle', 'verified', 'failed'].includes(next.phase) && !next.locked) { release.current?.(); release.current = null; }

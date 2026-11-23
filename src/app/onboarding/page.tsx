@@ -11,7 +11,7 @@ import { Label } from '@/components/ui/label';
 import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
 import BrandLogo from '@/components/BrandLogo';
 import { toast } from '@/hooks/use-toast';
-import { APP_DISTRIBUTION, isStoreDistribution } from '@/lib/app-distribution';
+import { APP_DISTRIBUTION, isStoreDistribution, safeReturnPath } from '@/lib/app-distribution';
 import { onboardingDestinationForRole } from '@/lib/store-signup-policy';
 
 const ROLES = [
@@ -21,6 +21,12 @@ const ROLES = [
   { value: 'admin', label: 'School or club administrator', destination: '/teams/new' },
   { value: 'league_creator', label: 'League organizer', destination: '/competition' },
 ] as const;
+
+function takeReturnPath(fallback: string) {
+  const path = sessionStorage.getItem('squad_return_path');
+  sessionStorage.removeItem('squad_return_path');
+  return safeReturnPath(path || fallback, APP_DISTRIBUTION);
+}
 
 export default function OnboardingPage() {
   const { user, isUserLoading } = useUser();
@@ -35,7 +41,7 @@ export default function OnboardingPage() {
     if (user?.displayName) setName(current => current || user.displayName || '');
     if (user && db) {
       getDoc(doc(db, 'users', user.uid)).then(snapshot => {
-        if (snapshot.exists()) router.replace('/dashboard');
+        if (snapshot.exists()) router.replace(takeReturnPath('/dashboard'));
       }).catch(() => undefined);
     }
   }, [db, isUserLoading, router, user]);
@@ -77,7 +83,7 @@ export default function OnboardingPage() {
       }
       await batch.commit();
       const destination = onboardingDestinationForRole(role, APP_DISTRIBUTION);
-      router.replace(destination);
+      router.replace(takeReturnPath(destination));
     } catch {
       toast({ title: 'Profile setup failed', description: 'Your profile could not be created. Please try again.', variant: 'destructive' });
       setSaving(false);

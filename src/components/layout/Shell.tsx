@@ -1,4 +1,5 @@
 "use client";
+import { isTeamModuleRouteDisabled } from '@/lib/team-module-visibility';
 import { coordinateTodoLogout } from '@/lib/schedule-todos/logout';
 import { PublicPageEntry, confirmPageContextSwitch as confirmUnsavedPageContextSwitch } from '@/components/squad-pages/entity-context';
 
@@ -568,7 +569,7 @@ function ShellContent({ children }: { children: React.ReactNode }) {
                 { name: 'Roster', href: '/roster', icon: Users },
                 ...(activeTeam?.features?.tacticalChat !== false ? [{ name: 'Chat', href: '/chats', icon: MessageCircle }] : []),
               ]
-  ).filter(item => authorizeDashboardRoute(item.href, {
+  ).filter(item => !isTeamModuleRouteDisabled(item.href, activeTeam?.features)).filter(item => authorizeDashboardRoute(item.href, {
     role: user?.role,
     plan_type: user?.plan_type,
     isPrimaryClubAuthority,

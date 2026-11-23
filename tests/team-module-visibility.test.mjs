@@ -7,9 +7,9 @@ import {
   teamModuleFeaturePatch,
 } from '../src/lib/team-module-visibility.ts';
 
-test('team module policy uses the eight frozen keys and guards every canonical route', () => {
+test('team module policy includes configurable team tools and guards every canonical route', () => {
   assert.deepEqual(TEAM_MODULE_DEFINITIONS.map(item => item.key), [
-    'attendance', 'equipment', 'facilities', 'feed', 'files', 'fundraising', 'practice', 'volunteers',
+    'attendance', 'competition', 'leagues', 'tournaments', 'scorekeeping', 'coachTools', 'equipment', 'facilities', 'feed', 'files', 'fundraising', 'practice', 'volunteers',
   ]);
   for (const teamModule of TEAM_MODULE_DEFINITIONS) {
     assert.equal(isTeamModuleRouteDisabled(teamModule.route, { [teamModule.key]: false }), true, teamModule.key);

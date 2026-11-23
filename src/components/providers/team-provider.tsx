@@ -59,6 +59,7 @@ export type UserProfile = {
   email: string;
   phone: string;
   avatar: string;
+  avatarUrl?: string;
   role: UserRole;
   createdAt?: string;
   isDemo?: boolean;
@@ -271,21 +272,7 @@ export type Team = {
   teamName?: string; // Alias used in some contexts
   lastCodeEditedAt?: string;
   // Module visibility settings (admin-configurable)
-  features?: {
-    attendance?: boolean;
-    equipment?: boolean;
-    facilities?: boolean;
-    feed?: boolean;
-    files?: boolean;
-    fundraising?: boolean;
-    practice?: boolean;
-    volunteers?: boolean;
-    roster?: boolean;
-    playbook?: boolean;
-    volunteer?: boolean;
-    tacticalChat?: boolean;
-    library?: boolean;
-  };
+  features?: import('@/lib/team-module-visibility').TeamModuleFeatures;
 };
 
 export type Club = {
@@ -1199,7 +1186,7 @@ export function TeamProvider({ children }: { children: ReactNode }) {
           plan_type: isSuper ? 'league' : data.plan_type,
           team_limit: isSuper ? 100 : data.team_limit,
           role: isSuper ? 'superadmin' : data.role,
-          avatar: data.avatarUrl || data.avatar || `https://picsum.photos/seed/${snap.id}/150/150`
+          avatar: data.avatar || data.avatarUrl || `https://picsum.photos/seed/${snap.id}/150/150`
         } as UserProfile);
       } else {
         // Fallback if the user document hasn't been written to DB yet or is deleted

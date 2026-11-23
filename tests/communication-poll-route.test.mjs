@@ -295,7 +295,7 @@ test('Chat lifecycle revalidates deletion and authority in the same transaction 
   } finally {loaded.dispose();}
 });
 
-test('Chat directory returns only server-authorized multi-team channels without private audience fields',async()=>{
+test('Chat directory returns only the selected team\'s authorized channels without private audience fields',async()=>{
   const seed={
     'teams/team-a':{ownerUserId:'owner-a',name:'Team A',features:{tacticalChat:true}},
     'teams/team-b':{ownerUserId:'owner-b',name:'Team B',features:{tacticalChat:true}},
@@ -316,13 +316,10 @@ test('Chat directory returns only server-authorized multi-team channels without 
     assert.equal(response.headers.get('cache-control'),'private, no-store');
     const body=await response.json();
     assert.deepEqual(body.channels.map(channel=>[channel.teamId,channel.id,channel.name,channel.unread]),[
-      ['team-b','shared','B marker',3],
       ['team-a','shared','A marker',2],
     ]);
     assert.equal(body.channels.every(channel=>channel.memberIds===undefined&&channel.memberAuthorities===undefined&&channel.unreadBy===undefined),true);
-    assert.deepEqual(records.get('teams/team-b/groupChats/shared').memberAuthorities?.multi,{teamId:'team-b',memberId:'legacy-multi-member'});
-    assert.equal(records.get('teams/team-b/groupChats/shared').isDeleted,false);
-    assert.equal(records.get('teams/team-b/groupChats/shared').teamId,'team-b');
+    assert.equal(records.get('teams/team-b/groupChats/shared').memberAuthorities,undefined);
     assert.equal(records.get('teams/team-c/groupChats/shared').memberAuthorities,undefined);
     assert.equal(records.get('teams/team-c/groupChats/shared').isDeleted,undefined);
   } finally {loaded.dispose();}
@@ -349,8 +346,8 @@ test('Chat directory honors server-derived remote authority and module revocatio
     'teams/source':{ownerUserId:'owner-source',name:'Source',features:{tacticalChat:true}},
     'teams/off':{ownerUserId:'owner-off',name:'Off',features:{tacticalChat:false}},
     'teams/source/members/remote':{userId:'remote',position:'Assistant Coach',status:'active'},
-    'teams/host/groupChats/league':{name:'League marker',memberIds:['remote'],memberAuthorities:{remote:{teamId:'source',memberId:'remote'}},isDeleted:false},
-    'teams/off/groupChats/off-channel':{name:'Off marker',memberIds:['remote'],memberAuthorities:{remote:{teamId:'source',memberId:'remote'}},isDeleted:false},
+    'teams/host/groupChats/league':{name:'League marker',contextType:'league',memberIds:['remote'],memberAuthorities:{remote:{teamId:'source',memberId:'remote'}},isDeleted:false},
+    'teams/off/groupChats/off-channel':{name:'Off marker',contextType:'league',memberIds:['remote'],memberAuthorities:{remote:{teamId:'source',memberId:'remote'}},isDeleted:false},
   };
   const {db}=communicationDb(seed);
   const loaded=await loadCommunicationRoute('../../src/app/api/teams/chat/route.ts',db,{uid:'remote'});

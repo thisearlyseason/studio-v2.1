@@ -15,6 +15,7 @@ const PROTECTED_ROOTS = new Set([
 ]);
 
 function isProtectedPath(pathname: string) {
+  if (pathname.startsWith('/register/squad/')) return true;
   if (pathname.startsWith('/events/register/')) return false;
   if (pathname === '/leagues' || pathname === '/leagues/') return true;
   if (pathname === '/leagues/registration' || pathname.startsWith('/leagues/registration/')) return true;
