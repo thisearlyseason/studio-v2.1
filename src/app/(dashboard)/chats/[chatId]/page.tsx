@@ -4,6 +4,7 @@
 import { chatActivityDate, isChatVisibleForTeam } from '@/lib/chat-channel-identity';
 import { ContentSafety, BlockedUsers, useBlockedAuthors } from '@/components/content-safety';
 import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { format } from 'date-fns';
 import { useParams, useRouter, useSearchParams } from 'next/navigation';
 import { 
@@ -166,7 +167,8 @@ function ChatRoomInner() {
   useEffect(() => {
     // Use requestAnimationFrame to ensure DOM has painted before scrolling
     requestAnimationFrame(() => {
-      messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      const viewport = messagesEndRef.current?.closest('[data-radix-scroll-area-viewport]');
+      viewport?.scrollTo({ top: viewport.scrollHeight, behavior: 'smooth' });
     });
   }, [messages.length]);
 
@@ -308,8 +310,8 @@ function ChatRoomInner() {
   });
 
   return (
-    <div className="flex flex-col h-[calc(100vh-160px)] md:h-[calc(100vh-130px)] mt-0 md:mt-0 -mx-4 overflow-hidden bg-muted/5">
-      <div className="flex flex-col p-4 border-b bg-white sticky top-0 z-20 shadow-sm gap-3">
+    <div className="flex flex-col h-full min-h-0 md:h-[calc(100vh-130px)] md:-mx-4 overflow-hidden bg-muted/5">
+      <div className="flex shrink-0 flex-col p-2 sm:p-4 border-b bg-white sticky top-0 z-20 shadow-sm gap-3">
         <div className="flex items-center gap-3">
           <Tooltip>
             <TooltipTrigger asChild>
@@ -383,8 +385,8 @@ function ChatRoomInner() {
       </div>
 
       <div className="px-4 py-2 border-b"><BlockedUsers /></div>
-      <ScrollArea className="flex-1 px-4 py-6">
-        <div className="max-w-4xl mx-auto space-y-8 pb-10" ref={scrollRef}>
+      <ScrollArea className="min-h-0 flex-1 px-4">
+        <div className="max-w-4xl mx-auto space-y-8 py-6" ref={scrollRef}>
           {isMessagesLoading || blocksLoading ? (
             <div className="flex justify-center p-8"><Loader2 className="h-6 w-6 animate-spin text-primary opacity-20" /></div>
           ) : messages.length > 0 ? (
@@ -471,7 +473,7 @@ function ChatRoomInner() {
         </div>
       </ScrollArea>
 
-      <div className="p-4 md:p-6 bg-white border-t mt-auto relative z-30 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
+      <div className="shrink-0 p-2 pb-[max(.5rem,env(safe-area-inset-bottom))] md:p-6 bg-white border-t relative z-30 shadow-[0_-10px_40px_rgba(0,0,0,0.05)]">
         <div className="max-w-4xl mx-auto space-y-4">
           {sendAttempt?.status === 'failed' && (
             <div role="status" className="flex items-center justify-between gap-3 rounded-2xl border border-destructive/30 bg-destructive/5 px-4 py-3">
@@ -713,7 +715,32 @@ function ChatRoomInner() {
 }
 
 export default function ChatRoomPage() {
-  return (
+  const [mobile, setMobile] = useState(false);
+  const screen = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    const query = window.matchMedia('(max-width: 767px)');
+    const update = () => setMobile(query.matches);
+    update();
+    query.addEventListener('change', update);
+    return () => query.removeEventListener('change', update);
+  }, []);
+  useEffect(() => {
+    const viewport = window.visualViewport;
+    if (!mobile || !viewport) return;
+    const resize = () => {
+      if (!screen.current) return;
+      screen.current.style.height = viewport.height + 'px';
+      screen.current.style.top = viewport.offsetTop + 'px';
+    };
+    resize();
+    viewport.addEventListener('resize', resize);
+    viewport.addEventListener('scroll', resize);
+    return () => {
+      viewport.removeEventListener('resize', resize);
+      viewport.removeEventListener('scroll', resize);
+    };
+  }, [mobile]);
+  const room = (
     <React.Suspense
       fallback={
         <div className="flex flex-col items-center justify-center h-full gap-4 animate-pulse">
@@ -725,4 +752,8 @@ export default function ChatRoomPage() {
       <ChatRoomInner />
     </React.Suspense>
   );
+  return mobile ? createPortal(
+    <div ref={screen} data-mobile-chat-screen className="fixed inset-x-0 top-0 z-40 h-dvh overflow-hidden bg-background pt-[env(safe-area-inset-top)]">{room}</div>,
+    document.body,
+  ) : room;
 }

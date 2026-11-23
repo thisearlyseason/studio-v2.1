@@ -516,21 +516,13 @@ export default function LandingPage() {
         </div>
       </nav>
 
-      <section className="relative isolate overflow-hidden bg-black text-white pt-32 xl:min-h-[740px] xl:pb-16" id="hero">
-        <div className="pointer-events-none absolute inset-0 z-10 overflow-hidden" aria-hidden="true">
-          <div className="absolute right-[8%] top-[20%] h-64 w-64 rounded-full border border-white/10 motion-safe:animate-pulse" />
-          <div className="absolute right-[10%] top-[22%] h-48 w-48 rounded-full border border-primary/25" />
-          <div className="absolute left-1/2 top-1/2 h-px w-[900px] -translate-x-1/2 -rotate-[25deg] bg-linear-to-r from-transparent via-primary/30 to-transparent" />
-        </div>
-        <div className="container relative z-20 mx-auto px-5 pb-8 text-center md:px-6 xl:pb-0">
-          <div className="mx-auto max-w-5xl space-y-6">
-          <p className="mx-auto w-fit rounded-full border border-white/20 bg-black/25 px-4 py-2 text-[10px] font-bold uppercase tracking-[0.22em] text-white/85 backdrop-blur-md">One team. Every season. One Squad.</p>
-          <h1 className="mx-auto max-w-5xl text-balance font-bold tracking-tight leading-[1.04]" style={{ textShadow: '0 8px 50px rgba(0,0,0,.65)', fontSize: 'clamp(2.25rem, 6vw, 5rem)' }}>
-            <span className="text-primary">The Squad:</span>{' '}sports team management for clubs, leagues and schools.
-          </h1>
-          <p className="mx-auto max-w-xl text-base font-medium leading-relaxed text-white/85 md:text-lg">Stop chasing parents across disconnected tools. Keep schedules, waivers, dues and team chat in one workspace.</p>
+      <section id="hero" className="relative isolate flex min-h-[min(48rem,95svh)] flex-col justify-end overflow-hidden bg-black pt-32 text-white">
+        <div className="container relative z-20 mx-auto px-6 pb-8 sm:px-10 lg:pb-12">
+          <div className="max-w-4xl space-y-6">
+          <h1 className="max-w-[13ch] text-balance text-[clamp(3.25rem,8vw,7.5rem)] font-black leading-[.95] tracking-[-.055em]">Run your entire season with The Squad.</h1>
+          <p className="max-w-xl text-lg font-medium leading-snug text-white/90 sm:text-2xl">Sports team management for clubs, leagues and schools.</p>
           {/* Existing signup and demo paths */}
-          <motion.div className="flex flex-col sm:flex-row items-center justify-center gap-3 w-full max-w-lg mx-auto">
+          <motion.div className="flex flex-col sm:flex-row items-center justify-start gap-3 w-full max-w-lg">
             {user ? (
               <Link href="/dashboard" className="w-full">
                 <Button size="lg" className="h-12 px-8 rounded-full text-sm font-black shadow-2xl shadow-primary/40 active:scale-95 transition-all w-full">
@@ -596,16 +588,8 @@ export default function LandingPage() {
             </Dialog>
           </motion.div>
           </div>
-          <p className="mx-auto mt-5 max-w-lg text-xs font-medium text-white/60">Less administration. More action. One Squad.</p>
-          <p className="mt-2 text-[10px] font-medium text-white/50"><span id="demo-destination">The demo opens sample team, club, school and family workspaces.</span></p>
+          <p id="demo-destination" className="sr-only">The demo opens sample team, club, school and family workspaces.</p>
         </div>
-        <figure className="relative z-20 mx-auto mb-8 w-[280px] max-w-[calc(100%-40px)] overflow-hidden rounded-2xl border border-white/25 bg-black/60 p-1.5 text-left shadow-2xl backdrop-blur-xl xl:absolute xl:bottom-8 xl:right-8 xl:mb-0 xl:w-[260px] xl:rotate-[-3deg] xl:transition-transform xl:hover:rotate-0">
-          <div className="flex items-center justify-between px-2 pb-2 pt-1"><span className="text-[9px] font-black uppercase tracking-[0.18em] text-white">Inside The Squad</span><span className="rounded-full bg-white/10 px-2 py-1 text-[8px] font-bold uppercase tracking-wider text-white/60">Demo data</span></div>
-          <button type="button" onClick={() => setIsDemoDialogOpen(true)} className="block w-full overflow-hidden rounded-xl text-left" aria-label="Explore the example league workspace">
-            <Image src="/how-to/screenshots/league-schedule.webp" width={1440} height={1000} sizes="280px" alt="Example league workspace with teams, games, venues and schedule controls" className="h-[145px] w-full object-cover object-top" />
-          </button>
-          <figcaption className="flex items-center justify-between px-2 pb-1 pt-3 text-[10px] font-bold text-white/85"><span>Your season, in one place.</span><button type="button" onClick={() => setIsDemoDialogOpen(true)} className="text-red-400 hover:text-white">Explore demo ↗</button></figcaption>
-        </figure>
         <HeroBackground />
       </section>
       <AdoptionProof />

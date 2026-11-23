@@ -1,4 +1,5 @@
 "use client";
+import { HomeLayoutSelector } from '@/components/team-home/layout-selector';
 import { authorizeDashboardRoute } from '@/lib/dashboard-route-policy';
 import { schoolInstitutionLandingAllowed } from '@/lib/dashboard-institution-context';
 import Link from 'next/link';
@@ -648,7 +649,9 @@ function LayoutContent({ children }: { children: React.ReactNode }) {
           setIsSeedingDemo={setIsSeedingDemo}
         />
         <ErrorBoundary>
-          <Shell>{activeTeam && isTeamModuleRouteDisabled(pathname, activeTeam.features) ? null : children}</Shell>
+          <Shell>{userProfile && !user?.isAnonymous && !userProfile.isDemo && !userProfile.homeScreenLayout && !userProfile.homeLayoutInvitationDismissed ? (
+            <div className="mx-auto w-full max-w-lg"><HomeLayoutSelector invitation /></div>
+          ) : activeTeam && isTeamModuleRouteDisabled(pathname, activeTeam.features) ? null : children}</Shell>
         </ErrorBoundary>
       </div>
     </div>

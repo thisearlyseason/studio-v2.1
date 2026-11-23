@@ -2,7 +2,6 @@
 import { schoolInstitutionLandingAllowed } from '@/lib/dashboard-institution-context';
 
 import { homeWinRate } from '@/lib/team-home-events';
-import { HomeLayoutSelector } from '@/components/team-home/layout-selector';
 import { ModernTeamHome } from '@/components/team-home/modern-team-home';
 import React, { useMemo, useEffect, useState } from 'react';
 import { useTeam } from '@/components/providers/team-provider';
@@ -488,10 +487,9 @@ function UniversalAccountDashboard() {
 }
 
 export default function TeamHomePage() {
-  const { user, activeTeam, isParent, isStaff } = useTeam();
+  const { user, activeTeam } = useTeam();
   const modern = user?.homeScreenLayout === 'modern';
   return <>
-    {user && activeTeam && !user.homeLayoutInvitationDismissed && !user.homeScreenLayout && (!isParent || isStaff) && <HomeLayoutSelector invitation />}
     {modern && activeTeam ? <ModernTeamHome key={`${user?.id}:${activeTeam.id}`} /> : <UniversalAccountDashboard />}
   </>;
 }

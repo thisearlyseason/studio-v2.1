@@ -463,3 +463,8 @@
   .lg\:space-y-8 > :not([hidden]) ~ :not([hidden]) { --tw-space-y-reverse: 0; margin-top: calc(2rem * calc(1 - var(--tw-space-y-reverse))); margin-bottom: calc(2rem * var(--tw-space-y-reverse)); }
   }
 }
+
+/* The phone conversation is portaled above the workspace, including its navigation. */
+body:has(> [data-mobile-chat-screen]) [data-workspace-shell] {
+  display: none;
+}
