@@ -147,7 +147,7 @@ test('failed schedule commits cannot leave partial bookings, team events or Leag
 });
 
 test('schedule authority is revalidated in the committing transaction and denies Owner B', async () => {
-  for (const changed of ['demotion', 'plan', 'tenant', 'archive', 'version']) {
+  for (const changed of ['demotion', 'plan', 'starter', 'tenant', 'archive', 'version']) {
     let count = 0;
     const { db, records } = communicationDb({ ...scheduleFixture, 'teams/host': { ownerUserId: 'billing-owner', planId: 'elite_league' },
       'leagues/league-a': { ...scheduleFixture['leagues/league-a'], creatorId: 'billing-owner' },
@@ -155,7 +155,7 @@ test('schedule authority is revalidated in the committing transaction and denies
     }, { beforeTransaction({ records: mutable }) {
       if (++count !== 3) return;
       if (changed === 'demotion') mutable.set('teams/host/members/owner', { userId: 'owner', position: 'Player', status: 'active' });
-      if (changed === 'plan') mutable.set('teams/host', { ...mutable.get('teams/host'), planId: 'free' });
+      if (changed === 'plan' || changed === 'starter') mutable.set('teams/host', { ...mutable.get('teams/host'), planId: changed === 'starter' ? 'free' : 'unknown' });
       if (changed === 'tenant') mutable.set('leagues/league-a', { ...mutable.get('leagues/league-a'), tenantId: 'other' });
       if (changed === 'archive') mutable.set('leagues/league-a', { ...mutable.get('leagues/league-a'), isArchived: true });
       if (changed === 'version') mutable.set('leagues/league-a', { ...mutable.get('leagues/league-a'), lifecycleVersion: 2 });
@@ -163,6 +163,11 @@ test('schedule authority is revalidated in the committing transaction and denies
     const app = await loadCommunicationRoute('../../src/app/api/leagues/schedule/route.ts', db, { uid: 'owner' });
     try {
       const response = await app.route.POST(scheduleRequest(replacement));
+      if (changed === 'starter') {
+        assert.equal(response.status, 200);
+        assert.ok(records.get('leagues/league-a').schedule.length > 0);
+        continue;
+      }
       assert.ok([403, 409].includes(response.status), `${changed}: ${response.status}`);
       assert.deepEqual(records.get('leagues/league-a').schedule, []);
       assert.equal([...records.keys()].filter(path => path.startsWith('scheduleBookings/') || path.includes('/events/')).length, 0);
