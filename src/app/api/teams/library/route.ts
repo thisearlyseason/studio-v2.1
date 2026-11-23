@@ -2,8 +2,8 @@ import {NextRequest,NextResponse} from 'next/server';
 import {getStorage} from 'firebase-admin/storage';
 import {adminDb,getAdminStorageBucketName} from '@/lib/firebase-admin';
 import {verifyFirebaseToken} from '@/lib/api-auth';
-import {getTeamAuthority} from '@/lib/server-team-access';
-import {isTeamModuleEnabled} from '@/lib/team-module-visibility';
+import {getTeamAuthority,isParentMember} from '@/lib/server-team-access';
+import {isTeamModuleEnabled,visibleTeamModules} from '@/lib/team-module-visibility';
 import {enforceUserRateLimit} from '@/lib/server-request-guards';
 import {LibraryInputError,LIBRARY_FILE_LIMIT,LIBRARY_STARTER_LIMIT,readLibraryBytes,sanitizeLibraryFilename,validateLibraryBytes} from '@/lib/library-policy';
 import {createHash} from 'node:crypto';
@@ -17,7 +17,22 @@ async function context(req:NextRequest,staff=false){
   const params=new URL(req.url).searchParams,teamId=params.get('teamId');
   if(!validId(teamId)||[...params.keys()].some(key=>!['teamId','fileId','name','category','description'].includes(key)))return NextResponse.json({error:'Invalid Library request.'},{status:400,headers:privateHeaders});
   const authority=await getTeamAuthority(teamId,auth.uid,auth.role);
-  if(!authority||(!authority.isStaff&&!authority.member)||(staff&&!authority.isStaff)||!isTeamModuleEnabled({key:'files',legacyKey:'library'},authority.teamData.features))return NextResponse.json({error:'Library unavailable.'},{status:403,headers:privateHeaders});
+  if (!authority || (!authority.isStaff && !authority.member))
+    return NextResponse.json({error:'You need active membership in this team to access its Library.'},{status:403,headers:privateHeaders});
+  if (staff && !authority.isStaff)
+    return NextResponse.json({error:'Only this team’s coaches and staff can manage Library files.'},{status:403,headers:privateHeaders});
+  if (!authority.isStaff) {
+    const features = authority.teamData.features;
+    let parent = isParentMember(authority.member?.data);
+    if (features?.byRole) {
+      const profile = await adminDb.collection('users').doc(auth.uid).get();
+      const role = String(profile.data()?.role || '').toLowerCase();
+      if (role) parent = role === 'parent' || role === 'guardian';
+    }
+    const flags = visibleTeamModules(features, false, parent);
+    if (!isTeamModuleEnabled({key:'files',legacyKey:'library'}, flags))
+      return NextResponse.json({error:'Library access is turned off for your role on this team.'},{status:403,headers:privateHeaders});
+  }
   return{auth,params,teamId,authority};
 }
 function failure(error:unknown){
